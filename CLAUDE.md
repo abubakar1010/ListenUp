@@ -6,12 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ListenUp is a web app for practicing English listening. The learner adds a clip (file upload or YouTube link) and works through a fixed plan: **Blind**, **Dictation**, **Transcript**, **Card**, **Shadow**. The learner picks Blind, Dictation or both first, so the plan has 4 or 5 steps, and Transcript, Card and Shadow always follow.
 
-The repository has no code yet and no technology stack has been chosen. When one is chosen, add the build, lint and test commands (including how to run a single test) to this file.
+The repository has no code yet. The stack is chosen in the Software Architecture: a React + TypeScript web client built with Vite; a Python 3.12 FastAPI API and Procrastinate workers in one Python package; PostgreSQL 16; S3-compatible object storage; Docker Compose for local and production runs. Once the scaffold exists, add the build, lint and test commands (including how to run a single test) to this file.
 
-The requirements live in two documents outside the repo:
-- PRD: https://claude.ai/code/artifact/5d73e467-e587-4d4f-946d-a9fd2c0ab5f6
-- SRS: https://claude.ai/code/artifact/fd47a9cb-6515-4fde-a232-3ab8cc14f0dd
-
+The design lives in documents outside the repo:
+- PRD: https://claude.ai/code/artifact/5d73e467-e587-4d4f-946d-a9fd2c0ab5f6 (what the product does and why)
+- SRS: https://claude.ai/code/artifact/fd47a9cb-6515-4fde-a232-3ab8cc14f0dd (requirements with stable IDs)
+- Software Architecture: https://claude.ai/code/artifact/6a30920f-b6a0-4131-a486-f2044c71bb13 (stack, modules, key flows, API, repository layout, deployment)
+- System Design: https://claude.ai/code/artifact/98274889-96ba-4424-afad-c2cd056206e2 (capacity, job queue lanes, speech and storage efficiency, scaling)
+- Database Design: https://claude.ai/code/artifact/ba05f7b3-f881-41e5-86d6-dcb94a509644 (the full schema: tables, DDL, constraints, access rules)
 The SRS keeps stable requirement IDs (`FR-DI-1`, `FR-BL-1`, `NFR-AI-1`, and so on). Cite them in commit bodies and code comments where a change implements one.
 
 ## Decisions that shape the architecture
