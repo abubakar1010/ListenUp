@@ -1,6 +1,7 @@
 """Application settings, read from environment variables prefixed with LISTENUP_."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,8 +25,16 @@ class Settings(BaseSettings):
     # Signed URLs live for minutes and are reused until 80% of their lifetime.
     signed_url_ttl_seconds: int = 300
 
+    # Outgoing email (Architecture 4.1, notifications). Locally Mailpit takes
+    # everything on port 1025 without auth; production sets a provider's host, port,
+    # login and "starttls" or "ssl".
     smtp_host: str = "localhost"
     smtp_port: int = 1025
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_security: Literal["none", "starttls", "ssl"] = "none"
+    smtp_timeout_seconds: float = 10.0
+    smtp_sender: str = "ListenUp <no-reply@listenup.local>"
 
     # Sign-in (Architecture 9.1, D17). Cookies are Secure everywhere except local runs
     # over plain http; set LISTENUP_COOKIE_SECURE to override.
