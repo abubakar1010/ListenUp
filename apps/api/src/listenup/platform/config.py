@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     upload_quota_bytes: int = 2 * 1024 * 1024 * 1024  # stored uploads per account
     upload_confirm_hours: int = 24  # an unconfirmed upload can be confirmed this long
     upload_rate_limit: int = 30  # upload requests per learner per hour
+    upload_ip_limit: int = 120  # upload requests per IP per hour (several learners may share one)
+
+    # Intake admission per learner (System Design 4.2, D16, ADR 0027). New audio counts
+    # per UTC day, each clip with at most 15 minutes (the longest passage).
+    intake_daily_minutes: int = 120
+    # Intakes of one learner on the shared intake lane at once, waiting or running; the
+    # rest wait in the learner's own queue.
+    intake_running_limit: int = 2
 
     # Where media workers write source and converted files while a job runs; the
     # system's temporary directory when unset. Each job removes its own files.

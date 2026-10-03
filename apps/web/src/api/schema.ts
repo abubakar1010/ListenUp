@@ -203,9 +203,11 @@ export interface paths {
      * Add Content
      * @description Confirm an upload: the file must be in storage with the declared size.
      *
-     *     Creates a pending content item and queues its conversion. Confirming the same
-     *     upload again returns the same item with 200; an `Idempotency-Key` replays the
-     *     first response exactly.
+     *     Creates a pending content item and queues its conversion, or keeps it in the
+     *     learner's own queue while two of theirs are being prepared. Refused with 429
+     *     `daily_audio_limit` once today's new audio is used up. Confirming the same upload
+     *     again returns the same item with 200; an `Idempotency-Key` replays the first
+     *     response exactly.
      */
     post: operations['add_content_api_v1_contents_post'];
     delete?: never;
@@ -548,8 +550,9 @@ export interface paths {
      * @description Check the declared file and return a signed URL to PUT it straight to storage.
      *
      *     Refused before any byte is sent: an unsupported type (`unsupported_file_type`), a
-     *     file over the size limit (`file_too_large`), or one that would take the account
-     *     over its storage cap (`storage_full`). Rate-limited per learner.
+     *     file over the size limit (`file_too_large`), one that would take the account over
+     *     its storage cap (`storage_full`), or any new clip once today's new audio is used up
+     *     (429 `daily_audio_limit`, with `resets_at`). Rate-limited per learner and per IP.
      */
     post: operations['start_upload_api_v1_uploads_post'];
     delete?: never;
@@ -567,7 +570,8 @@ export interface paths {
     };
     /**
      * Upload Usage
-     * @description How much of the per-account upload storage is used, and the per-file limit (D5).
+     * @description How much of the per-account upload storage is used, the per-file limit (D5), and
+     *     today's allowance of new audio (D16).
      */
     get: operations['upload_usage_api_v1_uploads_usage_get'];
     put?: never;
@@ -760,10 +764,20 @@ export interface components {
        */
       peaks_url: string | null;
       /**
+       * Queue Position
+       * @description For a `queued` item: 1 when it is the next of the learner's clips to start
+       */
+      queue_position?: number | null;
+      /**
        * Source
        * @enum {string}
        */
       source: 'upload' | 'youtube';
+      /**
+       * Stage
+       * @description Where an item still being prepared is: `queued` in the learner's own queue (two of their clips are prepared at a time), `waiting` for a free worker, then the job's own stages. Null once prepared or failed
+       */
+      stage?: ('queued' | 'waiting' | 'downloading' | 'checking' | 'converting' | 'saving') | null;
       /**
        * Status
        * @enum {string}
@@ -787,10 +801,20 @@ export interface components {
        */
       id: string;
       /**
+       * Queue Position
+       * @description For a `queued` item: 1 when it is the next of the learner's clips to start
+       */
+      queue_position?: number | null;
+      /**
        * Source
        * @enum {string}
        */
       source: 'upload' | 'youtube';
+      /**
+       * Stage
+       * @description Where an item still being prepared is: `queued` in the learner's own queue (two of their clips are prepared at a time), `waiting` for a free worker, then the job's own stages. Null once prepared or failed
+       */
+      stage?: ('queued' | 'waiting' | 'downloading' | 'checking' | 'converting' | 'saving') | null;
       /**
        * Status
        * @enum {string}
@@ -815,6 +839,40 @@ export interface components {
       email: string;
       /** Password */
       password: string;
+    };
+    /**
+     * DailyAudio
+     * @description Today's allowance of new audio (D16). Days are UTC days.
+     */
+    DailyAudio: {
+      /**
+       * Can Add
+       * @description Whether a new clip is accepted now
+       */
+      can_add: boolean;
+      /**
+       * Clips In Progress
+       * @description Clips not prepared yet, queued or running
+       */
+      clips_in_progress: number;
+      /** Limit Seconds */
+      limit_seconds: number;
+      /**
+       * Reserved Seconds
+       * @description Held for the clips in progress, 15 minutes each
+       */
+      reserved_seconds: number;
+      /**
+       * Resets At
+       * Format: date-time
+       * @description When the count starts again (midnight UTC)
+       */
+      resets_at: string;
+      /**
+       * Used Seconds
+       * @description Counted today: each clip with at most 15 minutes
+       */
+      used_seconds: number;
     };
     /**
      * DictationAttempt
@@ -961,10 +1019,20 @@ export interface components {
       /** @description Status of the newest practice session on this item; null when none */
       last_session_status: components['schemas']['SessionStatus'] | null;
       /**
+       * Queue Position
+       * @description For a `queued` clip: 1 when it is the next of the learner's clips to start
+       */
+      queue_position?: number | null;
+      /**
        * Source
        * @enum {string}
        */
       source: 'upload' | 'youtube';
+      /**
+       * Stage
+       * @description Where a clip still being prepared is; null once prepared or failed
+       */
+      stage?: ('queued' | 'waiting' | 'downloading' | 'checking' | 'converting' | 'saving') | null;
       /**
        * Status
        * @description Processing status of the clip's media
@@ -1197,6 +1265,7 @@ export interface components {
     StepStatus: 'locked' | 'open' | 'done' | 'skipped';
     /** StorageUse */
     StorageUse: {
+      daily_audio: components['schemas']['DailyAudio'];
       /** Max File Bytes */
       max_file_bytes: number;
       /** Quota Bytes */

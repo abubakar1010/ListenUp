@@ -288,10 +288,35 @@
             "description": "Waveform peaks JSON (redirects to a signed URL); null until playable",
             "title": "Peaks Url"
           },
+          "queue_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a `queued` item: 1 when it is the next of the learner's clips to start",
+            "title": "Queue Position"
+          },
           "source": {
             "enum": ["upload", "youtube"],
             "title": "Source",
             "type": "string"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "enum": ["queued", "waiting", "downloading", "checking", "converting", "saving"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where an item still being prepared is: `queued` in the learner's own queue (two of their clips are prepared at a time), `waiting` for a free worker, then the job's own stages. Null once prepared or failed",
+            "title": "Stage"
           },
           "status": {
             "enum": ["pending", "downloading", "playable", "failed", "expired"],
@@ -344,10 +369,35 @@
             "title": "Id",
             "type": "string"
           },
+          "queue_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a `queued` item: 1 when it is the next of the learner's clips to start",
+            "title": "Queue Position"
+          },
           "source": {
             "enum": ["upload", "youtube"],
             "title": "Source",
             "type": "string"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "enum": ["queued", "waiting", "downloading", "checking", "converting", "saving"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where an item still being prepared is: `queued` in the learner's own queue (two of their clips are prepared at a time), `waiting` for a free worker, then the job's own stages. Null once prepared or failed",
+            "title": "Stage"
           },
           "status": {
             "enum": ["pending", "downloading", "playable", "failed", "expired"],
@@ -404,6 +454,51 @@
         },
         "required": ["email", "password"],
         "title": "Credentials",
+        "type": "object"
+      },
+      "DailyAudio": {
+        "description": "Today's allowance of new audio (D16). Days are UTC days.",
+        "properties": {
+          "can_add": {
+            "description": "Whether a new clip is accepted now",
+            "title": "Can Add",
+            "type": "boolean"
+          },
+          "clips_in_progress": {
+            "description": "Clips not prepared yet, queued or running",
+            "title": "Clips In Progress",
+            "type": "integer"
+          },
+          "limit_seconds": {
+            "title": "Limit Seconds",
+            "type": "integer"
+          },
+          "reserved_seconds": {
+            "description": "Held for the clips in progress, 15 minutes each",
+            "title": "Reserved Seconds",
+            "type": "integer"
+          },
+          "resets_at": {
+            "description": "When the count starts again (midnight UTC)",
+            "format": "date-time",
+            "title": "Resets At",
+            "type": "string"
+          },
+          "used_seconds": {
+            "description": "Counted today: each clip with at most 15 minutes",
+            "title": "Used Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "used_seconds",
+          "limit_seconds",
+          "clips_in_progress",
+          "reserved_seconds",
+          "can_add",
+          "resets_at"
+        ],
+        "title": "DailyAudio",
         "type": "object"
       },
       "DictationAttempt": {
@@ -660,10 +755,35 @@
             ],
             "description": "Status of the newest practice session on this item; null when none"
           },
+          "queue_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a `queued` clip: 1 when it is the next of the learner's clips to start",
+            "title": "Queue Position"
+          },
           "source": {
             "enum": ["upload", "youtube"],
             "title": "Source",
             "type": "string"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "enum": ["queued", "waiting", "downloading", "checking", "converting", "saving"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where a clip still being prepared is; null once prepared or failed",
+            "title": "Stage"
           },
           "status": {
             "description": "Processing status of the clip's media",
@@ -1096,6 +1216,9 @@
       },
       "StorageUse": {
         "properties": {
+          "daily_audio": {
+            "$ref": "#/components/schemas/DailyAudio"
+          },
           "max_file_bytes": {
             "title": "Max File Bytes",
             "type": "integer"
@@ -1109,7 +1232,7 @@
             "type": "integer"
           }
         },
-        "required": ["used_bytes", "quota_bytes", "max_file_bytes"],
+        "required": ["used_bytes", "quota_bytes", "max_file_bytes", "daily_audio"],
         "title": "StorageUse",
         "type": "object"
       },
@@ -1691,7 +1814,7 @@
         "tags": ["content"]
       },
       "post": {
-        "description": "Confirm an upload: the file must be in storage with the declared size.\n\nCreates a pending content item and queues its conversion. Confirming the same\nupload again returns the same item with 200; an `Idempotency-Key` replays the\nfirst response exactly.",
+        "description": "Confirm an upload: the file must be in storage with the declared size.\n\nCreates a pending content item and queues its conversion, or keeps it in the\nlearner's own queue while two of theirs are being prepared. Refused with 429\n`daily_audio_limit` once today's new audio is used up. Confirming the same upload\nagain returns the same item with 200; an `Idempotency-Key` replays the first\nresponse exactly.",
         "operationId": "add_content_api_v1_contents_post",
         "parameters": [
           {
@@ -2527,7 +2650,7 @@
     },
     "/api/v1/uploads": {
       "post": {
-        "description": "Check the declared file and return a signed URL to PUT it straight to storage.\n\nRefused before any byte is sent: an unsupported type (`unsupported_file_type`), a\nfile over the size limit (`file_too_large`), or one that would take the account\nover its storage cap (`storage_full`). Rate-limited per learner.",
+        "description": "Check the declared file and return a signed URL to PUT it straight to storage.\n\nRefused before any byte is sent: an unsupported type (`unsupported_file_type`), a\nfile over the size limit (`file_too_large`), one that would take the account over\nits storage cap (`storage_full`), or any new clip once today's new audio is used up\n(429 `daily_audio_limit`, with `resets_at`). Rate-limited per learner and per IP.",
         "operationId": "start_upload_api_v1_uploads_post",
         "requestBody": {
           "content": {
@@ -2567,7 +2690,7 @@
     },
     "/api/v1/uploads/usage": {
       "get": {
-        "description": "How much of the per-account upload storage is used, and the per-file limit (D5).",
+        "description": "How much of the per-account upload storage is used, the per-file limit (D5), and\ntoday's allowance of new audio (D16).",
         "operationId": "upload_usage_api_v1_uploads_usage_get",
         "responses": {
           "200": {

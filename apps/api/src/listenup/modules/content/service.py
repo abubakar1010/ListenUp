@@ -14,11 +14,18 @@ storage (Architecture 5.1, 9.2; ADR 0020):
 4. The conversion job (`jobs.convert_upload`, #36) checks the real streams, writes the
    playback file and the waveform peaks, and makes the media object `playable`.
 
+Admission per learner (#41, System Design 4.2, ADR 0027): a learner may add new audio
+while the day's count is under the limit (`domain/admission.py`), checked before the
+upload starts and again when it is confirmed; and at most `intake_running_limit` of a
+learner's conversions are on the shared intake lane at once, the rest waiting in the
+learner's own queue (`jobs.start_waiting_uploads`).
+
 Other modules (the library) read content items through `list_contents`. The learner
 plays a clip through `media_url`, which checks that they have an item on that media
 object and hands out a short-lived signed URL (Architecture 9.2: Media).
 """
 
+import ipaddress
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -29,6 +36,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.content import jobs, repository
+from listenup.modules.content.domain import admission
 from listenup.modules.content.domain import cursor as cursors
 from listenup.modules.content.domain.files import (
     check_file,
@@ -41,7 +49,7 @@ from listenup.modules.content.domain.media import failure_message
 from listenup.platform.config import Settings
 from listenup.platform.errors import ProblemError
 from listenup.platform.ids import uuid7
-from listenup.platform.rate_limit import Limit, RateLimiter, user_key
+from listenup.platform.rate_limit import Limit, RateLimiter, ip_key, user_key, window_count
 from listenup.platform.storage import Storage
 
 PAGE_SIZE = 20
@@ -62,6 +70,7 @@ class StorageUse:
     used_bytes: int
     quota_bytes: int
     max_file_bytes: int
+    daily_audio: admission.DailyAudio
 
 
 @dataclass(frozen=True)
@@ -74,6 +83,9 @@ class ContentSummary:
     status: str  # the media object's: pending, downloading, playable, failed, expired
     duration_ms: int | None
     created_at: datetime
+    # While it is prepared: queued, waiting, downloading, checking, converting, saving.
+    stage: str | None
+    queue_position: int | None  # 1 = next of the learner's queued clips to start
 
 
 @dataclass(frozen=True)
@@ -86,6 +98,8 @@ class ContentDetail:
     status: str
     duration_ms: int | None
     created_at: datetime
+    stage: str | None
+    queue_position: int | None
     media_object_id: uuid.UUID
     has_video: bool
     keep_video: bool
@@ -121,11 +135,48 @@ class Uploads:
         self.storage = storage
         self.limiter = limiter
         self.per_learner = Limit("upload", settings.upload_rate_limit, timedelta(hours=1))
+        self.per_ip = Limit("upload", settings.upload_ip_limit, timedelta(hours=1))
         self.confirm_window = timedelta(hours=settings.upload_confirm_hours)
+        self.daily_limit_seconds = settings.intake_daily_minutes * 60
 
     async def usage(self, session: AsyncSession, learner: uuid.UUID) -> StorageUse:
         used = await repository.stored_upload_bytes(session, learner, self.confirm_window)
-        return StorageUse(used, self.settings.upload_quota_bytes, self.settings.upload_max_bytes)
+        return StorageUse(
+            used,
+            self.settings.upload_quota_bytes,
+            self.settings.upload_max_bytes,
+            await self.daily_audio(session, learner),
+        )
+
+    async def daily_audio(self, session: AsyncSession, learner: uuid.UUID) -> admission.DailyAudio:
+        """Today's count of new audio and the clips still being prepared (#41, D16)."""
+        return admission.DailyAudio(
+            used_seconds=await window_count(session, jobs.daily_audio_key(learner), admission.DAY),
+            clips_in_progress=await repository.clips_in_progress(session, learner),
+            limit_seconds=self.daily_limit_seconds,
+            resets_at=admission.resets_at(datetime.now(UTC)),
+        )
+
+    async def _check_daily_audio(self, session: AsyncSession, learner: uuid.UUID) -> None:
+        """Refuse a new clip once the day's new audio is used up (FR-CI-3, D16).
+
+        Run under the learner's upload lock, so two uploads at once are counted one
+        after the other.
+        """
+        daily = await self.daily_audio(session, learner)
+        if daily.allows_more:
+            return
+        now = datetime.now(UTC)
+        raise ProblemError(
+            429,
+            "daily_audio_limit",
+            admission.refusal_message(daily, now),
+            headers={"Retry-After": str(max(1, int((daily.resets_at - now).total_seconds())))},
+            used_seconds=daily.used_seconds,
+            limit_seconds=daily.limit_seconds,
+            clips_in_progress=daily.clips_in_progress,
+            resets_at=daily.resets_at.isoformat(),
+        )
 
     async def start(
         self,
@@ -134,8 +185,11 @@ class Uploads:
         filename: str,
         content_type: str,
         size_bytes: int,
+        client_ip: str | None = None,
     ) -> StartedUpload:
-        """Refuse a file that cannot be used before any byte is sent (FR-CI-3, D5)."""
+        """Refuse a file that cannot be used before any byte is sent (FR-CI-3, D5, D16)."""
+        if client_ip is not None:
+            await self.limiter.enforce(self.per_ip, ip_key(self.per_ip, client_ip))
         await self.limiter.enforce(self.per_learner, user_key(self.per_learner, learner))
         if problem := check_file(
             filename, content_type, size_bytes, self.settings.upload_max_bytes
@@ -154,6 +208,7 @@ class Uploads:
                 used_bytes=used,
                 quota_bytes=quota,
             )
+        await self._check_daily_audio(session, learner)
 
         upload_id = uuid7()
         key = upload_key(learner, upload_id, filename)
@@ -199,7 +254,13 @@ class Uploads:
         *,
         keep_video: bool = False,
     ) -> Confirmed:
-        """Turn an upload that reached storage into a pending content item (FR-CI-1)."""
+        """Turn an upload that reached storage into a pending content item (FR-CI-1).
+
+        Its conversion goes on the shared intake lane at once, or waits in the learner's
+        own queue while two of theirs are on it (#41).
+        """
+        # Before the upload's row: the conversion job takes this lock after its media row.
+        await repository.lock_learner_uploads(session, learner)
         upload = await repository.lock_upload(session, upload_id)
         if upload is None:
             raise _upload_not_found()
@@ -212,6 +273,7 @@ class Uploads:
             raise ProblemError(
                 409, "upload_expired", "This upload is too old to add. Upload the file again."
             )
+        await self._check_daily_audio(session, learner)
 
         stored = await self.storage.head(upload.storage_key)
         if stored is None:
@@ -248,7 +310,7 @@ class Uploads:
             keep_video=keep_video,
         )
         await repository.mark_upload_confirmed(session, upload_id, content_id, media_id)
-        await jobs.queue_conversion(session, media_id, upload_id)
+        await jobs.start_waiting_uploads(session, learner, self.settings.intake_running_limit)
         created = await repository.get_content(session, content_id)
         assert created is not None
         return Confirmed(_summary(created), created=True)
@@ -270,7 +332,14 @@ def _upload_not_found() -> ProblemError:
 
 def _summary(row: repository.ContentRow) -> ContentSummary:
     return ContentSummary(
-        row.id, row.title, row.source, row.status, row.duration_ms, row.created_at
+        row.id,
+        row.title,
+        row.source,
+        row.status,
+        row.duration_ms,
+        row.created_at,
+        row.stage,
+        row.queue_position,
     )
 
 
@@ -316,6 +385,8 @@ async def get_content(
         row.status,
         row.duration_ms,
         row.created_at,
+        row.stage,
+        row.queue_position,
         row.media_object_id,
         row.has_video,
         row.keep_video,
@@ -355,6 +426,15 @@ async def media_url(
             media_status=files.status,
         )
     return storage.signed_download(key, ttl_seconds=ttl_seconds).url
+
+
+def client_ip(request: Request) -> str | None:
+    """The caller's address for per-IP limits, or None when the server got no real IP."""
+    host = request.client.host if request.client else None
+    try:
+        return str(ipaddress.ip_address(host)) if host else None
+    except ValueError:
+        return None
 
 
 def get_uploads(request: Request) -> Uploads:

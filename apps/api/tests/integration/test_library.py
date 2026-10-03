@@ -65,6 +65,8 @@ def test_an_uploaded_clip_appears_in_the_library_as_pending(
                 "status": "pending",
                 "duration_ms": None,
                 "created_at": item["created_at"],
+                "stage": "waiting",
+                "queue_position": None,
                 "last_session_status": None,
             }
         ],

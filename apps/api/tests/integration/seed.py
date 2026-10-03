@@ -124,8 +124,8 @@ def add_clip(
         )
         conn.execute(
             "INSERT INTO content.uploads (id, user_id, storage_key, filename, content_type, "
-            "size_bytes, content_id, media_object_id, confirmed_at) "
-            "VALUES (%s, %s, %s, 'clip.mp3', 'audio/mpeg', 1000000, %s, %s, now())",
+            "size_bytes, content_id, media_object_id, confirmed_at, queued_at) "
+            "VALUES (%s, %s, %s, 'clip.mp3', 'audio/mpeg', 1000000, %s, %s, now(), now())",
             [upload_id, user_id, f"users/{user_id}/uploads/{upload_id}.mp3", content_id, media_id],
         )
     return media_id, content_id, upload_id

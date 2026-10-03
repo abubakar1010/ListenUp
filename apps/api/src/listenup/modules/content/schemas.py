@@ -25,10 +25,22 @@ class UploadTarget(BaseModel):
     expires_at: datetime = Field(description="The upload must start before this time")
 
 
+class DailyAudio(BaseModel):
+    """Today's allowance of new audio (D16). Days are UTC days."""
+
+    used_seconds: int = Field(description="Counted today: each clip with at most 15 minutes")
+    limit_seconds: int
+    clips_in_progress: int = Field(description="Clips not prepared yet, queued or running")
+    reserved_seconds: int = Field(description="Held for the clips in progress, 15 minutes each")
+    can_add: bool = Field(description="Whether a new clip is accepted now")
+    resets_at: datetime = Field(description="When the count starts again (midnight UTC)")
+
+
 class StorageUse(BaseModel):
     used_bytes: int
     quota_bytes: int
     max_file_bytes: int
+    daily_audio: DailyAudio
 
 
 class ConfirmUpload(BaseModel):
@@ -48,6 +60,7 @@ class ConfirmUpload(BaseModel):
 
 ContentSource = Literal["upload", "youtube"]
 MediaStatus = Literal["pending", "downloading", "playable", "failed", "expired"]
+IntakeStage = Literal["queued", "waiting", "downloading", "checking", "converting", "saving"]
 
 
 class ContentItem(BaseModel):
@@ -57,6 +70,18 @@ class ContentItem(BaseModel):
     status: MediaStatus
     duration_ms: int | None
     created_at: datetime
+    stage: IntakeStage | None = Field(
+        default=None,
+        description=(
+            "Where an item still being prepared is: `queued` in the learner's own queue "
+            "(two of their clips are prepared at a time), `waiting` for a free worker, then "
+            "the job's own stages. Null once prepared or failed"
+        ),
+    )
+    queue_position: int | None = Field(
+        default=None,
+        description="For a `queued` item: 1 when it is the next of the learner's clips to start",
+    )
 
 
 class ContentList(BaseModel):

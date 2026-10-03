@@ -27,6 +27,8 @@ class ContentRow:
     status: str
     duration_ms: int | None
     created_at: datetime
+    stage: str | None
+    queue_position: int | None
 
 
 async def lock_learner_uploads(session: AsyncSession, learner: uuid.UUID) -> None:
@@ -148,10 +150,75 @@ async def mark_upload_confirmed(
     )
 
 
-_CONTENT_COLUMNS = """
-SELECT c.id, c.title, m.source, m.status, m.duration_ms, c.created_at
+# -- The learner's intake queue (#41, ADR 0027). These run under row-level security in
+# the API and see every row in the worker, so each one names the learner. --
+
+
+async def clips_in_progress(session: AsyncSession, learner: uuid.UUID) -> int:
+    """The learner's confirmed uploads that are not converted yet, queued or running."""
+    count = await session.scalar(
+        text("""
+        SELECT count(*) FROM content.uploads u
+          JOIN content.media_objects m ON m.id = u.media_object_id
+         WHERE u.user_id = :learner AND m.status IN ('pending', 'downloading')
+        """),
+        {"learner": learner},
+    )
+    return int(count or 0)
+
+
+async def uploads_to_start(
+    session: AsyncSession, learner: uuid.UUID, running_limit: int
+) -> list[tuple[uuid.UUID, uuid.UUID]]:
+    """(upload id, media id) of the learner's waiting uploads that may go on the shared
+    lane now, oldest first: as many as keep at most `running_limit` of theirs on it."""
+    rows = await session.execute(
+        text("""
+        SELECT u.id, u.media_object_id
+          FROM content.uploads u
+          JOIN content.media_objects m ON m.id = u.media_object_id
+         WHERE u.user_id = :learner AND u.confirmed_at IS NOT NULL AND u.queued_at IS NULL
+           AND m.status = 'pending'
+         ORDER BY u.confirmed_at, u.id
+         LIMIT greatest(0, :limit - (
+           SELECT count(*) FROM content.uploads r
+             JOIN content.media_objects rm ON rm.id = r.media_object_id
+            WHERE r.user_id = :learner AND r.queued_at IS NOT NULL
+              AND rm.status IN ('pending', 'downloading')))
+        """),
+        {"learner": learner, "limit": running_limit},
+    )
+    return [(row[0], row[1]) for row in rows]
+
+
+async def mark_upload_queued(session: AsyncSession, upload_id: uuid.UUID) -> None:
+    await session.execute(
+        text("UPDATE content.uploads SET queued_at = now() WHERE id = :id"), {"id": upload_id}
+    )
+
+
+# Where an item still being prepared is (#40, #41): 'queued' in the learner's own queue,
+# 'waiting' on the shared intake lane, or the conversion job's own stage; NULL once it
+# is prepared. A queued item's position counts the learner's queued items up to it.
+_STAGE_COLUMNS = """
+       CASE WHEN m.status NOT IN ('pending', 'downloading') THEN NULL
+            WHEN m.status = 'pending' AND u.confirmed_at IS NOT NULL AND u.queued_at IS NULL
+              THEN 'queued'
+            WHEN m.status = 'downloading' THEN coalesce(m.stage, 'downloading')
+            ELSE coalesce(m.stage, 'waiting') END,
+       CASE WHEN m.status = 'pending' AND u.confirmed_at IS NOT NULL AND u.queued_at IS NULL
+            THEN (SELECT count(*) FROM content.uploads h
+                    JOIN content.media_objects hm ON hm.id = h.media_object_id
+                   WHERE h.user_id = c.user_id AND hm.status = 'pending'
+                     AND h.confirmed_at IS NOT NULL AND h.queued_at IS NULL
+                     AND (h.confirmed_at, h.id) <= (u.confirmed_at, u.id)) END
+"""
+
+_CONTENT_COLUMNS = f"""
+SELECT c.id, c.title, m.source, m.status, m.duration_ms, c.created_at, {_STAGE_COLUMNS}
   FROM content.contents c
   JOIN content.media_objects m ON m.id = c.media_object_id
+  LEFT JOIN content.uploads u ON u.content_id = c.id
 """
 
 
@@ -263,17 +330,24 @@ async def delete_media(session: AsyncSession, media_id: uuid.UUID) -> None:
     )
 
 
-async def mark_media_failed(session: AsyncSession, media_id: uuid.UUID, error_code: str) -> bool:
-    """Fail a media object that is still being prepared; False when it was not."""
-    result = await session.execute(
-        text("""
-        UPDATE content.media_objects SET status = 'failed', error_code = :code
-         WHERE id = :id AND status IN ('pending', 'downloading')
-        RETURNING id
-        """),
-        {"id": media_id, "code": error_code},
-    )
-    return result.first() is not None
+async def mark_media_failed(
+    session: AsyncSession, media_id: uuid.UUID, error_code: str
+) -> tuple[bool, uuid.UUID | None]:
+    """Fail a media object that is still being prepared.
+
+    Returns whether it changed (False when it was not being prepared) and its uploader.
+    """
+    row = (
+        await session.execute(
+            text("""
+            UPDATE content.media_objects SET status = 'failed', error_code = :code, stage = NULL
+             WHERE id = :id AND status IN ('pending', 'downloading')
+            RETURNING uploaded_by
+            """),
+            {"id": media_id, "code": error_code},
+        )
+    ).first()
+    return row is not None, (row[0] if row else None)
 
 
 async def mark_media_playable(
@@ -290,7 +364,7 @@ async def mark_media_playable(
     result = await session.execute(
         text("""
         UPDATE content.media_objects
-           SET status = 'playable', error_code = NULL, duration_ms = :duration_ms,
+           SET status = 'playable', error_code = NULL, stage = NULL, duration_ms = :duration_ms,
                has_video = :has_video, playback_key = :playback_key, peaks_key = :peaks_key,
                playback_bytes = :playback_bytes
          WHERE id = :id AND status IN ('pending', 'downloading', 'playable')
@@ -334,6 +408,8 @@ class ContentDetailRow:
     has_video: bool
     keep_video: bool
     error_code: str | None
+    stage: str | None
+    queue_position: int | None
 
 
 async def get_content_detail(
@@ -341,13 +417,18 @@ async def get_content_detail(
 ) -> ContentDetailRow | None:
     row = (
         await session.execute(
-            text("""
+            text(
+                """
             SELECT c.id, c.title, m.source, m.status, m.duration_ms, c.created_at,
-                   m.id, m.has_video, c.keep_video, m.error_code
+                   m.id, m.has_video, c.keep_video, m.error_code, """
+                + _STAGE_COLUMNS
+                + """
               FROM content.contents c
               JOIN content.media_objects m ON m.id = c.media_object_id
+              LEFT JOIN content.uploads u ON u.content_id = c.id
              WHERE c.id = :id AND c.user_id = :learner
-            """),
+            """
+            ),
             {"id": content_id, "learner": learner},
         )
     ).first()

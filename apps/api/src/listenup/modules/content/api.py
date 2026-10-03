@@ -20,13 +20,29 @@ router = APIRouter(tags=["content"])
 async def upload_usage(
     learner: CurrentLearner, session: DbSession, uploads: UploadsDep
 ) -> schemas.StorageUse:
-    """How much of the per-account upload storage is used, and the per-file limit (D5)."""
-    return schemas.StorageUse(**dataclasses.asdict(await uploads.usage(session, learner)))
+    """How much of the per-account upload storage is used, the per-file limit (D5), and
+    today's allowance of new audio (D16)."""
+    use = await uploads.usage(session, learner)
+    daily = use.daily_audio
+    return schemas.StorageUse(
+        used_bytes=use.used_bytes,
+        quota_bytes=use.quota_bytes,
+        max_file_bytes=use.max_file_bytes,
+        daily_audio=schemas.DailyAudio(
+            used_seconds=daily.used_seconds,
+            limit_seconds=daily.limit_seconds,
+            clips_in_progress=daily.clips_in_progress,
+            reserved_seconds=daily.reserved_seconds,
+            can_add=daily.allows_more,
+            resets_at=daily.resets_at,
+        ),
+    )
 
 
 @router.post("/uploads", status_code=201)
 async def start_upload(
     body: schemas.UploadRequest,
+    request: Request,
     learner: CurrentLearner,
     session: DbSession,
     uploads: UploadsDep,
@@ -34,11 +50,17 @@ async def start_upload(
     """Check the declared file and return a signed URL to PUT it straight to storage.
 
     Refused before any byte is sent: an unsupported type (`unsupported_file_type`), a
-    file over the size limit (`file_too_large`), or one that would take the account
-    over its storage cap (`storage_full`). Rate-limited per learner.
+    file over the size limit (`file_too_large`), one that would take the account over
+    its storage cap (`storage_full`), or any new clip once today's new audio is used up
+    (429 `daily_audio_limit`, with `resets_at`). Rate-limited per learner and per IP.
     """
     started = await uploads.start(
-        session, learner, body.filename, body.content_type, body.size_bytes
+        session,
+        learner,
+        body.filename,
+        body.content_type,
+        body.size_bytes,
+        client_ip=service.client_ip(request),
     )
     return schemas.UploadTarget(
         upload_id=started.upload_id,
@@ -77,9 +99,11 @@ async def add_content(
 ) -> JSONResponse:
     """Confirm an upload: the file must be in storage with the declared size.
 
-    Creates a pending content item and queues its conversion. Confirming the same
-    upload again returns the same item with 200; an `Idempotency-Key` replays the
-    first response exactly.
+    Creates a pending content item and queues its conversion, or keeps it in the
+    learner's own queue while two of theirs are being prepared. Refused with 429
+    `daily_audio_limit` once today's new audio is used up. Confirming the same upload
+    again returns the same item with 200; an `Idempotency-Key` replays the first
+    response exactly.
     """
 
     async def confirm() -> tuple[int, Any]:

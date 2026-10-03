@@ -20,6 +20,9 @@ from listenup.platform.database import DbSession
 router = APIRouter(tags=["library"])
 
 
+IntakeStage = Literal["queued", "waiting", "downloading", "checking", "converting", "saving"]
+
+
 class LibraryItem(BaseModel):
     id: uuid.UUID
     title: str
@@ -29,6 +32,14 @@ class LibraryItem(BaseModel):
     )
     duration_ms: int | None
     created_at: datetime
+    stage: IntakeStage | None = Field(
+        default=None,
+        description="Where a clip still being prepared is; null once prepared or failed",
+    )
+    queue_position: int | None = Field(
+        default=None,
+        description="For a `queued` clip: 1 when it is the next of the learner's clips to start",
+    )
     last_session_status: practice.SessionStatus | None = Field(
         description="Status of the newest practice session on this item; null when none"
     )
@@ -64,6 +75,8 @@ async def library_contents(
                 status=item.status,  # type: ignore[arg-type]
                 duration_ms=item.duration_ms,
                 created_at=item.created_at,
+                stage=item.stage,  # type: ignore[arg-type]
+                queue_position=item.queue_position,
                 last_session_status=last_status.get(item.id),
             )
             for item in page.items

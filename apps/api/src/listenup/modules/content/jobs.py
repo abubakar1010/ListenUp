@@ -9,11 +9,12 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.content import ffmpeg, repository
-from listenup.modules.content.domain import media
+from listenup.modules.content.domain import admission, media
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database
 from listenup.platform.events import EventType, publish
 from listenup.platform.jobs import LANES, JobDeps, Lane, PermanentError, enqueue, job
+from listenup.platform.rate_limit import add_to_window
 from listenup.platform.storage import S3Storage, Storage
 
 logger = logging.getLogger(__name__)
@@ -38,8 +39,13 @@ def _storage() -> Storage:
     return _Storage.instance
 
 
+def daily_audio_key(learner: uuid.UUID) -> str:
+    """The learner's count of new audio seconds per day (Database Design 7)."""
+    return f"intake:user:{learner}"
+
+
 async def queue_conversion(
-    session: AsyncSession, media_object_id: uuid.UUID, upload_id: uuid.UUID
+    session: AsyncSession, media_object_id: uuid.UUID, upload_id: uuid.UUID, learner: uuid.UUID
 ) -> None:
     """Queue validation and conversion of a confirmed upload, in the caller's transaction."""
     await enqueue(
@@ -49,7 +55,33 @@ async def queue_conversion(
         lock=f"media:{media_object_id}",
         media_object_id=str(media_object_id),
         upload_id=str(upload_id),
+        user_id=str(learner),
     )
+
+
+async def start_waiting_uploads(
+    session: AsyncSession, learner: uuid.UUID, running_limit: int
+) -> int:
+    """Move the learner's oldest waiting uploads onto the shared intake lane (#41).
+
+    At most `running_limit` intakes of one learner are on the lane at once, waiting or
+    running; the rest wait in the learner's own queue (`content.uploads.queued_at` is
+    NULL), so one learner adding many clips never sits ahead of everyone else (System
+    Design 4.2, ADR 0027). Called when an upload is confirmed and whenever one of the
+    learner's conversions ends, in that transaction. Returns how many were queued.
+    """
+    await repository.lock_learner_uploads(session, learner)
+    ready = await repository.uploads_to_start(session, learner, running_limit)
+    for upload_id, media_id in ready:
+        await repository.mark_upload_queued(session, upload_id)
+        await queue_conversion(session, media_id, upload_id, learner)
+    return len(ready)
+
+
+async def _conversion_ended(session: AsyncSession, learner: uuid.UUID | None) -> None:
+    """A slot on the lane is free: let the learner's next waiting upload in."""
+    if learner is not None:
+        await start_waiting_uploads(session, learner, get_settings().intake_running_limit)
 
 
 class _Claim(enum.Enum):
@@ -58,7 +90,9 @@ class _Claim(enum.Enum):
 
 
 @job(Lane.INTAKE, CONVERT_UPLOAD)
-async def convert_upload(deps: JobDeps, media_object_id: str, upload_id: str) -> None:
+async def convert_upload(
+    deps: JobDeps, media_object_id: str, upload_id: str, user_id: str | None = None
+) -> None:
     """Check and convert an uploaded file into the playback file (#36; FR-CI-1, FR-CI-6).
 
     Architecture 5.1 (file upload) and System Design 6.1, decided in ADR 0022:
@@ -74,12 +108,16 @@ async def convert_upload(deps: JobDeps, media_object_id: str, upload_id: str) ->
        `playable` and publish `content.ready` in one transaction.
     4. Delete the original.
 
+    Making a clip playable counts its new audio towards the learner's day (#41), and
+    every way the job ends lets the learner's next waiting upload onto the lane.
     Every step can run again: a repeated run on a playable or failed media object
     only makes sure the original is gone.
     """
     media_id = uuid.UUID(media_object_id)
+    # Jobs queued before #41 have no user_id; they end without starting the next one.
+    learner = uuid.UUID(user_id) if user_id else None
     try:
-        await _convert(deps.database, _storage(), media_id, uuid.UUID(upload_id))
+        await _convert(deps.database, _storage(), media_id, uuid.UUID(upload_id), learner)
     except PermanentError:
         raise
     except Exception:
@@ -90,10 +128,16 @@ async def convert_upload(deps: JobDeps, media_object_id: str, upload_id: str) ->
 
 
 async def _convert(
-    database: Database, storage: Storage, media_id: uuid.UUID, upload_id: uuid.UUID
+    database: Database,
+    storage: Storage,
+    media_id: uuid.UUID,
+    upload_id: uuid.UUID,
+    learner: uuid.UUID | None,
 ) -> None:
     async with database.transaction() as session:
         state = await repository.conversion_state(session, media_id, upload_id)
+        if state is None:
+            await _conversion_ended(session, learner)
     if state is None:
         logger.info("upload conversion skipped: the item is gone", extra={"media": str(media_id)})
         return
@@ -154,6 +198,13 @@ async def _convert(
         )
         if stored:
             await _announce(session, media_id)
+            await add_to_window(
+                session,
+                daily_audio_key(state.learner),
+                admission.DAY,
+                admission.counted_seconds(probe.duration_ms),
+            )
+        await _conversion_ended(session, state.learner)
     if not stored:
         # The learner deleted the item while it converted; nothing refers to the files.
         await storage.delete_prefix(media.media_prefix(state.learner, media_id))
@@ -197,6 +248,7 @@ async def _claim_fingerprint(
             await repository.delete_content_item(session, state.content_id)
             await repository.delete_media(session, state.media_id)
             await publish(session, state.learner, EventType.CONTENT_READY, state.content_id)
+            await _conversion_ended(session, state.learner)
             logger.info(
                 "duplicate upload merged into the existing item",
                 extra={"media": str(state.media_id), "existing": str(owner.media_id)},
@@ -216,8 +268,10 @@ async def _claim_fingerprint(
 
 async def _fail(database: Database, media_id: uuid.UUID, error_code: str) -> None:
     async with database.transaction() as session:
-        if await repository.mark_media_failed(session, media_id, error_code):
+        changed, learner = await repository.mark_media_failed(session, media_id, error_code)
+        if changed:
             await _announce(session, media_id)
+            await _conversion_ended(session, learner)
     logger.info("upload refused", extra={"media": str(media_id), "error_code": error_code})
 
 

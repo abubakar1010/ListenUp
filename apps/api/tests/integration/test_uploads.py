@@ -151,7 +151,7 @@ def test_uploads_that_would_pass_the_account_cap_are_refused(
     assert refused.json()["code"] == "storage_full"
     assert refused.json()["used_bytes"] == 60 * MB
     usage = client.get("/api/v1/uploads/usage").json()
-    assert usage == {
+    assert {key: usage[key] for key in ("used_bytes", "quota_bytes", "max_file_bytes")} == {
         "used_bytes": 60 * MB,
         "quota_bytes": 100 * MB,
         "max_file_bytes": 500 * MB,
