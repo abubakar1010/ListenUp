@@ -20,7 +20,7 @@ x-backend: &backend
   depends_on:
     postgres:
       condition: service_healthy
-    queue-schema:
+    migrate:
       condition: service_completed_successfully
 
 services:
@@ -62,8 +62,9 @@ services:
     image: axllent/mailpit:latest
     ports: ["8025:8025", "1025:1025"]
 
-  # Creates the job-queue tables once. Replaced by Alembic migrations in the migrations story.
-  queue-schema:
+  # Applies the database migrations, then creates the job-queue tables once
+  # (Procrastinate manages its own schema in `public`).
+  migrate:
     build:
       context: ../..
       dockerfile: infra/docker/backend.Dockerfile
@@ -73,9 +74,10 @@ services:
       postgres:
         condition: service_healthy
     command: >
-      sh -c "python -c \"import psycopg,os,sys; c=psycopg.connect(os.environ['LISTENUP_DATABASE_URL']);
+      sh -c "alembic upgrade head &&
+      (python -c \"import psycopg,os,sys; c=psycopg.connect(os.environ['LISTENUP_DATABASE_URL']);
       sys.exit(0 if c.execute(\\\"select to_regclass('procrastinate_jobs')\\\").fetchone()[0] else 1)\"
-      || procrastinate --app=listenup.worker.app schema --apply"
+      || procrastinate --app=listenup.worker.app schema --apply)"
 
   api:
     <<: *backend
