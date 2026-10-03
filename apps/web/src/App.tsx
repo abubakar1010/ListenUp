@@ -15,6 +15,12 @@ import { RegisterPage, SignInPage } from './auth/pages';
 const LibraryPage = lazy(() => import('./features/library/LibraryPage'));
 const SessionPage = lazy(() => import('./features/session/SessionPage'));
 const NotFoundPage = lazy(() => import('./app/NotFoundPage'));
+const PasswordResetRequestPage = lazy(() =>
+  import('./auth/PasswordResetPages').then((m) => ({ default: m.PasswordResetRequestPage })),
+);
+const PasswordResetConfirmPage = lazy(() =>
+  import('./auth/PasswordResetPages').then((m) => ({ default: m.PasswordResetConfirmPage })),
+);
 
 export function App() {
   return (
@@ -45,6 +51,25 @@ export function App() {
               }
             />
           </Route>
+          {/* Outside RedirectIfSignedIn: a reset link must also work while signed in. */}
+          <Route
+            path="/forgot-password"
+            element={
+              <>
+                <PageTitle title="Reset your password" />
+                <PasswordResetRequestPage />
+              </>
+            }
+          />
+          <Route
+            path="/reset-password"
+            element={
+              <>
+                <PageTitle title="Choose a new password" />
+                <PasswordResetConfirmPage />
+              </>
+            }
+          />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
 

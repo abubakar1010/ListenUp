@@ -171,3 +171,31 @@ test('every page starts with a skip link to the content', async () => {
   fireEvent.click(skip);
   expect(main).toHaveFocus();
 });
+
+test('the forgotten-password page is linked from sign-in', async () => {
+  mockApi({ '/me': SIGNED_OUT });
+  renderApp('/sign-in');
+
+  fireEvent.click(await screen.findByRole('link', { name: 'Forgot your password?' }));
+
+  await waitFor(() => expect(url()).toBe('/forgot-password'));
+  expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
+});
+
+test('a reset link opens even for a signed-in learner', async () => {
+  mockApi({ '/me': () => jsonResponse(200, LEARNER) });
+  renderApp('/reset-password');
+
+  expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
+  expect(url()).toBe('/reset-password');
+});
+
+test('switching between sign-in and register keeps where to return', async () => {
+  mockApi({ '/me': SIGNED_OUT });
+  renderApp('/sign-in?next=%2Fsessions%2Fabc');
+
+  expect(await screen.findByRole('link', { name: 'Create an account' })).toHaveAttribute(
+    'href',
+    '/register?next=%2Fsessions%2Fabc',
+  );
+});
