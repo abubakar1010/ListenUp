@@ -20,7 +20,7 @@ The SRS keeps stable requirement IDs (`FR-DI-1`, `FR-BL-1`, `NFR-AI-1`, and so o
 
 Run from the repository root unless a directory is given.
 
-**Local stack** (PostgreSQL, S3 storage, Mailpit, API on :8000, both worker pools):
+**Local stack** (PostgreSQL with migrations applied, S3 storage, Mailpit, API on :8000, both worker pools):
 - `docker compose up --build` — start everything; the API reloads on changes in `apps/api/src`.
 - `docker compose down` — stop; add `-v` to also delete the local data volumes.
 - Mailpit (sent email) is at http://localhost:8025.
@@ -28,7 +28,8 @@ Run from the repository root unless a directory is given.
 **Backend** (`cd apps/api`; uv manages the virtual environment):
 - `uv sync` — install dependencies, including dev tools.
 - `uv run uvicorn listenup.main:app --reload` — run the API without Docker (needs PostgreSQL).
-- `uv run pytest` — all tests; single test: `uv run pytest tests/unit/test_health.py::test_health_returns_ok`.
+- `uv run pytest` — all tests; single test: `uv run pytest tests/unit/test_health.py::test_health_returns_ok`. `tests/integration/` creates throwaway databases on the server in `LISTENUP_DATABASE_URL` and skips when none is reachable (CI sets `LISTENUP_REQUIRE_DB=1` to fail instead).
+- `uv run alembic upgrade head` — apply migrations; `uv run alembic downgrade -1` steps back; `uv run alembic check` fails if the models in `modules/*/models.py` drift from the schema. Migrations are hand-written SQL (ADR 0013): every table with `user_id` gets the `own_rows` policy from `migrations/rls.py`, and each new table needs explicit grants for `listenup_api`.
 - `uv run ruff check .` and `uv run ruff format .` — lint and format.
 - `uv run mypy` — type check (strict).
 - `uv run lint-imports` — module-boundary contracts (Architecture 4.3); `tests/architecture/` checks that modules use each other only through `service.py`.
