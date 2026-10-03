@@ -88,3 +88,38 @@ class Content(Base):
     keep_video: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+
+
+class Upload(Base):
+    """A file the learner is uploading straight to storage (migration 0006, ADR 0020)."""
+
+    __tablename__ = "uploads"
+    __table_args__ = (
+        CheckConstraint("char_length(filename) BETWEEN 1 AND 255"),
+        CheckConstraint("char_length(content_type) BETWEEN 1 AND 100"),
+        CheckConstraint("size_bytes > 0"),
+        CheckConstraint("(confirmed_at IS NULL) = (content_id IS NULL)"),
+        CheckConstraint("(content_id IS NULL) = (media_object_id IS NULL)"),
+        Index("uploads_user_idx", "user_id", "created_at"),
+        Index(
+            "uploads_unconfirmed_idx",
+            "created_at",
+            postgresql_where=text("confirmed_at IS NULL"),
+        ),
+        {"schema": "content"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("identity.users.id", ondelete="CASCADE"))
+    storage_key: Mapped[str] = mapped_column(Text, unique=True)
+    filename: Mapped[str] = mapped_column(Text)
+    content_type: Mapped[str] = mapped_column(Text)
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    content_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("content.contents.id", ondelete="CASCADE"), unique=True
+    )
+    media_object_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("content.media_objects.id", ondelete="CASCADE")
+    )
+    created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+    confirmed_at: Mapped[datetime | None] = mapped_column(Timestamp)
