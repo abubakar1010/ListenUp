@@ -7,8 +7,9 @@ import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { AlertIcon, BackIcon } from '../../components/icons';
 import { ACCEPT_ATTRIBUTE, ACCEPTED_NAMES, checkFile, formatSize, type FileProblem } from './files';
+import { checkAllowance, formatReset, refusalFor } from './refusals';
 import { StorageError, UploadCancelled, uploadFile, type UploadHandle } from './upload';
-import { LIBRARY_KEY, UPLOAD_USAGE_KEY, useUploadUsage } from './useLibrary';
+import { LIBRARY_KEY, UPLOAD_USAGE_KEY, useUploadUsage, type StorageUse } from './useLibrary';
 
 type State =
   | { kind: 'idle' }
@@ -49,7 +50,7 @@ export default function AddClipPage() {
   }, [uploading]);
 
   const start = (file: File) => {
-    const problem = checkFile(file, usage.data?.max_file_bytes);
+    const problem = checkFile(file, usage.data?.max_file_bytes) ?? checkAllowance(file, usage.data);
     if (problem) {
       setState({ kind: 'refused', problem });
       return;
@@ -81,6 +82,13 @@ export default function AddClipPage() {
         if (error instanceof UploadCancelled) {
           setState({ kind: 'idle' });
           setAnnouncement('Upload cancelled.');
+          return;
+        }
+        // Storage use and today's allowance may have changed under a refusal.
+        void queryClient.invalidateQueries({ queryKey: UPLOAD_USAGE_KEY });
+        const refused = refusalFor(error);
+        if (refused) {
+          setState({ kind: 'refused', problem: refused });
           return;
         }
         setState({ kind: 'failed', file, error });
@@ -155,10 +163,13 @@ export default function AddClipPage() {
       </div>
 
       {usage.data && (
-        <p className="text-body-s">
-          <b>{formatSize(usage.data.used_bytes)}</b> of {formatSize(usage.data.quota_bytes)} used by
-          your uploads
-        </p>
+        <div className="flex flex-col gap-1 text-body-s">
+          <p>
+            <b>{formatSize(usage.data.used_bytes)}</b> of {formatSize(usage.data.quota_bytes)} used
+            by your uploads
+          </p>
+          {usage.data.daily_audio && <DailyAllowance daily={usage.data.daily_audio} />}
+        </div>
       )}
 
       <div aria-live="polite" className="sr-only">
@@ -216,6 +227,23 @@ export default function AddClipPage() {
         Your files are private to your account. You can delete them any time.
       </p>
     </main>
+  );
+}
+
+/** Today's new audio (D16, #41): how much is used, and when the count starts again. */
+function DailyAllowance({ daily }: { daily: NonNullable<StorageUse['daily_audio']> }) {
+  const used = Math.min(daily.limit_seconds, daily.used_seconds);
+  return (
+    <>
+      <p>
+        <b>{Math.floor(used / 60)}</b> of {Math.floor(daily.limit_seconds / 60)} minutes of new
+        audio added today; the count starts again {formatReset(daily.resets_at)}.
+      </p>
+      <p className="text-ink-muted">
+        A clip counts with at most 15 minutes, however long it is. Two of your clips are prepared at
+        a time; the others wait in your queue.
+      </p>
+    </>
   );
 }
 

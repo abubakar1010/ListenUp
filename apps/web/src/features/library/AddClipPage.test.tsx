@@ -205,8 +205,92 @@ test('a refusal from the server is shown with what to do next', async () => {
   choose(file('talk.m4a', 184 * MB, ''));
 
   const alert = await screen.findByRole('alert');
-  expect(alert).toHaveTextContent('Something needs fixing');
+  expect(within(alert).getByRole('heading')).toHaveTextContent('Your upload storage is full');
   expect(alert).toHaveTextContent('You have used 1.9 GB of 2.0 GB');
+});
+
+const DAILY = {
+  used_seconds: 34 * 60,
+  limit_seconds: 120 * 60,
+  clips_in_progress: 0,
+  reserved_seconds: 0,
+  can_add: true,
+  resets_at: '2026-10-04T00:00:00Z',
+};
+
+test("today's allowance of new audio is shown with when it resets", async () => {
+  mockUploadApi({
+    'GET /uploads/usage': () => jsonResponse(200, { ...USAGE, daily_audio: DAILY }),
+  });
+  renderPage();
+
+  expect(await screen.findByText(/of 120 minutes of new audio added today/)).toHaveTextContent(
+    /^34 of 120 minutes of new audio added today; the count starts again at \d\d:\d\d/,
+  );
+  expect(screen.getByText(/Two of your clips are prepared at a time/)).toBeInTheDocument();
+});
+
+test('a new file is refused before upload once the daily allowance is used up', async () => {
+  const calls = mockUploadApi({
+    'GET /uploads/usage': () =>
+      jsonResponse(200, {
+        ...USAGE,
+        daily_audio: { ...DAILY, used_seconds: 120 * 60, can_add: false },
+      }),
+  });
+  renderPage();
+  await screen.findByText(/minutes of new audio added today/);
+
+  choose(file('talk.mp3', MB, 'audio/mpeg'));
+
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByRole('heading')).toHaveTextContent(
+    "You have reached today's limit of new audio",
+  );
+  expect(alert).toHaveTextContent(
+    /You have added 120 minutes of new audio today, the daily limit\. You can add more at \d\d:\d\d/,
+  );
+  expect(calls.filter((c) => c.method !== 'GET')).toEqual([]);
+});
+
+test('a file that would fill the storage is refused before upload', async () => {
+  const calls = mockUploadApi({
+    'GET /uploads/usage': () =>
+      jsonResponse(200, { ...USAGE, used_bytes: 1900 * MB, daily_audio: DAILY }),
+  });
+  renderPage();
+  await screen.findByText(/used\s+by your uploads/);
+
+  choose(file('talk.mp4', 200 * MB, 'video/mp4'));
+
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByRole('heading')).toHaveTextContent('Your upload storage is full');
+  expect(alert).toHaveTextContent(
+    'You have used 1.9 GB of 2.0 GB, and talk.mp4 is 200 MB. Delete a clip you have finished to make room.',
+  );
+  expect(calls.filter((c) => c.method !== 'GET')).toEqual([]);
+});
+
+test("the server's daily limit refusal says when to come back", async () => {
+  mockUploadApi({
+    'GET /uploads/usage': () => jsonResponse(200, USAGE),
+    'POST /uploads': () =>
+      problem(429, 'daily_audio_limit', 'You have added 120 minutes of new audio today.', {
+        used_seconds: 7000,
+        limit_seconds: 7200,
+        clips_in_progress: 2,
+        resets_at: '2026-10-04T00:00:00Z',
+      }),
+  });
+  renderPage();
+
+  choose(file('talk.mp3', MB, 'audio/mpeg'));
+
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByRole('heading')).toHaveTextContent('Wait for your clips in progress');
+  expect(alert).toHaveTextContent(
+    /may use the rest of today's 120 minutes of new audio\. Add this one when they are ready, or at \d\d:\d\d/,
+  );
 });
 
 test('a dropped file is uploaded too', async () => {
