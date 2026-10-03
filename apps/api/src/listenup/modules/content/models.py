@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Text,
@@ -58,6 +59,8 @@ class MediaObject(Base):
     duration_ms: Mapped[int | None] = mapped_column(Integer)
     has_video: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     status: Mapped[str] = mapped_column(Text, server_default="pending")
+    # How far the conversion job has got while the item is prepared (migration 0011).
+    stage: Mapped[str | None] = mapped_column(Text)
     error_code: Mapped[str | None] = mapped_column(Text)
     playback_key: Mapped[str | None] = mapped_column(Text)
     video_key: Mapped[str | None] = mapped_column(Text)
@@ -108,6 +111,13 @@ class Upload(Base):
             "created_at",
             postgresql_where=text("confirmed_at IS NULL"),
         ),
+        Index(
+            "uploads_waiting_idx",
+            "user_id",
+            "confirmed_at",
+            "id",
+            postgresql_where=text("confirmed_at IS NOT NULL AND queued_at IS NULL"),
+        ),
         {"schema": "content"},
     )
 
@@ -125,3 +135,26 @@ class Upload(Base):
     )
     created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
     confirmed_at: Mapped[datetime | None] = mapped_column(Timestamp)
+    # When its conversion went on the shared intake lane; NULL while it waits in the
+    # learner's own queue (migration 0011, ADR 0027).
+    queued_at: Mapped[datetime | None] = mapped_column(Timestamp)
+
+
+class DuplicateUpload(Base):
+    """An item removed as a copy of one the learner already had (migration 0011)."""
+
+    __tablename__ = "duplicate_uploads"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["existing_content_id", "user_id"],
+            ["content.contents.id", "content.contents.user_id"],
+            ondelete="CASCADE",
+        ),
+        Index("duplicate_uploads_existing_idx", "existing_content_id", "user_id"),
+        {"schema": "content"},
+    )
+
+    content_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("identity.users.id", ondelete="CASCADE"))
+    existing_content_id: Mapped[uuid.UUID]
+    created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
