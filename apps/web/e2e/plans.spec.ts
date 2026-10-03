@@ -63,6 +63,26 @@ function view(s: FakeSession) {
   };
 }
 
+/** `GET /contents/{id}` for the clip; without peaks the picker draws a bare track. */
+function contentDetail(clip: typeof CLIP) {
+  const { id, title, source, status, duration_ms, created_at } = clip;
+  return {
+    id,
+    title,
+    source,
+    status,
+    duration_ms,
+    created_at,
+    error_code: null,
+    error_detail: null,
+    has_video: false,
+    keep_video: false,
+    media_object_id: 'm-1',
+    media_url: '/api/v1/media/m-1',
+    peaks_url: '/api/v1/media/m-1/peaks',
+  };
+}
+
 function problem(route: Route, status: number, code: string, detail: string) {
   return route.fulfill({
     status,
@@ -88,6 +108,7 @@ async function fakeApi(page: Page, sessions: FakeSession[] = []) {
     if (path === '/library/contents') {
       return route.fulfill({ json: { items: [CLIP], next_cursor: null } });
     }
+    if (path === `/contents/${CLIP.id}`) return route.fulfill({ json: contentDetail(CLIP) });
     if (path === '/sessions' && method === 'GET') {
       return route.fulfill({ json: { items: sessions.map(view), next_cursor: null } });
     }
@@ -176,16 +197,19 @@ test('a learner starts a plan from the library and sees step 1 of 5', async ({ p
   await expect(page).toHaveURL('/sessions/s-1');
 });
 
-test('a part of the clip is chosen with the keyboard at 360 px', async ({ page }) => {
+test('a part of the clip is typed at 360 px', async ({ page }) => {
   const { posts } = await fakeApi(page);
   await page.setViewportSize({ width: 360, height: 740 });
   await page.goto('/contents/clip-1/plan');
 
   await page.getByRole('radio', { name: /A part of it/ }).check();
   await page.getByRole('textbox', { name: 'Start' }).fill('02:10');
+  await page.getByRole('textbox', { name: 'Start' }).press('Tab');
   await page.getByRole('textbox', { name: 'End' }).fill('02:20');
+  // Enter submits; the end is first set to 30 s after the start, so the plan waits.
   await page.getByRole('textbox', { name: 'End' }).press('Enter');
-  await expect(page.getByRole('textbox', { name: 'End' })).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByRole('textbox', { name: 'End' })).toHaveValue('02:40');
+  await expect(page.getByRole('textbox', { name: 'End' })).toBeFocused();
   expect(posts).toHaveLength(0);
 
   await page.getByRole('textbox', { name: 'End' }).fill('04:40');

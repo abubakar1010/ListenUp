@@ -1,24 +1,20 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useMemo, useReducer, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 
 import { usePageTitle } from '../../app/usePageTitle';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { BackIcon } from '../../components/icons';
-import type { LibraryItem } from '../library/useLibrary';
+import { useContent, type ContentDetail } from '../content/useContent';
 import { useStartSession, type StartSession } from './api';
 import { EntryChoice } from './EntryChoice';
 import { PassagePicker } from './PassagePicker';
 import { entryFrom } from './plan';
 import { PlanPreview } from './PlanPreview';
-import {
-  checkPassage,
-  defaultPassage,
-  formatClock,
-  MIN_PASSAGE_MS,
-  type PassageValue,
-} from './time';
-import { useClip } from './useClip';
+import { defaultRange, firstSpeechMs, MIN_PASSAGE_MS } from './passage';
+import { commitAll, initialPassage, passageReducer, selectedRange } from './passageState';
+import { formatClock } from './time';
+import { usePeaks } from './usePeaks';
 
 const PAGE_CLASS =
   'mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 pt-4 pb-8 md:gap-8 md:px-6 md:pt-8 md:pb-12';
@@ -30,7 +26,7 @@ const PAGE_CLASS =
 export default function StartPlanPage() {
   const { contentId = '' } = useParams();
   usePageTitle('Start a plan');
-  const clip = useClip(contentId);
+  const clip = useContent(contentId);
 
   return (
     <main className={PAGE_CLASS}>
@@ -56,7 +52,7 @@ export default function StartPlanPage() {
   );
 }
 
-function ClipPlan({ clip }: { clip: LibraryItem }) {
+function ClipPlan({ clip }: { clip: ContentDetail }) {
   if (clip.status !== 'playable') {
     return (
       <p role="status" className="rounded-md border border-line bg-surface-raised p-4">
@@ -64,7 +60,14 @@ function ClipPlan({ clip }: { clip: LibraryItem }) {
       </p>
     );
   }
-  if (clip.duration_ms !== null && clip.duration_ms < MIN_PASSAGE_MS) {
+  if (clip.duration_ms === null) {
+    return (
+      <p className="rounded-md border border-line bg-surface-raised p-4">
+        The length of this clip is not known, so a part cannot be chosen yet. Try again later.
+      </p>
+    );
+  }
+  if (clip.duration_ms < MIN_PASSAGE_MS) {
     return (
       <p className="rounded-md border border-line bg-surface-raised p-4">
         This clip is {formatClock(clip.duration_ms)} long. A plan needs at least 30 seconds, so add
@@ -72,20 +75,26 @@ function ClipPlan({ clip }: { clip: LibraryItem }) {
       </p>
     );
   }
-  return <PlanForm clip={clip} />;
+  return <PlanForm clip={clip} durationMs={clip.duration_ms} />;
 }
 
-const NOT_READY: Record<Exclude<LibraryItem['status'], 'playable'>, string> = {
+const NOT_READY: Record<Exclude<ContentDetail['status'], 'playable'>, string> = {
   pending: 'This clip is still being prepared. You can start a plan as soon as it is ready.',
   downloading: 'This clip is still downloading. You can start a plan as soon as it is ready.',
   failed: 'This clip could not be processed, so it cannot be practised. Add the file again.',
   expired: 'This clip needs downloading again before you can practise it.',
 };
 
-function PlanForm({ clip }: { clip: LibraryItem }) {
+function PlanForm({ clip, durationMs }: { clip: ContentDetail; durationMs: number }) {
   const navigate = useNavigate();
   const start = useStartSession();
-  const [passage, setPassage] = useState<PassageValue>(() => defaultPassage(clip.duration_ms));
+  const peaks = usePeaks(clip.peaks_url);
+  const [passage, dispatch] = useReducer(passageReducer, durationMs, initialPassage);
+  // The suggested part follows the first speech once the peaks arrive (ADR 0026).
+  const base = useMemo(
+    () => defaultRange(durationMs, peaks.data ? firstSpeechMs(peaks.data) : null),
+    [durationMs, peaks.data],
+  );
   const [blind, setBlind] = useState(true);
   const [dictation, setDictation] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -93,25 +102,26 @@ function PlanForm({ clip }: { clip: LibraryItem }) {
   const attempt = useRef<{ body: string; key: string } | null>(null);
 
   const entry = entryFrom(blind, dictation);
-  const checked = checkPassage(passage.start, passage.end, clip.duration_ms);
-  const valid = Object.keys(checked.errors).length === 0;
-  const lengthMs = valid ? checked.endMs! - checked.startMs! : null;
-  const shownErrors = submitted ? checked.errors : {};
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
     setSubmitted(true);
-    if (!valid) {
-      document.getElementById(checked.errors.start ? 'passage-start' : 'passage-end')?.focus();
+    // Typed times are applied first; one that is unreadable or was adjusted stops the
+    // submit, so the learner sees why before the plan starts.
+    const committed = commitAll(passage, base, durationMs);
+    if (committed.state !== passage) dispatch({ type: 'replace', state: committed.state });
+    if (committed.stop) {
+      document.getElementById(`passage-${committed.stop}`)?.focus();
       return;
     }
     if (!entry) {
       document.getElementById('plan-blind')?.focus();
       return;
     }
+    const range = selectedRange(committed.state, base, durationMs);
     const body: StartSession = {
       content_id: clip.id,
-      passage: { start_ms: checked.startMs!, end_ms: checked.endMs! },
+      passage: { start_ms: range.startMs, end_ms: range.endMs },
       entry,
     };
     const json = JSON.stringify(body);
@@ -136,11 +146,13 @@ function PlanForm({ clip }: { clip: LibraryItem }) {
           </p>
         </div>
         <PassagePicker
-          durationMs={clip.duration_ms}
-          value={passage}
-          onChange={setPassage}
-          errors={shownErrors}
-          lengthMs={lengthMs}
+          durationMs={durationMs}
+          state={passage}
+          base={base}
+          dispatch={dispatch}
+          peaks={peaks.data ?? null}
+          peaksFailed={peaks.isError}
+          mediaUrl={clip.media_url}
         />
       </section>
 
