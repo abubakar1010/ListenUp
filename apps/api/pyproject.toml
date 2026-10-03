@@ -13,6 +13,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "procrastinate>=2.0",
     "boto3>=1.35",
+    "argon2-cffi>=23.1",
 ]
 
 [dependency-groups]
