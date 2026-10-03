@@ -10,6 +10,8 @@ __pycache__/
 node_modules/
 dist/
 coverage/
+playwright-report/
+test-results/
 *.tsbuildinfo
 
 # Environment and local data

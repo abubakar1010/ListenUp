@@ -13,6 +13,7 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc -b",
     "test": "vitest run",
+    "e2e": "playwright test",
     "api:generate": "openapi-typescript src/api/openapi.json -o src/api/schema.ts && prettier --write src/api/schema.ts src/api/openapi.json"
   },
   "dependencies": {
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",

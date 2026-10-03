@@ -5,7 +5,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'coverage'] },
+  { ignores: ['dist', 'coverage', 'playwright-report', 'test-results'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],
@@ -18,7 +18,7 @@ export default tseslint.config(
   },
   {
     // Test helpers are never hot-reloaded, so they may export functions beside components.
-    files: ['src/test-utils.tsx', '**/*.test.{ts,tsx}'],
+    files: ['src/test-utils.tsx', '**/*.test.{ts,tsx}', 'e2e/**/*.ts'],
     rules: { 'react-refresh/only-export-components': 'off' },
   },
 );
