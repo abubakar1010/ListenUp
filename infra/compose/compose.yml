@@ -64,8 +64,7 @@ services:
     image: axllent/mailpit:latest
     ports: ["8025:8025", "1025:1025"]
 
-  # Applies the database migrations, then creates the job-queue tables once
-  # (Procrastinate manages its own schema in `public`).
+  # Applies the database migrations, including the job-queue schema (migration 0003).
   migrate:
     build:
       context: ../..
@@ -75,11 +74,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: >
-      sh -c "alembic upgrade head &&
-      (python -c \"import psycopg,os,sys; c=psycopg.connect(os.environ['LISTENUP_DATABASE_URL']);
-      sys.exit(0 if c.execute(\\\"select to_regclass('procrastinate_jobs')\\\").fetchone()[0] else 1)\"
-      || procrastinate --app=listenup.worker.app schema --apply)"
+    command: alembic upgrade head
+    healthcheck:
+      disable: true
 
   api:
     <<: *backend
