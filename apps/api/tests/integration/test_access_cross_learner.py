@@ -153,9 +153,11 @@ def snapshot(owner_url: str, user_id: uuid.UUID) -> dict[str, str]:
 
 
 def request(client: TestClient, method: str, path: str, body: object) -> httpx.Response:
+    # Redirects are never followed: a redirect to another learner's media is itself the
+    # leak, and following it would only reach a path the test app does not serve.
     if body is None:
-        return client.request(method, path)
-    return client.request(method, path, json=body)
+        return client.request(method, path, follow_redirects=False)
+    return client.request(method, path, json=body, follow_redirects=False)
 
 
 def problem_code(response: httpx.Response) -> object:
@@ -228,7 +230,9 @@ def check_access(
 
         if method in SAFE_METHODS:
             own = request(a, method, path, body)
-            assert own.is_success, f"{route}: A's own request failed: {own.status_code}"
+            assert own.is_success or own.is_redirect, (
+                f"{route}: A's own request failed: {own.status_code}"
+            )
             if isinstance(entry, Scoped) and entry.a_sees:
                 missing = [str(i) for i in entry.a_sees(world) if str(i) not in own.text]
                 assert not missing, f"{route}: A's own answer lacks {missing}; fix the fixture"

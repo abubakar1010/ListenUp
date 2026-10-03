@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     upload_confirm_hours: int = 24  # an unconfirmed upload can be confirmed this long
     upload_rate_limit: int = 30  # upload requests per learner per hour
 
+    # Where media workers write source and converted files while a job runs; the
+    # system's temporary directory when unset. Each job removes its own files.
+    media_scratch_dir: str | None = None
+
     # First retry waits about this long; later ones four times longer each time.
     job_retry_base_seconds: float = 10.0
 

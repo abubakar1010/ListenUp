@@ -40,6 +40,10 @@ class ConfirmUpload(BaseModel):
         max_length=MAX_TITLE_LENGTH,
         description="Defaults to the file name without its extension",
     )
+    keep_video: bool = Field(
+        default=False,
+        description="Keep the picture of a video (H.264 360p); otherwise only the sound is kept",
+    )
 
 
 ContentSource = Literal["upload", "youtube"]
@@ -58,3 +62,19 @@ class ContentItem(BaseModel):
 class ContentList(BaseModel):
     items: list[ContentItem]
     next_cursor: str | None = Field(description="Pass as `cursor` for the next page")
+
+
+class ContentDetail(ContentItem):
+    """One item, with what its page needs to show and play it."""
+
+    media_object_id: uuid.UUID
+    has_video: bool = Field(description="The playback file has a picture (only with keep_video)")
+    keep_video: bool
+    error_code: str | None = Field(description="Why processing failed; null unless failed")
+    error_detail: str | None = Field(description="The reason, as the learner reads it")
+    media_url: str | None = Field(
+        description="Play from here (redirects to a signed URL); null until playable"
+    )
+    peaks_url: str | None = Field(
+        description="Waveform peaks JSON (redirects to a signed URL); null until playable"
+    )

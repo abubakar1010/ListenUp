@@ -94,14 +94,16 @@ def add_clip(
     with psycopg.connect(owner_url) as conn:
         conn.execute(
             "INSERT INTO content.media_objects "
-            "(id, fingerprint, source, uploaded_by, status, duration_ms, playback_key) "
-            "VALUES (%s, %s, 'upload', %s, 'playable', %s, %s)",
+            "(id, fingerprint, source, uploaded_by, status, duration_ms, playback_key, "
+            "peaks_key) VALUES (%s, %s, 'upload', %s, 'playable', %s, %s, %s)",
             [
                 media_id,
                 f"upload:{user_id}:{media_id.hex}",
                 user_id,
                 CLIP_MS,
-                f"users/{user_id}/media/{media_id}.m4a",
+                # The keys the conversion job writes (ADR 0022); no file stands behind them.
+                f"users/{user_id}/media/{media_id}/playback.mp4",
+                f"users/{user_id}/media/{media_id}/peaks.json",
             ],
         )
         conn.execute(

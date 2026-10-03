@@ -150,6 +150,16 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         "upload_not_found", body=lambda w: {"upload_id": str(w.a.confirmed_upload_id)}
     ),
     ("GET", "/api/v1/contents"): Scoped(a_sees=lambda w: [w.a.content_id]),
+    ("GET", "/api/v1/contents/{content_id}"): Owned(
+        "content_not_found", params=lambda w: {"content_id": w.a.content_id}
+    ),
+    # -- media -------------------------------------------------------------------------
+    ("GET", "/api/v1/media/{media_object_id}"): Owned(
+        "media_not_found", params=lambda w: {"media_object_id": w.a.media_id}
+    ),
+    ("GET", "/api/v1/media/{media_object_id}/peaks"): Owned(
+        "media_not_found", params=lambda w: {"media_object_id": w.a.media_id}
+    ),
     # -- library -----------------------------------------------------------------------
     ("GET", "/api/v1/library/contents"): Scoped(a_sees=lambda w: [w.a.content_id]),
 }

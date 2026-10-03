@@ -123,6 +123,27 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/contents/{content_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Content
+     * @description One of the learner's items: its processing status, or why it failed, and where
+     *     to play it once it is playable.
+     */
+    get: operations['get_content_api_v1_contents__content_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/events': {
     parameters: {
       query?: never;
@@ -191,6 +212,47 @@ export interface paths {
     };
     /** Me */
     get: operations['me_api_v1_me_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/media/{media_object_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Play Media
+     * @description The playback file. Redirects to a signed storage URL that serves range requests,
+     *     so the player starts on the first bytes and seeks without downloading everything.
+     */
+    get: operations['play_media_api_v1_media__media_object_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/media/{media_object_id}/peaks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Media Peaks
+     * @description The waveform peaks: JSON with `per_second` values a second on a 0 to `scale` range.
+     */
+    get: operations['media_peaks_api_v1_media__media_object_id__peaks_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -273,6 +335,12 @@ export interface components {
      */
     ConfirmUpload: {
       /**
+       * Keep Video
+       * @description Keep the picture of a video (H.264 360p); otherwise only the sound is kept
+       * @default false
+       */
+      keep_video: boolean;
+      /**
        * Title
        * @description Defaults to the file name without its extension
        */
@@ -282,6 +350,68 @@ export interface components {
        * Format: uuid
        */
       upload_id: string;
+    };
+    /**
+     * ContentDetail
+     * @description One item, with what its page needs to show and play it.
+     */
+    ContentDetail: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Duration Ms */
+      duration_ms: number | null;
+      /**
+       * Error Code
+       * @description Why processing failed; null unless failed
+       */
+      error_code: string | null;
+      /**
+       * Error Detail
+       * @description The reason, as the learner reads it
+       */
+      error_detail: string | null;
+      /**
+       * Has Video
+       * @description The playback file has a picture (only with keep_video)
+       */
+      has_video: boolean;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Keep Video */
+      keep_video: boolean;
+      /**
+       * Media Object Id
+       * Format: uuid
+       */
+      media_object_id: string;
+      /**
+       * Media Url
+       * @description Play from here (redirects to a signed URL); null until playable
+       */
+      media_url: string | null;
+      /**
+       * Peaks Url
+       * @description Waveform peaks JSON (redirects to a signed URL); null until playable
+       */
+      peaks_url: string | null;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: 'upload' | 'youtube';
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'pending' | 'downloading' | 'playable' | 'failed' | 'expired';
+      /** Title */
+      title: string;
     };
     /** ContentItem */
     ContentItem: {
@@ -704,6 +834,44 @@ export interface operations {
       };
     };
   };
+  get_content_api_v1_contents__content_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        content_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ContentDetail'];
+        };
+      };
+      /** @description Not in your library */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   events_api_v1_events_get: {
     parameters: {
       query?: never;
@@ -812,6 +980,92 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['Me'];
+        };
+      };
+    };
+  };
+  play_media_api_v1_media__media_object_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        media_object_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to a short-lived signed storage URL */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No item of yours uses this media object */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not playable yet (`media_not_ready`) */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  media_peaks_api_v1_media__media_object_id__peaks_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        media_object_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to a short-lived signed storage URL */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No item of yours uses this media object */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not playable yet (`media_not_ready`) */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

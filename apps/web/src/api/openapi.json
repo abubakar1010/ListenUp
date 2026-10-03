@@ -4,6 +4,12 @@
       "ConfirmUpload": {
         "description": "Add an uploaded file to the library. YouTube links (#37) will be another shape.",
         "properties": {
+          "keep_video": {
+            "default": false,
+            "description": "Keep the picture of a video (H.264 360p); otherwise only the sound is kept",
+            "title": "Keep Video",
+            "type": "boolean"
+          },
           "title": {
             "anyOf": [
               {
@@ -25,6 +31,125 @@
         },
         "required": ["upload_id"],
         "title": "ConfirmUpload",
+        "type": "object"
+      },
+      "ContentDetail": {
+        "description": "One item, with what its page needs to show and play it.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why processing failed; null unless failed",
+            "title": "Error Code"
+          },
+          "error_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The reason, as the learner reads it",
+            "title": "Error Detail"
+          },
+          "has_video": {
+            "description": "The playback file has a picture (only with keep_video)",
+            "title": "Has Video",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "keep_video": {
+            "title": "Keep Video",
+            "type": "boolean"
+          },
+          "media_object_id": {
+            "format": "uuid",
+            "title": "Media Object Id",
+            "type": "string"
+          },
+          "media_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Play from here (redirects to a signed URL); null until playable",
+            "title": "Media Url"
+          },
+          "peaks_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waveform peaks JSON (redirects to a signed URL); null until playable",
+            "title": "Peaks Url"
+          },
+          "source": {
+            "enum": ["upload", "youtube"],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["pending", "downloading", "playable", "failed", "expired"],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "source",
+          "status",
+          "duration_ms",
+          "created_at",
+          "media_object_id",
+          "has_video",
+          "keep_video",
+          "error_code",
+          "error_detail",
+          "media_url",
+          "peaks_url"
+        ],
+        "title": "ContentDetail",
         "type": "object"
       },
       "ContentItem": {
@@ -705,6 +830,51 @@
         "tags": ["content"]
       }
     },
+    "/api/v1/contents/{content_id}": {
+      "get": {
+        "description": "One of the learner's items: its processing status, or why it failed, and where\nto play it once it is playable.",
+        "operationId": "get_content_api_v1_contents__content_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "content_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Content Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Not in your library"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Content",
+        "tags": ["content"]
+      }
+    },
     "/api/v1/events": {
       "get": {
         "description": "Stream the learner's live events (System Design 9.1).\n\nEach event carries only its type and the id of the resource to refetch.",
@@ -857,6 +1027,88 @@
         },
         "summary": "Me",
         "tags": ["identity"]
+      }
+    },
+    "/api/v1/media/{media_object_id}": {
+      "get": {
+        "description": "The playback file. Redirects to a signed storage URL that serves range requests,\nso the player starts on the first bytes and seeks without downloading everything.",
+        "operationId": "play_media_api_v1_media__media_object_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "media_object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Media Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Redirect to a short-lived signed storage URL"
+          },
+          "404": {
+            "description": "No item of yours uses this media object"
+          },
+          "409": {
+            "description": "Not playable yet (`media_not_ready`)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Play Media",
+        "tags": ["content"]
+      }
+    },
+    "/api/v1/media/{media_object_id}/peaks": {
+      "get": {
+        "description": "The waveform peaks: JSON with `per_second` values a second on a 0 to `scale` range.",
+        "operationId": "media_peaks_api_v1_media__media_object_id__peaks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "media_object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Media Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Redirect to a short-lived signed storage URL"
+          },
+          "404": {
+            "description": "No item of yours uses this media object"
+          },
+          "409": {
+            "description": "Not playable yet (`media_not_ready`)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Media Peaks",
+        "tags": ["content"]
       }
     },
     "/api/v1/uploads": {

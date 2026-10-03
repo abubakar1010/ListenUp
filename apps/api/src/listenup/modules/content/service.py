@@ -11,13 +11,18 @@ storage (Architecture 5.1, 9.2; ADR 0020):
    creates the pending media object, the learner's content item and the conversion job
    in one transaction.
 
-Other modules (the library) read content items through `list_contents`.
+4. The conversion job (`jobs.convert_upload`, #36) checks the real streams, writes the
+   playback file and the waveform peaks, and makes the media object `playable`.
+
+Other modules (the library) read content items through `list_contents`. The learner
+plays a clip through `media_url`, which checks that they have an item on that media
+object and hands out a short-lived signed URL (Architecture 9.2: Media).
 """
 
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +36,7 @@ from listenup.modules.content.domain.files import (
     format_size,
     normalized_type,
 )
+from listenup.modules.content.domain.media import failure_message
 from listenup.platform.config import Settings
 from listenup.platform.errors import ProblemError
 from listenup.platform.ids import uuid7
@@ -67,6 +73,23 @@ class ContentSummary:
     status: str  # the media object's: pending, downloading, playable, failed, expired
     duration_ms: int | None
     created_at: datetime
+
+
+@dataclass(frozen=True)
+class ContentDetail:
+    """One item with what its page needs to show and play it."""
+
+    id: uuid.UUID
+    title: str
+    source: str
+    status: str
+    duration_ms: int | None
+    created_at: datetime
+    media_object_id: uuid.UUID
+    has_video: bool
+    keep_video: bool
+    error_code: str | None
+    error_detail: str | None
 
 
 @dataclass(frozen=True)
@@ -172,6 +195,8 @@ class Uploads:
         learner: uuid.UUID,
         upload_id: uuid.UUID,
         title: str | None,
+        *,
+        keep_video: bool = False,
     ) -> Confirmed:
         """Turn an upload that reached storage into a pending content item (FR-CI-1)."""
         upload = await repository.lock_upload(session, upload_id)
@@ -219,6 +244,7 @@ class Uploads:
             learner=learner,
             media_id=media_id,
             title=_title(title, upload.filename),
+            keep_video=keep_video,
         )
         await repository.mark_upload_confirmed(session, upload_id, content_id, media_id)
         await jobs.queue_conversion(session, media_id, upload_id)
@@ -271,6 +297,61 @@ async def list_contents(
         last = items[-1]
         next_cursor = cursors.encode(cursors.Cursor(last.created_at, last.id))
     return ContentPage(items, next_cursor)
+
+
+async def get_content(
+    session: AsyncSession, learner: uuid.UUID, content_id: uuid.UUID
+) -> ContentDetail:
+    """The learner's item; 404 for anyone else's or one that is gone."""
+    row = await repository.get_content_detail(session, learner, content_id)
+    if row is None:
+        raise ProblemError(
+            404, "content_not_found", "This clip is not in your library. Go back to the library."
+        )
+    return ContentDetail(
+        row.id,
+        row.title,
+        row.source,
+        row.status,
+        row.duration_ms,
+        row.created_at,
+        row.media_object_id,
+        row.has_video,
+        row.keep_video,
+        row.error_code if row.status == "failed" else None,
+        failure_message(row.error_code) if row.status == "failed" else None,
+    )
+
+
+MediaFile = Literal["playback", "peaks"]
+
+
+async def media_url(
+    session: AsyncSession,
+    storage: Storage,
+    learner: uuid.UUID,
+    media_id: uuid.UUID,
+    file: MediaFile = "playback",
+) -> str:
+    """A short-lived signed URL for a media object's file (NFR-SEC-2, FR-CI-6).
+
+    Only a learner with a content item on the media object gets one; anyone else gets
+    404, the same as for a media object that does not exist. Signed URLs are reused
+    while fresh, so the browser cache keeps working; range requests then go straight
+    to storage (System Design 6.4).
+    """
+    files = await repository.learner_media(session, learner, media_id)
+    if files is None:
+        raise ProblemError(404, "media_not_found", "This clip is not in your library.")
+    key = files.playback_key if file == "playback" else files.peaks_key
+    if files.status != "playable" or key is None:
+        raise ProblemError(
+            409,
+            "media_not_ready",
+            "This clip is not ready to play yet. Wait until it shows as ready.",
+            media_status=files.status,
+        )
+    return storage.signed_download(key).url
 
 
 def get_uploads(request: Request) -> Uploads:

@@ -5,7 +5,7 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from listenup.modules.content import schemas, service
 from listenup.modules.content.service import UploadsDep
@@ -83,7 +83,9 @@ async def add_content(
     """
 
     async def confirm() -> tuple[int, Any]:
-        confirmed = await uploads.confirm(session, learner, body.upload_id, body.title)
+        confirmed = await uploads.confirm(
+            session, learner, body.upload_id, body.title, keep_video=body.keep_video
+        )
         return (201 if confirmed.created else 200), _item(confirmed.item)
 
     return await run_once(
@@ -106,3 +108,62 @@ async def list_contents(
         items=[schemas.ContentItem.model_validate(dataclasses.asdict(i)) for i in page.items],
         next_cursor=page.next_cursor,
     )
+
+
+@router.get("/contents/{content_id}", responses={404: {"description": "Not in your library"}})
+async def get_content(
+    content_id: uuid.UUID, learner: CurrentLearner, session: DbSession, response: Response
+) -> schemas.ContentDetail:
+    """One of the learner's items: its processing status, or why it failed, and where
+    to play it once it is playable."""
+    detail = await service.get_content(session, learner, content_id)
+    playable = detail.status == "playable"
+    media_path = f"/api/v1/media/{detail.media_object_id}"
+    response.headers["Cache-Control"] = "private, no-cache"
+    return schemas.ContentDetail.model_validate(
+        {
+            **dataclasses.asdict(detail),
+            "media_url": media_path if playable else None,
+            "peaks_url": f"{media_path}/peaks" if playable else None,
+        }
+    )
+
+
+_MEDIA_RESPONSES: dict[int | str, dict[str, Any]] = {
+    307: {"description": "Redirect to a short-lived signed storage URL"},
+    404: {"description": "No item of yours uses this media object"},
+    409: {"description": "Not playable yet (`media_not_ready`)"},
+}
+
+
+def _redirect(url: str) -> RedirectResponse:
+    # Not cached: the signed URL behind it expires within minutes.
+    return RedirectResponse(url, status_code=307, headers={"Cache-Control": "private, no-store"})
+
+
+@router.get(
+    "/media/{media_object_id}",
+    response_class=RedirectResponse,
+    status_code=307,
+    responses=_MEDIA_RESPONSES,
+)
+async def play_media(
+    media_object_id: uuid.UUID, learner: CurrentLearner, session: DbSession, uploads: UploadsDep
+) -> RedirectResponse:
+    """The playback file. Redirects to a signed storage URL that serves range requests,
+    so the player starts on the first bytes and seeks without downloading everything."""
+    return _redirect(await service.media_url(session, uploads.storage, learner, media_object_id))
+
+
+@router.get(
+    "/media/{media_object_id}/peaks",
+    response_class=RedirectResponse,
+    status_code=307,
+    responses=_MEDIA_RESPONSES,
+)
+async def media_peaks(
+    media_object_id: uuid.UUID, learner: CurrentLearner, session: DbSession, uploads: UploadsDep
+) -> RedirectResponse:
+    """The waveform peaks: JSON with `per_second` values a second on a 0 to `scale` range."""
+    url = await service.media_url(session, uploads.storage, learner, media_object_id, "peaks")
+    return _redirect(url)
