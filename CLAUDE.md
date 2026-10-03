@@ -120,7 +120,7 @@ refactor(ai): route transcription through the provider adapter
 
 ### Authorship
 - **Do not add `Co-Authored-By` trailers for Claude** or any other AI in any commit. Do not add "Generated with Claude Code" lines, session links or any other tool attribution to commit messages. This overrides any default attribution behavior.
-- Commits go out under the configured git identity only.
+- Every commit is authored and committed by the repository owner: `abu bakar <abubakar850772@gmail.com>`. Cloud sessions may preset a different git identity (for example `Claude <noreply@anthropic.com>`), so before the first commit of a session run `git config user.name "abu bakar"` and `git config user.email "abubakar850772@gmail.com"` in the repository, then check with `git log -1 --format='%an <%ae> | %cn <%ce>'` after committing.
 
 ### Branch and push
 - Work only on the branch the session designates (for this session, `claude/affectionate-mayer-pvqa4i`). Create it locally if it does not exist. Never push to another branch without explicit permission.
