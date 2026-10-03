@@ -311,7 +311,7 @@ test('a learner opens a ready clip from the library and plays it', async ({ page
     });
 
     await page.goto('/library');
-    await page.getByRole('link', { name: 'Why cities plant street trees' }).click();
+    await page.getByRole('link', { name: 'Why cities plant street trees', exact: true }).click();
 
     await expect(page).toHaveURL('/contents/content-1');
     await expect(page).toHaveTitle('Why cities plant street trees · ListenUp');
