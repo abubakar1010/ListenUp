@@ -24,6 +24,7 @@ dev = [
     "mypy>=1.11",
     "import-linter>=2.15",
     "types-boto3[s3]>=1.35",
+    "hypothesis>=6.168.3",
 ]
 
 [build-system]
