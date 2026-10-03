@@ -31,6 +31,8 @@ jobs:
           --health-interval 2s --health-retries 30
     env:
       LISTENUP_DATABASE_URL: postgresql://listenup:listenup@localhost:5432/listenup
+      # Database integration tests fail instead of skipping when PostgreSQL is missing.
+      LISTENUP_REQUIRE_DB: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -43,8 +45,13 @@ jobs:
       - run: uv run mypy
       - name: Module boundaries (import-linter)
         run: uv run lint-imports
+      - name: Migrations (upgrade, downgrade one, upgrade, drift check)
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade -1
+          uv run alembic upgrade head
+          uv run alembic check
       - run: uv run pytest
-      # Migration checks are added by the database migrations story.
 
   web:
     name: Web (lint, format, types, tests, build)
