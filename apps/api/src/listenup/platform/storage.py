@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Protocol
 import anyio.to_thread
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from listenup.platform.config import Settings
 
@@ -38,10 +39,20 @@ class SignedUrl:
     headers: dict[str, str]  # headers the client must send with the request
 
 
+@dataclass(frozen=True)
+class StoredObject:
+    size: int  # bytes
+    content_type: str | None
+
+
 class Storage(Protocol):
-    def signed_upload(self, key: str, content_type: str) -> SignedUrl: ...
+    def signed_upload(
+        self, key: str, content_type: str, content_length: int | None = None
+    ) -> SignedUrl: ...
     def signed_download(self, key: str, download_name: str | None = None) -> SignedUrl: ...
     async def put(self, key: str, data: bytes, content_type: str) -> None: ...
+    async def head(self, key: str) -> StoredObject | None: ...
+    async def delete(self, key: str) -> None: ...
     async def delete_prefix(self, prefix: str) -> int: ...
 
 
@@ -78,14 +89,20 @@ class S3Storage:
             config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
         )
 
-    def signed_upload(self, key: str, content_type: str) -> SignedUrl:
-        """A URL the browser can PUT one object to, with this exact Content-Type."""
+    def signed_upload(
+        self, key: str, content_type: str, content_length: int | None = None
+    ) -> SignedUrl:
+        """A URL the browser can PUT one object to, with this exact Content-Type.
+
+        With `content_length`, the signature also covers the Content-Length header, so
+        storage refuses a body of any other size. Browsers and HTTP clients send that
+        header themselves (a page may not set it), so it is not in `headers`.
+        """
         check_key(key)
-        url = self._signer.generate_presigned_url(
-            "put_object",
-            Params={"Bucket": self.bucket, "Key": key, "ContentType": content_type},
-            ExpiresIn=self.ttl,
-        )
+        params: dict[str, object] = {"Bucket": self.bucket, "Key": key, "ContentType": content_type}
+        if content_length is not None:
+            params["ContentLength"] = content_length
+        url = self._signer.generate_presigned_url("put_object", Params=params, ExpiresIn=self.ttl)
         return SignedUrl(url, "PUT", self._clock() + self.ttl, {"Content-Type": content_type})
 
     def signed_download(self, key: str, download_name: str | None = None) -> SignedUrl:
@@ -117,6 +134,29 @@ class S3Storage:
                 Bucket=self.bucket, Key=key, Body=data, ContentType=content_type
             )
         )
+
+    async def head(self, key: str) -> StoredObject | None:
+        """Size and type of a stored object, or None when there is no such object."""
+        check_key(key)
+        try:
+            found = await anyio.to_thread.run_sync(
+                lambda: self._client.head_object(Bucket=self.bucket, Key=key)
+            )
+        except ClientError as error:
+            status = error.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if status == 404:
+                return None
+            raise
+        return StoredObject(found["ContentLength"], found.get("ContentType"))
+
+    async def delete(self, key: str) -> None:
+        """Delete one object; deleting a key that does not exist is not an error."""
+        check_key(key)
+        await anyio.to_thread.run_sync(
+            lambda: self._client.delete_object(Bucket=self.bucket, Key=key)
+        )
+        for cache_key in [k for k in self._cache if k[0] == key]:
+            del self._cache[cache_key]
 
     async def delete_prefix(self, prefix: str) -> int:
         """Delete every object under a folder-like prefix; returns how many were deleted.

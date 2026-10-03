@@ -65,3 +65,12 @@ def test_unsafe_keys_are_refused(key: str) -> None:
 async def test_delete_needs_a_folder_prefix(prefix: str) -> None:
     with pytest.raises(ValueError):
         await make_storage().delete_prefix(prefix)
+
+
+def test_upload_urls_can_be_bound_to_the_exact_size() -> None:
+    signed = make_storage().signed_upload("users/1/uploads/a.mp3", "audio/mpeg", content_length=42)
+
+    signed_headers = parse_qs(urlparse(signed.url).query)["X-Amz-SignedHeaders"][0]
+    assert "content-length" in signed_headers.split(";")
+    # Clients send Content-Length themselves; browsers refuse to let a page set it.
+    assert signed.headers == {"Content-Type": "audio/mpeg"}
