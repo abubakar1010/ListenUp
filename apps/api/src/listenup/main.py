@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, FastAPI
 
 from listenup import __version__
+from listenup.modules.content import api as content_api
+from listenup.modules.content.service import build_uploads
 from listenup.modules.identity import api as identity_api
 from listenup.modules.identity.service import build_accounts, current_learner
 from listenup.platform.config import Settings, get_settings
@@ -32,6 +34,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.storage = S3Storage(settings)
         app.state.rate_limiter = RateLimiter(app.state.database)
         app.state.accounts = build_accounts(app.state.database, app.state.rate_limiter, settings)
+        app.state.uploads = build_uploads(settings, app.state.storage, app.state.rate_limiter)
         app.state.events = EventHub()
         app.state.event_listener = EventListener(settings.database_url, app.state.events)
         app.state.event_listener.start()
@@ -48,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api = APIRouter(prefix="/api/v1")
     api.add_api_route("/health", health, methods=["GET"])
     api.include_router(identity_api.router)
+    api.include_router(content_api.router)
     api.include_router(events_router(current_learner))
     app.include_router(api)
     return app

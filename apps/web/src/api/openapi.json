@@ -1,6 +1,100 @@
 {
   "components": {
     "schemas": {
+      "ConfirmUpload": {
+        "description": "Add an uploaded file to the library. YouTube links (#37) will be another shape.",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Defaults to the file name without its extension",
+            "title": "Title"
+          },
+          "upload_id": {
+            "format": "uuid",
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": ["upload_id"],
+        "title": "ConfirmUpload",
+        "type": "object"
+      },
+      "ContentItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "source": {
+            "enum": ["upload", "youtube"],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["pending", "downloading", "playable", "failed", "expired"],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": ["id", "title", "source", "status", "duration_ms", "created_at"],
+        "title": "ContentItem",
+        "type": "object"
+      },
+      "ContentList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContentItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pass as `cursor` for the next page",
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items", "next_cursor"],
+        "title": "ContentList",
+        "type": "object"
+      },
       "Credentials": {
         "properties": {
           "email": {
@@ -101,6 +195,85 @@
         },
         "required": ["detail"],
         "title": "PasswordResetRequested",
+        "type": "object"
+      },
+      "StorageUse": {
+        "properties": {
+          "max_file_bytes": {
+            "title": "Max File Bytes",
+            "type": "integer"
+          },
+          "quota_bytes": {
+            "title": "Quota Bytes",
+            "type": "integer"
+          },
+          "used_bytes": {
+            "title": "Used Bytes",
+            "type": "integer"
+          }
+        },
+        "required": ["used_bytes", "quota_bytes", "max_file_bytes"],
+        "title": "StorageUse",
+        "type": "object"
+      },
+      "UploadRequest": {
+        "properties": {
+          "content_type": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "size_bytes": {
+            "description": "The file's exact size; storage refuses any other",
+            "exclusiveMinimum": 0.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": ["filename", "content_type", "size_bytes"],
+        "title": "UploadRequest",
+        "type": "object"
+      },
+      "UploadTarget": {
+        "description": "Where and how the browser sends the file: one PUT with exactly these headers.",
+        "properties": {
+          "expires_at": {
+            "description": "The upload must start before this time",
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "method": {
+            "const": "PUT",
+            "title": "Method",
+            "type": "string"
+          },
+          "upload_id": {
+            "format": "uuid",
+            "title": "Upload Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": ["upload_id", "url", "method", "headers", "expires_at"],
+        "title": "UploadTarget",
         "type": "object"
       },
       "ValidationError": {
@@ -310,6 +483,135 @@
         "tags": ["identity"]
       }
     },
+    "/api/v1/contents": {
+      "get": {
+        "description": "The learner's content items, newest first, in keyset pages.",
+        "operationId": "list_contents_api_v1_contents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Contents",
+        "tags": ["content"]
+      },
+      "post": {
+        "description": "Confirm an upload: the file must be in storage with the declared size.\n\nCreates a pending content item and queues its conversion. Confirming the same\nupload again returns the same item with 200; an `Idempotency-Key` replays the\nfirst response exactly.",
+        "operationId": "add_content_api_v1_contents_post",
+        "parameters": [
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmUpload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentItem"
+                }
+              }
+            },
+            "description": "Already confirmed"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Content",
+        "tags": ["content"]
+      }
+    },
     "/api/v1/events": {
       "get": {
         "description": "Stream the learner's live events (System Design 9.1).\n\nEach event carries only its type and the id of the resource to refetch.",
@@ -398,6 +700,101 @@
         },
         "summary": "Me",
         "tags": ["identity"]
+      }
+    },
+    "/api/v1/uploads": {
+      "post": {
+        "description": "Check the declared file and return a signed URL to PUT it straight to storage.\n\nRefused before any byte is sent: an unsupported type (`unsupported_file_type`), a\nfile over the size limit (`file_too_large`), or one that would take the account\nover its storage cap (`storage_full`). Rate-limited per learner.",
+        "operationId": "start_upload_api_v1_uploads_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadTarget"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Upload",
+        "tags": ["content"]
+      }
+    },
+    "/api/v1/uploads/usage": {
+      "get": {
+        "description": "How much of the per-account upload storage is used, and the per-file limit (D5).",
+        "operationId": "upload_usage_api_v1_uploads_usage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageUse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Upload Usage",
+        "tags": ["content"]
+      }
+    },
+    "/api/v1/uploads/{upload_id}": {
+      "delete": {
+        "description": "Forget an upload that was cancelled before it was added to the library.",
+        "operationId": "cancel_upload_api_v1_uploads__upload_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "upload_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Upload Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Upload",
+        "tags": ["content"]
       }
     }
   }

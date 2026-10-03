@@ -29,7 +29,10 @@ READY_FILE = Path("/tmp/listenup-worker-ready")
 
 # Modules whose job handlers this process registers. Each feature story adds its
 # module's jobs package here.
-JOB_MODULES: list[str] = ["listenup.modules.identity.jobs"]
+JOB_MODULES: list[str] = [
+    "listenup.modules.identity.jobs",
+    "listenup.modules.content.jobs",
+]
 
 
 @dataclass(frozen=True)

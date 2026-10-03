@@ -95,6 +95,34 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/contents': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Contents
+     * @description The learner's content items, newest first, in keyset pages.
+     */
+    get: operations['list_contents_api_v1_contents_get'];
+    put?: never;
+    /**
+     * Add Content
+     * @description Confirm an upload: the file must be in storage with the declared size.
+     *
+     *     Creates a pending content item and queues its conversion. Confirming the same
+     *     upload again returns the same item with 200; an `Idempotency-Key` replays the
+     *     first response exactly.
+     */
+    post: operations['add_content_api_v1_contents_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/events': {
     parameters: {
       query?: never;
@@ -151,10 +179,127 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/uploads': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Start Upload
+     * @description Check the declared file and return a signed URL to PUT it straight to storage.
+     *
+     *     Refused before any byte is sent: an unsupported type (`unsupported_file_type`), a
+     *     file over the size limit (`file_too_large`), or one that would take the account
+     *     over its storage cap (`storage_full`). Rate-limited per learner.
+     */
+    post: operations['start_upload_api_v1_uploads_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/uploads/usage': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Upload Usage
+     * @description How much of the per-account upload storage is used, and the per-file limit (D5).
+     */
+    get: operations['upload_usage_api_v1_uploads_usage_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/uploads/{upload_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Cancel Upload
+     * @description Forget an upload that was cancelled before it was added to the library.
+     */
+    delete: operations['cancel_upload_api_v1_uploads__upload_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /**
+     * ConfirmUpload
+     * @description Add an uploaded file to the library. YouTube links (#37) will be another shape.
+     */
+    ConfirmUpload: {
+      /**
+       * Title
+       * @description Defaults to the file name without its extension
+       */
+      title?: string | null;
+      /**
+       * Upload Id
+       * Format: uuid
+       */
+      upload_id: string;
+    };
+    /** ContentItem */
+    ContentItem: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Duration Ms */
+      duration_ms: number | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: 'upload' | 'youtube';
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'pending' | 'downloading' | 'playable' | 'failed' | 'expired';
+      /** Title */
+      title: string;
+    };
+    /** ContentList */
+    ContentList: {
+      /** Items */
+      items: components['schemas']['ContentItem'][];
+      /**
+       * Next Cursor
+       * @description Pass as `cursor` for the next page
+       */
+      next_cursor: string | null;
+    };
     /** Credentials */
     Credentials: {
       /** Email */
@@ -197,6 +342,55 @@ export interface components {
     PasswordResetRequested: {
       /** Detail */
       detail: string;
+    };
+    /** StorageUse */
+    StorageUse: {
+      /** Max File Bytes */
+      max_file_bytes: number;
+      /** Quota Bytes */
+      quota_bytes: number;
+      /** Used Bytes */
+      used_bytes: number;
+    };
+    /** UploadRequest */
+    UploadRequest: {
+      /** Content Type */
+      content_type: string;
+      /** Filename */
+      filename: string;
+      /**
+       * Size Bytes
+       * @description The file's exact size; storage refuses any other
+       */
+      size_bytes: number;
+    };
+    /**
+     * UploadTarget
+     * @description Where and how the browser sends the file: one PUT with exactly these headers.
+     */
+    UploadTarget: {
+      /**
+       * Expires At
+       * Format: date-time
+       * @description The upload must start before this time
+       */
+      expires_at: string;
+      /** Headers */
+      headers: {
+        [key: string]: string;
+      };
+      /**
+       * Method
+       * @constant
+       */
+      method: 'PUT';
+      /**
+       * Upload Id
+       * Format: uuid
+       */
+      upload_id: string;
+      /** Url */
+      url: string;
     };
     /** ValidationError */
     ValidationError: {
@@ -368,6 +562,83 @@ export interface operations {
       };
     };
   };
+  list_contents_api_v1_contents_get: {
+    parameters: {
+      query?: {
+        cursor?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ContentList'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  add_content_api_v1_contents_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ConfirmUpload'];
+      };
+    };
+    responses: {
+      /** @description Already confirmed */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ContentItem'];
+        };
+      };
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ContentItem'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   events_api_v1_events_get: {
     parameters: {
       query?: never;
@@ -437,6 +708,88 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['Me'];
+        };
+      };
+    };
+  };
+  start_upload_api_v1_uploads_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UploadRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UploadTarget'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  upload_usage_api_v1_uploads_usage_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['StorageUse'];
+        };
+      };
+    };
+  };
+  cancel_upload_api_v1_uploads__upload_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        upload_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

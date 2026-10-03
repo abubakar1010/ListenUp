@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     password_reset_ip_limit: int = 10  # reset requests (and, separately, resets) per IP per hour
     password_reset_email_limit: int = 3  # reset emails per address per hour
 
+    # File uploads (FR-CI-1, FR-CI-3, D5). Sizes are binary: 500 MB is 500 MiB, as
+    # operating systems show file sizes.
+    upload_max_bytes: int = 500 * 1024 * 1024  # per file
+    upload_quota_bytes: int = 2 * 1024 * 1024 * 1024  # stored uploads per account
+    upload_confirm_hours: int = 24  # an unconfirmed upload can be confirmed this long
+    upload_rate_limit: int = 30  # upload requests per learner per hour
+
     # First retry waits about this long; later ones four times longer each time.
     job_retry_base_seconds: float = 10.0
 
