@@ -1,12 +1,14 @@
-import type { ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { PageLoading } from '../../app/PageLoading';
 import { usePageTitle } from '../../app/usePageTitle';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
-import { CheckIcon } from '../../components/icons';
-import { useSession, type Session } from './api';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { CheckIcon, LockIcon } from '../../components/icons';
+import { useSession, useSkipStep, type Session } from './api';
+import { ChangeEntryPanel } from './ChangeEntryPanel';
 import { PracticeLayout } from './PracticeLayout';
 import { STEP_DESCRIPTIONS, STEP_NAMES, STEP_RULES } from './plan';
 import { StepProgress } from './StepProgress';
@@ -52,13 +54,106 @@ function SessionView({ session }: { session: Session }) {
       clipTitle={session.content_title}
       clipMeta={passage}
       back={{ to: '/library', label: 'Library' }}
-      progress={<StepProgress session={session} />}
+      progress={<Progress session={session} />}
       player={<Slot name="Player">The clip's player will show here.</Slot>}
       rule={open ? STEP_RULES[open] : 'Plan complete.'}
       workLabel={open ? STEP_NAMES[open] : 'Plan complete'}
     >
       {open ? <OpenStep session={session} /> : <Finished session={session} />}
     </PracticeLayout>
+  );
+}
+
+/** The step progress, with "Change entry" until Transcript starts (FR-PL-5). */
+function Progress({ session }: { session: Session }) {
+  const [editing, setEditing] = useState(false);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const canChange = session.status === 'active' && !session.entry_locked;
+
+  let action = null;
+  if (canChange) {
+    action = (
+      <button
+        ref={toggle}
+        type="button"
+        className={buttonClass('quiet')}
+        aria-expanded={editing}
+        onClick={() => setEditing((value) => !value)}
+      >
+        Change entry
+      </button>
+    );
+  } else if (session.status === 'active') {
+    action = (
+      <span className="flex items-center gap-1 text-body-s text-ink-muted">
+        <LockIcon className="size-4" />
+        Entry locked
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <StepProgress session={session} actions={action} />
+      {editing && (canChange || session.entry_locked) && (
+        <ChangeEntryPanel
+          session={session}
+          onClose={() => {
+            setEditing(false);
+            toggle.current?.focus();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+const SKIP_COPY = {
+  card: {
+    title: 'Skip Card?',
+    body: "Cards keep the sounds you missed so you can review them later. If you skip, you can't make cards for this session.",
+    confirm: 'Skip Card',
+    cancel: 'Make a card',
+  },
+  shadow: {
+    title: 'Skip Shadow?',
+    body: 'Shadow trains your rhythm on the part with your marks. If you skip, your plan ends here and is marked complete without Shadow.',
+    confirm: 'Skip Shadow and finish',
+    cancel: 'Do Shadow',
+  },
+} as const;
+
+/** Skip Card or Shadow, behind a confirmation (FR-PL-7). Other steps have no skip. */
+function SkipControl({ session, step }: { session: Session; step: 'card' | 'shadow' }) {
+  const [confirming, setConfirming] = useState(false);
+  const skip = useSkipStep(session);
+  const copy = SKIP_COPY[step];
+  return (
+    <>
+      <button
+        type="button"
+        className={buttonClass('secondary', 'self-start')}
+        onClick={() => {
+          skip.reset();
+          setConfirming(true);
+        }}
+      >
+        Skip {STEP_NAMES[step]}
+      </button>
+      {confirming && (
+        <ConfirmDialog
+          title={copy.title}
+          confirmLabel={copy.confirm}
+          cancelLabel={copy.cancel}
+          busy={skip.isPending}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => skip.mutate(step, { onSuccess: () => setConfirming(false) })}
+          footer={skip.isError ? <ErrorPanel error={skip.error} /> : undefined}
+        >
+          <p>{copy.body}</p>
+        </ConfirmDialog>
+      )}
+    </>
   );
 }
 
@@ -74,6 +169,10 @@ function OpenStep({ session }: { session: Session }) {
       </p>
       <p>{STEP_DESCRIPTIONS[open]}</p>
       <p className="text-body-s text-ink-muted">This step's exercise will open here.</p>
+      {open === 'transcript' && (
+        <p className="text-body-s">Transcript can't be skipped: it shows what you missed.</p>
+      )}
+      {(open === 'card' || open === 'shadow') && <SkipControl session={session} step={open} />}
     </div>
   );
 }

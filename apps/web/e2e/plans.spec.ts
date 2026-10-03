@@ -108,6 +108,32 @@ async function fakeApi(page: Page, sessions: FakeSession[] = []) {
     const session = match && sessions.find((s) => s.id === match[1]);
     if (match && !session) return problem(route, 404, 'session_not_found', 'No such session.');
     if (session && !match![2] && method === 'GET') return route.fulfill({ json: view(session) });
+    if (session && method !== 'GET') {
+      const body = request.postDataJSON() as { version: number; entry?: Entry };
+      if (body.version !== session.version) {
+        return problem(route, 409, 'session_changed', 'The session changed. Reload and try again.');
+      }
+      if (match![2] === '/entry') {
+        if (view(session).entry_locked) {
+          return problem(route, 409, 'entry_locked', 'The entry choice cannot change now.');
+        }
+        session.entry = body.entry!;
+        const next = pathFor(session.entry).find((step) => session.statuses[step] !== 'done');
+        session.statuses = Object.fromEntries(
+          Object.entries(session.statuses).filter(([, status]) => status === 'done'),
+        );
+        session.statuses[next!] = 'open';
+      } else {
+        const step = match![2]!.split('/')[2] as StepName;
+        if (!['card', 'shadow'].includes(step)) {
+          return problem(route, 409, 'step_not_skippable', 'Only Card and Shadow can be skipped.');
+        }
+        session.statuses[step] = 'skipped';
+        if (step === 'card') session.statuses.shadow = 'open';
+      }
+      session.version += 1;
+      return route.fulfill({ json: view(session) });
+    }
     return problem(route, 404, 'not_found', path);
   });
   return { posts };
@@ -177,4 +203,74 @@ test('a part of the clip is chosen with the keyboard at 360 px', async ({ page }
     );
     expect(overflow, `horizontal overflow on ${path}`).toBeLessThanOrEqual(0);
   }
+});
+
+test('before Transcript, adding Dictation makes the plan 5 steps', async ({ page }) => {
+  await fakeApi(page, [
+    {
+      id: 's-1',
+      entry: 'blind',
+      passage: { start_ms: 0, end_ms: 150_000 },
+      version: 0,
+      statuses: { blind: 'open' },
+    },
+  ]);
+  await page.goto('/sessions/s-1');
+
+  await expect(page.getByText('Step 1 of 4')).toBeVisible();
+  await page.getByRole('button', { name: 'Change entry' }).click();
+  const panel = page.getByRole('region', { name: 'Change how you start' });
+  await panel.getByRole('checkbox', { name: /Dictation/ }).check();
+  await expect(panel.getByText('Your plan becomes: 5 steps')).toBeVisible();
+  await panel.getByRole('button', { name: 'Save change' }).click();
+
+  await expect(page.getByText('Step 1 of 5')).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Plan steps' }).getByRole('listitem')).toHaveCount(5);
+  await expect(page.getByRole('button', { name: 'Change entry' })).toBeFocused();
+});
+
+test('Card and Shadow are skipped only after confirming, which completes the plan', async ({
+  page,
+}) => {
+  await fakeApi(page, [
+    {
+      id: 's-1',
+      entry: 'dictation',
+      passage: { start_ms: 0, end_ms: 150_000 },
+      version: 2,
+      statuses: { dictation: 'done', transcript: 'done', card: 'open' },
+    },
+  ]);
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto('/sessions/s-1');
+
+  await expect(page.getByText('Step 3 of 4')).toBeVisible();
+  await expect(page.getByText('Entry locked')).toBeVisible();
+  const skipCard = page.getByRole('button', { name: 'Skip Card' });
+  await skipCard.focus();
+  await page.keyboard.press('Enter');
+
+  const dialog = page.getByRole('dialog', { name: 'Skip Card?' });
+  await expect(dialog.getByRole('button', { name: 'Make a card' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByRole('button', { name: 'Skip Card' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByRole('button', { name: 'Make a card' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(skipCard).toBeFocused();
+  await expect(page.getByText('Step 3 of 4')).toBeVisible();
+
+  await skipCard.click();
+  await dialog.getByRole('button', { name: 'Skip Card' }).click();
+  await expect(page.getByText('Step 4 of 4')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Skip Shadow' }).click();
+  await page.getByRole('button', { name: 'Skip Shadow and finish' }).click();
+  await expect(page.getByText('All 4 steps finished')).toBeVisible();
+  await expect(page.getByText('Skipped: Card and Shadow.')).toBeVisible();
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
 });

@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { api } from '../../api/client';
 import type { components } from '../../api/schema';
 import { LIBRARY_KEY } from '../library/useLibrary';
+import type { Entry, Step } from './plan';
 
 export type Session = components['schemas']['Session'];
 export type SessionList = components['schemas']['SessionList'];
@@ -49,6 +50,43 @@ export function useStartSession() {
       void queryClient.invalidateQueries({ queryKey: LIBRARY_KEY });
     },
   });
+}
+
+function useSessionWrite<Vars>(
+  session: Session,
+  write: (vars: Vars, version: number) => Promise<Session>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: Vars) => write(vars, session.version),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(sessionKey(updated.id), updated);
+      void queryClient.invalidateQueries({ queryKey: SESSIONS_LIST_KEY });
+      void queryClient.invalidateQueries({ queryKey: LIBRARY_KEY });
+    },
+    // Refused (locked, changed elsewhere): load the session as the server has it.
+    onError: () => queryClient.invalidateQueries({ queryKey: sessionKey(session.id) }),
+  });
+}
+
+/** Change Blind, Dictation or both until Transcript opens (FR-PL-5). */
+export function useChangeEntry(session: Session) {
+  return useSessionWrite(session, (entry: Entry, version) =>
+    api<Session>(`/sessions/${session.id}/entry`, {
+      method: 'PATCH',
+      body: { entry, version },
+    }),
+  );
+}
+
+/** Skip Card or Shadow after the learner confirmed (FR-PL-7). */
+export function useSkipStep(session: Session) {
+  return useSessionWrite(session, (step: Step, version) =>
+    api<Session>(`/sessions/${session.id}/steps/${step}/skip`, {
+      method: 'POST',
+      body: { confirmed: true, version },
+    }),
+  );
 }
 
 /** "Step 2 of 5", or "Complete" once the plan is finished. */
