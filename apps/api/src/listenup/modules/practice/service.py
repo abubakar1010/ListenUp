@@ -62,6 +62,7 @@ __all__ = [
     "finish_attempt",
     "get_attempt",
     "get_session",
+    "latest_attempt",
     "list_sessions",
     "require_reached",
     "require_step",
@@ -522,6 +523,16 @@ async def start_attempt(db: AsyncSession, session_id: uuid.UUID, mode: Step) -> 
 async def active_attempt(db: AsyncSession, session_id: uuid.UUID, mode: Step) -> Attempt | None:
     _check_mode(mode)
     row = await repository.active_attempt(db, session_id, mode.value)
+    return _attempt(row) if row else None
+
+
+async def latest_attempt(db: AsyncSession, session_id: uuid.UUID, mode: Step) -> Attempt | None:
+    """The newest attempt at a step, live or ended; None before the first one.
+
+    A mode uses it to tell the learner how the last try ended, for example after a reload.
+    """
+    _check_mode(mode)
+    row = await repository.latest_attempt(db, session_id, mode.value)
     return _attempt(row) if row else None
 
 

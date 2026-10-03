@@ -357,3 +357,21 @@ async def finish_attempt(
         )
     ).first()
     return AttemptRow(*row) if row else None
+
+
+async def latest_attempt(
+    session: AsyncSession, session_id: uuid.UUID, mode: str
+) -> AttemptRow | None:
+    """The newest attempt at a step, live or ended (attempts_session_idx)."""
+    row = (
+        await session.execute(
+            text(f"""
+            SELECT {_ATTEMPT_COLUMNS} FROM practice.attempts
+             WHERE session_id = :session_id AND mode = :mode
+             ORDER BY started_at DESC, id DESC
+             LIMIT 1
+            """),
+            {"session_id": session_id, "mode": mode},
+        )
+    ).first()
+    return AttemptRow(*row) if row else None
