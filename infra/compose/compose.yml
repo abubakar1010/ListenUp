@@ -1,0 +1,105 @@
+# Local development stack. Start it from the repository root with `docker compose up`.
+# The web client runs outside Compose with the Vite dev server (apps/web: pnpm dev).
+
+x-backend-env: &backend-env
+  LISTENUP_ENVIRONMENT: local
+  LISTENUP_DATABASE_URL: postgresql://listenup:listenup@postgres:5432/listenup
+  LISTENUP_S3_ENDPOINT_URL: http://storage:9000
+  LISTENUP_S3_BUCKET: listenup
+  LISTENUP_SMTP_HOST: mailpit
+  LISTENUP_SMTP_PORT: "1025"
+
+x-backend: &backend
+  build:
+    context: ../..
+    dockerfile: infra/docker/backend.Dockerfile
+  environment: *backend-env
+  volumes:
+    # Live code for local development; the package is installed in editable mode.
+    - ../../apps/api/src:/app/src:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+    queue-schema:
+      condition: service_completed_successfully
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: listenup
+      POSTGRES_PASSWORD: listenup
+      POSTGRES_DB: listenup
+    ports: ["5432:5432"]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U listenup -d listenup"]
+      interval: 2s
+      retries: 30
+
+  # S3-compatible object storage for local development (SeaweedFS; MinIO images are no
+  # longer published on Docker Hub). Production uses any S3-compatible provider.
+  storage:
+    image: chrislusf/seaweedfs:latest
+    command: server -dir=/data -s3 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json
+    ports: ["9000:9000"]
+    volumes:
+      - storage-data:/data
+      - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "echo cluster.check | weed shell -master=localhost:9333 >/dev/null 2>&1"]
+      interval: 3s
+      retries: 40
+
+  storage-bucket:
+    image: chrislusf/seaweedfs:latest
+    depends_on:
+      storage:
+        condition: service_healthy
+    entrypoint: ["sh", "-c", "echo 's3.bucket.create -name listenup' | weed shell -master=storage:9333"]
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ["8025:8025", "1025:1025"]
+
+  # Creates the job-queue tables once. Replaced by Alembic migrations in the migrations story.
+  queue-schema:
+    build:
+      context: ../..
+      dockerfile: infra/docker/backend.Dockerfile
+      target: worker
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "python -c \"import psycopg,os,sys; c=psycopg.connect(os.environ['LISTENUP_DATABASE_URL']);
+      sys.exit(0 if c.execute(\\\"select to_regclass('procrastinate_jobs')\\\").fetchone()[0] else 1)\"
+      || procrastinate --app=listenup.worker.app schema --apply"
+
+  api:
+    <<: *backend
+    build:
+      context: ../..
+      dockerfile: infra/docker/backend.Dockerfile
+      target: api
+    command: uvicorn listenup.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+    ports: ["8000:8000"]
+
+  worker:
+    <<: *backend
+    build:
+      context: ../..
+      dockerfile: infra/docker/backend.Dockerfile
+      target: worker
+
+  worker-media:
+    <<: *backend
+    build:
+      context: ../..
+      dockerfile: infra/docker/backend.Dockerfile
+      target: worker-media
+
+volumes:
+  postgres-data:
+  storage-data:
