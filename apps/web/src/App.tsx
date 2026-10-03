@@ -13,6 +13,7 @@ import { RegisterPage, SignInPage } from './auth/pages';
 // The sign-in and register pages stay in the first bundle, because signed-out
 // visitors land on them.
 const LibraryPage = lazy(() => import('./features/library/LibraryPage'));
+const AddClipPage = lazy(() => import('./features/library/AddClipPage'));
 const SessionPage = lazy(() => import('./features/session/SessionPage'));
 const NotFoundPage = lazy(() => import('./app/NotFoundPage'));
 const PasswordResetRequestPage = lazy(() =>
@@ -76,6 +77,7 @@ export function App() {
         <Route element={<RequireAuth />}>
           <Route element={<AppLayout />}>
             <Route path="/library" element={<LibraryPage />} />
+            <Route path="/library/add" element={<AddClipPage />} />
           </Route>
           <Route path="/sessions/:sessionId" element={<SessionPage />} />
         </Route>
