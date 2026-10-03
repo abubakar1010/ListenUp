@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "listenup",
+      "credentials": [{ "accessKey": "listenup", "secretKey": "listenup-local-only" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

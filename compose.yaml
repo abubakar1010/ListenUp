@@ -1,0 +1,3 @@
+# Entry point so `docker compose up` works from the repository root.
+include:
+  - infra/compose/compose.yml
