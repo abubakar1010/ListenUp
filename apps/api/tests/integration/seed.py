@@ -14,9 +14,11 @@ development. It imports nothing from pytest, so it runs outside the tests too.
 import asyncio
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 import psycopg
 
+from listenup.modules.blind import service as blind
 from listenup.modules.practice import service as practice
 from listenup.modules.practice.service import Entry, Passage, Step
 from listenup.platform.database import Database
@@ -42,6 +44,10 @@ class SeededLearner:
     pending_upload_size: int
     sessions: dict[str, uuid.UUID] = field(default_factory=dict)
     """A session on `content_id` (entry: both) per stage in SESSION_STAGES."""
+    blind_attempt_id: uuid.UUID | None = None
+    """A Blind attempt in progress on the "blind" session, started just now."""
+    blind_media_token: str = ""
+    """The token of that attempt's media URL."""
 
     def ids(self) -> list[str]:
         """Every id this learner owns, as text: none may appear in another learner's view."""
@@ -54,6 +60,7 @@ class SeededLearner:
                 self.confirmed_upload_id,
                 self.pending_upload_id,
                 *self.sessions.values(),
+                *([self.blind_attempt_id] if self.blind_attempt_id else []),
             )
         ]
 
@@ -154,12 +161,27 @@ async def add_sessions(
     return sessions
 
 
+async def add_blind_attempt(
+    owner_url: str, user_id: uuid.UUID, session_id: uuid.UUID
+) -> tuple[uuid.UUID, str]:
+    """A Blind attempt in progress on a session whose Blind step is open, through the
+    blind service; returns its id and its media token."""
+    database = Database(sqlalchemy_ready(owner_url), pool_size=1)
+    try:
+        async with database.transaction(user_id) as db:
+            started = await blind.start(db, session_id, datetime.now(UTC))
+    finally:
+        await database.dispose()
+    return started.attempt.id, started.media_token
+
+
 def seed_learner_data(owner_url: str, user_id: uuid.UUID) -> SeededLearner:
     """A clip, a pending upload and a session at each step for an existing learner."""
     media_id, content_id, upload_id = add_clip(owner_url, user_id)
     size = 2_000_000
     pending_id, pending_key = add_pending_upload(owner_url, user_id, size)
     sessions = asyncio.run(add_sessions(owner_url, user_id, content_id))
+    attempt_id, token = asyncio.run(add_blind_attempt(owner_url, user_id, sessions["blind"]))
     return SeededLearner(
         user_id=user_id,
         content_id=content_id,
@@ -169,4 +191,6 @@ def seed_learner_data(owner_url: str, user_id: uuid.UUID) -> SeededLearner:
         pending_upload_key=pending_key,
         pending_upload_size=size,
         sessions=sessions,
+        blind_attempt_id=attempt_id,
+        blind_media_token=token,
     )

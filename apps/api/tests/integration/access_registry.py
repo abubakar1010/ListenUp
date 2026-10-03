@@ -176,6 +176,33 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         params=lambda w: {"session_id": w.a.sessions["card"], "step": "card"},
         body=lambda w: {"confirmed": True, "version": 0},
     ),
+    # -- blind -------------------------------------------------------------------------
+    ("GET", "/api/v1/sessions/{session_id}/blind"): Owned(
+        "session_not_found", params=lambda w: {"session_id": w.a.sessions["blind"]}
+    ),
+    ("POST", "/api/v1/sessions/{session_id}/blind/attempts"): Owned(
+        "session_not_found", params=lambda w: {"session_id": w.a.sessions["blind"]}
+    ),
+    ("POST", "/api/v1/blind/attempts/{attempt_id}/heartbeat"): Owned(
+        "attempt_not_found",
+        params=lambda w: {"attempt_id": w.a.blind_attempt_id},
+        body=lambda w: {"position_ms": 0, "state": "playing", "visible": True},
+    ),
+    ("POST", "/api/v1/blind/attempts/{attempt_id}/void"): Owned(
+        "attempt_not_found",
+        params=lambda w: {"attempt_id": w.a.blind_attempt_id},
+        body=lambda w: {"reason": "left_page"},
+    ),
+    # B holds A's attempt id and A's valid token, and still gets nothing.
+    ("GET", "/api/v1/blind/attempts/{attempt_id}/media/{token}"): Owned(
+        "attempt_not_found",
+        params=lambda w: {"attempt_id": w.a.blind_attempt_id, "token": w.a.blind_media_token},
+    ),
+    ("POST", "/api/v1/blind/attempts/{attempt_id}/gist"): Owned(
+        "attempt_not_found",
+        params=lambda w: {"attempt_id": w.a.blind_attempt_id},
+        body=lambda w: {"text": "One two three. Four five six. Seven eight nine."},
+    ),
     # -- media -------------------------------------------------------------------------
     ("GET", "/api/v1/media/{media_object_id}"): Owned(
         "media_not_found", params=lambda w: {"media_object_id": w.a.media_id}

@@ -95,6 +95,97 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/blind/attempts/{attempt_id}/gist': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Submit Gist
+     * @description Submit the three-sentence gist after the whole passage has played (FR-BL-4, #65).
+     *
+     *     Completes the Blind step. An `Idempotency-Key` makes a retry return the first answer.
+     */
+    post: operations['submit_gist_api_v1_blind_attempts__attempt_id__gist_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/blind/attempts/{attempt_id}/heartbeat': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Heartbeat
+     * @description Report the player's position every 5 s (FR-BL-3, System Design 9.2).
+     *
+     *     The answer is `continue`, `resume` (the one resume after an interruption the
+     *     learner did not cause, D13 and D18) or `stop` with the attempt's `void_reason`.
+     */
+    post: operations['heartbeat_api_v1_blind_attempts__attempt_id__heartbeat_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/blind/attempts/{attempt_id}/media/{token}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Attempt Media
+     * @description The passage's audio for this attempt only (#62). Range requests go to storage.
+     *
+     *     The token in the path comes from starting the attempt; the redirect's signed URL
+     *     lives only until the attempt's window ends.
+     */
+    get: operations['attempt_media_api_v1_blind_attempts__attempt_id__media__token__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/blind/attempts/{attempt_id}/void': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Void Attempt
+     * @description The page reports leaving, a reload or a seek: the listen ends (FR-BL-3).
+     *
+     *     Sent with `fetch(..., {keepalive: true})` from `pagehide` and `visibilitychange`.
+     *     After the whole passage has played it changes nothing.
+     */
+    post: operations['void_attempt_api_v1_blind_attempts__attempt_id__void_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/contents': {
     parameters: {
       query?: never;
@@ -308,6 +399,49 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sessions/{session_id}/blind': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Blind Step
+     * @description The Blind step with its newest attempt, so a reloaded page knows where it stands.
+     */
+    get: operations['get_blind_step_api_v1_sessions__session_id__blind_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/blind/attempts': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Start Attempt
+     * @description Start one listen of the passage (FR-BL-1, #62).
+     *
+     *     Returns a media URL bound to this attempt. The player sends a heartbeat every
+     *     `heartbeat_interval_ms` from now on.
+     */
+    post: operations['start_attempt_api_v1_sessions__session_id__blind_attempts_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sessions/{session_id}/entry': {
     parameters: {
       query?: never;
@@ -421,6 +555,83 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /**
+     * Action
+     * @enum {string}
+     */
+    Action: 'continue' | 'resume' | 'stop';
+    /**
+     * AttemptStatus
+     * @enum {string}
+     */
+    AttemptStatus: 'active' | 'submitted' | 'voided';
+    /**
+     * BlindAttempt
+     * @description One try at the Blind step. Positions are in the clip, in milliseconds.
+     */
+    BlindAttempt: {
+      /** Finished At */
+      finished_at: string | null;
+      /** Gist Text */
+      gist_text: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Listen Complete
+       * @description The whole passage has played: write the gist
+       */
+      listen_complete: boolean;
+      /** Passage End Ms */
+      passage_end_ms: number;
+      /** Passage Start Ms */
+      passage_start_ms: number;
+      /**
+       * Position Ms
+       * @description The last position the server accepted
+       */
+      position_ms: number;
+      /**
+       * Resume Count
+       * @description 0 or 1: the one resume after an interruption (D13)
+       */
+      resume_count: number;
+      /**
+       * Resume Stop Ms
+       * @description Where the interruption that resumed stopped
+       */
+      resume_stop_ms: number | null;
+      /**
+       * Session Id
+       * Format: uuid
+       */
+      session_id: string;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      status: components['schemas']['AttemptStatus'];
+      /** @description Why the attempt ended, when voided */
+      void_reason: components['schemas']['VoidReason'] | null;
+    };
+    /** BlindStep */
+    BlindStep: {
+      /** @description The newest attempt, live or ended */
+      attempt: components['schemas']['BlindAttempt'] | null;
+      /** Passage End Ms */
+      passage_end_ms: number;
+      /** Passage Start Ms */
+      passage_start_ms: number;
+      /**
+       * Session Id
+       * Format: uuid
+       */
+      session_id: string;
+      step_status: components['schemas']['StepStatus'];
+    };
     /** ChangeEntry */
     ChangeEntry: {
       entry: components['schemas']['Entry'];
@@ -563,11 +774,71 @@ export interface components {
      * @enum {string}
      */
     Entry: 'blind' | 'dictation' | 'both';
+    /** GistIn */
+    GistIn: {
+      /**
+       * Text
+       * @description Three sentences or more
+       */
+      text: string;
+    };
+    /** GistSubmitted */
+    GistSubmitted: {
+      attempt: components['schemas']['BlindAttempt'];
+      /** @description The step that opened next */
+      open_step: components['schemas']['Step'] | null;
+      /** Session Version */
+      session_version: number;
+    };
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
       detail?: components['schemas']['ValidationError'][];
     };
+    /** HeartbeatIn */
+    HeartbeatIn: {
+      /**
+       * Buffering Ms
+       * @description Time spent waiting for data since the last beat
+       * @default 0
+       */
+      buffering_ms: number;
+      /** @description With `interrupted`: a network stall or a device pause */
+      interruption?: components['schemas']['Interruption'] | null;
+      /**
+       * Interruption Ms
+       * @description How long a device pause lasted
+       * @default 0
+       */
+      interruption_ms: number;
+      /**
+       * Position Ms
+       * @description The player's position in the clip
+       */
+      position_ms: number;
+      state: components['schemas']['PlayerState'];
+      /**
+       * Visible
+       * @description The page is visible (not hidden)
+       * @default true
+       */
+      visible: boolean;
+    };
+    /** HeartbeatOut */
+    HeartbeatOut: {
+      /** @description `continue`; `resume`: carry on from `resume_from_ms` after `resume_delay_ms` once the audio is ready; `stop`: the attempt has ended */
+      action: components['schemas']['Action'];
+      attempt: components['schemas']['BlindAttempt'];
+      /** Resume Delay Ms */
+      resume_delay_ms: number;
+      /** Resume From Ms */
+      resume_from_ms: number | null;
+    };
+    /**
+     * Interruption
+     * @enum {string}
+     */
+    Interruption: 'network' | 'device';
     /** LibraryItem */
     LibraryItem: {
       /**
@@ -652,6 +923,12 @@ export interface components {
       /** Detail */
       detail: string;
     };
+    /**
+     * PlayerState
+     * @description What the player says it is doing when it sends a beat.
+     * @enum {string}
+     */
+    PlayerState: 'playing' | 'buffering' | 'interrupted' | 'resuming' | 'ended';
     /**
      * Session
      * @description A practice session with its plan, for "Step N of M" (UI-1).
@@ -761,6 +1038,22 @@ export interface components {
       entry: components['schemas']['Entry'];
       passage: components['schemas']['PassageRange'];
     };
+    /** StartedAttempt */
+    StartedAttempt: {
+      attempt: components['schemas']['BlindAttempt'];
+      /** Heartbeat Interval Ms */
+      heartbeat_interval_ms: number;
+      /**
+       * Media Url
+       * @description The passage's audio for this attempt only; it stops working shortly after the passage's length
+       */
+      media_url: string;
+      /**
+       * Resume Delay Ms
+       * @description The wait before playback carries on (D18)
+       */
+      resume_delay_ms: number;
+    };
     /**
      * Step
      * @enum {string}
@@ -833,6 +1126,19 @@ export interface components {
       /** Error Type */
       type: string;
     };
+    /** VoidIn */
+    VoidIn: {
+      /**
+       * Reason
+       * @enum {string}
+       */
+      reason: 'left_page' | 'reload' | 'seek';
+    };
+    /**
+     * VoidReason
+     * @enum {string}
+     */
+    VoidReason: 'left_page' | 'reload' | 'seek' | 'missed_heartbeat' | 'too_fast' | 'interrupted';
   };
   responses: never;
   parameters: never;
@@ -978,6 +1284,191 @@ export interface operations {
         content: {
           'application/json': components['schemas']['Me'];
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  submit_gist_api_v1_blind_attempts__attempt_id__gist_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['GistIn'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GistSubmitted'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `listen_incomplete`, `attempt_closed` or `step_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `gist_too_short` (with `sentences`) or `gist_too_long` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  heartbeat_api_v1_blind_attempts__attempt_id__heartbeat_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['HeartbeatIn'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HeartbeatOut'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  attempt_media_api_v1_blind_attempts__attempt_id__media__token__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+        token: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to a signed storage URL that ends with the attempt */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `attempt_not_found` or `media_not_found` (wrong token) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `media_not_ready` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `media_expired`: the attempt ended or its window is over */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  void_attempt_api_v1_blind_attempts__attempt_id__void_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['VoidIn'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BlindAttempt'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Validation Error */
       422: {
@@ -1405,6 +1896,96 @@ export interface operations {
       };
       /** @description `session_not_found` */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_blind_step_api_v1_sessions__session_id__blind_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BlindStep'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` or `step_not_in_plan` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  start_attempt_api_v1_sessions__session_id__blind_attempts_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['StartedAttempt'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked`, or `attempt_active` with `attempt_id` */
+      409: {
         headers: {
           [name: string]: unknown;
         };

@@ -1,6 +1,159 @@
 {
   "components": {
     "schemas": {
+      "Action": {
+        "enum": ["continue", "resume", "stop"],
+        "title": "Action",
+        "type": "string"
+      },
+      "AttemptStatus": {
+        "enum": ["active", "submitted", "voided"],
+        "title": "AttemptStatus",
+        "type": "string"
+      },
+      "BlindAttempt": {
+        "description": "One try at the Blind step. Positions are in the clip, in milliseconds.",
+        "properties": {
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "gist_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gist Text"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "listen_complete": {
+            "description": "The whole passage has played: write the gist",
+            "title": "Listen Complete",
+            "type": "boolean"
+          },
+          "passage_end_ms": {
+            "title": "Passage End Ms",
+            "type": "integer"
+          },
+          "passage_start_ms": {
+            "title": "Passage Start Ms",
+            "type": "integer"
+          },
+          "position_ms": {
+            "description": "The last position the server accepted",
+            "title": "Position Ms",
+            "type": "integer"
+          },
+          "resume_count": {
+            "description": "0 or 1: the one resume after an interruption (D13)",
+            "title": "Resume Count",
+            "type": "integer"
+          },
+          "resume_stop_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the interruption that resumed stopped",
+            "title": "Resume Stop Ms"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AttemptStatus"
+          },
+          "void_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoidReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the attempt ended, when voided"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "status",
+          "void_reason",
+          "started_at",
+          "finished_at",
+          "passage_start_ms",
+          "passage_end_ms",
+          "position_ms",
+          "resume_count",
+          "resume_stop_ms",
+          "listen_complete",
+          "gist_text"
+        ],
+        "title": "BlindAttempt",
+        "type": "object"
+      },
+      "BlindStep": {
+        "properties": {
+          "attempt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlindAttempt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The newest attempt, live or ended"
+          },
+          "passage_end_ms": {
+            "title": "Passage End Ms",
+            "type": "integer"
+          },
+          "passage_start_ms": {
+            "title": "Passage Start Ms",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "step_status": {
+            "$ref": "#/components/schemas/StepStatus"
+          }
+        },
+        "required": ["session_id", "passage_start_ms", "passage_end_ms", "step_status", "attempt"],
+        "title": "BlindStep",
+        "type": "object"
+      },
       "ChangeEntry": {
         "properties": {
           "entry": {
@@ -258,6 +411,44 @@
         "title": "Entry",
         "type": "string"
       },
+      "GistIn": {
+        "properties": {
+          "text": {
+            "description": "Three sentences or more",
+            "maxLength": 20000,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": ["text"],
+        "title": "GistIn",
+        "type": "object"
+      },
+      "GistSubmitted": {
+        "properties": {
+          "attempt": {
+            "$ref": "#/components/schemas/BlindAttempt"
+          },
+          "open_step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Step"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The step that opened next"
+          },
+          "session_version": {
+            "title": "Session Version",
+            "type": "integer"
+          }
+        },
+        "required": ["attempt", "open_step", "session_version"],
+        "title": "GistSubmitted",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -270,6 +461,89 @@
         },
         "title": "HTTPValidationError",
         "type": "object"
+      },
+      "HeartbeatIn": {
+        "properties": {
+          "buffering_ms": {
+            "default": 0,
+            "description": "Time spent waiting for data since the last beat",
+            "maximum": 3600000.0,
+            "minimum": 0.0,
+            "title": "Buffering Ms",
+            "type": "integer"
+          },
+          "interruption": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Interruption"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With `interrupted`: a network stall or a device pause"
+          },
+          "interruption_ms": {
+            "default": 0,
+            "description": "How long a device pause lasted",
+            "maximum": 3600000.0,
+            "minimum": 0.0,
+            "title": "Interruption Ms",
+            "type": "integer"
+          },
+          "position_ms": {
+            "description": "The player's position in the clip",
+            "minimum": 0.0,
+            "title": "Position Ms",
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PlayerState"
+          },
+          "visible": {
+            "default": true,
+            "description": "The page is visible (not hidden)",
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": ["position_ms", "state"],
+        "title": "HeartbeatIn",
+        "type": "object"
+      },
+      "HeartbeatOut": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/Action",
+            "description": "`continue`; `resume`: carry on from `resume_from_ms` after `resume_delay_ms` once the audio is ready; `stop`: the attempt has ended"
+          },
+          "attempt": {
+            "$ref": "#/components/schemas/BlindAttempt"
+          },
+          "resume_delay_ms": {
+            "title": "Resume Delay Ms",
+            "type": "integer"
+          },
+          "resume_from_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume From Ms"
+          }
+        },
+        "required": ["action", "attempt", "resume_from_ms", "resume_delay_ms"],
+        "title": "HeartbeatOut",
+        "type": "object"
+      },
+      "Interruption": {
+        "enum": ["network", "device"],
+        "title": "Interruption",
+        "type": "string"
       },
       "LibraryItem": {
         "properties": {
@@ -449,6 +723,12 @@
         "required": ["detail"],
         "title": "PasswordResetRequested",
         "type": "object"
+      },
+      "PlayerState": {
+        "description": "What the player says it is doing when it sends a beat.",
+        "enum": ["playing", "buffering", "interrupted", "resuming", "ended"],
+        "title": "PlayerState",
+        "type": "string"
       },
       "Session": {
         "description": "A practice session with its plan, for \"Step N of M\" (UI-1).",
@@ -664,6 +944,30 @@
         "title": "StartSession",
         "type": "object"
       },
+      "StartedAttempt": {
+        "properties": {
+          "attempt": {
+            "$ref": "#/components/schemas/BlindAttempt"
+          },
+          "heartbeat_interval_ms": {
+            "title": "Heartbeat Interval Ms",
+            "type": "integer"
+          },
+          "media_url": {
+            "description": "The passage's audio for this attempt only; it stops working shortly after the passage's length",
+            "title": "Media Url",
+            "type": "string"
+          },
+          "resume_delay_ms": {
+            "description": "The wait before playback carries on (D18)",
+            "title": "Resume Delay Ms",
+            "type": "integer"
+          }
+        },
+        "required": ["attempt", "media_url", "heartbeat_interval_ms", "resume_delay_ms"],
+        "title": "StartedAttempt",
+        "type": "object"
+      },
       "Step": {
         "enum": ["blind", "dictation", "transcript", "card", "shadow"],
         "title": "Step",
@@ -788,6 +1092,23 @@
         "required": ["loc", "msg", "type"],
         "title": "ValidationError",
         "type": "object"
+      },
+      "VoidIn": {
+        "properties": {
+          "reason": {
+            "enum": ["left_page", "reload", "seek"],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["reason"],
+        "title": "VoidIn",
+        "type": "object"
+      },
+      "VoidReason": {
+        "enum": ["left_page", "reload", "seek", "missed_heartbeat", "too_fast", "interrupted"],
+        "title": "VoidReason",
+        "type": "string"
       }
     }
   },
@@ -958,6 +1279,239 @@
         },
         "summary": "Register",
         "tags": ["identity"]
+      }
+    },
+    "/api/v1/blind/attempts/{attempt_id}/gist": {
+      "post": {
+        "description": "Submit the three-sentence gist after the whole passage has played (FR-BL-4, #65).\n\nCompletes the Blind step. An `Idempotency-Key` makes a retry return the first answer.",
+        "operationId": "submit_gist_api_v1_blind_attempts__attempt_id__gist_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GistIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GistSubmitted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "409": {
+            "description": "`listen_incomplete`, `attempt_closed` or `step_locked`"
+          },
+          "422": {
+            "description": "`gist_too_short` (with `sentences`) or `gist_too_long`"
+          }
+        },
+        "summary": "Submit Gist",
+        "tags": ["blind"]
+      }
+    },
+    "/api/v1/blind/attempts/{attempt_id}/heartbeat": {
+      "post": {
+        "description": "Report the player's position every 5 s (FR-BL-3, System Design 9.2).\n\nThe answer is `continue`, `resume` (the one resume after an interruption the\nlearner did not cause, D13 and D18) or `stop` with the attempt's `void_reason`.",
+        "operationId": "heartbeat_api_v1_blind_attempts__attempt_id__heartbeat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeartbeatOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Heartbeat",
+        "tags": ["blind"]
+      }
+    },
+    "/api/v1/blind/attempts/{attempt_id}/media/{token}": {
+      "get": {
+        "description": "The passage's audio for this attempt only (#62). Range requests go to storage.\n\nThe token in the path comes from starting the attempt; the redirect's signed URL\nlives only until the attempt's window ends.",
+        "operationId": "attempt_media_api_v1_blind_attempts__attempt_id__media__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Redirect to a signed storage URL that ends with the attempt"
+          },
+          "404": {
+            "description": "`attempt_not_found` or `media_not_found` (wrong token)"
+          },
+          "409": {
+            "description": "`media_not_ready`"
+          },
+          "410": {
+            "description": "`media_expired`: the attempt ended or its window is over"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Attempt Media",
+        "tags": ["blind"]
+      }
+    },
+    "/api/v1/blind/attempts/{attempt_id}/void": {
+      "post": {
+        "description": "The page reports leaving, a reload or a seek: the listen ends (FR-BL-3).\n\nSent with `fetch(..., {keepalive: true})` from `pagehide` and `visibilitychange`.\nAfter the whole passage has played it changes nothing.",
+        "operationId": "void_attempt_api_v1_blind_attempts__attempt_id__void_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlindAttempt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Void Attempt",
+        "tags": ["blind"]
       }
     },
     "/api/v1/contents": {
@@ -1531,6 +2085,102 @@
         },
         "summary": "Get Session",
         "tags": ["sessions"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/blind": {
+      "get": {
+        "description": "The Blind step with its newest attempt, so a reloaded page knows where it stands.",
+        "operationId": "get_blind_step_api_v1_sessions__session_id__blind_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlindStep"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked` or `step_not_in_plan`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Blind Step",
+        "tags": ["blind"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/blind/attempts": {
+      "post": {
+        "description": "Start one listen of the passage (FR-BL-1, #62).\n\nReturns a media URL bound to this attempt. The player sends a heartbeat every\n`heartbeat_interval_ms` from now on.",
+        "operationId": "start_attempt_api_v1_sessions__session_id__blind_attempts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartedAttempt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`, or `attempt_active` with `attempt_id`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Attempt",
+        "tags": ["blind"]
       }
     },
     "/api/v1/sessions/{session_id}/entry": {
