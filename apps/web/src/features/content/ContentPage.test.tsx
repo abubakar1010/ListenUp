@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router';
 
 import { jsonResponse, mockApi, problem, renderWithProviders } from '../../test-utils';
@@ -145,5 +145,50 @@ test('a clip that is not in the library leads back to it', async () => {
   expect(screen.getByRole('link', { name: 'Go to your library' })).toHaveAttribute(
     'href',
     '/library',
+  );
+});
+
+test('a clip in the queue says where it is and that the page updates', async () => {
+  mockApi({
+    '/contents/content-1': jsonResponse(
+      200,
+      clip({
+        status: 'pending',
+        stage: 'queued',
+        queue_position: 1,
+        duration_ms: null,
+        media_url: null,
+        peaks_url: null,
+      }),
+    ),
+  });
+  renderPage();
+
+  const status = await screen.findByText(/^Waiting for your other clips/);
+  expect(status).toHaveAttribute('role', 'status');
+  expect(status).toHaveTextContent(
+    'Waiting for your other clips: two of your clips are prepared at a time. It is 1st in line.',
+  );
+});
+
+test('a copy of a clip the learner has links to that clip', async () => {
+  mockApi({
+    '/contents/content-1': problem(
+      410,
+      'duplicate_upload',
+      'You already have this clip in your library, as \u201cMorning news\u201d, so this copy was not added. Open that clip to practise it.',
+      { existing_content_id: 'content-0', existing_title: 'Morning news' },
+    ),
+  });
+  renderPage();
+
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByRole('heading', { level: 1 })).toHaveTextContent(
+    'You already have this clip',
+  );
+  expect(alert).toHaveTextContent('so this copy was not added');
+  expect(within(alert).getByRole('link', { name: 'Open Morning news' })).toHaveAttribute(
+    'href',
+    '/contents/content-0',
   );
 });

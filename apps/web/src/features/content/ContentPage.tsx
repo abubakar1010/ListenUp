@@ -5,6 +5,8 @@ import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { formatDuration } from '../../components/formatDuration';
 import { AlertIcon, BackIcon } from '../../components/icons';
+import { ApiError } from '../../api/client';
+import { stageSentence } from './intakeStatus';
 import { isProcessing, useContent, type ContentDetail } from './useContent';
 
 const PAGE_CLASS =
@@ -33,11 +35,40 @@ export default function ContentPage() {
         </p>
       )}
       {content.isError && !content.data && (
-        <ErrorPanel error={content.error} onRetry={() => void content.refetch()} headingLevel={1} />
+        <ClipError error={content.error} retry={content.refetch} />
       )}
       {content.data && <Clip item={content.data} />}
     </main>
   );
+}
+
+/**
+ * Why the clip cannot be shown. A copy of a clip the learner already has was removed by
+ * the server (ADR 0022); say so and link to the clip they have (NFR-USE-3, #39).
+ */
+function ClipError({ error, retry }: { error: unknown; retry: () => unknown }) {
+  if (error instanceof ApiError && error.code === 'duplicate_upload') {
+    const existingId = String(error.problem.existing_content_id ?? '');
+    const existingTitle = String(error.problem.existing_title ?? 'your clip');
+    return (
+      <div
+        role="alert"
+        className="flex flex-col items-start gap-2 rounded-md border-2 border-line-strong bg-surface-raised p-4"
+      >
+        <h1 className="font-display text-heading">You already have this clip</h1>
+        <p>{error.problem.detail}</p>
+        {existingId && (
+          <Link
+            to={`/contents/${encodeURIComponent(existingId)}`}
+            className={buttonClass('primary', 'mt-2')}
+          >
+            Open {existingTitle}
+          </Link>
+        )}
+      </div>
+    );
+  }
+  return <ErrorPanel error={error} onRetry={() => void retry()} headingLevel={1} />;
 }
 
 function Clip({ item }: { item: ContentDetail }) {
@@ -97,21 +128,19 @@ function ClipStatus({ item }: { item: ContentDetail }) {
           className="size-4 animate-spin rounded-full border-2 border-line border-t-accent"
         />
       )}
-      {statusText(item.status)}
+      {statusText(item)}
     </p>
   );
 }
 
-function statusText(status: ContentDetail['status']): string {
-  switch (status) {
+function statusText(item: ContentDetail): string {
+  switch (item.status) {
     case 'playable':
       return 'Ready to play.';
-    case 'downloading':
-      return 'Downloading. This page updates by itself when the clip is ready.';
     case 'expired':
       return 'This clip needs downloading again before you can play it.';
     default:
-      return 'Processing. This page updates by itself when the clip is ready.';
+      return stageSentence(item);
   }
 }
 

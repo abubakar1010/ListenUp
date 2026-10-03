@@ -5,6 +5,7 @@ import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { formatDuration } from '../../components/formatDuration';
 import { AlertIcon } from '../../components/icons';
+import { stageLabel } from '../content/intakeStatus';
 import { SessionsSection } from '../session/SessionsSection';
 import { ACCEPTED_NAMES } from './files';
 import { useLibraryContents, type LibraryItem } from './useLibrary';
@@ -165,7 +166,7 @@ function ClipRow({ item }: { item: LibraryItem }) {
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <StatusBadge status={item.status} />
+        <StatusBadge item={item} />
         {item.last_session_status && (
           <span className={BADGE}>Last session: {SESSION_LABEL[item.last_session_status]}</span>
         )}
@@ -182,7 +183,13 @@ function ClipRow({ item }: { item: LibraryItem }) {
 const BADGE =
   'inline-flex min-h-7 items-center gap-1.5 rounded-full border border-line px-3 text-body-s';
 
-function StatusBadge({ status }: { status: LibraryItem['status'] }) {
+/**
+ * The clip's status. Stages of a clip being prepared update live from `job.progress` events
+ * (#40); they are not announced one by one, since a library may hold several clips in
+ * progress: the in-app notice announces each clip once it is ready.
+ */
+function StatusBadge({ item }: { item: LibraryItem }) {
+  const { status } = item;
   if (status === 'playable') {
     return <span className={`${BADGE} border-success text-success`}>Ready</span>;
   }
@@ -203,7 +210,7 @@ function StatusBadge({ status }: { status: LibraryItem['status'] }) {
         aria-hidden="true"
         className="size-3 animate-spin rounded-full border-2 border-line border-t-accent"
       />
-      {status === 'downloading' ? 'Downloading' : 'Processing'}
+      {stageLabel(item)}
     </span>
   );
 }

@@ -33,6 +33,8 @@ export interface LiveEventsOptions {
    * reconnect, and every 5 s while the stream is down.
    */
   pendingKeys: readonly QueryKey[];
+  /** Called with each event after its keys are invalidated, for example to show a notice. */
+  onEvent?: (event: LiveEvent) => void;
   /** Turn the stream off, for example while nobody is signed in. */
   enabled?: boolean;
   url?: string;
@@ -70,6 +72,7 @@ function parse(type: LiveEventType, message: MessageEvent<string>): LiveEvent | 
 export function useLiveEvents({
   keysFor,
   pendingKeys,
+  onEvent,
   enabled = true,
   url = EVENTS_URL,
   pollIntervalMs = POLL_INTERVAL_MS,
@@ -80,9 +83,11 @@ export function useLiveEvents({
   // The latest callbacks, without reopening the stream on every render.
   const keysForRef = useRef(keysFor);
   const pendingRef = useRef(pendingKeys);
+  const onEventRef = useRef(onEvent);
   useEffect(() => {
     keysForRef.current = keysFor;
     pendingRef.current = pendingKeys;
+    onEventRef.current = onEvent;
   });
 
   useEffect(() => {
@@ -126,7 +131,9 @@ export function useLiveEvents({
       for (const type of LIVE_EVENT_TYPES) {
         stream.addEventListener(type, (message) => {
           const event = parse(type, message);
-          if (event) refetch(queryClient, keysForRef.current(event));
+          if (!event) return;
+          refetch(queryClient, keysForRef.current(event));
+          onEventRef.current?.(event);
         });
       }
       stream.addEventListener('resync', refetchPending);

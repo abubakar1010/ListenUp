@@ -5,8 +5,10 @@ import { DEFAULT_SIGNED_IN_PATH, nextPath, signInPath } from '../auth/next';
 import { useMe } from '../auth/useMe';
 import { useLiveEvents, type LiveEvent } from '../events/useLiveEvents';
 import { BLIND_KEY } from '../features/blind/api';
+import { ClipNotices } from '../features/content/ClipNotices';
+import { useClipNotices } from '../features/content/useClipNotices';
 import { CONTENTS_KEY, contentKey } from '../features/content/useContent';
-import { LIBRARY_KEY } from '../features/library/useLibrary';
+import { LIBRARY_KEY, UPLOAD_USAGE_KEY } from '../features/library/useLibrary';
 import { ErrorPage } from './ErrorPage';
 import { PageLoading } from './PageLoading';
 import { RouteBoundary } from './RouteBoundary';
@@ -30,18 +32,24 @@ export function RequireAuth() {
  * need an account (for example the live-events connection) belong here.
  */
 function SignedInRoot() {
+  const notices = useClipNotices();
   useLiveEvents({
     keysFor: queryKeysForEvent,
     // Clips still processing show in the library and on their own page; refetch both
     // when events may be missed.
     pendingKeys: PENDING_KEYS,
+    // A clip that becomes ready while the learner is elsewhere in the app (#40).
+    onEvent: notices.onEvent,
     // Not every environment has EventSource (jsdom in unit tests); the hook then stays off.
     enabled: typeof EventSource !== 'undefined',
   });
   return (
-    <RouteBoundary>
-      <Outlet />
-    </RouteBoundary>
+    <>
+      <RouteBoundary>
+        <Outlet />
+      </RouteBoundary>
+      <ClipNotices notices={notices} />
+    </>
   );
 }
 
@@ -55,6 +63,9 @@ const PENDING_KEYS: readonly QueryKey[] = [LIBRARY_KEY, CONTENTS_KEY];
 function queryKeysForEvent(event: LiveEvent): readonly QueryKey[] {
   switch (event.type) {
     case 'content.ready':
+      // A converted clip also changes storage use and today's new audio.
+      return [LIBRARY_KEY, contentKey(event.resourceId), UPLOAD_USAGE_KEY];
+    case 'job.progress':
       return [LIBRARY_KEY, contentKey(event.resourceId)];
     case 'attempt.voided':
       // The event names the attempt only; refresh every Blind step shown (ADR 0024).

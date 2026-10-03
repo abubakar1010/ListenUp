@@ -135,3 +135,23 @@ test('a ready clip offers "Start a plan" without adding it again (FR-LB-2)', asy
   expect(start).toHaveAttribute('href', '/contents/item-1/plan');
   expect(screen.getAllByRole('link', { name: /Start a plan/ })).toHaveLength(1);
 });
+
+test('clips being prepared show their queue place or stage', async () => {
+  mockApi({
+    '/library/contents': jsonResponse(200, {
+      items: [
+        item(1, { status: 'pending', stage: 'queued', queue_position: 2, duration_ms: null }),
+        item(2, { status: 'pending', stage: 'converting', duration_ms: null }),
+        item(3, { status: 'pending', stage: 'waiting', duration_ms: null }),
+      ],
+      next_cursor: null,
+    }),
+  });
+  renderLibrary();
+
+  const rows = within(await screen.findByRole('list')).getAllByRole('listitem');
+  expect(rows[0]).toHaveTextContent('Queued · 2nd in line');
+  expect(rows[1]).toHaveTextContent('Converting');
+  expect(rows[2]).toHaveTextContent('Waiting to start');
+  expect(screen.queryByRole('link', { name: /Start a plan/ })).not.toBeInTheDocument();
+});

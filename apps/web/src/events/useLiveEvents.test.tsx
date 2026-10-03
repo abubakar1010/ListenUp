@@ -116,6 +116,29 @@ describe('useLiveEvents', () => {
     expect(invalidated).toEqual([['resource', 'clip-1']]);
   });
 
+  it('hands each event to onEvent after refetching, and skips malformed ones', () => {
+    const onEvent = vi.fn();
+    const { invalidated } = setup({ onEvent });
+    act(() => FakeEventSource.latest.open());
+
+    act(() => {
+      FakeEventSource.latest.emit(
+        'content.ready',
+        { type: 'content.ready', resource_id: 'clip-1' },
+        'abcd-4',
+      );
+      FakeEventSource.latest.emit('content.ready', { type: 'content.ready' });
+    });
+
+    expect(invalidated).toEqual([['resource', 'clip-1']]);
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(onEvent).toHaveBeenCalledWith({
+      id: 'abcd-4',
+      type: 'content.ready',
+      resourceId: 'clip-1',
+    });
+  });
+
   it('handles every event type and ignores malformed data', () => {
     const { invalidated } = setup();
     act(() => FakeEventSource.latest.open());

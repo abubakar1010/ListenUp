@@ -23,10 +23,14 @@ export function isProcessing(status: ContentDetail['status']): boolean {
  * One clip of the learner's library (`GET /contents/{id}`). While it is being prepared it
  * refreshes on the `content.ready` live event and, as a fallback, every few seconds.
  */
+export function fetchContent(contentId: string) {
+  return api<ContentDetail>(`/contents/${encodeURIComponent(contentId)}`);
+}
+
 export function useContent(contentId: string) {
   return useQuery({
     queryKey: contentKey(contentId),
-    queryFn: () => api<ContentDetail>(`/contents/${encodeURIComponent(contentId)}`),
+    queryFn: () => fetchContent(contentId),
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return status !== undefined && isProcessing(status) ? PROCESSING_POLL_MS : false;
