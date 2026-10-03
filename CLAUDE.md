@@ -18,7 +18,7 @@ The SRS keeps stable requirement IDs (`FR-DI-1`, `FR-BL-1`, `NFR-AI-1`, and so o
 
 ## Decisions that shape the architecture
 
-- **Mode rules are enforced on the server and in the app, never by interface text alone.** Blind has no pause, seek, rewind or speed change, and leaving or reloading voids the attempt. Dictation hides the transcript. Cards are capped at two per session. A Shadow segment is 60 to 90 seconds with three rounds. Keep these rules in one place with automated tests (NFR-MNT-2).
+- **Mode rules are enforced on the server and in the app, never by interface text alone.** Blind has no pause, seek, rewind or speed change, and leaving, reloading or seeking voids the attempt; one resume per attempt is allowed after an interruption the learner did not cause (a network stall, or a device or OS pause under 5 s), and a second interruption voids it. Dictation hides the transcript. Cards are capped at two per session. A Shadow segment is 60 to 90 seconds, or the whole passage when the passage is 30 to 60 seconds, with three rounds. Keep these rules in one place with automated tests (NFR-MNT-2).
 - **Step order is gated.** A step unlocks only when the previous one is complete. The entry choice can change only until Transcript starts. Transcript cannot be skipped; Card and Shadow can be skipped after confirmation.
 - **Marks are the shared spine.** Dictation and Transcript create marks (places where the sound did not match the text). Card and Shadow read them.
 - **Slow work runs in background workers**, not in request handling: downloading YouTube media, transcription, and grading of gists and Shadow rounds.
@@ -26,7 +26,7 @@ The SRS keeps stable requirement IDs (`FR-DI-1`, `FR-BL-1`, `NFR-AI-1`, and so o
 - **Free first.** The MVP uses free-tier or open-source AI only. A provider may receive voice recordings, transcripts or gists only if it does not train on them; otherwise a self-hosted open-source model is used (NFR-AI-7).
 - **Grading never blocks the learner.** If gist or Shadow grading fails, keep the data, show that feedback is unavailable, allow a retry, and let the plan continue.
 - **Accounts are required** so progress follows the learner across browsers. English only.
-- **YouTube content is downloaded to our servers** for playback control. This conflicts with YouTube's terms and is pending legal review (OQ-6), so keep the downloader isolated so it can be replaced or switched off, with upload as the fallback.
+- **YouTube content is downloaded to our servers** for playback control. This conflicts with YouTube's terms and is pending legal review (OQ-6), so build and ship the upload-only path first and keep YouTube intake behind a feature flag until the review clears it. Keep the downloader isolated so it can be replaced or switched off, and leave YouTube media out of data exports.
 
 ## Commit and push rules
 
