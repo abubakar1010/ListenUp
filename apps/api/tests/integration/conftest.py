@@ -30,17 +30,20 @@ def with_dbname(url: str, dbname: str) -> str:
     return psycopg.conninfo.make_conninfo(url, dbname=dbname)
 
 
-def alembic_config(conninfo: str) -> Config:
-    config = Config(str(API_DIR / "alembic.ini"))
+def conninfo_to_url(conninfo: str) -> str:
     params = psycopg.conninfo.conninfo_to_dict(conninfo)
-    url = "postgresql://{user}:{password}@{host}:{port}/{dbname}".format(
+    return "postgresql://{user}:{password}@{host}:{port}/{dbname}".format(
         user=params.get("user", ""),
         password=params.get("password", ""),
         host=params.get("host", "localhost"),
         port=params.get("port", 5432),
         dbname=params["dbname"],
     )
-    config.set_main_option("sqlalchemy.url", to_sqlalchemy_url(url))
+
+
+def alembic_config(conninfo: str) -> Config:
+    config = Config(str(API_DIR / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", to_sqlalchemy_url(conninfo_to_url(conninfo)))
     return config
 
 
@@ -91,3 +94,16 @@ def conn(migrated_url: str) -> Iterator[psycopg.Connection[tuple[object, ...]]]:
     with psycopg.connect(migrated_url) as connection:
         yield connection
         connection.rollback()
+
+
+@pytest.fixture
+def learner(migrated_url: str) -> Iterator[uuid.UUID]:
+    """A committed learner, visible to the app's own connections; removed afterwards."""
+    user_id = uuid.uuid4()
+    with psycopg.connect(migrated_url, autocommit=True) as connection:
+        connection.execute(
+            "INSERT INTO identity.users (id, email) VALUES (%s, %s)",
+            [user_id, f"{user_id}@example.com"],
+        )
+        yield user_id
+        connection.execute("DELETE FROM identity.users WHERE id = %s", [user_id])
