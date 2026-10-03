@@ -54,7 +54,7 @@ jobs:
         working-directory: apps/web
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           package_json_file: apps/web/package.json
       - uses: actions/setup-node@v4
@@ -78,7 +78,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: apps/api/uv.lock
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           package_json_file: apps/web/package.json
       - uses: actions/setup-node@v4
@@ -121,7 +121,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           package_json_file: apps/web/package.json
       - name: Python (pip-audit)
