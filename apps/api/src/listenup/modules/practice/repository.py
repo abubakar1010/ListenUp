@@ -278,3 +278,82 @@ async def list_sessions(
     for s in step_rows:
         steps.setdefault(s.session_id, []).append(StepRow(s.step, s.position, s.status))
     return [(_session_row(row), steps.get(row.id, [])) for row in rows]
+
+
+# --- Attempts (migration 0008) ---------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AttemptRow:
+    id: uuid.UUID
+    session_id: uuid.UUID
+    user_id: uuid.UUID
+    mode: str
+    status: str
+    started_at: datetime
+    finished_at: datetime | None
+
+
+_ATTEMPT_COLUMNS = "id, session_id, user_id, mode, status, started_at, finished_at"
+
+
+async def insert_attempt(
+    session: AsyncSession,
+    attempt_id: uuid.UUID,
+    session_id: uuid.UUID,
+    user_id: uuid.UUID,
+    mode: str,
+) -> AttemptRow:
+    row = (
+        await session.execute(
+            text(f"""
+            INSERT INTO practice.attempts (id, session_id, user_id, mode)
+            VALUES (:id, :session_id, :user_id, :mode)
+            RETURNING {_ATTEMPT_COLUMNS}
+            """),
+            {"id": attempt_id, "session_id": session_id, "user_id": user_id, "mode": mode},
+        )
+    ).one()
+    return AttemptRow(*row)
+
+
+async def get_attempt(session: AsyncSession, attempt_id: uuid.UUID) -> AttemptRow | None:
+    row = (
+        await session.execute(
+            text(f"SELECT {_ATTEMPT_COLUMNS} FROM practice.attempts WHERE id = :id"),
+            {"id": attempt_id},
+        )
+    ).first()
+    return AttemptRow(*row) if row else None
+
+
+async def active_attempt(
+    session: AsyncSession, session_id: uuid.UUID, mode: str
+) -> AttemptRow | None:
+    row = (
+        await session.execute(
+            text(f"""
+            SELECT {_ATTEMPT_COLUMNS} FROM practice.attempts
+             WHERE session_id = :session_id AND mode = :mode AND status = 'active'
+            """),
+            {"session_id": session_id, "mode": mode},
+        )
+    ).first()
+    return AttemptRow(*row) if row else None
+
+
+async def finish_attempt(
+    session: AsyncSession, attempt_id: uuid.UUID, status: str
+) -> AttemptRow | None:
+    """Close an active attempt; None when it is not active (already closed or unknown)."""
+    row = (
+        await session.execute(
+            text(f"""
+            UPDATE practice.attempts SET status = :status, finished_at = now()
+             WHERE id = :id AND status = 'active'
+            RETURNING {_ATTEMPT_COLUMNS}
+            """),
+            {"id": attempt_id, "status": status},
+        )
+    ).first()
+    return AttemptRow(*row) if row else None

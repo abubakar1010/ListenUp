@@ -92,3 +92,42 @@ class SessionStep(Base):
     status: Mapped[str] = mapped_column(Text)
     opened_at: Mapped[datetime | None] = mapped_column(Timestamp)
     completed_at: Mapped[datetime | None] = mapped_column(Timestamp)
+
+
+class Attempt(Base):
+    __tablename__ = "attempts"
+    __table_args__ = (
+        CheckConstraint("mode IN ('blind', 'dictation')"),
+        CheckConstraint("status IN ('active', 'submitted', 'voided')"),
+        CheckConstraint("(status = 'active') = (finished_at IS NULL)"),
+        ForeignKeyConstraint(
+            ["session_id", "mode"],
+            ["practice.session_steps.session_id", "practice.session_steps.step"],
+            name="attempts_step_fk",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["session_id", "user_id"],
+            ["practice.sessions.id", "practice.sessions.user_id"],
+            name="attempts_session_user_fk",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("id", "user_id", name="attempts_id_user_uq"),
+        Index(
+            "attempts_one_active",
+            "session_id",
+            "mode",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+        ),
+        Index("attempts_session_idx", "session_id", "mode", text("started_at DESC")),
+        {"schema": "practice"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    session_id: Mapped[uuid.UUID]
+    user_id: Mapped[uuid.UUID]
+    mode: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, server_default="active")
+    started_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(Timestamp)

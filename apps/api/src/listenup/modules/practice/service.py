@@ -18,7 +18,9 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.content import service as content
@@ -44,6 +46,8 @@ from listenup.platform.errors import ProblemError
 from listenup.platform.ids import uuid7
 
 __all__ = [
+    "Attempt",
+    "AttemptStatus",
     "Entry",
     "Passage",
     "PracticeSession",
@@ -52,13 +56,17 @@ __all__ = [
     "Step",
     "StepState",
     "StepStatus",
+    "active_attempt",
     "change_entry",
     "complete_step",
+    "finish_attempt",
+    "get_attempt",
     "get_session",
     "list_sessions",
     "require_reached",
     "require_step",
     "skip_step",
+    "start_attempt",
     "start_plan",
     "start_session",
 ]
@@ -443,3 +451,98 @@ async def list_sessions(
         last = items[-1]
         next_cursor = cursors.encode(cursors.Cursor(last.updated_at, last.id))
     return SessionPage(items, next_cursor)
+
+
+# --- Attempts: one learner's try at a Blind or Dictation step (migration 0008) ----------
+
+ATTEMPT_MODES = (Step.BLIND, Step.DICTATION)
+
+
+class AttemptStatus(StrEnum):
+    ACTIVE = "active"
+    SUBMITTED = "submitted"
+    VOIDED = "voided"
+
+
+@dataclass(frozen=True)
+class Attempt:
+    id: uuid.UUID
+    session_id: uuid.UUID
+    user_id: uuid.UUID
+    mode: Step
+    status: AttemptStatus
+    started_at: datetime
+    finished_at: datetime | None
+
+
+def _attempt(row: repository.AttemptRow) -> Attempt:
+    return Attempt(
+        row.id,
+        row.session_id,
+        row.user_id,
+        Step(row.mode),
+        AttemptStatus(row.status),
+        row.started_at,
+        row.finished_at,
+    )
+
+
+def _check_mode(mode: Step) -> None:
+    if mode not in ATTEMPT_MODES:
+        raise ValueError(f"attempts exist only for {ATTEMPT_MODES}, not {mode}")
+
+
+async def start_attempt(db: AsyncSession, session_id: uuid.UUID, mode: Step) -> Attempt:
+    """Start a try at an open Blind or Dictation step (FR-PL-4: one live try at a time).
+
+    Refused with 409 `step_locked` unless that step is open, and with 409
+    `attempt_active` (naming the live attempt) while another try is still active; the
+    mode decides whether to resume it or void it first.
+    """
+    _check_mode(mode)
+    practice = await require_step(db, session_id, mode)
+    try:
+        async with db.begin_nested():
+            row = await repository.insert_attempt(
+                db, uuid7(), practice.id, practice.user_id, mode.value
+            )
+    except IntegrityError as error:
+        if "attempts_one_active" not in str(error.orig):
+            raise
+        live = await repository.active_attempt(db, practice.id, mode.value)
+        raise ProblemError(
+            409,
+            "attempt_active",
+            "This step already has an attempt in progress.",
+            attempt_id=str(live.id) if live else None,
+        ) from None
+    return _attempt(row)
+
+
+async def active_attempt(db: AsyncSession, session_id: uuid.UUID, mode: Step) -> Attempt | None:
+    _check_mode(mode)
+    row = await repository.active_attempt(db, session_id, mode.value)
+    return _attempt(row) if row else None
+
+
+async def get_attempt(db: AsyncSession, attempt_id: uuid.UUID) -> Attempt:
+    """The learner's attempt; 404 `attempt_not_found` for anyone else's."""
+    row = await repository.get_attempt(db, attempt_id)
+    if row is None:
+        raise ProblemError(404, "attempt_not_found", "This attempt was not found.")
+    return _attempt(row)
+
+
+async def finish_attempt(db: AsyncSession, attempt_id: uuid.UUID, status: AttemptStatus) -> Attempt:
+    """Submit or void an active attempt; 409 `attempt_closed` if it already ended.
+
+    Finishing an attempt does not complete the step: the mode calls `complete_step`
+    when its own rules say the step is done.
+    """
+    if status is AttemptStatus.ACTIVE:
+        raise ValueError("an attempt can only be finished as submitted or voided")
+    row = await repository.finish_attempt(db, attempt_id, status.value)
+    if row is None:
+        await get_attempt(db, attempt_id)  # 404 when it is not the learner's
+        raise ProblemError(409, "attempt_closed", "This attempt has already ended.")
+    return _attempt(row)
