@@ -1,4 +1,4 @@
-"""The sessions API (#48: start a plan and show progress).
+"""The sessions API (#48: start a plan and show progress; #49: entry change and skips).
 
 The app connects as a role with only the API's rights, so row-level security is in
 force as in production. Content items are inserted directly, ready or not, so nothing
@@ -11,6 +11,7 @@ import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
@@ -104,6 +105,21 @@ def finish(api_role_url: str, client: TestClient, session_id: object, *steps: St
 
 def steps_of(session: dict[str, object]) -> list[tuple[str, int, str]]:
     return [(s["step"], s["position"], s["status"]) for s in session["steps"]]
+
+
+def change_entry(client: TestClient, session: dict[str, object], entry: str) -> httpx.Response:
+    return client.patch(
+        f"{SESSIONS}/{session['id']}/entry", json={"entry": entry, "version": session["version"]}
+    )
+
+
+def skip(
+    client: TestClient, session: dict[str, object], step: str, confirmed: bool = True
+) -> httpx.Response:
+    return client.post(
+        f"{SESSIONS}/{session['id']}/steps/{step}/skip",
+        json={"confirmed": confirmed, "version": session["version"]},
+    )
 
 
 def load(client: TestClient, session: dict[str, object]) -> dict[str, object]:
@@ -247,9 +263,13 @@ def test_another_learner_can_neither_see_nor_use_my_sessions(
     clip = add_clip(migrated_url, learner_id(mine))
     session = start(mine, clip)
 
-    response = theirs.get(f"{SESSIONS}/{session['id']}")
-    assert response.status_code == 404
-    assert response.json()["code"] == "session_not_found"
+    for response in (
+        theirs.get(f"{SESSIONS}/{session['id']}"),
+        change_entry(theirs, session, "both"),
+        skip(theirs, session, "card"),
+    ):
+        assert response.status_code == 404
+        assert response.json()["code"] == "session_not_found"
     started = theirs.post(
         SESSIONS, json={"content_id": clip, "passage": TWO_MINUTES, "entry": "blind"}
     )
@@ -322,3 +342,167 @@ def test_a_broken_cursor_is_refused(client: TestClient) -> None:
     refused = client.get(SESSIONS, params={"cursor": "nonsense"})
     assert refused.status_code == 400
     assert refused.json()["code"] == "invalid_cursor"
+
+
+# Changing the entry (#49)
+
+
+def test_changing_blind_to_both_before_transcript_gives_5_steps(
+    client: TestClient, clip: str
+) -> None:
+    """AT-7 (part): "Step 1 of 4" becomes "Step 1 of 5"."""
+    session = start(client, clip, "blind")
+
+    changed = change_entry(client, session, "both")
+
+    assert changed.status_code == 200
+    body = changed.json()
+    assert body["entry"] == "both"
+    assert body["step_count"] == 5
+    assert body["open_position"] == 1
+    assert body["version"] == session["version"] + 1  # type: ignore[operator]
+    assert load(client, session) == body
+
+
+def test_the_entry_locks_once_transcript_opens(
+    client: TestClient, clip: str, api_role_url: str
+) -> None:
+    session = load(client, start(client, clip, "blind"))
+    finish(api_role_url, client, session["id"], Step.BLIND)
+    session = load(client, session)
+    assert session["open_step"] == "transcript"
+    assert session["entry_locked"] is True
+
+    # Transcript opened when Blind finished, so the entry is locked now.
+    refused = change_entry(client, session, "both")
+
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "entry_locked"
+    assert load(client, session) == session
+
+
+def test_dropping_dictation_after_blind_is_done_keeps_blind(
+    client: TestClient, clip: str, api_role_url: str
+) -> None:
+    session = start(client, clip, "both")
+    finish(api_role_url, client, session["id"], Step.BLIND)
+    session = load(client, session)
+
+    changed = change_entry(client, session, "blind").json()
+
+    assert steps_of(changed) == [
+        ("blind", 1, "done"),
+        ("transcript", 2, "open"),
+        ("card", 3, "locked"),
+        ("shadow", 4, "locked"),
+    ]
+    assert changed["entry_locked"] is True
+
+
+def test_removing_a_finished_entry_exercise_is_refused(
+    client: TestClient, clip: str, api_role_url: str
+) -> None:
+    session = start(client, clip, "both")
+    finish(api_role_url, client, session["id"], Step.BLIND)
+    session = load(client, session)
+
+    refused = change_entry(client, session, "dictation")
+
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "entry_locked"
+
+
+def test_a_stale_version_is_refused(client: TestClient, clip: str) -> None:
+    session = start(client, clip, "blind")
+    assert change_entry(client, session, "both").status_code == 200
+
+    # The page still shows version 0.
+    stale_entry = change_entry(client, session, "dictation")
+    stale_skip = skip(client, session, "card")
+
+    for response in (stale_entry, stale_skip):
+        assert response.status_code == 409
+        assert response.json()["code"] == "session_changed"
+    assert load(client, session)["entry"] == "both"
+
+
+# Skipping (#49)
+
+
+def at_card(client: TestClient, clip: str, api_role_url: str) -> dict[str, object]:
+    session = start(client, clip, "blind")
+    finish(api_role_url, client, session["id"], Step.BLIND, Step.TRANSCRIPT)
+    return load(client, session)
+
+
+def test_transcript_cannot_be_skipped(client: TestClient, clip: str, api_role_url: str) -> None:
+    session = start(client, clip, "dictation")
+    finish(api_role_url, client, session["id"], Step.DICTATION)
+    session = load(client, session)
+
+    refused = skip(client, session, "transcript")
+
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "step_not_skippable"
+    assert load(client, session)["open_step"] == "transcript"
+
+
+@pytest.mark.parametrize("step", ["blind", "dictation"])
+def test_entry_exercises_cannot_be_skipped(client: TestClient, clip: str, step: str) -> None:
+    session = start(client, clip, "both")
+    refused = skip(client, session, step)
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "step_not_skippable"
+
+
+def test_skipping_card_needs_confirmation(client: TestClient, clip: str, api_role_url: str) -> None:
+    session = at_card(client, clip, api_role_url)
+
+    unconfirmed = skip(client, session, "card", confirmed=False)
+
+    assert unconfirmed.status_code == 422
+    assert unconfirmed.json()["code"] == "confirmation_required"
+    assert load(client, session) == session
+
+    skipped = skip(client, session, "card").json()
+    assert steps_of(skipped)[2:] == [("card", 3, "skipped"), ("shadow", 4, "open")]
+    assert skipped["open_position"] == 4
+    assert skipped["status"] == "active"
+
+
+def test_a_locked_step_cannot_be_skipped_early(client: TestClient, clip: str) -> None:
+    session = start(client, clip, "blind")
+    refused = skip(client, session, "card")
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "step_locked"
+
+
+def test_skipping_shadow_after_card_was_done_completes_the_session(
+    client: TestClient, clip: str, api_role_url: str
+) -> None:
+    """D12, SR-6: Shadow skipped completes the session, whatever happened to Card."""
+    session = at_card(client, clip, api_role_url)
+    finish(api_role_url, client, session["id"], Step.CARD)
+    session = load(client, session)
+
+    unconfirmed = skip(client, session, "shadow", confirmed=False)
+    assert unconfirmed.json()["code"] == "confirmation_required"
+
+    done = skip(client, session, "shadow").json()
+
+    assert done["status"] == "completed"
+    assert done["completed_at"] is not None
+    assert done["open_step"] is None
+    assert done["open_position"] is None
+    assert steps_of(done)[-2:] == [("card", 3, "done"), ("shadow", 4, "skipped")]
+    closed = skip(client, done, "shadow")
+    assert closed.json()["code"] == "session_closed"
+
+
+def test_skipping_card_then_shadow_completes_the_session(
+    client: TestClient, clip: str, api_role_url: str
+) -> None:
+    session = at_card(client, clip, api_role_url)
+    after_card = skip(client, session, "card").json()
+    done = skip(client, after_card, "shadow").json()
+    assert done["status"] == "completed"

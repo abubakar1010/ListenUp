@@ -1,6 +1,8 @@
-"""HTTP routes of the practice module (Architecture 9.2: Sessions; issue #48).
+"""HTTP routes of the practice module (Architecture 9.2: Sessions; issues #48 and #49).
 
 The rules live in `service.py` and `domain/plan.py`; these routes only translate.
+Every change carries the `version` the client last saw, so a stale page gets 409
+`session_changed` instead of overwriting a newer state (ADR 0021).
 """
 
 import uuid
@@ -13,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from listenup.modules.content import service as content
 from listenup.modules.identity.service import CurrentLearner
 from listenup.modules.practice import schemas, service
-from listenup.modules.practice.service import PracticeSession
+from listenup.modules.practice.service import PracticeSession, Step
 from listenup.platform.database import DbSession
 from listenup.platform.idempotency import IdempotencyKeyHeader, request_fingerprint, run_once
 
@@ -114,3 +116,52 @@ async def get_session(
     practice = await service.get_session(db, session_id)
     response.headers["Cache-Control"] = "private, no-cache"
     return await _with_title(db, practice)
+
+
+@router.patch(
+    "/sessions/{session_id}/entry",
+    responses={
+        404: {"description": "`session_not_found`"},
+        409: {"description": "`entry_locked`, `session_changed` or `session_closed`"},
+    },
+)
+async def change_entry(
+    session_id: uuid.UUID, body: schemas.ChangeEntry, learner: CurrentLearner, db: DbSession
+) -> schemas.Session:
+    """Change Blind, Dictation or both until Transcript opens (FR-PL-5, SR-3).
+
+    The unfinished steps are rebuilt; a finished entry exercise stays and cannot be
+    removed. Choosing the current entry again changes nothing.
+    """
+    practice = await service.get_session(db, session_id)
+    changed = await service.change_entry(db, practice, body.entry, expected_version=body.version)
+    return await _with_title(db, changed)
+
+
+@router.post(
+    "/sessions/{session_id}/steps/{step}/skip",
+    responses={
+        404: {"description": "`session_not_found`"},
+        409: {
+            "description": "`step_not_skippable` (Blind, Dictation, Transcript), `step_locked`, "
+            "`step_not_in_plan`, `session_changed` or `session_closed`"
+        },
+        422: {"description": "`confirmation_required`: `confirmed` was not true"},
+    },
+)
+async def skip_step(
+    session_id: uuid.UUID,
+    step: Step,
+    body: schemas.SkipStep,
+    learner: CurrentLearner,
+    db: DbSession,
+) -> schemas.Session:
+    """Skip Card or Shadow after the learner confirmed (FR-PL-7, SR-4).
+
+    Skipping Shadow completes the session, whatever happened to Card (SR-6, D12).
+    """
+    practice = await service.get_session(db, session_id)
+    skipped = await service.skip_step(
+        db, practice, step, confirmed=body.confirmed, expected_version=body.version
+    )
+    return await _with_title(db, skipped)

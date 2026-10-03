@@ -166,6 +166,16 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ("GET", "/api/v1/sessions/{session_id}"): Owned(
         "session_not_found", params=lambda w: {"session_id": w.a.sessions["dictation"]}
     ),
+    ("PATCH", "/api/v1/sessions/{session_id}/entry"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["dictation"]},
+        body=lambda w: {"entry": "blind", "version": 0},
+    ),
+    ("POST", "/api/v1/sessions/{session_id}/steps/{step}/skip"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["card"], "step": "card"},
+        body=lambda w: {"confirmed": True, "version": 0},
+    ),
     # -- media -------------------------------------------------------------------------
     ("GET", "/api/v1/media/{media_object_id}"): Owned(
         "media_not_found", params=lambda w: {"media_object_id": w.a.media_id}

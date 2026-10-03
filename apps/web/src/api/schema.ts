@@ -308,6 +308,51 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sessions/{session_id}/entry': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Change Entry
+     * @description Change Blind, Dictation or both until Transcript opens (FR-PL-5, SR-3).
+     *
+     *     The unfinished steps are rebuilt; a finished entry exercise stays and cannot be
+     *     removed. Choosing the current entry again changes nothing.
+     */
+    patch: operations['change_entry_api_v1_sessions__session_id__entry_patch'];
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/steps/{step}/skip': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Skip Step
+     * @description Skip Card or Shadow after the learner confirmed (FR-PL-7, SR-4).
+     *
+     *     Skipping Shadow completes the session, whatever happened to Card (SR-6, D12).
+     */
+    post: operations['skip_step_api_v1_sessions__session_id__steps__step__skip_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/uploads': {
     parameters: {
       query?: never;
@@ -376,6 +421,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** ChangeEntry */
+    ChangeEntry: {
+      entry: components['schemas']['Entry'];
+      /**
+       * Version
+       * @description The session `version` the client last saw
+       */
+      version: number;
+    };
     /**
      * ConfirmUpload
      * @description Add an uploaded file to the library. YouTube links (#37) will be another shape.
@@ -681,6 +735,20 @@ export interface components {
       position: number;
       status: components['schemas']['StepStatus'];
       step: components['schemas']['Step'];
+    };
+    /** SkipStep */
+    SkipStep: {
+      /**
+       * Confirmed
+       * @description The learner confirmed the skip; without it, 422
+       * @default false
+       */
+      confirmed: boolean;
+      /**
+       * Version
+       * @description The session `version` the client last saw
+       */
+      version: number;
     };
     /** StartSession */
     StartSession: {
@@ -1350,6 +1418,103 @@ export interface operations {
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
         };
+      };
+    };
+  };
+  change_entry_api_v1_sessions__session_id__entry_patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ChangeEntry'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Session'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `entry_locked`, `session_changed` or `session_closed` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  skip_step_api_v1_sessions__session_id__steps__step__skip_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+        step: components['schemas']['Step'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SkipStep'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Session'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_not_skippable` (Blind, Dictation, Transcript), `step_locked`, `step_not_in_plan`, `session_changed` or `session_closed` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `confirmation_required`: `confirmed` was not true */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

@@ -21,6 +21,18 @@ class StartSession(BaseModel):
     entry: Entry = Field(description="Blind, Dictation or both (Blind first, OQ-1)")
 
 
+class ChangeEntry(BaseModel):
+    entry: Entry
+    version: int = Field(ge=0, description="The session `version` the client last saw")
+
+
+class SkipStep(BaseModel):
+    confirmed: bool = Field(
+        default=False, description="The learner confirmed the skip; without it, 422"
+    )
+    version: int = Field(ge=0, description="The session `version` the client last saw")
+
+
 class SessionStep(BaseModel):
     step: Step
     position: int = Field(description="1-based place in the plan")

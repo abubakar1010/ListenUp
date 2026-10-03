@@ -1,6 +1,22 @@
 {
   "components": {
     "schemas": {
+      "ChangeEntry": {
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/Entry"
+          },
+          "version": {
+            "description": "The session `version` the client last saw",
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": ["entry", "version"],
+        "title": "ChangeEntry",
+        "type": "object"
+      },
       "ConfirmUpload": {
         "description": "Add an uploaded file to the library. YouTube links (#37) will be another shape.",
         "properties": {
@@ -608,6 +624,25 @@
         },
         "required": ["step", "position", "status"],
         "title": "SessionStep",
+        "type": "object"
+      },
+      "SkipStep": {
+        "properties": {
+          "confirmed": {
+            "default": false,
+            "description": "The learner confirmed the skip; without it, 422",
+            "title": "Confirmed",
+            "type": "boolean"
+          },
+          "version": {
+            "description": "The session `version` the client last saw",
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": ["version"],
+        "title": "SkipStep",
         "type": "object"
       },
       "StartSession": {
@@ -1495,6 +1530,123 @@
           }
         },
         "summary": "Get Session",
+        "tags": ["sessions"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/entry": {
+      "patch": {
+        "description": "Change Blind, Dictation or both until Transcript opens (FR-PL-5, SR-3).\n\nThe unfinished steps are rebuilt; a finished entry exercise stays and cannot be\nremoved. Choosing the current entry again changes nothing.",
+        "operationId": "change_entry_api_v1_sessions__session_id__entry_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeEntry"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`entry_locked`, `session_changed` or `session_closed`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Entry",
+        "tags": ["sessions"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/steps/{step}/skip": {
+      "post": {
+        "description": "Skip Card or Shadow after the learner confirmed (FR-PL-7, SR-4).\n\nSkipping Shadow completes the session, whatever happened to Card (SR-6, D12).",
+        "operationId": "skip_step_api_v1_sessions__session_id__steps__step__skip_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Step"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkipStep"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_not_skippable` (Blind, Dictation, Transcript), `step_locked`, `step_not_in_plan`, `session_changed` or `session_closed`"
+          },
+          "422": {
+            "description": "`confirmation_required`: `confirmed` was not true"
+          }
+        },
+        "summary": "Skip Step",
         "tags": ["sessions"]
       }
     },

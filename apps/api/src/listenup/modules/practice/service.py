@@ -251,17 +251,40 @@ async def complete_step(db: AsyncSession, practice: PracticeSession, step: Step)
 
 
 async def skip_step(
-    db: AsyncSession, practice: PracticeSession, step: Step, *, confirmed: bool
+    db: AsyncSession,
+    practice: PracticeSession,
+    step: Step,
+    *,
+    confirmed: bool,
+    expected_version: int | None = None,
 ) -> PracticeSession:
-    """Skip Card or Shadow; `confirmed` must be true (FR-PL-7, SR-4)."""
+    """Skip Card or Shadow; `confirmed` must be true (FR-PL-7, SR-4).
+
+    With `expected_version` (the version the client last saw), a session that changed
+    since is refused with 409 `session_changed` before any rule is checked.
+    """
+    _check_version(practice, expected_version)
     return await _transition(db, practice, lambda plan: plan.skip(step, confirmed=confirmed))
 
 
 async def change_entry(
-    db: AsyncSession, practice: PracticeSession, entry: Entry
+    db: AsyncSession,
+    practice: PracticeSession,
+    entry: Entry,
+    *,
+    expected_version: int | None = None,
 ) -> PracticeSession:
-    """Change the entry choice until Transcript opens (FR-PL-5, SR-3)."""
+    """Change the entry choice until Transcript opens (FR-PL-5, SR-3).
+
+    `expected_version` works as in `skip_step`.
+    """
+    _check_version(practice, expected_version)
     return await _transition(db, practice, lambda plan: plan.change_entry(entry))
+
+
+def _check_version(practice: PracticeSession, expected_version: int | None) -> None:
+    if expected_version is not None and expected_version != practice.version:
+        raise _changed()
 
 
 async def _transition(
