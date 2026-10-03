@@ -261,6 +261,53 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sessions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Sessions
+     * @description The learner's sessions, most recently active first, in keyset pages.
+     */
+    get: operations['list_sessions_api_v1_sessions_get'];
+    put?: never;
+    /**
+     * Start Session
+     * @description Start a plan on a clip from the library, with its first step open (FR-PL-1, FR-LB-2).
+     *
+     *     The clip must be playable, and the passage 30 s to 15 min long and within the clip.
+     *     An `Idempotency-Key` makes a retry return the first session instead of a second one.
+     */
+    post: operations['start_session_api_v1_sessions_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Session
+     * @description One session with its plan: steps, the open step and the entry lock.
+     */
+    get: operations['get_session_api_v1_sessions__session_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/uploads': {
     parameters: {
       query?: never;
@@ -457,6 +504,11 @@ export interface components {
       /** Password */
       password: string;
     };
+    /**
+     * Entry
+     * @enum {string}
+     */
+    Entry: 'blind' | 'dictation' | 'both';
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -516,6 +568,19 @@ export interface components {
        */
       id: string;
     };
+    /**
+     * PassageRange
+     * @description The practised part of the clip in milliseconds, half-open [start_ms, end_ms) (C2).
+     */
+    PassageRange: {
+      /**
+       * End Ms
+       * @description 30 s to 15 min after start_ms, within the clip
+       */
+      end_ms: number;
+      /** Start Ms */
+      start_ms: number;
+    };
     /** PasswordReset */
     PasswordReset: {
       /** Password */
@@ -534,10 +599,110 @@ export interface components {
       detail: string;
     };
     /**
+     * Session
+     * @description A practice session with its plan, for "Step N of M" (UI-1).
+     */
+    Session: {
+      /** Completed At */
+      completed_at: string | null;
+      /**
+       * Content Id
+       * Format: uuid
+       */
+      content_id: string;
+      /** Content Title */
+      content_title: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      entry: components['schemas']['Entry'];
+      /**
+       * Entry Locked
+       * @description True once Transcript has opened (FR-PL-5)
+       */
+      entry_locked: boolean;
+      /** Entry Locked At */
+      entry_locked_at: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Open Position
+       * @description N in 'Step N of M'; null when closed
+       */
+      open_position: number | null;
+      /** @description The step the learner can work on; null if closed */
+      open_step: components['schemas']['Step'] | null;
+      passage: components['schemas']['PassageRange'];
+      status: components['schemas']['SessionStatus'];
+      /**
+       * Step Count
+       * @description M in 'Step N of M': 4 or 5
+       */
+      step_count: number;
+      /** Steps */
+      steps: components['schemas']['SessionStep'][];
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /**
+       * Version
+       * @description Send it back with every change; a stale one gets 409
+       */
+      version: number;
+    };
+    /** SessionList */
+    SessionList: {
+      /** Items */
+      items: components['schemas']['Session'][];
+      /**
+       * Next Cursor
+       * @description Pass as `cursor` for the next page
+       */
+      next_cursor: string | null;
+    };
+    /**
      * SessionStatus
      * @enum {string}
      */
     SessionStatus: 'active' | 'completed' | 'abandoned';
+    /** SessionStep */
+    SessionStep: {
+      /**
+       * Position
+       * @description 1-based place in the plan
+       */
+      position: number;
+      status: components['schemas']['StepStatus'];
+      step: components['schemas']['Step'];
+    };
+    /** StartSession */
+    StartSession: {
+      /**
+       * Content Id
+       * Format: uuid
+       */
+      content_id: string;
+      /** @description Blind, Dictation or both (Blind first, OQ-1) */
+      entry: components['schemas']['Entry'];
+      passage: components['schemas']['PassageRange'];
+    };
+    /**
+     * Step
+     * @enum {string}
+     */
+    Step: 'blind' | 'dictation' | 'transcript' | 'card' | 'shadow';
+    /**
+     * StepStatus
+     * @enum {string}
+     */
+    StepStatus: 'locked' | 'open' | 'done' | 'skipped';
     /** StorageUse */
     StorageUse: {
       /** Max File Bytes */
@@ -1054,6 +1219,124 @@ export interface operations {
       };
       /** @description Not playable yet (`media_not_ready`) */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_sessions_api_v1_sessions_get: {
+    parameters: {
+      query?: {
+        cursor?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SessionList'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  start_session_api_v1_sessions_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['StartSession'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Session'];
+        };
+      };
+      /** @description `content_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `content_not_ready`: the clip cannot be played yet */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `invalid_passage`, `clip_too_short` or `passage_outside_clip` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  get_session_api_v1_sessions__session_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Session'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
         headers: {
           [name: string]: unknown;
         };

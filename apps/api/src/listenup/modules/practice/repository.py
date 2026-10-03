@@ -9,8 +9,9 @@ the optimistic check that catches two requests changing one session at once.
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import Row, text
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +31,8 @@ class SessionRow:
     version: int
     entry_locked_at: datetime | None
     completed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,7 @@ class Stamps:
     version: int
     entry_locked_at: datetime | None
     completed_at: datetime | None
+    updated_at: datetime
 
 
 def _passage(value: Range[int]) -> Passage:
@@ -113,18 +117,34 @@ async def insert_steps(
         )
 
 
+_SESSION_COLUMNS = """
+SELECT id, user_id, content_id, passage, entry, status, version,
+       entry_locked_at, completed_at, created_at, updated_at
+  FROM practice.sessions
+"""
+
+
+def _session_row(row: Row[Any]) -> SessionRow:
+    return SessionRow(
+        id=row.id,
+        user_id=row.user_id,
+        content_id=row.content_id,
+        passage=_passage(row.passage),
+        entry=row.entry,
+        status=row.status,
+        version=row.version,
+        entry_locked_at=row.entry_locked_at,
+        completed_at=row.completed_at,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
 async def find_session(
     session: AsyncSession, session_id: uuid.UUID
 ) -> tuple[SessionRow, list[StepRow]] | None:
     row = (
-        await session.execute(
-            text("""
-            SELECT id, user_id, content_id, passage, entry, status, version,
-                   entry_locked_at, completed_at
-              FROM practice.sessions WHERE id = :id
-            """),
-            {"id": session_id},
-        )
+        await session.execute(text(_SESSION_COLUMNS + " WHERE id = :id"), {"id": session_id})
     ).first()
     if row is None:
         return None
@@ -137,18 +157,7 @@ async def find_session(
             {"id": session_id},
         )
     ).all()
-    found = SessionRow(
-        id=row.id,
-        user_id=row.user_id,
-        content_id=row.content_id,
-        passage=_passage(row.passage),
-        entry=row.entry,
-        status=row.status,
-        version=row.version,
-        entry_locked_at=row.entry_locked_at,
-        completed_at=row.completed_at,
-    )
-    return found, [StepRow(s.step, s.position, s.status) for s in steps]
+    return _session_row(row), [StepRow(s.step, s.position, s.status) for s in steps]
 
 
 async def update_session(
@@ -170,7 +179,7 @@ async def update_session(
                                        ELSE completed_at END,
                    version = version + 1
              WHERE id = :id AND version = :version
-            RETURNING version, entry_locked_at, completed_at
+            RETURNING version, entry_locked_at, completed_at, updated_at
             """),
             {
                 "id": session_id,
@@ -183,7 +192,9 @@ async def update_session(
             },
         )
     ).first()
-    return Stamps(row.version, row.entry_locked_at, row.completed_at) if row else None
+    if row is None:
+        return None
+    return Stamps(row.version, row.entry_locked_at, row.completed_at, row.updated_at)
 
 
 async def update_steps(
@@ -230,3 +241,40 @@ async def latest_status_by_content(
         {"content_ids": content_ids},
     )
     return {row.content_id: row.status for row in rows}
+
+
+async def list_sessions(
+    session: AsyncSession,
+    learner: uuid.UUID,
+    limit: int,
+    after: tuple[datetime, uuid.UUID] | None,
+) -> list[tuple[SessionRow, list[StepRow]]]:
+    """The learner's sessions, most recently changed first, starting after `after`.
+
+    Keyset on `sessions_user_idx` (user_id, updated_at DESC, id); the steps of the
+    whole page come in one more query.
+    """
+    params: dict[str, object] = {"learner": learner, "limit": limit}
+    where = "WHERE user_id = :learner"
+    if after is not None:
+        where += " AND (updated_at, id) < (:after_at, :after_id)"
+        params.update(after_at=after[0], after_id=after[1])
+    rows = (
+        await session.execute(
+            text(f"{_SESSION_COLUMNS} {where} ORDER BY updated_at DESC, id DESC LIMIT :limit"),
+            params,
+        )
+    ).all()
+    if not rows:
+        return []
+    step_rows = await session.execute(
+        text("""
+        SELECT session_id, step, position, status FROM practice.session_steps
+         WHERE session_id = ANY(:ids) ORDER BY session_id, position
+        """),
+        {"ids": [row.id for row in rows]},
+    )
+    steps: dict[uuid.UUID, list[StepRow]] = {}
+    for s in step_rows:
+        steps.setdefault(s.session_id, []).append(StepRow(s.step, s.position, s.status))
+    return [(_session_row(row), steps.get(row.id, [])) for row in rows]

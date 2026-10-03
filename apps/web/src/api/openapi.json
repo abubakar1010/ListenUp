@@ -237,6 +237,11 @@
         "title": "Credentials",
         "type": "object"
       },
+      "Entry": {
+        "enum": ["blind", "dictation", "both"],
+        "title": "Entry",
+        "type": "string"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -369,6 +374,25 @@
         "title": "Me",
         "type": "object"
       },
+      "PassageRange": {
+        "description": "The practised part of the clip in milliseconds, half-open [start_ms, end_ms) (C2).",
+        "properties": {
+          "end_ms": {
+            "description": "30 s to 15 min after start_ms, within the clip",
+            "exclusiveMinimum": 0.0,
+            "title": "End Ms",
+            "type": "integer"
+          },
+          "start_ms": {
+            "minimum": 0.0,
+            "title": "Start Ms",
+            "type": "integer"
+          }
+        },
+        "required": ["start_ms", "end_ms"],
+        "title": "PassageRange",
+        "type": "object"
+      },
       "PasswordReset": {
         "properties": {
           "password": {
@@ -410,9 +434,209 @@
         "title": "PasswordResetRequested",
         "type": "object"
       },
+      "Session": {
+        "description": "A practice session with its plan, for \"Step N of M\" (UI-1).",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "content_id": {
+            "format": "uuid",
+            "title": "Content Id",
+            "type": "string"
+          },
+          "content_title": {
+            "title": "Content Title",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/Entry"
+          },
+          "entry_locked": {
+            "description": "True once Transcript has opened (FR-PL-5)",
+            "title": "Entry Locked",
+            "type": "boolean"
+          },
+          "entry_locked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Locked At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "open_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "N in 'Step N of M'; null when closed",
+            "title": "Open Position"
+          },
+          "open_step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Step"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The step the learner can work on; null if closed"
+          },
+          "passage": {
+            "$ref": "#/components/schemas/PassageRange"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionStatus"
+          },
+          "step_count": {
+            "description": "M in 'Step N of M': 4 or 5",
+            "title": "Step Count",
+            "type": "integer"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/SessionStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "description": "Send it back with every change; a stale one gets 409",
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "content_id",
+          "content_title",
+          "passage",
+          "entry",
+          "status",
+          "version",
+          "steps",
+          "step_count",
+          "open_step",
+          "open_position",
+          "entry_locked",
+          "entry_locked_at",
+          "completed_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Session",
+        "type": "object"
+      },
+      "SessionList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pass as `cursor` for the next page",
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items", "next_cursor"],
+        "title": "SessionList",
+        "type": "object"
+      },
       "SessionStatus": {
         "enum": ["active", "completed", "abandoned"],
         "title": "SessionStatus",
+        "type": "string"
+      },
+      "SessionStep": {
+        "properties": {
+          "position": {
+            "description": "1-based place in the plan",
+            "title": "Position",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StepStatus"
+          },
+          "step": {
+            "$ref": "#/components/schemas/Step"
+          }
+        },
+        "required": ["step", "position", "status"],
+        "title": "SessionStep",
+        "type": "object"
+      },
+      "StartSession": {
+        "properties": {
+          "content_id": {
+            "format": "uuid",
+            "title": "Content Id",
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/Entry",
+            "description": "Blind, Dictation or both (Blind first, OQ-1)"
+          },
+          "passage": {
+            "$ref": "#/components/schemas/PassageRange"
+          }
+        },
+        "required": ["content_id", "passage", "entry"],
+        "title": "StartSession",
+        "type": "object"
+      },
+      "Step": {
+        "enum": ["blind", "dictation", "transcript", "card", "shadow"],
+        "title": "Step",
+        "type": "string"
+      },
+      "StepStatus": {
+        "enum": ["locked", "open", "done", "skipped"],
+        "title": "StepStatus",
         "type": "string"
       },
       "StorageUse": {
@@ -1109,6 +1333,169 @@
         },
         "summary": "Media Peaks",
         "tags": ["content"]
+      }
+    },
+    "/api/v1/sessions": {
+      "get": {
+        "description": "The learner's sessions, most recently active first, in keyset pages.",
+        "operationId": "list_sessions_api_v1_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sessions",
+        "tags": ["sessions"]
+      },
+      "post": {
+        "description": "Start a plan on a clip from the library, with its first step open (FR-PL-1, FR-LB-2).\n\nThe clip must be playable, and the passage 30 s to 15 min long and within the clip.\nAn `Idempotency-Key` makes a retry return the first session instead of a second one.",
+        "operationId": "start_session_api_v1_sessions_post",
+        "parameters": [
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartSession"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`content_not_found`"
+          },
+          "409": {
+            "description": "`content_not_ready`: the clip cannot be played yet"
+          },
+          "422": {
+            "description": "`invalid_passage`, `clip_too_short` or `passage_outside_clip`"
+          }
+        },
+        "summary": "Start Session",
+        "tags": ["sessions"]
+      }
+    },
+    "/api/v1/sessions/{session_id}": {
+      "get": {
+        "description": "One session with its plan: steps, the open step and the entry lock.",
+        "operationId": "get_session_api_v1_sessions__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Session",
+        "tags": ["sessions"]
       }
     },
     "/api/v1/uploads": {

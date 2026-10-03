@@ -153,6 +153,19 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ("GET", "/api/v1/contents/{content_id}"): Owned(
         "content_not_found", params=lambda w: {"content_id": w.a.content_id}
     ),
+    # -- practice sessions -------------------------------------------------------------
+    ("POST", "/api/v1/sessions"): Owned(
+        "content_not_found",
+        body=lambda w: {
+            "content_id": str(w.a.content_id),
+            "passage": {"start_ms": 0, "end_ms": 60_000},
+            "entry": "both",
+        },
+    ),
+    ("GET", "/api/v1/sessions"): Scoped(a_sees=lambda w: w.a.sessions.values()),
+    ("GET", "/api/v1/sessions/{session_id}"): Owned(
+        "session_not_found", params=lambda w: {"session_id": w.a.sessions["dictation"]}
+    ),
     # -- media -------------------------------------------------------------------------
     ("GET", "/api/v1/media/{media_object_id}"): Owned(
         "media_not_found", params=lambda w: {"media_object_id": w.a.media_id}

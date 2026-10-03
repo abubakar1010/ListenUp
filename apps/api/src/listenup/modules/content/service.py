@@ -25,6 +25,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 from fastapi import Depends, Request
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.content import jobs, repository
@@ -364,3 +365,28 @@ def build_uploads(settings: Settings, storage: Storage, limiter: RateLimiter) ->
 
 
 UploadsDep = Annotated[Uploads, Depends(get_uploads)]
+
+
+# --- Content lookups for other modules (added for the sessions API, #48) -------------
+# Kept apart from the intake code above. The practice module checks that a clip is
+# ready and long enough before a plan starts, and shows clip titles in its sessions,
+# without reaching into this module's tables.
+
+
+async def find_content(session: AsyncSession, content_id: uuid.UUID) -> ContentSummary | None:
+    """One of the learner's content items, or None (row-level security hides others')."""
+    row = await repository.get_content(session, content_id)
+    return _summary(row) if row else None
+
+
+async def content_titles(
+    session: AsyncSession, content_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    """The titles of the learner's content items among `content_ids`, by id."""
+    if not content_ids:
+        return {}
+    rows = await session.execute(
+        text("SELECT id, title FROM content.contents WHERE id = ANY(:ids)"),
+        {"ids": list(set(content_ids))},
+    )
+    return {row.id: row.title for row in rows}

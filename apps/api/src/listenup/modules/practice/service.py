@@ -21,6 +21,7 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.modules.content import service as content
 from listenup.modules.practice import repository
 from listenup.modules.practice.domain import (
     ConfirmationRequired,
@@ -38,6 +39,7 @@ from listenup.modules.practice.domain import (
     StepState,
     StepStatus,
 )
+from listenup.modules.practice.domain import cursor as cursors
 from listenup.platform.errors import ProblemError
 from listenup.platform.ids import uuid7
 
@@ -45,6 +47,7 @@ __all__ = [
     "Entry",
     "Passage",
     "PracticeSession",
+    "SessionPage",
     "SessionStatus",
     "Step",
     "StepState",
@@ -52,11 +55,16 @@ __all__ = [
     "change_entry",
     "complete_step",
     "get_session",
+    "list_sessions",
     "require_reached",
     "require_step",
     "skip_step",
+    "start_plan",
     "start_session",
 ]
+
+PAGE_SIZE = 20
+MAX_PAGE_SIZE = 50
 
 
 @dataclass(frozen=True)
@@ -71,6 +79,8 @@ class PracticeSession:
     version: int
     entry_locked_at: datetime | None
     completed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
 
     @property
     def entry(self) -> Entry:
@@ -91,6 +101,18 @@ class PracticeSession:
     @property
     def steps(self) -> tuple[StepState, ...]:
         return self.plan.steps
+
+    @property
+    def entry_locked(self) -> bool:
+        return self.plan.entry_locked
+
+    @property
+    def open_position(self) -> int | None:
+        """The open step's place in the plan, the N of "Step N of M"; None when closed."""
+        for state in self.plan.steps:
+            if state.status is StepStatus.OPEN:
+                return state.position
+        return None
 
 
 def problem_for(error: PlanError) -> ProblemError:
@@ -156,7 +178,10 @@ async def get_session(db: AsyncSession, session_id: uuid.UUID) -> PracticeSessio
     found = await repository.find_session(db, session_id)
     if found is None:
         raise _not_found()
-    row, steps = found
+    return _snapshot(*found)
+
+
+def _snapshot(row: repository.SessionRow, steps: list[repository.StepRow]) -> PracticeSession:
     return PracticeSession(
         id=row.id,
         user_id=row.user_id,
@@ -166,6 +191,8 @@ async def get_session(db: AsyncSession, session_id: uuid.UUID) -> PracticeSessio
         version=row.version,
         entry_locked_at=row.entry_locked_at,
         completed_at=row.completed_at,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     )
 
 
@@ -279,6 +306,8 @@ async def _transition(
         version=stamps.version,
         entry_locked_at=stamps.entry_locked_at,
         completed_at=stamps.completed_at,
+        created_at=practice.created_at,
+        updated_at=stamps.updated_at,
     )
 
 
@@ -291,3 +320,103 @@ async def latest_session_status(
     """
     found = await repository.latest_status_by_content(db, content_ids)
     return {content_id: SessionStatus(status) for content_id, status in found.items()}
+
+
+_NOT_READY = {
+    "pending": "This clip is still being prepared. You can start a plan as soon as it is ready.",
+    "downloading": "This clip is still downloading. You can start a plan as soon as it is ready.",
+    "failed": "This clip could not be processed, so it cannot be practised. Add the file again.",
+    "expired": "This clip needs downloading again before you can practise it.",
+}
+
+
+async def start_plan(
+    db: AsyncSession,
+    learner: uuid.UUID,
+    content_id: uuid.UUID,
+    start_ms: int,
+    end_ms: int,
+    entry: Entry,
+) -> PracticeSession:
+    """Start a plan on one of the learner's clips (FR-PL-1, FR-PL-2, FR-LB-2).
+
+    The checks `start_session` leaves to its caller:
+    - 422 `invalid_passage`: the passage starts before the clip or is not 30 s to 15 min
+      long (C2).
+    - 404 `content_not_found`: no such content item for this learner.
+    - 409 `content_not_ready`: the clip is not playable yet (or failed, or expired).
+      Blind and Dictation need playback, so a plan never starts on a clip that cannot
+      play; the problem carries the clip's `content_status`.
+    - 422 `clip_too_short`: the clip is under 30 s, so no passage fits.
+    - 422 `passage_outside_clip`: the passage ends after the clip; carries `duration_ms`.
+    The duration checks apply once the clip's duration is known.
+    """
+    try:
+        passage = Passage(start_ms, end_ms)
+    except ValueError as error:
+        raise ProblemError(
+            422,
+            "invalid_passage",
+            f"Choose a part of the clip from 30 seconds to 15 minutes long ({error}).",
+        ) from error
+    item = await content.find_content(db, content_id)
+    if item is None:
+        raise ProblemError(404, "content_not_found", "There is no such content item.")
+    if item.status != "playable":
+        raise ProblemError(
+            409,
+            "content_not_ready",
+            _NOT_READY.get(item.status, "This clip cannot be played yet."),
+            content_status=item.status,
+        )
+    if item.duration_ms is not None:
+        if item.duration_ms < Passage.MIN_MS:
+            raise ProblemError(
+                422,
+                "clip_too_short",
+                "This clip is shorter than 30 seconds, too short for a plan. Add a longer clip.",
+                duration_ms=item.duration_ms,
+            )
+        if passage.end_ms > item.duration_ms:
+            raise ProblemError(
+                422,
+                "passage_outside_clip",
+                "The part you chose ends after the clip does. Choose an end time within the clip.",
+                duration_ms=item.duration_ms,
+            )
+    return await start_session(db, learner, content_id, passage, entry)
+
+
+@dataclass(frozen=True)
+class SessionPage:
+    items: list[PracticeSession]
+    next_cursor: str | None
+
+
+async def list_sessions(
+    db: AsyncSession,
+    learner: uuid.UUID,
+    cursor: str | None = None,
+    limit: int = PAGE_SIZE,
+) -> SessionPage:
+    """The learner's sessions, most recently changed first, in keyset pages.
+
+    400 `invalid_cursor` for a cursor this API did not hand out.
+    """
+    after = None
+    if cursor:
+        try:
+            decoded = cursors.decode(cursor)
+        except cursors.InvalidCursor as error:
+            raise ProblemError(
+                400, "invalid_cursor", "This page link is not valid. Load the list again."
+            ) from error
+        after = (decoded.updated_at, decoded.id)
+    limit = max(1, min(limit, MAX_PAGE_SIZE))
+    rows = await repository.list_sessions(db, learner, limit + 1, after)
+    items = [_snapshot(row, steps) for row, steps in rows[:limit]]
+    next_cursor = None
+    if len(rows) > limit:
+        last = items[-1]
+        next_cursor = cursors.encode(cursors.Cursor(last.updated_at, last.id))
+    return SessionPage(items, next_cursor)
