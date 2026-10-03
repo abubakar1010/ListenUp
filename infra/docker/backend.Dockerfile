@@ -24,7 +24,8 @@ RUN uv sync --frozen --no-dev && useradd --system --uid 10001 app
 FROM base AS api
 USER app
 EXPOSE 8000
-CMD ["uvicorn", "listenup.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Open event streams (GET /api/v1/events) would otherwise hold up a shutdown.
+CMD ["uvicorn", "listenup.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "5"]
 
 FROM base AS worker
 USER app
