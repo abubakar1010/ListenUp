@@ -29,26 +29,42 @@ SCHEMAS = "identity, content, practice, grading, ai, ops"
 # Creating a BYPASSRLS role needs a superuser; on a managed database where the
 # migration role is not one, an administrator runs this block once beforehand.
 ROLES = """
+-- Roles and their settings are shared by every database on the server, so two
+-- databases migrating at the same moment (parallel test runs, several environments
+-- on one server) race on them and PostgreSQL refuses one with "tuple concurrently
+-- updated". The work is idempotent, so a refused attempt waits briefly and retries.
 DO $$
+DECLARE
+  attempt int;
 BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'listenup_api') THEN
-    CREATE ROLE listenup_api NOLOGIN;
-  END IF;
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'listenup_worker') THEN
-    CREATE ROLE listenup_worker NOLOGIN BYPASSRLS;  -- jobs act for many learners
-  END IF;
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'listenup_readonly') THEN
-    CREATE ROLE listenup_readonly NOLOGIN;
-  END IF;
-END $$;
+  FOR attempt IN 1..20 LOOP
+    BEGIN
+      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'listenup_api') THEN
+        CREATE ROLE listenup_api NOLOGIN;
+      END IF;
+      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'listenup_worker') THEN
+        CREATE ROLE listenup_worker NOLOGIN BYPASSRLS;  -- jobs act for many learners
+      END IF;
+      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'listenup_readonly') THEN
+        CREATE ROLE listenup_readonly NOLOGIN;
+      END IF;
 
--- Timeouts per role (Database Design 12.3).
-ALTER ROLE listenup_api SET statement_timeout = '5s';
-ALTER ROLE listenup_api SET idle_in_transaction_session_timeout = '30s';
-ALTER ROLE listenup_worker SET statement_timeout = '60s';
-ALTER ROLE listenup_worker SET idle_in_transaction_session_timeout = '30s';
-ALTER ROLE listenup_readonly SET statement_timeout = '30s';
-ALTER ROLE listenup_readonly SET idle_in_transaction_session_timeout = '30s';
+      -- Timeouts per role (Database Design 12.3).
+      ALTER ROLE listenup_api SET statement_timeout = '5s';
+      ALTER ROLE listenup_api SET idle_in_transaction_session_timeout = '30s';
+      ALTER ROLE listenup_worker SET statement_timeout = '60s';
+      ALTER ROLE listenup_worker SET idle_in_transaction_session_timeout = '30s';
+      ALTER ROLE listenup_readonly SET statement_timeout = '30s';
+      ALTER ROLE listenup_readonly SET idle_in_transaction_session_timeout = '30s';
+      RETURN;
+    EXCEPTION WHEN internal_error OR unique_violation OR duplicate_object THEN
+      IF attempt = 20 THEN
+        RAISE;
+      END IF;
+      PERFORM pg_sleep(0.05 * attempt);
+    END;
+  END LOOP;
+END $$;
 """
 
 UPGRADE = f"""
