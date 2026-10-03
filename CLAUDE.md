@@ -52,6 +52,7 @@ TypeScript is pinned to 6.x because typescript-eslint does not support TypeScrip
 - Submissions wrap their work in `run_once` with the `Idempotency-Key` header. Rate limits go through `RateLimiter.enforce`, which commits on its own.
 - Storage keys live under `users/<user id>/`; the browser only ever gets signed URLs from `S3Storage`.
 - Endpoints that need a signed-in learner take `CurrentLearner` from `modules/identity/service.py`; it resolves the session cookie and calls `set_learner`. Every POST, PUT, PATCH and DELETE needs the `X-CSRF-Token` header (the web client's `api()` adds it; tests use `with_csrf`).
+- Background work is a job: declare it with `@job(Lane.X, "module.name")` from `listenup.platform.jobs` (an async handler that takes `JobDeps` and writes results as idempotent upserts) and queue it with `enqueue(session, ...)` in the transaction that changes the data. Raise `PermanentError` for input that can never succeed. Add the module's jobs package to `JOB_MODULES` in `listenup/worker.py` (ADR 0015). Run a pool locally with `uv run python -m listenup.worker default` (or `media`).
 - Integration tests that go through the API connect as `api_role_url` (a role with only `listenup_api`'s rights); the migration owner bypasses row-level security and hides bugs.
 
 ## Decisions that shape the architecture
