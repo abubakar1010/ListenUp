@@ -1,53 +1,60 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link, Route, Routes } from 'react-router';
+import { lazy } from 'react';
+import { Route, Routes } from 'react-router';
 
-import { api } from './api/client';
+import { AppLayout } from './app/AppLayout';
+import { HomeRedirect, RedirectIfSignedIn, RequireAuth } from './app/guards';
+import { PageTitle } from './app/PageTitle';
+import { PublicLayout } from './app/PublicLayout';
+import { RouteFocus } from './app/RouteFocus';
+import { SkipLink } from './app/SkipLink';
 import { RegisterPage, SignInPage } from './auth/pages';
-import { ME_KEY, useMe } from './auth/useMe';
 
-function Home() {
-  const me = useMe();
-  const queryClient = useQueryClient();
-  const signOut = useMutation({
-    mutationFn: () => api<void>('/auth/logout', { method: 'POST' }),
-    onSuccess: () => queryClient.setQueryData(ME_KEY, null),
-  });
-
-  return (
-    <main className="mx-auto max-w-3xl p-6">
-      <h1 className="text-3xl font-semibold">ListenUp</h1>
-      <p className="mt-2">Practise English listening, one clip at a time.</p>
-      {me.data ? (
-        <div className="mt-6 flex items-center gap-4">
-          <p>Signed in as {me.data.email}</p>
-          <button
-            type="button"
-            onClick={() => signOut.mutate()}
-            className="rounded border border-gray-400 px-3 py-1 focus:outline-2 focus:outline-offset-2 focus:outline-blue-700"
-          >
-            Sign out
-          </button>
-        </div>
-      ) : me.isSuccess ? (
-        <p className="mt-6 flex gap-4">
-          <Link to="/sign-in" className="text-blue-700 underline">
-            Sign in
-          </Link>
-          <Link to="/register" className="text-blue-700 underline">
-            Create an account
-          </Link>
-        </p>
-      ) : null}
-    </main>
-  );
-}
+// Route-based code splitting: each page below downloads when it is first opened.
+// The sign-in and register pages stay in the first bundle, because signed-out
+// visitors land on them.
+const LibraryPage = lazy(() => import('./features/library/LibraryPage'));
+const SessionPage = lazy(() => import('./features/session/SessionPage'));
+const NotFoundPage = lazy(() => import('./app/NotFoundPage'));
 
 export function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/sign-in" element={<SignInPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-    </Routes>
+    <>
+      <SkipLink />
+      <RouteFocus />
+      <Routes>
+        <Route path="/" element={<HomeRedirect />} />
+
+        <Route element={<PublicLayout />}>
+          <Route element={<RedirectIfSignedIn />}>
+            <Route
+              path="/sign-in"
+              element={
+                <>
+                  <PageTitle title="Sign in" />
+                  <SignInPage />
+                </>
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <>
+                  <PageTitle title="Create account" />
+                  <RegisterPage />
+                </>
+              }
+            />
+          </Route>
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+
+        <Route element={<RequireAuth />}>
+          <Route element={<AppLayout />}>
+            <Route path="/library" element={<LibraryPage />} />
+          </Route>
+          <Route path="/sessions/:sessionId" element={<SessionPage />} />
+        </Route>
+      </Routes>
+    </>
   );
 }

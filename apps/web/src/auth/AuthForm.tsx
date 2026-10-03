@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 
 import { api, ApiError, type Me } from '../api/client';
 import { errorMessage } from './errorMessage';
+import { nextPath } from './next';
 import { ME_KEY } from './useMe';
 
 type Mode = 'sign-in' | 'register';
@@ -20,12 +21,14 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
   const [password, setPassword] = useState('');
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const submit = useMutation({
     mutationFn: () => api<Me>(copy.path, { method: 'POST', body: { email, password } }),
     onSuccess: (me) => {
       queryClient.setQueryData(ME_KEY, me);
-      void navigate('/');
+      // Back to the page that sent the learner here, else the library.
+      void navigate(nextPath(searchParams), { replace: true });
     },
   });
 
