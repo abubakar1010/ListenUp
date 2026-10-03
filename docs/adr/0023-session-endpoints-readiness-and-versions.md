@@ -1,6 +1,6 @@
 # ADR 0023: Plans start only on playable clips, and session writes carry the version
 
-- Status: Accepted
+- Status: Accepted; the typed passage is superseded by the waveform picker of ADR 0026
 - Date: 2026-10-03
 - Source: issues #48 and #49; [SRS FR-PL-1 to FR-PL-7, FR-LB-2, C2](https://claude.ai/code/artifact/fd47a9cb-6515-4fde-a232-3ab8cc14f0dd); [Software Architecture 9.2 (Sessions)](https://claude.ai/code/artifact/6a30920f-b6a0-4131-a486-f2044c71bb13); final UI screens B04, C01, C02 and G04
 
