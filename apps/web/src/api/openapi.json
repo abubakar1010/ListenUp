@@ -125,6 +125,96 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "LibraryItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_session_status": {
+            "anyOf": [
+              {
+                "enum": ["active", "completed", "abandoned"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Status of the newest practice session on this item; null when none",
+            "title": "Last Session Status"
+          },
+          "source": {
+            "enum": ["upload", "youtube"],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "description": "Processing status of the clip's media",
+            "enum": ["pending", "downloading", "playable", "failed", "expired"],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "source",
+          "status",
+          "duration_ms",
+          "created_at",
+          "last_session_status"
+        ],
+        "title": "LibraryItem",
+        "type": "object"
+      },
+      "LibraryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pass as `cursor` for the next page",
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items", "next_cursor"],
+        "title": "LibraryPage",
+        "type": "object"
+      },
       "Me": {
         "properties": {
           "display_name": {
@@ -681,6 +771,70 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/api/v1/library/contents": {
+      "get": {
+        "description": "The learner's library, newest first, 20 per page by default (FR-LB-1).",
+        "operationId": "library_contents_api_v1_library_contents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not modified since the ETag in If-None-Match"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Library Contents",
+        "tags": ["library"]
       }
     },
     "/api/v1/me": {

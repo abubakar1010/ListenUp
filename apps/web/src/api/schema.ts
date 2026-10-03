@@ -162,6 +162,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/library/contents': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Library Contents
+     * @description The learner's library, newest first, 20 per page by default (FR-LB-1).
+     */
+    get: operations['library_contents_api_v1_library_contents_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/me': {
     parameters: {
       query?: never;
@@ -311,6 +331,49 @@ export interface components {
     HTTPValidationError: {
       /** Detail */
       detail?: components['schemas']['ValidationError'][];
+    };
+    /** LibraryItem */
+    LibraryItem: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Duration Ms */
+      duration_ms: number | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Last Session Status
+       * @description Status of the newest practice session on this item; null when none
+       */
+      last_session_status: ('active' | 'completed' | 'abandoned') | null;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: 'upload' | 'youtube';
+      /**
+       * Status
+       * @description Processing status of the clip's media
+       * @enum {string}
+       */
+      status: 'pending' | 'downloading' | 'playable' | 'failed' | 'expired';
+      /** Title */
+      title: string;
+    };
+    /** LibraryPage */
+    LibraryPage: {
+      /** Items */
+      items: components['schemas']['LibraryItem'][];
+      /**
+       * Next Cursor
+       * @description Pass as `cursor` for the next page
+       */
+      next_cursor: string | null;
     };
     /** Me */
     Me: {
@@ -688,6 +751,45 @@ export interface operations {
           'application/json': {
             [key: string]: string;
           };
+        };
+      };
+    };
+  };
+  library_contents_api_v1_library_contents_get: {
+    parameters: {
+      query?: {
+        cursor?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['LibraryPage'];
+        };
+      };
+      /** @description Not modified since the ETag in If-None-Match */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

@@ -10,6 +10,7 @@ from listenup.modules.content import api as content_api
 from listenup.modules.content.service import build_uploads
 from listenup.modules.identity import api as identity_api
 from listenup.modules.identity.service import build_accounts, current_learner
+from listenup.modules.library import api as library_api
 from listenup.platform.config import Settings, get_settings
 from listenup.platform.csrf import CsrfMiddleware
 from listenup.platform.database import Database
@@ -52,6 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.add_api_route("/health", health, methods=["GET"])
     api.include_router(identity_api.router)
     api.include_router(content_api.router)
+    api.include_router(library_api.router)
     api.include_router(events_router(current_learner))
     app.include_router(api)
     return app
