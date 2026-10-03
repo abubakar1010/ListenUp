@@ -1,0 +1,11 @@
+# Test audio and recordings never enter this public repository: recordings are personal
+# data, and test clips may be copyrighted. Keep them on the benchmark server only.
+data/
+*.wav
+*.flac
+*.mp3
+*.m4a
+*.webm
+*.ogg
+LibriSpeech/
+*.tar.gz
