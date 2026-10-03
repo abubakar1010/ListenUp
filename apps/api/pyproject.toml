@@ -42,6 +42,9 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["listenup", "migrations", "tests"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
