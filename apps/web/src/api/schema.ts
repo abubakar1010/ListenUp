@@ -55,6 +55,28 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Events
+     * @description Stream the learner's live events (System Design 9.1).
+     *
+     *     Each event carries only its type and the id of the resource to refetch.
+     */
+    get: operations['events_api_v1_events_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/health': {
     parameters: {
       query?: never;
@@ -212,6 +234,37 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['Me'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  events_api_v1_events_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        'last-event-id'?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description A Server-Sent Events stream of the learner's events: job.progress, content.ready, grade.ready, attempt.voided and resync. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/event-stream': string;
         };
       };
       /** @description Validation Error */
