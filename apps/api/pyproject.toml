@@ -13,6 +13,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "procrastinate>=2.0",
     "boto3>=1.35",
+    "argon2-cffi>=23.1",
 ]
 
 [dependency-groups]
@@ -23,6 +24,7 @@ dev = [
     "mypy>=1.11",
     "import-linter>=2.15",
     "types-boto3[s3]>=1.35",
+    "hypothesis>=6.168.3",
 ]
 
 [build-system]

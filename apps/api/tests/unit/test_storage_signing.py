@@ -39,6 +39,22 @@ def test_urls_expire_in_minutes() -> None:
     assert parse_qs(urlparse(url).query)["X-Amz-Expires"] == ["300"]
 
 
+def test_a_short_lived_download_url_is_fresh_and_capped() -> None:
+    """Blind's attempt-bound media (#62): never reused, never longer than the default."""
+    clock = Clock()
+    storage = make_storage(clock)
+    cached = storage.signed_download("users/1/a.mp3")
+
+    short = storage.signed_download("users/1/a.mp3", ttl_seconds=90)
+    capped = storage.signed_download("users/1/a.mp3", ttl_seconds=3_600)
+
+    assert short != cached
+    assert parse_qs(urlparse(short.url).query)["X-Amz-Expires"] == ["90"]
+    assert short.expires_at == clock.now + 90
+    assert parse_qs(urlparse(capped.url).query)["X-Amz-Expires"] == ["300"]
+    assert storage.signed_download("users/1/a.mp3") == cached
+
+
 def test_upload_urls_are_bound_to_the_content_type() -> None:
     signed = make_storage().signed_upload("users/1/upload.webm", "audio/webm")
 
@@ -65,3 +81,12 @@ def test_unsafe_keys_are_refused(key: str) -> None:
 async def test_delete_needs_a_folder_prefix(prefix: str) -> None:
     with pytest.raises(ValueError):
         await make_storage().delete_prefix(prefix)
+
+
+def test_upload_urls_can_be_bound_to_the_exact_size() -> None:
+    signed = make_storage().signed_upload("users/1/uploads/a.mp3", "audio/mpeg", content_length=42)
+
+    signed_headers = parse_qs(urlparse(signed.url).query)["X-Amz-SignedHeaders"][0]
+    assert "content-length" in signed_headers.split(";")
+    # Clients send Content-Length themselves; browsers refuse to let a page set it.
+    assert signed.headers == {"Content-Type": "audio/mpeg"}

@@ -2,6 +2,8 @@
 #   --target api           FastAPI API
 #   --target worker        default worker pool: lanes ai, background
 #   --target worker-media  media worker pool: lanes speech-interactive, intake
+# Worker containers are healthy only once the pool has loaded its models and written
+# its ready file (listenup.worker).
 # Build from the repository root: docker build -f infra/docker/backend.Dockerfile --target api .
 
 FROM python:3.12-slim AS base
@@ -22,11 +24,13 @@ RUN uv sync --frozen --no-dev && useradd --system --uid 10001 app
 FROM base AS api
 USER app
 EXPOSE 8000
-CMD ["uvicorn", "listenup.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Open event streams (GET /api/v1/events) would otherwise hold up a shutdown.
+CMD ["uvicorn", "listenup.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "5"]
 
 FROM base AS worker
 USER app
-CMD ["procrastinate", "--app=listenup.worker.app", "worker", "--queues=ai,background"]
+HEALTHCHECK --interval=10s --start-period=30s CMD test -f /tmp/listenup-worker-ready
+CMD ["python", "-m", "listenup.worker", "default"]
 
 FROM base AS worker-media
 # Media tools for download, conversion and snippet cutting. Speech models are
@@ -36,4 +40,5 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && uv pip install --python /opt/venv/bin/python yt-dlp
 USER app
-CMD ["procrastinate", "--app=listenup.worker.app", "worker", "--queues=speech-interactive,intake"]
+HEALTHCHECK --interval=10s --start-period=120s CMD test -f /tmp/listenup-worker-ready
+CMD ["python", "-m", "listenup.worker", "media"]

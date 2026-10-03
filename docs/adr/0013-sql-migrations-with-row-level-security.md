@@ -21,4 +21,4 @@ The Database Design keeps product rules and learner isolation in PostgreSQL itse
 
 ## Consequences
 
-Feature stories add their tables, constraints, policies and grants in new revisions, plus a model for each table. Integration tests run against a real PostgreSQL 16 server and try to break each rule; CI fails rather than skips them when the database is missing. Procrastinate still creates its own tables in `public`, outside Alembic; the grants that let the API and worker roles use the queue come with the first feature that enqueues jobs under those roles.
+Feature stories add their tables, constraints, policies and grants in new revisions, plus a model for each table. Integration tests run against a real PostgreSQL 16 server and try to break each rule; CI fails rather than skips them when the database is missing. Procrastinate still creates its own tables in `public`, outside Alembic; the grants that let the API and worker roles use the queue come with the first feature that enqueues jobs under those roles. (Superseded on this point by ADR 0015: migration 0003 creates the queue in its own `procrastinate` schema, with the grants.)
