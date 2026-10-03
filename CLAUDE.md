@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ListenUp is a web app for practicing English listening. The learner adds a clip (file upload or YouTube link) and works through a fixed plan: **Blind**, **Dictation**, **Transcript**, **Card**, **Shadow**. The learner picks Blind, Dictation or both first, so the plan has 4 or 5 steps, and Transcript, Card and Shadow always follow.
 
-The repository has no code yet. The stack is chosen in the Software Architecture: a React + TypeScript web client built with Vite; a Python 3.12 FastAPI API and Procrastinate workers in one Python package; PostgreSQL 16; S3-compatible object storage; Docker Compose for local and production runs. Once the scaffold exists, add the build, lint and test commands (including how to run a single test) to this file.
+The stack is chosen in the Software Architecture: a React + TypeScript web client built with Vite (`apps/web`); a Python 3.12 FastAPI API and Procrastinate workers in one Python package (`apps/api`, package `listenup`); PostgreSQL 16; S3-compatible object storage; Docker Compose for local and production runs. Architecture decision records live in `docs/adr/`; add one for every significant decision.
 
 The design lives in documents outside the repo:
 - PRD: https://claude.ai/code/artifact/5d73e467-e587-4d4f-946d-a9fd2c0ab5f6 (what the product does and why)
@@ -15,6 +15,29 @@ The design lives in documents outside the repo:
 - System Design: https://claude.ai/code/artifact/98274889-96ba-4424-afad-c2cd056206e2 (capacity, job queue lanes, speech and storage efficiency, scaling)
 - Database Design: https://claude.ai/code/artifact/ba05f7b3-f881-41e5-86d6-dcb94a509644 (the full schema: tables, DDL, constraints, access rules)
 The SRS keeps stable requirement IDs (`FR-DI-1`, `FR-BL-1`, `NFR-AI-1`, and so on). Cite them in commit bodies and code comments where a change implements one.
+
+## Commands
+
+Run from the repository root unless a directory is given.
+
+**Local stack** (PostgreSQL, S3 storage, Mailpit, API on :8000, both worker pools):
+- `docker compose up --build` — start everything; the API reloads on changes in `apps/api/src`.
+- `docker compose down` — stop; add `-v` to also delete the local data volumes.
+- Mailpit (sent email) is at http://localhost:8025.
+
+**Backend** (`cd apps/api`; uv manages the virtual environment):
+- `uv sync` — install dependencies, including dev tools.
+- `uv run uvicorn listenup.main:app --reload` — run the API without Docker (needs PostgreSQL).
+- `uv run pytest` — all tests; single test: `uv run pytest tests/unit/test_health.py::test_health_returns_ok`.
+- `uv run ruff check .` and `uv run ruff format .` — lint and format.
+- `uv run mypy` — type check (strict).
+
+**Web** (`cd apps/web`; pnpm):
+- `pnpm install`, then `pnpm dev` — Vite dev server on http://localhost:5173, proxying `/api` to :8000.
+- `pnpm test` — all tests; single test: `pnpm vitest run src/App.test.tsx -t "shows the product name"`.
+- `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm build`.
+
+TypeScript is pinned to 6.x because typescript-eslint does not support TypeScript 7 yet.
 
 ## Decisions that shape the architecture
 
