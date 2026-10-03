@@ -8,10 +8,11 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
-    "sqlalchemy>=2.0",
+    "sqlalchemy[asyncio]>=2.0",
     "alembic>=1.13",
     "psycopg[binary]>=3.2",
     "procrastinate>=2.0",
+    "boto3>=1.35",
 ]
 
 [dependency-groups]
@@ -21,6 +22,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "import-linter>=2.15",
+    "types-boto3[s3]>=1.35",
 ]
 
 [build-system]
