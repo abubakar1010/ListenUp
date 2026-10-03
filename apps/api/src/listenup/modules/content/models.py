@@ -74,6 +74,8 @@ class Content(Base):
     __table_args__ = (
         CheckConstraint("char_length(title) BETWEEN 1 AND 300"),
         UniqueConstraint("user_id", "media_object_id"),
+        # Lets practice sessions reference (content id, learner) together (migration 0007).
+        UniqueConstraint("id", "user_id", name="contents_id_user_uq"),
         Index("contents_library_idx", "user_id", text("created_at DESC"), "id"),
         Index("contents_media_idx", "media_object_id"),
         {"schema": "content"},

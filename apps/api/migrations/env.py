@@ -13,6 +13,7 @@ from sqlalchemy import create_engine, text
 
 from listenup.modules.content import models as _content_models  # noqa: F401
 from listenup.modules.identity import models as _identity_models  # noqa: F401
+from listenup.modules.practice import models as _practice_models  # noqa: F401
 from listenup.platform import models as _platform_models  # noqa: F401
 from listenup.platform.config import get_settings
 from listenup.platform.db import APP_SCHEMAS, Base, to_sqlalchemy_url
