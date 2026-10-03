@@ -350,6 +350,19 @@ async def mark_media_failed(
     return row is not None, (row[0] if row else None)
 
 
+async def set_media_stage(session: AsyncSession, media_id: uuid.UUID, stage: str) -> bool:
+    """Record the conversion's stage; False when the media object is no longer prepared."""
+    result = await session.execute(
+        text("""
+        UPDATE content.media_objects SET stage = :stage
+         WHERE id = :id AND status IN ('pending', 'downloading')
+        RETURNING id
+        """),
+        {"id": media_id, "stage": stage},
+    )
+    return result.first() is not None
+
+
 async def mark_media_playable(
     session: AsyncSession,
     media_id: uuid.UUID,

@@ -108,8 +108,12 @@ async def convert_upload(
        `playable` and publish `content.ready` in one transaction.
     4. Delete the original.
 
-    Making a clip playable counts its new audio towards the learner's day (#41), and
-    every way the job ends lets the learner's next waiting upload onto the lane.
+    Each step is recorded as the media object's `stage` ('checking', 'converting',
+    'saving') and announced with a `job.progress` event, so the learner sees how far it
+    has got (FR-CI-5, #40). Making a clip playable counts its new audio towards the
+    learner's day (#41), and every way the job ends lets the learner's next waiting
+    upload onto the lane.
+
     Every step can run again: a repeated run on a playable or failed media object
     only makes sure the original is gone.
     """
@@ -150,6 +154,7 @@ async def _convert(
         prefix="listenup-convert-", dir=settings.media_scratch_dir
     ) as scratch:
         source = Path(scratch) / "source"
+        await _progress(database, media_id, "checking")
         downloaded = await storage.download(state.source_key, source)
         if downloaded is None:
             await _fail(database, media_id, "upload_missing")
@@ -169,6 +174,7 @@ async def _convert(
                 raise _Refused(problem.code, problem.detail)
             target = Path(scratch) / "playback.mp4"
             video = state.keep_video and probe.has_video
+            await _progress(database, media_id, "converting")
             try:
                 converted = await ffmpeg.convert(source, target, video=video)
             except ffmpeg.ToolFailed as error:
@@ -180,6 +186,7 @@ async def _convert(
             raise PermanentError(refused.detail) from refused
 
         assert probe.duration_ms is not None  # check_probe refuses a file without one
+        await _progress(database, media_id, "saving")
         playback = media.playback_key(state.learner, media_id)
         peaks = media.peaks_key(state.learner, media_id)
         await storage.put_file(playback, target, "video/mp4" if video else "audio/mp4")
@@ -275,7 +282,16 @@ async def _fail(database: Database, media_id: uuid.UUID, error_code: str) -> Non
     logger.info("upload refused", extra={"media": str(media_id), "error_code": error_code})
 
 
-async def _announce(session: AsyncSession, media_id: uuid.UUID) -> None:
+async def _progress(database: Database, media_id: uuid.UUID, stage: media.Stage) -> None:
+    """Record how far the job has got and tell the learner (`job.progress`, ADR 0016)."""
+    async with database.transaction() as session:
+        if await repository.set_media_stage(session, media_id, stage):
+            await _announce(session, media_id, EventType.JOB_PROGRESS)
+
+
+async def _announce(
+    session: AsyncSession, media_id: uuid.UUID, event: EventType = EventType.CONTENT_READY
+) -> None:
     """Tell each learner with an item on this media object, when the transaction commits."""
     for learner, content_id in await repository.media_content_owners(session, media_id):
-        await publish(session, learner, EventType.CONTENT_READY, content_id)
+        await publish(session, learner, event, content_id)

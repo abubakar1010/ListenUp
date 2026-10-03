@@ -30,7 +30,7 @@ from listenup.modules.content import jobs
 from listenup.platform.config import Settings
 from listenup.platform.database import Database
 from listenup.platform.jobs import JobDeps, PermanentError
-from listenup.platform.storage import S3Storage, Storage
+from listenup.platform.storage import Downloaded, S3Storage, Storage
 from tests.integration.conftest import conninfo_to_url
 from tests.integration.intake_helpers import (
     ClientFactory,
@@ -169,7 +169,8 @@ def media_row(migrated_url: str, media_id: str) -> dict[str, object] | None:
     with psycopg.connect(migrated_url) as conn:
         cursor = conn.execute(
             "SELECT status, error_code, duration_ms, has_video, playback_key, peaks_key, "
-            "playback_bytes, fingerprint, ref_count FROM content.media_objects WHERE id = %s",
+            "playback_bytes, fingerprint, ref_count, stage FROM content.media_objects "
+            "WHERE id = %s",
             [media_id],
         )
         row = cursor.fetchone()
@@ -253,16 +254,48 @@ def test_an_mp3_becomes_a_playable_aac_file_with_peaks(
     assert max(peaks["peaks"]) > 0
     assert len(storage.data[prefix + "peaks.json"]) < 2048
 
-    # The original is gone; the learner is told, with the content item's id.
+    # The original is gone; the learner is told of each stage and the end, with the
+    # content item's id (#40).
     assert added.source_key not in storage.objects
     assert added.source_key in storage.deleted
-    assert events_for(listener, user) == [{"u": user, "t": "content.ready", "r": added.content_id}]
+    progress = {"u": user, "t": "job.progress", "r": added.content_id}
+    ready = {"u": user, "t": "content.ready", "r": added.content_id}
+    assert events_for(listener, user) == [progress, progress, progress, ready]
 
     detail = client.get(f"/api/v1/contents/{added.content_id}").json()
     assert detail["status"] == "playable"
     assert detail["media_url"] == f"/api/v1/media/{added.media_id}"
     assert detail["peaks_url"] == f"/api/v1/media/{added.media_id}/peaks"
     assert detail["error_detail"] is None
+
+
+def test_each_stage_is_recorded_while_the_job_runs_and_cleared_at_the_end(
+    client: TestClient, storage: FakeStorage, media: Media, migrated_url: str
+) -> None:
+    """A page that refetches after a `job.progress` event reads the stage (#40)."""
+    added = add_file(client, storage, media.mp3, migrated_url)
+    seen: list[tuple[str, object]] = []
+
+    def stage_now(step: str) -> None:
+        seen.append((step, client.get(f"/api/v1/contents/{added.content_id}").json()["stage"]))
+
+    class Watching(FakeStorage):
+        async def download(self, key: str, destination: Path) -> Downloaded | None:
+            stage_now("download")
+            return await storage.download(key, destination)
+
+        async def put_file(self, key: str, path: Path, content_type: str) -> None:
+            stage_now("store")
+            await storage.put_file(key, path, content_type)
+
+    watching = Watching()
+    jobs.use_storage(watching)
+    stage_now("before")
+    run_job(migrated_url, added)
+
+    assert seen == [("before", "waiting"), ("download", "checking"), ("store", "saving")]
+    detail = client.get(f"/api/v1/contents/{added.content_id}").json()
+    assert (detail["status"], detail["stage"]) == ("playable", None)
 
 
 def test_the_fingerprint_is_the_sha256_of_the_original(
@@ -340,9 +373,15 @@ def test_an_unusable_file_fails_with_a_reason_and_is_not_retried(
     assert (row["status"], row["error_code"]) == ("failed", code)
     assert row["playback_key"] is None
     assert added.source_key not in storage.objects
-    assert events_for(listener, user) == [{"u": user, "t": "content.ready", "r": added.content_id}]
+    assert row["stage"] is None
+    assert events_for(listener, user)[-1] == {
+        "u": user,
+        "t": "content.ready",
+        "r": added.content_id,
+    }
     detail = client.get(f"/api/v1/contents/{added.content_id}").json()
     assert detail["status"] == "failed"
+    assert detail["stage"] is None
     assert detail["error_code"] == code
     assert detail["error_detail"]
     assert detail["media_url"] is None
@@ -463,7 +502,10 @@ def test_the_same_file_twice_keeps_one_item(
     assert second.source_key not in storage.objects
     assert client.get("/api/v1/uploads/usage").json()["used_bytes"] == media.mp3.stat().st_size
     # The page showing the new item refetches and learns it is gone.
-    assert events_for(listener, user) == [{"u": user, "t": "content.ready", "r": second.content_id}]
+    assert events_for(listener, user) == [
+        {"u": user, "t": "job.progress", "r": second.content_id},
+        {"u": user, "t": "content.ready", "r": second.content_id},
+    ]
 
 
 def test_the_same_file_from_two_learners_is_never_shared(

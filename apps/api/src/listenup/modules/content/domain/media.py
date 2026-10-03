@@ -8,7 +8,7 @@ in the bytes counts (Architecture 5.1, NFR-SEC-3).
 import json
 from array import array
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 # C2: every passage is 30 s to 15 min. A clip shorter than the shortest passage can
 # never be practised; a longer clip is fine, since the learner picks a passage in it.
@@ -32,6 +32,10 @@ PEAKS_SAMPLE_RATE = 8000
 SAMPLES_PER_PEAK = PEAKS_SAMPLE_RATE // PEAKS_PER_SECOND
 BYTES_PER_PEAK = SAMPLES_PER_PEAK * 2  # signed 16-bit mono
 INT16_MAX = 32767
+
+# How far the conversion job has got (#40): reading and probing the original, running
+# ffmpeg, storing the outputs. Stored as `media_objects.stage` while it is prepared.
+Stage = Literal["checking", "converting", "saving"]
 
 # Why a media object failed, as the learner reads it. The code is stored on the media
 # object (`error_code`); the text is chosen when it is shown.
