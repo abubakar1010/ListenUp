@@ -16,8 +16,8 @@ from listenup.modules.blind.domain import (
     judge,
 )
 from listenup.modules.blind.domain.listen import (
+    BUFFERING_BUDGET_MS,
     MEDIA_GRACE_MS,
-    RESUME_WAIT_LIMIT_MS,
     resume,
 )
 
@@ -162,7 +162,7 @@ def test_buffering_over_20_seconds_is_a_stall_that_uses_the_resume() -> None:
 
     assert verdict.action is Action.RESUME
     assert verdict.resume_from_ms == START + 2_000
-    assert verdict.listen.buffering_ms == 20_000
+    assert verdict.listen.buffering_ms == 0  # the resumed listen gets a fresh allowance
 
 
 def test_a_network_stall_resumes_once_from_three_seconds_before_the_stop() -> None:
@@ -231,20 +231,20 @@ def test_a_second_interruption_voids_the_attempt() -> None:
 
 def test_a_stall_after_the_resume_voids_the_attempt() -> None:
     resumed = resume(listen(), START + 6_000, at(6_000)).listen
-
-    verdict = judge(
-        resumed, Beat(START + 3_000, PlayerState.BUFFERING, buffering_ms=4_000), at(10_000)
-    )
-    assert verdict.action is Action.CONTINUE  # some buffering is still allowed
-    state = verdict.listen
-    for n in range(3, 7):
+    state = resumed
+    verdict = None
+    for n in range(1, 6):  # 25 s of waiting for data after the resume
         verdict = judge(
-            state, Beat(START + 3_000, PlayerState.BUFFERING, buffering_ms=5_000), at(n * 5_000)
+            state,
+            Beat(START + 3_000, PlayerState.BUFFERING, buffering_ms=5_000),
+            at(6_000 + n * 5_000),
         )
         if verdict.voided:
             break
+        assert verdict.action is Action.CONTINUE  # up to 20 s is still allowed
         state = verdict.listen
 
+    assert verdict is not None
     assert verdict.void_reason is VoidReason.INTERRUPTED
 
 
@@ -296,16 +296,45 @@ def test_resuming_without_a_granted_resume_voids() -> None:
 
 
 def test_waiting_too_long_after_a_resume_is_a_second_interruption() -> None:
-    resumed = resume(listen(), START + 6_000, at(6_000)).listen
-    state = resumed
+    state = resume(listen(), START + 6_000, at(6_000)).listen
     verdict = None
-    for when in range(11_000, 6_000 + RESUME_WAIT_LIMIT_MS + 5_001, 5_000):
-        verdict = judge(state, Beat(START + 3_000, PlayerState.RESUMING), at(when))
+    for n in range(1, 6):
+        verdict = judge(
+            state,
+            Beat(START + 3_000, PlayerState.RESUMING, buffering_ms=5_000),
+            at(6_000 + n * 5_000),
+        )
         if verdict.voided:
             break
         state = verdict.listen
 
     assert verdict is not None
+    assert verdict.void_reason is VoidReason.INTERRUPTED
+
+
+def test_reported_waiting_pauses_the_clock() -> None:
+    state = listen()
+    state = judge(state, Beat(START, PlayerState.BUFFERING, buffering_ms=4_000), at(4_000)).listen
+
+    assert state.anchor_at == at(4_000)
+    # 10 s after the start, 6 s of it playing: in step with the paused clock.
+    assert judge(state, Beat(START + 6_000, PLAYING), at(10_000)).action is Action.CONTINUE
+
+
+def test_claiming_to_wait_while_moving_on_is_too_fast() -> None:
+    verdict = judge(
+        listen(), Beat(START + 5_000, PlayerState.BUFFERING, buffering_ms=5_000), at(5_000)
+    )
+
+    assert verdict.void_reason is VoidReason.TOO_FAST
+
+
+def test_a_pause_the_player_did_not_report_voids() -> None:
+    """Beats that keep coming while the position stands still: an unreported pause."""
+    state = play(listen(), (5_000, 5_000), (10_000, 5_000))
+
+    verdict = judge(state, Beat(START + 5_000, PLAYING), at(15_000))
+
     assert verdict.void_reason is VoidReason.INTERRUPTED
 
 
@@ -365,12 +394,12 @@ def test_the_browser_cannot_report_server_reasons() -> None:
         client_void(listen(), VoidReason.TOO_FAST)
 
 
-def test_the_media_deadline_is_the_passage_plus_grace() -> None:
-    assert listen().media_deadline() == at(END - START + MEDIA_GRACE_MS)
+def test_the_media_deadline_is_the_passage_plus_waiting_and_grace() -> None:
+    assert listen().media_deadline() == at(END - START + BUFFERING_BUDGET_MS + MEDIA_GRACE_MS)
 
 
 def test_a_resume_moves_the_media_deadline() -> None:
     resumed = resume(listen(), START + 100_000, at(120_000)).listen
 
     rest = END - (START + 97_000)
-    assert resumed.media_deadline() == at(120_000 + rest + RESUME_WAIT_LIMIT_MS + MEDIA_GRACE_MS)
+    assert resumed.media_deadline() == at(120_000 + rest + BUFFERING_BUDGET_MS + MEDIA_GRACE_MS)

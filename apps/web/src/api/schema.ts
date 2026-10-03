@@ -795,11 +795,14 @@ export interface components {
       /** Detail */
       detail?: components['schemas']['ValidationError'][];
     };
-    /** HeartbeatIn */
+    /**
+     * HeartbeatIn
+     * @description One beat; `state` is `playing`, `buffering`, `interrupted`, `resuming` or `ended`.
+     */
     HeartbeatIn: {
       /**
        * Buffering Ms
-       * @description Time spent waiting for data since the last beat
+       * @description Time the audio waited since the last accepted beat (loading, waiting for data, the resume's wait and count); it pauses the server's clock, up to 20 s
        * @default 0
        */
       buffering_ms: number;

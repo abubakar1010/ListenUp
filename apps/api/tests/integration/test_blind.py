@@ -194,14 +194,15 @@ def test_the_media_url_redirects_to_storage_for_the_window_only(
     assert response.headers["location"].startswith("http://storage.test/bucket/users/")
     key, ttl = storage.downloads[-1]
     assert key.endswith("/playback.mp4")
-    # The passage's 30 s plus 60 s of grace: never the storage's default lifetime.
-    assert ttl == 90
+    # The passage's 30 s, 20 s of allowed waiting and 60 s of grace: never the
+    # storage's default lifetime.
+    assert ttl == 110
 
     clock.advance(30_000)
     client.get(str(started["media_url"]), follow_redirects=False)
-    assert storage.downloads[-1][1] == 60
+    assert storage.downloads[-1][1] == 80
 
-    clock.advance(60_000)
+    clock.advance(80_000)
     expired = client.get(str(started["media_url"]), follow_redirects=False)
     assert expired.status_code == 410
     assert expired.json()["code"] == "media_expired"
@@ -270,6 +271,7 @@ def test_beats_in_step_with_the_clock_continue(
         (5_000, START + 5_000, {"visible": False}, "left_page"),
         (5_000, START + 9_000, {}, "too_fast"),
         (20_000, START + 20_000, {}, "missed_heartbeat"),
+        (10_000, START + 2_000, {}, "interrupted"),  # a pause the player did not report
         (5_000, START - 5_000, {}, "seek"),
         (5_000, END + 5_000, {}, "seek"),
         (

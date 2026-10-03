@@ -6,26 +6,30 @@ every 5 s with its position and state, and the server judges each beat against i
 own clock (System Design 9.2). `judge` is that judgement, a pure function, so every
 rule is here and nowhere else (NFR-MNT-2).
 
+The server's clock runs from an anchor: the position and time playback could start
+from (the passage start when the attempt starts, or the resume point). The position
+must keep in step with it. Waiting the player reports (`buffering_ms`: loading,
+waiting for data, the resume's wait and count) pauses that clock, up to 20 s per
+listen.
+
 A beat is refused, and the attempt voided with a reason, when:
 
 - the page is hidden (`left_page`): the learner left the screen;
 - the position is outside the passage or moved backwards (`seek`);
-- the position is ahead of what the server's clock allows, plus 1.5 s (`too_fast`).
-  The check is cumulative from an anchor (the start, or the resume point), so a
-  client cannot gain 1.5 s on every beat;
-- no beat arrived for more than 15 s while the player said it was playing
+- the position is more than 1.5 s ahead of the clock (`too_fast`). Measured from the
+  anchor, so a client cannot gain 1.5 s on every beat;
+- no beat arrived for more than 15 s while the player did not report an interruption
   (`missed_heartbeat`);
-- a second interruption, or a device pause of 5 s or more (`interrupted`).
+- the position fell more than 6 s behind the clock without reported waiting (a pause
+  the player did not report: 5 s, D13's limit, plus 1 s for the beat's own trip), a
+  device pause of 5 s or more, or a second interruption (`interrupted`).
 
 Interruptions the learner did not cause get one resume per attempt (D13): a network
-stall (the player reports it once a beat gets through again, or its waiting for data
-uses up the 20 s buffering allowance), or a device or OS pause under 5 s. The resume
-is automatic (D18): the server sets the restart point 3 s before the stop, and the
-player carries on 3 s after the audio is ready again. The server accepts that one
-backward step as part of the resume, never as a seek.
-
-Buffering the player reports (waiting for data) is allowed up to 20 s in total per
-attempt. It only ever slows the position down, which no rule refuses.
+stall (the player reports it once a beat gets through again, or its waiting uses up
+the 20 s allowance), or a device or OS pause under 5 s. The resume is automatic
+(D18): the server sets the restart point 3 s before the stop, and the player carries
+on 3 s after the audio is ready again. The server accepts that one backward step as
+part of the resume, never as a seek. The resumed listen gets a fresh 20 s allowance.
 """
 
 from dataclasses import dataclass, replace
@@ -35,15 +39,17 @@ from enum import StrEnum
 HEARTBEAT_INTERVAL_MS = 5_000
 """How often the player sends a beat."""
 MAX_SILENCE_MS = 15_000
-"""A gap between beats longer than this, while playing, voids the attempt."""
+"""A gap between beats longer than this, without a reported interruption, voids."""
 AHEAD_TOLERANCE_MS = 1_500
 """How far the position may run ahead of the server's clock (network and timer jitter)."""
+LAG_TOLERANCE_MS = 6_000
+"""How far the position may fall behind the clock without reported waiting."""
 BACKWARD_TOLERANCE_MS = 250
 """Rounding between the player's clock and the beats; anything more is a seek back."""
 END_TOLERANCE_MS = 1_000
 """The listen counts as complete this close to the passage's end; also its overrun."""
 BUFFERING_BUDGET_MS = 20_000
-"""Buffering allowed per attempt before it counts as a network stall."""
+"""Waiting allowed per listen before it counts as a network stall."""
 DEVICE_PAUSE_LIMIT_MS = 5_000
 """A device or OS pause this long or longer ends the attempt (D13)."""
 MAX_RESUMES = 1
@@ -52,11 +58,8 @@ RESUME_REWIND_MS = 3_000
 """The resume restarts this far before the stop (D18)."""
 RESUME_DELAY_MS = 3_000
 """The resume starts this long after the audio is ready again (D18)."""
-RESUME_WAIT_LIMIT_MS = 30_000
-"""How long the player may wait for the audio after a resume before it counts as a
-second interruption."""
 MEDIA_GRACE_MS = 60_000
-"""The attempt's media URL works for the passage's length plus this (#62)."""
+"""The attempt's media URL works for the rest of the passage plus this (#62)."""
 
 
 class PlayerState(StrEnum):
@@ -64,7 +67,7 @@ class PlayerState(StrEnum):
 
     PLAYING = "playing"
     BUFFERING = "buffering"
-    """Waiting for data; `buffering_ms` says for how long since the last beat."""
+    """Loading or waiting for data."""
     INTERRUPTED = "interrupted"
     """Stopped by something the learner did not cause; `position_ms` is the stop."""
     RESUMING = "resuming"
@@ -98,7 +101,8 @@ class Beat:
     state: PlayerState
     visible: bool = True
     buffering_ms: int = 0
-    """Time spent waiting for data since the last beat, as the player measured it."""
+    """Time the audio waited since the last beat the server accepted, as the player
+    measured it: loading, waiting for data, or the resume's wait and count."""
     interruption: Interruption | None = None
     interruption_ms: int = 0
     """How long a device pause lasted, as the player measured it."""
@@ -113,9 +117,10 @@ class Listen:
     last_position_ms: int
     last_heartbeat_at: datetime
     anchor_position_ms: int
-    """The position at `anchor_at`: the passage start, or the resume point."""
+    """The position the clock runs from: the passage start, or the resume point."""
     anchor_at: datetime
-    """When playback could have started from `anchor_position_ms` at the earliest."""
+    """When playback from `anchor_position_ms` could have started at the earliest,
+    moved later by every wait the player reported."""
     buffering_ms: int = 0
     resume_count: int = 0
     resume_stop_ms: int | None = None
@@ -138,15 +143,15 @@ class Listen:
         return self.last_position_ms >= self.passage_end_ms - END_TOLERANCE_MS
 
     def media_deadline(self) -> datetime:
-        """When the attempt's media URL stops working: the rest of the passage from the
-        anchor, plus the time a resume may wait, plus a grace period (#62)."""
+        """When the attempt's media URL stops working: the rest of the passage by the
+        clock, the waiting still allowed, and a grace period (#62)."""
         rest = self.passage_end_ms - self.anchor_position_ms
-        wait = RESUME_WAIT_LIMIT_MS if self.resume_count else 0
-        return self.anchor_at + timedelta(milliseconds=rest + wait + MEDIA_GRACE_MS)
+        waiting = BUFFERING_BUDGET_MS - self.buffering_ms
+        return self.anchor_at + timedelta(milliseconds=rest + waiting + MEDIA_GRACE_MS)
 
-    def allowed_position_ms(self, now: datetime) -> int:
-        """The furthest position the server's clock allows at `now`."""
-        return self.anchor_position_ms + _ms(now - self.anchor_at) + AHEAD_TOLERANCE_MS
+    def expected_position_ms(self, now: datetime) -> int:
+        """Where playback should be at `now` by the server's clock."""
+        return self.anchor_position_ms + _ms(now - self.anchor_at)
 
 
 class Action(StrEnum):
@@ -187,14 +192,13 @@ def judge(listen: Listen, beat: Beat, now: datetime) -> Verdict:
         return _void(listen, VoidReason.SEEK)
     if beat.position_ms < listen.last_position_ms - BACKWARD_TOLERANCE_MS:
         return _void(listen, VoidReason.SEEK)
-    if beat.position_ms > listen.allowed_position_ms(now):
-        return _void(listen, VoidReason.TOO_FAST)
     if listen.complete:
-        # The listen is over; late beats change nothing.
-        return Verdict(Action.CONTINUE, listen)
+        return Verdict(Action.CONTINUE, listen)  # the listen is over; late beats change nothing
 
     elapsed = max(0, _ms(now - listen.last_heartbeat_at))
     if beat.state is PlayerState.INTERRUPTED:
+        if beat.position_ms > listen.expected_position_ms(now) + AHEAD_TOLERANCE_MS:
+            return _void(listen, VoidReason.TOO_FAST)
         if (
             beat.interruption is Interruption.DEVICE
             and beat.interruption_ms >= DEVICE_PAUSE_LIMIT_MS
@@ -203,33 +207,37 @@ def judge(listen: Listen, beat: Beat, now: datetime) -> Verdict:
         return resume(listen, beat.position_ms, now)
     if elapsed > MAX_SILENCE_MS:
         return _void(listen, VoidReason.MISSED_HEARTBEAT)
+    if beat.state is PlayerState.RESUMING and listen.resume_count == 0:
+        return _void(listen, VoidReason.INTERRUPTED)
 
-    moved = replace(
+    waited = min(max(0, beat.buffering_ms), elapsed)
+    if listen.buffering_ms + waited > BUFFERING_BUDGET_MS:
+        return resume(listen, beat.position_ms, now)  # waiting this long is a stall
+    paused = replace(
         listen,
-        last_position_ms=max(listen.last_position_ms, beat.position_ms),
-        last_heartbeat_at=now,
+        anchor_at=listen.anchor_at + timedelta(milliseconds=waited),
+        buffering_ms=listen.buffering_ms + waited,
     )
-    if beat.state is PlayerState.BUFFERING:
-        buffering = listen.buffering_ms + min(max(0, beat.buffering_ms), elapsed)
-        if buffering > BUFFERING_BUDGET_MS:
-            # Waiting this long for data is a network stall.
-            stalled = replace(listen, buffering_ms=BUFFERING_BUDGET_MS)
-            return resume(stalled, beat.position_ms, now)
-        return Verdict(Action.CONTINUE, replace(moved, buffering_ms=buffering))
-    if beat.state is PlayerState.RESUMING:
-        if listen.resume_count == 0:
-            return _void(listen, VoidReason.INTERRUPTED)
-        if _ms(now - listen.anchor_at) > RESUME_WAIT_LIMIT_MS:
-            return _void(listen, VoidReason.INTERRUPTED)
-        return Verdict(Action.CONTINUE, moved)
-    return Verdict(Action.CONTINUE, moved)
+    expected = paused.expected_position_ms(now)
+    if beat.position_ms > expected + AHEAD_TOLERANCE_MS:
+        return _void(listen, VoidReason.TOO_FAST)
+    if beat.position_ms < expected - LAG_TOLERANCE_MS:
+        return _void(listen, VoidReason.INTERRUPTED)
+    return Verdict(
+        Action.CONTINUE,
+        replace(
+            paused,
+            last_position_ms=max(listen.last_position_ms, beat.position_ms),
+            last_heartbeat_at=now,
+        ),
+    )
 
 
 def resume(listen: Listen, stop_ms: int, now: datetime) -> Verdict:
     """The one resume after an interruption the learner did not cause (D13, D18).
 
-    Restarts 3 s before the stop (or at the passage start), from now on the server's
-    clock; a second interruption voids the attempt.
+    Restarts 3 s before the stop (or at the passage start) on a clock that starts now,
+    with a fresh waiting allowance; a second interruption voids the attempt.
     """
     if listen.resume_count >= MAX_RESUMES:
         return _void(listen, VoidReason.INTERRUPTED)
@@ -240,6 +248,7 @@ def resume(listen: Listen, stop_ms: int, now: datetime) -> Verdict:
         last_heartbeat_at=now,
         anchor_position_ms=resume_from,
         anchor_at=now,
+        buffering_ms=0,
         resume_count=listen.resume_count + 1,
         resume_stop_ms=stop_ms,
     )
@@ -261,5 +270,5 @@ def heard_whole_passage(listen: Listen, now: datetime) -> bool:
     has passed since the anchor to hear the rest of it (#65)."""
     if not listen.complete:
         return False
-    needed = listen.passage_end_ms - END_TOLERANCE_MS - listen.anchor_position_ms
-    return _ms(now - listen.anchor_at) + AHEAD_TOLERANCE_MS >= needed
+    end = listen.passage_end_ms - END_TOLERANCE_MS
+    return listen.expected_position_ms(now) + AHEAD_TOLERANCE_MS >= end

@@ -47,11 +47,17 @@ class StartedAttempt(BaseModel):
 
 
 class HeartbeatIn(BaseModel):
+    """One beat; `state` is `playing`, `buffering`, `interrupted`, `resuming` or `ended`."""
+
     position_ms: int = Field(ge=0, description="The player's position in the clip")
     state: PlayerState
     visible: bool = Field(default=True, description="The page is visible (not hidden)")
     buffering_ms: int = Field(
-        default=0, ge=0, le=3_600_000, description="Time spent waiting for data since the last beat"
+        default=0,
+        ge=0,
+        le=3_600_000,
+        description="Time the audio waited since the last accepted beat (loading, waiting "
+        "for data, the resume's wait and count); it pauses the server's clock, up to 20 s",
     )
     interruption: Interruption | None = Field(
         default=None, description="With `interrupted`: a network stall or a device pause"

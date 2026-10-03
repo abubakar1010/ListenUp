@@ -463,10 +463,11 @@
         "type": "object"
       },
       "HeartbeatIn": {
+        "description": "One beat; `state` is `playing`, `buffering`, `interrupted`, `resuming` or `ended`.",
         "properties": {
           "buffering_ms": {
             "default": 0,
-            "description": "Time spent waiting for data since the last beat",
+            "description": "Time the audio waited since the last accepted beat (loading, waiting for data, the resume's wait and count); it pauses the server's clock, up to 20 s",
             "maximum": 3600000.0,
             "minimum": 0.0,
             "title": "Buffering Ms",
