@@ -52,6 +52,8 @@ jobs:
           uv run alembic downgrade -1
           uv run alembic upgrade head
           uv run alembic check
+      - name: Install ffmpeg (upload conversion tests, as in the worker-media image)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Start S3 storage (SeaweedFS, as in Docker Compose)
         working-directory: .
         run: |
