@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     smtp_timeout_seconds: float = 10.0
     smtp_sender: str = "ListenUp <no-reply@listenup.local>"
 
+    # Where the web app is served; links in emails point here.
+    web_base_url: str = "http://localhost:5173"
+
     # Sign-in (Architecture 9.1, D17). Cookies are Secure everywhere except local runs
     # over plain http; set LISTENUP_COOKIE_SECURE to override.
     cookie_secure: bool | None = None
@@ -45,6 +48,10 @@ class Settings(BaseSettings):
     login_ip_limit: int = 20  # sign-in attempts per IP ...
     login_ip_window_minutes: int = 15  # ... per window
     register_ip_limit: int = 10  # new accounts per IP per hour
+    # Password reset (FR-ACC-3).
+    password_reset_minutes: int = 60  # how long an emailed reset link works
+    password_reset_ip_limit: int = 10  # reset requests (and, separately, resets) per IP per hour
+    password_reset_email_limit: int = 3  # reset emails per address per hour
 
     # First retry waits about this long; later ones four times longer each time.
     job_retry_base_seconds: float = 10.0

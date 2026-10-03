@@ -62,6 +62,47 @@
         "title": "Me",
         "type": "object"
       },
+      "PasswordReset": {
+        "properties": {
+          "password": {
+            "maxLength": 1000,
+            "title": "Password",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": ["token", "password"],
+        "title": "PasswordReset",
+        "type": "object"
+      },
+      "PasswordResetRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": ["email"],
+        "title": "PasswordResetRequest",
+        "type": "object"
+      },
+      "PasswordResetRequested": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": ["detail"],
+        "title": "PasswordResetRequested",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -154,6 +195,79 @@
           }
         },
         "summary": "Logout",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/auth/password-reset": {
+      "post": {
+        "description": "Email a reset link. The answer is the same whether or not the email has an account.",
+        "operationId": "request_password_reset_api_v1_auth_password_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordResetRequested"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Password Reset",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/auth/password-reset/confirm": {
+      "post": {
+        "description": "Set a new password with the token from the email; signs the learner out everywhere.",
+        "operationId": "reset_password_api_v1_auth_password_reset_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Password",
         "tags": ["identity"]
       }
     },

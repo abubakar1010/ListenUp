@@ -186,3 +186,66 @@ async def clear_failures(session: AsyncSession, user_id: uuid.UUID) -> None:
         text("DELETE FROM ops.rate_counters WHERE key IN (:fail, :lock)"),
         {"fail": _fail_key(user_id), "lock": _lock_key(user_id)},
     )
+
+
+# Password reset (FR-ACC-3). Tokens live in identity.one_time_tokens as SHA-256 hashes.
+
+RESET_PASSWORD = "reset_password"
+
+
+async def get_account(session: AsyncSession, user_id: uuid.UUID) -> Account | None:
+    row = (
+        await session.execute(
+            text(
+                "SELECT id, email::text, password_hash, status FROM identity.users WHERE id = :id"
+            ),
+            {"id": user_id},
+        )
+    ).first()
+    return Account(*row) if row else None
+
+
+async def retire_reset_tokens(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """Make every live, unused reset token of this learner expire now."""
+    await session.execute(
+        text("""
+        UPDATE identity.one_time_tokens SET expires_at = now()
+         WHERE user_id = :user_id AND purpose = :purpose
+           AND used_at IS NULL AND expires_at > now()
+        """),
+        {"user_id": user_id, "purpose": RESET_PASSWORD},
+    )
+
+
+async def insert_reset_token(
+    session: AsyncSession, user_id: uuid.UUID, token_hash: bytes, lifetime: timedelta
+) -> None:
+    await session.execute(
+        text("""
+        INSERT INTO identity.one_time_tokens (token_hash, user_id, purpose, expires_at)
+        VALUES (:token_hash, :user_id, :purpose, now() + :lifetime)
+        """),
+        {
+            "token_hash": token_hash,
+            "user_id": user_id,
+            "purpose": RESET_PASSWORD,
+            "lifetime": lifetime,
+        },
+    )
+
+
+async def consume_reset_token(session: AsyncSession, token_hash: bytes) -> uuid.UUID | None:
+    """Mark a live reset token used and return its learner; None if unknown, used or expired."""
+    user_id = await session.scalar(
+        text("SELECT identity.consume_one_time_token(:token_hash, :purpose)"),
+        {"token_hash": token_hash, "purpose": RESET_PASSWORD},
+    )
+    return uuid.UUID(str(user_id)) if user_id else None
+
+
+async def delete_user_sessions(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """End every login session of a learner (row-level security needs the learner set)."""
+    await session.execute(
+        text("DELETE FROM identity.auth_sessions WHERE user_id = :user_id"),
+        {"user_id": user_id},
+    )

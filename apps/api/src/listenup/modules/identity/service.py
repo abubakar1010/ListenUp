@@ -1,4 +1,4 @@
-"""Accounts and sign-in (FR-ACC-1, FR-ACC-2, NFR-SEC-1, D17).
+"""Accounts, sign-in and password reset (FR-ACC-1, FR-ACC-2, FR-ACC-3, NFR-SEC-1, D17).
 
 The public face of the identity module: other modules use `CurrentLearner` to require
 a signed-in learner and get their id, with row-level security already scoped to them.
@@ -6,7 +6,6 @@ a signed-in learner and get their id, with row-level security already scoped to 
 
 import hashlib
 import ipaddress
-import secrets
 import uuid
 from datetime import datetime, timedelta
 from typing import Annotated
@@ -14,12 +13,13 @@ from typing import Annotated
 from fastapi import Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from listenup.modules.identity import passwords, repository
+from listenup.modules.identity import jobs, passwords, repository
 from listenup.modules.identity.domain.credentials import (
     email_problem,
     normalize_email,
     password_problem,
 )
+from listenup.modules.identity.domain.tokens import new_token, token_hash
 from listenup.platform.config import Settings, get_settings
 from listenup.platform.database import Database, DbSession, set_learner
 from listenup.platform.errors import ProblemError
@@ -29,10 +29,6 @@ from listenup.platform.rate_limit import Limit, RateLimiter, ip_key
 
 def session_cookie_name(secure: bool) -> str:
     return "__Host-listenup_session" if secure else "listenup_session"
-
-
-def _token_hash(token: str) -> bytes:
-    return hashlib.sha256(token.encode()).digest()
 
 
 def _client_ip(request: Request) -> str | None:
@@ -53,7 +49,7 @@ async def current_learner(request: Request, session: DbSession) -> uuid.UUID:
     token = request.cookies.get(session_cookie_name(settings.cookies_secure))
     if not token:
         raise _not_signed_in()
-    learner = await repository.resolve_auth_session(session, _token_hash(token))
+    learner = await repository.resolve_auth_session(session, token_hash(token))
     if learner is None:
         raise _not_signed_in()
     await set_learner(session, learner)
@@ -75,6 +71,12 @@ class Accounts:
             timedelta(minutes=settings.login_ip_window_minutes),
         )
         self.register_by_ip = Limit("register", settings.register_ip_limit, timedelta(hours=1))
+        hour = timedelta(hours=1)
+        self.reset_request_by_ip = Limit("password_reset", settings.password_reset_ip_limit, hour)
+        self.reset_request_by_email = Limit(
+            "password_reset", settings.password_reset_email_limit, hour
+        )
+        self.reset_by_ip = Limit("password_reset_confirm", settings.password_reset_ip_limit, hour)
 
     async def register(
         self,
@@ -153,13 +155,84 @@ class Accounts:
         await self._start_session(session, request, response, account.id)
         return account.id
 
+    async def request_password_reset(
+        self, session: AsyncSession, request: Request, email: str
+    ) -> None:
+        """Queue a reset email if the address has an account (FR-ACC-3).
+
+        The caller always gets the same answer, so it cannot learn which emails are
+        registered. Past the per-address limit the request is dropped silently rather
+        than refused, so nobody can use the limit to probe for accounts or to stop a
+        learner from receiving their own reset email with a 429.
+        """
+        ip = _client_ip(request)
+        if ip:
+            await self.limiter.enforce(
+                self.reset_request_by_ip, ip_key(self.reset_request_by_ip, ip)
+            )
+        email = normalize_email(email)
+        if problem := email_problem(email):
+            raise ProblemError(422, "invalid_email", problem)
+        address = hashlib.sha256(email.casefold().encode()).hexdigest()
+        hit = await self.limiter.hit(
+            self.reset_request_by_email, f"{self.reset_request_by_email.name}:email:{address}"
+        )
+        if not hit.allowed:
+            return
+        account = await repository.find_account(session, email)
+        if account is not None and account.status != "deleting":
+            await jobs.queue_password_reset(session, account.id)
+
+    async def reset_password(
+        self,
+        session: AsyncSession,
+        request: Request,
+        response: Response,
+        token: str,
+        password: str,
+    ) -> None:
+        """Set a new password with an emailed token (FR-ACC-3).
+
+        The token works once. Every login session of the learner ends, including the
+        caller's, and the sign-in lockout is lifted, so the new password works at once.
+        """
+        ip = _client_ip(request)
+        if ip:
+            await self.limiter.enforce(self.reset_by_ip, ip_key(self.reset_by_ip, ip))
+        if problem := password_problem(password):
+            raise ProblemError(422, "weak_password", problem)
+        learner = await repository.consume_reset_token(session, token_hash(token))
+        account = await repository.get_account(session, learner) if learner else None
+        if learner is None or account is None or account.status == "deleting":
+            raise ProblemError(
+                400,
+                "invalid_reset_link",
+                "This reset link has expired or was already used. "
+                "Ask for a new link from the sign-in page.",
+            )
+        await set_learner(session, learner)
+        await repository.update_password_hash(
+            session, learner, await passwords.hash_password(password)
+        )
+        await repository.retire_reset_tokens(session, learner)
+        await repository.delete_user_sessions(session, learner)
+        await repository.clear_failures(session, learner)
+        self._clear_cookie(response)
+
     async def sign_out(self, session: AsyncSession, request: Request, response: Response) -> None:
         name = session_cookie_name(self.settings.cookies_secure)
         token = request.cookies.get(name)
         if token:
             await _revoke(session, token)
+        self._clear_cookie(response)
+
+    def _clear_cookie(self, response: Response) -> None:
         response.delete_cookie(
-            name, path="/", secure=self.settings.cookies_secure, httponly=True, samesite="lax"
+            session_cookie_name(self.settings.cookies_secure),
+            path="/",
+            secure=self.settings.cookies_secure,
+            httponly=True,
+            samesite="lax",
         )
 
     async def _start_session(
@@ -171,13 +244,13 @@ class Accounts:
         if old := request.cookies.get(name):
             await _revoke(session, old)
         await set_learner(session, user_id)
-        token = secrets.token_urlsafe(32)
+        token = new_token()
         lifetime = timedelta(days=self.settings.session_days)
         await repository.create_auth_session(
             session,
             session_id=uuid7(),
             user_id=user_id,
-            token_hash=_token_hash(token),
+            token_hash=token_hash(token),
             lifetime=lifetime,
             user_agent=request.headers.get("user-agent"),
             ip=_client_ip(request),
@@ -210,11 +283,11 @@ async def _revoke(session: AsyncSession, token: str) -> None:
     Row-level security hides a login session until its learner is set, so the
     learner is looked up first; otherwise the delete would silently match nothing.
     """
-    token_hash = _token_hash(token)
-    owner = await repository.resolve_auth_session(session, token_hash)
+    hashed = token_hash(token)
+    owner = await repository.resolve_auth_session(session, hashed)
     if owner is not None:
         await set_learner(session, owner)
-        await repository.delete_auth_session(session, token_hash)
+        await repository.delete_auth_session(session, hashed)
 
 
 def _now(reference: datetime) -> datetime:
