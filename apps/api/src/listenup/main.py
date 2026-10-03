@@ -9,6 +9,7 @@ from listenup import __version__
 from listenup.modules.blind import api as blind_api
 from listenup.modules.content import api as content_api
 from listenup.modules.content.service import build_uploads
+from listenup.modules.dictation import api as dictation_api
 from listenup.modules.identity import api as identity_api
 from listenup.modules.identity.service import build_accounts, current_learner
 from listenup.modules.library import api as library_api
@@ -58,6 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(library_api.router)
     api.include_router(practice_api.router)
     api.include_router(blind_api.router)
+    api.include_router(dictation_api.router)
     api.include_router(events_router(current_learner))
     app.include_router(api)
     return app

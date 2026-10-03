@@ -235,6 +235,29 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/dictation/attempts/{attempt_id}/draft': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Save Draft
+     * @description Save the Dictation draft if it is still at `draft_version` (FR-DI-4, #50).
+     *
+     *     A save based on an older version gets 409 `draft_conflict`, so two tabs never
+     *     silently overwrite each other; resending a save that already landed succeeds.
+     */
+    put: operations['save_draft_api_v1_dictation_attempts__attempt_id__draft_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/events': {
     parameters: {
       query?: never;
@@ -436,6 +459,30 @@ export interface paths {
      *     `heartbeat_interval_ms` from now on.
      */
     post: operations['start_attempt_api_v1_sessions__session_id__blind_attempts_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/dictation/attempts': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Open Attempt
+     * @description Start the Dictation attempt (201), or resume the one in progress with its draft
+     *     (200). Leaving or reloading never voids a Dictation attempt (FR-PL-6, NFR-REL-1).
+     *
+     *     The answer holds what the player needs, the passage and the media path, and never
+     *     any reference text (FR-DI-3, FR-TX-5).
+     */
+    post: operations['open_attempt_api_v1_sessions__session_id__dictation_attempts_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -770,6 +817,61 @@ export interface components {
       password: string;
     };
     /**
+     * DictationAttempt
+     * @description The learner's Dictation attempt with its saved draft (FR-DI-1, FR-DI-4).
+     */
+    DictationAttempt: {
+      /** Draft Text */
+      draft_text: string;
+      /**
+       * Draft Updated At
+       * Format: date-time
+       */
+      draft_updated_at: string;
+      /**
+       * Draft Version
+       * @description Send it back with the next draft save
+       */
+      draft_version: number;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Media Url
+       * @description The API path that redirects to the playback file (ADR 0022); play only `passage` of it
+       */
+      media_url: string;
+      passage: components['schemas']['DictationPassage'];
+      /**
+       * Resumed
+       * @description True when an attempt already in progress was resumed
+       */
+      resumed: boolean;
+      /**
+       * Session Id
+       * Format: uuid
+       */
+      session_id: string;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      status: components['schemas']['AttemptStatus'];
+    };
+    /**
+     * DictationPassage
+     * @description The part of the clip the player may play, in milliseconds, [start_ms, end_ms).
+     */
+    DictationPassage: {
+      /** End Ms */
+      end_ms: number;
+      /** Start Ms */
+      start_ms: number;
+    };
+    /**
      * Entry
      * @enum {string}
      */
@@ -932,6 +1034,32 @@ export interface components {
      * @enum {string}
      */
     PlayerState: 'playing' | 'buffering' | 'interrupted' | 'resuming' | 'ended';
+    /** SaveDraft */
+    SaveDraft: {
+      /**
+       * Draft Text
+       * @description The whole text, at most 20,000 characters
+       */
+      draft_text: string;
+      /**
+       * Draft Version
+       * @description The `draft_version` this text was based on
+       */
+      draft_version: number;
+    };
+    /** SavedDraft */
+    SavedDraft: {
+      /**
+       * Draft Version
+       * @description The new version; base the next save on it
+       */
+      draft_version: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
     /**
      * Session
      * @description A practice session with its plan, for "Step N of M" (UI-1).
@@ -1599,6 +1727,53 @@ export interface operations {
       };
     };
   };
+  save_draft_api_v1_dictation_attempts__attempt_id__draft_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SaveDraft'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SavedDraft'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `draft_conflict` (with the current `draft_text` and `draft_version`), `attempt_closed`, `step_locked` or `session_closed` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `draft_too_long` (with `max_chars`) */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   events_api_v1_events_get: {
     parameters: {
       query?: never;
@@ -1988,6 +2163,60 @@ export interface operations {
         content?: never;
       };
       /** @description `step_locked`, or `attempt_active` with `attempt_id` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  open_attempt_api_v1_sessions__session_id__dictation_attempts_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The live attempt, resumed */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationAttempt'];
+        };
+      };
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationAttempt'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked`, `step_not_in_plan` or `session_closed` */
       409: {
         headers: {
           [name: string]: unknown;

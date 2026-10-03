@@ -406,6 +406,86 @@
         "title": "Credentials",
         "type": "object"
       },
+      "DictationAttempt": {
+        "description": "The learner's Dictation attempt with its saved draft (FR-DI-1, FR-DI-4).",
+        "properties": {
+          "draft_text": {
+            "title": "Draft Text",
+            "type": "string"
+          },
+          "draft_updated_at": {
+            "format": "date-time",
+            "title": "Draft Updated At",
+            "type": "string"
+          },
+          "draft_version": {
+            "description": "Send it back with the next draft save",
+            "title": "Draft Version",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "media_url": {
+            "description": "The API path that redirects to the playback file (ADR 0022); play only `passage` of it",
+            "title": "Media Url",
+            "type": "string"
+          },
+          "passage": {
+            "$ref": "#/components/schemas/DictationPassage"
+          },
+          "resumed": {
+            "description": "True when an attempt already in progress was resumed",
+            "title": "Resumed",
+            "type": "boolean"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AttemptStatus"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "status",
+          "started_at",
+          "resumed",
+          "draft_text",
+          "draft_version",
+          "draft_updated_at",
+          "passage",
+          "media_url"
+        ],
+        "title": "DictationAttempt",
+        "type": "object"
+      },
+      "DictationPassage": {
+        "description": "The part of the clip the player may play, in milliseconds, [start_ms, end_ms).",
+        "properties": {
+          "end_ms": {
+            "title": "End Ms",
+            "type": "integer"
+          },
+          "start_ms": {
+            "title": "Start Ms",
+            "type": "integer"
+          }
+        },
+        "required": ["start_ms", "end_ms"],
+        "title": "DictationPassage",
+        "type": "object"
+      },
       "Entry": {
         "enum": ["blind", "dictation", "both"],
         "title": "Entry",
@@ -730,6 +810,41 @@
         "enum": ["playing", "buffering", "interrupted", "resuming", "ended"],
         "title": "PlayerState",
         "type": "string"
+      },
+      "SaveDraft": {
+        "properties": {
+          "draft_text": {
+            "description": "The whole text, at most 20,000 characters",
+            "title": "Draft Text",
+            "type": "string"
+          },
+          "draft_version": {
+            "description": "The `draft_version` this text was based on",
+            "minimum": 0.0,
+            "title": "Draft Version",
+            "type": "integer"
+          }
+        },
+        "required": ["draft_text", "draft_version"],
+        "title": "SaveDraft",
+        "type": "object"
+      },
+      "SavedDraft": {
+        "properties": {
+          "draft_version": {
+            "description": "The new version; base the next save on it",
+            "title": "Draft Version",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": ["draft_version", "updated_at"],
+        "title": "SavedDraft",
+        "type": "object"
       },
       "Session": {
         "description": "A practice session with its plan, for \"Step N of M\" (UI-1).",
@@ -1689,6 +1804,57 @@
         "tags": ["content"]
       }
     },
+    "/api/v1/dictation/attempts/{attempt_id}/draft": {
+      "put": {
+        "description": "Save the Dictation draft if it is still at `draft_version` (FR-DI-4, #50).\n\nA save based on an older version gets 409 `draft_conflict`, so two tabs never\nsilently overwrite each other; resending a save that already landed succeeds.",
+        "operationId": "save_draft_api_v1_dictation_attempts__attempt_id__draft_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "409": {
+            "description": "`draft_conflict` (with the current `draft_text` and `draft_version`), `attempt_closed`, `step_locked` or `session_closed`"
+          },
+          "422": {
+            "description": "`draft_too_long` (with `max_chars`)"
+          }
+        },
+        "summary": "Save Draft",
+        "tags": ["dictation"]
+      }
+    },
     "/api/v1/events": {
       "get": {
         "description": "Stream the learner's live events (System Design 9.1).\n\nEach event carries only its type and the id of the resource to refetch.",
@@ -2182,6 +2348,64 @@
         },
         "summary": "Start Attempt",
         "tags": ["blind"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/dictation/attempts": {
+      "post": {
+        "description": "Start the Dictation attempt (201), or resume the one in progress with its draft\n(200). Leaving or reloading never voids a Dictation attempt (FR-PL-6, NFR-REL-1).\n\nThe answer holds what the player needs, the passage and the media path, and never\nany reference text (FR-DI-3, FR-TX-5).",
+        "operationId": "open_attempt_api_v1_sessions__session_id__dictation_attempts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictationAttempt"
+                }
+              }
+            },
+            "description": "The live attempt, resumed"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictationAttempt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`, `step_not_in_plan` or `session_closed`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Attempt",
+        "tags": ["dictation"]
       }
     },
     "/api/v1/sessions/{session_id}/entry": {

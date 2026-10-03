@@ -203,6 +203,15 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         params=lambda w: {"attempt_id": w.a.blind_attempt_id},
         body=lambda w: {"text": "One two three. Four five six. Seven eight nine."},
     ),
+    # -- dictation ---------------------------------------------------------------------
+    ("POST", "/api/v1/sessions/{session_id}/dictation/attempts"): Owned(
+        "session_not_found", params=lambda w: {"session_id": w.a.sessions["dictation"]}
+    ),
+    ("PUT", "/api/v1/dictation/attempts/{attempt_id}/draft"): Owned(
+        "attempt_not_found",
+        params=lambda w: {"attempt_id": w.a.dictation_attempt_id},
+        body=lambda w: {"draft_text": "B was here", "draft_version": 1},
+    ),
     # -- media -------------------------------------------------------------------------
     ("GET", "/api/v1/media/{media_object_id}"): Owned(
         "media_not_found", params=lambda w: {"media_object_id": w.a.media_id}

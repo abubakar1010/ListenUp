@@ -40,6 +40,7 @@ def main() -> None:
     print(f"upload    {seeded.pending_upload_id} (not yet confirmed)")
     for stage, session_id in seeded.sessions.items():
         print(f"session   {session_id} at {stage}")
+    print(f"dictation {seeded.dictation_attempt_id} (attempt with a draft)")
 
 
 if __name__ == "__main__":
