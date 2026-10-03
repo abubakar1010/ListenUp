@@ -1910,7 +1910,10 @@
             "description": "Successful Response"
           },
           "404": {
-            "description": "Not in your library"
+            "description": "Not in your library (`content_not_found`)"
+          },
+          "410": {
+            "description": "Removed as a copy of a clip the learner already has (`duplicate_upload`, with `existing_content_id` and `existing_title`)"
           },
           "422": {
             "content": {

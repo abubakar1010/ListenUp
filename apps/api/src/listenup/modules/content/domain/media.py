@@ -54,7 +54,8 @@ FAILURE_MESSAGES: dict[str, str] = {
         "We could not convert this file; it may be damaged. Try another copy of it."
     ),
     "processing_failed": (
-        "Something went wrong while we prepared this clip. Delete it and upload the file again."
+        "Something went wrong on our side while we prepared this clip, and retrying did not "
+        "help. Add the file again; if it fails again, try another copy of it."
     ),
 }
 

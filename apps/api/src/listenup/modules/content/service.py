@@ -374,6 +374,16 @@ async def get_content(
 ) -> ContentDetail:
     """The learner's item; 404 for anyone else's or one that is gone."""
     row = await repository.get_content_detail(session, learner, content_id)
+    if row is None and (duplicate := await repository.find_duplicate(session, content_id)):
+        existing_id, existing_title = duplicate
+        raise ProblemError(
+            410,
+            "duplicate_upload",
+            f"You already have this clip in your library, as \u201c{existing_title}\u201d, so "
+            "this copy was not added. Open that clip to practise it.",
+            existing_content_id=str(existing_id),
+            existing_title=existing_title,
+        )
     if row is None:
         raise ProblemError(
             404, "content_not_found", "This clip is not in your library. Go back to the library."

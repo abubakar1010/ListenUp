@@ -53,7 +53,7 @@ def check_file(filename: str, content_type: str, size: int, max_bytes: int) -> F
     if allowed is None or mime not in allowed:
         return FileProblem(
             "unsupported_file_type",
-            f"{filename} can't be used. Choose an {ACCEPTED_NAMES} file.",
+            f"{filename} is not a file type we accept. Choose an {ACCEPTED_NAMES} file.",
         )
     if size > max_bytes:
         return FileProblem(

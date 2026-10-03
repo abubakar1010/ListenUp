@@ -1778,8 +1778,15 @@ export interface operations {
           'application/json': components['schemas']['ContentDetail'];
         };
       };
-      /** @description Not in your library */
+      /** @description Not in your library (`content_not_found`) */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Removed as a copy of a clip the learner already has (`duplicate_upload`, with `existing_content_id` and `existing_title`) */
+      410: {
         headers: {
           [name: string]: unknown;
         };

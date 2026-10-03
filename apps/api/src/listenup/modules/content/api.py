@@ -134,7 +134,18 @@ async def list_contents(
     )
 
 
-@router.get("/contents/{content_id}", responses={404: {"description": "Not in your library"}})
+@router.get(
+    "/contents/{content_id}",
+    responses={
+        404: {"description": "Not in your library (`content_not_found`)"},
+        410: {
+            "description": (
+                "Removed as a copy of a clip the learner already has (`duplicate_upload`, "
+                "with `existing_content_id` and `existing_title`)"
+            )
+        },
+    },
+)
 async def get_content(
     content_id: uuid.UUID, learner: CurrentLearner, session: DbSession, response: Response
 ) -> schemas.ContentDetail:

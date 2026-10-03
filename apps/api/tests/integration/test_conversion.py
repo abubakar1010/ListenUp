@@ -494,13 +494,16 @@ def test_the_same_file_twice_keeps_one_item(
     assert media_row(migrated_url, second.media_id) is None
     kept = media_row(migrated_url, first.media_id)
     assert kept is not None and kept["status"] == "playable" and kept["ref_count"] == 1
-    assert client.get(f"/api/v1/contents/{second.content_id}").status_code == 404
+    removed = client.get(f"/api/v1/contents/{second.content_id}")
+    assert removed.status_code == 410
+    assert removed.json()["code"] == "duplicate_upload"
+    assert removed.json()["existing_content_id"] == first.content_id
     library = client.get("/api/v1/contents").json()["items"]
     assert [item["id"] for item in library] == [first.content_id]
     # Nothing was converted, the duplicate original is gone, its upload no longer counts.
     assert {key for key in storage.objects if "/media/" in key} == stored
     assert second.source_key not in storage.objects
-    assert client.get("/api/v1/uploads/usage").json()["used_bytes"] == media.mp3.stat().st_size
+    assert client.get("/api/v1/uploads/usage").json()["used_bytes"] == kept["playback_bytes"]
     # The page showing the new item refetches and learns it is gone.
     assert events_for(listener, user) == [
         {"u": user, "t": "job.progress", "r": second.content_id},

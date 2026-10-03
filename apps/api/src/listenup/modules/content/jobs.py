@@ -251,7 +251,11 @@ async def _claim_fingerprint(
         owner = await repository.fingerprint_owner(session, fingerprint, state.learner)
         if owner is not None and owner.learner_content_id is not None:
             # Same file, already in this library: keep the older item, which may have
-            # practice history, and remove the new one. The trigger counts it down.
+            # practice history, and remove the new one. The trigger counts it down. The
+            # removed item's page then says which item the learner already has (#39).
+            await repository.remember_duplicate(
+                session, state.content_id, state.learner, owner.learner_content_id
+            )
             await repository.delete_content_item(session, state.content_id)
             await repository.delete_media(session, state.media_id)
             await publish(session, state.learner, EventType.CONTENT_READY, state.content_id)

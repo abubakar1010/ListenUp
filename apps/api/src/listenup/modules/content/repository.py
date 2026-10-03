@@ -45,12 +45,23 @@ async def lock_learner_uploads(session: AsyncSession, learner: uuid.UUID) -> Non
 async def stored_upload_bytes(
     session: AsyncSession, learner: uuid.UUID, confirm_window: timedelta
 ) -> int:
-    """Bytes of the learner's uploads in their library, plus uploads they may still confirm."""
+    """Bytes the learner's uploads keep in storage (D5, #39; ADR 0027).
+
+    What is really stored: the playback file of a playable clip (the original is
+    deleted after conversion), the original of a clip still being prepared and of an
+    upload that may still be confirmed, and nothing for a failed clip.
+    """
     used = await session.scalar(
         text("""
-        SELECT coalesce(sum(size_bytes), 0) FROM content.uploads
-         WHERE user_id = :id
-           AND (confirmed_at IS NOT NULL OR created_at > now() - :window)
+        SELECT coalesce(sum(CASE
+                 WHEN u.confirmed_at IS NULL THEN u.size_bytes
+                 WHEN m.status = 'playable' THEN coalesce(m.playback_bytes, u.size_bytes)
+                 WHEN m.status IN ('pending', 'downloading') THEN u.size_bytes
+                 ELSE 0 END), 0)
+          FROM content.uploads u
+          LEFT JOIN content.media_objects m ON m.id = u.media_object_id
+         WHERE u.user_id = :id
+           AND (u.confirmed_at IS NOT NULL OR u.created_at > now() - :window)
         """),
         {"id": learner, "window": confirm_window},
     )
@@ -317,6 +328,40 @@ async def set_fingerprint(session: AsyncSession, media_id: uuid.UUID, fingerprin
         text("UPDATE content.media_objects SET fingerprint = :fp WHERE id = :id"),
         {"id": media_id, "fp": fingerprint},
     )
+
+
+async def remember_duplicate(
+    session: AsyncSession,
+    content_id: uuid.UUID,
+    learner: uuid.UUID,
+    existing_content_id: uuid.UUID,
+) -> None:
+    """Keep the id of a removed duplicate item and the item it was merged into."""
+    await session.execute(
+        text("""
+        INSERT INTO content.duplicate_uploads (content_id, user_id, existing_content_id)
+        VALUES (:id, :learner, :existing)
+        ON CONFLICT (content_id) DO NOTHING
+        """),
+        {"id": content_id, "learner": learner, "existing": existing_content_id},
+    )
+
+
+async def find_duplicate(
+    session: AsyncSession, content_id: uuid.UUID
+) -> tuple[uuid.UUID, str] | None:
+    """(id, title) of the learner's item that a removed duplicate was merged into."""
+    row = (
+        await session.execute(
+            text("""
+            SELECT c.id, c.title FROM content.duplicate_uploads d
+              JOIN content.contents c ON c.id = d.existing_content_id AND c.user_id = d.user_id
+             WHERE d.content_id = :id
+            """),
+            {"id": content_id},
+        )
+    ).first()
+    return (row[0], row[1]) if row else None
 
 
 async def delete_content_item(session: AsyncSession, content_id: uuid.UUID) -> None:
