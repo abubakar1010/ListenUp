@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     login_ip_window_minutes: int = 15  # ... per window
     register_ip_limit: int = 10  # new accounts per IP per hour
 
+    # First retry waits about this long; later ones four times longer each time.
+    job_retry_base_seconds: float = 10.0
+
     log_level: str = "INFO"
     # JSON logs everywhere except an interactive terminal, where plain text reads better.
     log_json: bool = True
