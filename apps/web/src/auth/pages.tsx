@@ -14,6 +14,10 @@ export function SignInPage() {
           <Link to="/register" className={linkClass}>
             Create an account
           </Link>
+          <br />
+          <Link to="/forgot-password" className={linkClass}>
+            Forgot your password?
+          </Link>
         </>
       }
     />
