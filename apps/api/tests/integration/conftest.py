@@ -136,13 +136,28 @@ def api_role_url(migrated_url: str) -> str:
     would miss a query that the real API role cannot see.
     """
     with psycopg.connect(migrated_url, autocommit=True) as connection:
+        # Roles are shared by every database on the server; parallel test runs race
+        # here, so a refused attempt retries (as the baseline migration does).
         connection.execute("""
-            DO $$ BEGIN
-              IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'listenup_api_test') THEN
-                CREATE ROLE listenup_api_test LOGIN PASSWORD 'listenup-test';
-              END IF;
+            DO $$
+            DECLARE
+              attempt int;
+            BEGIN
+              FOR attempt IN 1..20 LOOP
+                BEGIN
+                  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'listenup_api_test') THEN
+                    CREATE ROLE listenup_api_test LOGIN PASSWORD 'listenup-test';
+                  END IF;
+                  GRANT listenup_api TO listenup_api_test;
+                  RETURN;
+                EXCEPTION WHEN internal_error OR unique_violation OR duplicate_object THEN
+                  IF attempt = 20 THEN
+                    RAISE;
+                  END IF;
+                  PERFORM pg_sleep(0.05 * attempt);
+                END;
+              END LOOP;
             END $$;
-            GRANT listenup_api TO listenup_api_test;
         """)
     params = psycopg.conninfo.conninfo_to_dict(migrated_url)
     params.update(user="listenup_api_test", password="listenup-test")

@@ -1,12 +1,14 @@
 """Live events end to end: PostgreSQL NOTIFY to a browser's SSE stream (#30).
 
-The API runs in a real uvicorn server on port 8101, because test clients that call
-the ASGI app directly buffer the whole response and an event stream never ends.
+The API runs in a real uvicorn server on a free port, because test clients that call
+the ASGI app directly buffer the whole response and an event stream never ends. The
+port is picked by the operating system, so test runs in parallel never collide.
 """
 
 import asyncio
 import json
 import queue
+import socket
 import threading
 import time
 import uuid
@@ -31,8 +33,6 @@ from listenup.platform.events import (
 from listenup.platform.jobs import JobDeps, Lane, app, configure_runtime, enqueue, job
 from tests.integration.conftest import conninfo_to_url
 
-PORT = 8101
-BASE_URL = f"http://127.0.0.1:{PORT}"
 PASSWORD = "correct horse battery"
 WAIT = 5.0
 
@@ -46,11 +46,13 @@ async def finish(deps: JobDeps, user_id: str, clip: str) -> None:
 @pytest.fixture(scope="module")
 def server(api_role_url: str) -> Iterator[str]:
     api = create_app(Settings(database_url=api_role_url, log_json=False))
-    config = uvicorn.Config(
-        api, host="127.0.0.1", port=PORT, log_level="warning", timeout_graceful_shutdown=2
-    )
+    # Bind first, on port 0, and hand the socket to uvicorn: no race for a free port.
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    base_url = f"http://127.0.0.1:{sock.getsockname()[1]}"
+    config = uvicorn.Config(api, log_level="warning", timeout_graceful_shutdown=2)
     instance = uvicorn.Server(config)
-    thread = threading.Thread(target=instance.run, daemon=True)
+    thread = threading.Thread(target=instance.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
     deadline = time.monotonic() + 10
     while not instance.started:
@@ -60,9 +62,10 @@ def server(api_role_url: str) -> Iterator[str]:
     while not api.state.event_listener.connected.is_set():
         assert time.monotonic() < deadline, "the event listener did not connect"
         time.sleep(0.05)
-    yield BASE_URL
+    yield base_url
     instance.should_exit = True
     thread.join(10)
+    sock.close()
 
 
 def signed_in(base_url: str) -> tuple[httpx.Client, uuid.UUID]:
@@ -244,7 +247,8 @@ def test_an_open_stream_holds_no_database_transaction(
     with psycopg.connect(migrated_url) as conn:
         row = conn.execute(
             "SELECT count(*) FROM pg_stat_activity "
-            "WHERE usename = 'listenup_api_test' AND state LIKE 'idle in transaction%%'"
+            "WHERE usename = 'listenup_api_test' AND datname = current_database() "
+            "AND state LIKE 'idle in transaction%%'"
         ).fetchone()
 
     assert row == (0,)
