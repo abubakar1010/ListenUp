@@ -1,4 +1,5 @@
 {
+  "packageManager": "pnpm@10.28.0",
   "name": "@listenup/web",
   "private": true,
   "version": "0.1.0",
@@ -11,7 +12,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc -b",
-    "test": "vitest run"
+    "test": "vitest run",
+    "api:generate": "openapi-typescript src/api/openapi.json -o src/api/schema.ts && prettier --write src/api/schema.ts src/api/openapi.json"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.1",
@@ -33,6 +35,7 @@
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.13.0",
     "jsdom": "^30.1.1",
+    "openapi-typescript": "^7.13.0",
     "prettier": "^3.9.9",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
