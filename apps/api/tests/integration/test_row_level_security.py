@@ -101,7 +101,7 @@ def test_a_cookie_resolves_to_its_learner_only_while_live(conn: Conn) -> None:
 
 def test_workers_see_every_learner(conn: Conn, learners: tuple[uuid.UUID, uuid.UUID]) -> None:
     act_as(conn, "listenup_worker")
-    assert sorted(visible_sessions(conn)) == sorted(learners)
+    assert set(learners) <= set(visible_sessions(conn))
 
 
 def test_the_read_only_role_cannot_read_identity(conn: Conn) -> None:

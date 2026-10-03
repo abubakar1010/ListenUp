@@ -27,12 +27,28 @@ class Settings(BaseSettings):
     smtp_host: str = "localhost"
     smtp_port: int = 1025
 
+    # Sign-in (Architecture 9.1, D17). Cookies are Secure everywhere except local runs
+    # over plain http; set LISTENUP_COOKIE_SECURE to override.
+    cookie_secure: bool | None = None
+    session_days: int = 30
+    login_lock_threshold: int = 5  # failed attempts on one account ...
+    login_lock_minutes: int = 15  # ... within this many minutes lock it for as long
+    login_ip_limit: int = 20  # sign-in attempts per IP ...
+    login_ip_window_minutes: int = 15  # ... per window
+    register_ip_limit: int = 10  # new accounts per IP per hour
+
     log_level: str = "INFO"
     # JSON logs everywhere except an interactive terminal, where plain text reads better.
     log_json: bool = True
 
     # YouTube intake stays off until the legal review (OQ-6) clears it.
     youtube_intake_enabled: bool = False
+
+    @property
+    def cookies_secure(self) -> bool:
+        if self.cookie_secure is not None:
+            return self.cookie_secure
+        return self.environment not in ("local", "test")
 
 
 @lru_cache

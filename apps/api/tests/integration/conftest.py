@@ -14,6 +14,7 @@ from pathlib import Path
 import psycopg
 import pytest
 from alembic.config import Config
+from fastapi.testclient import TestClient
 from psycopg import sql
 
 from listenup.platform.config import get_settings
@@ -107,3 +108,42 @@ def learner(migrated_url: str) -> Iterator[uuid.UUID]:
         )
         yield user_id
         connection.execute("DELETE FROM identity.users WHERE id = %s", [user_id])
+
+
+def with_csrf(client: TestClient) -> TestClient:
+    """Fetch the CSRF cookie once and send it back as the header, as the web app does."""
+    client.get("/api/v1/health")
+    token = next(value for name, value in client.cookies.items() if name.endswith("listenup_csrf"))
+    client.headers["X-CSRF-Token"] = token
+    return client
+
+
+@pytest.fixture(autouse=True)
+def fresh_rate_counters(request: pytest.FixtureRequest) -> None:
+    """Rate limits are shared state; each test starts with none counted."""
+    if "migrated_url" not in request.fixturenames:
+        return
+    url: str = request.getfixturevalue("migrated_url")
+    with psycopg.connect(url, autocommit=True) as connection:
+        connection.execute("DELETE FROM ops.rate_counters")
+
+
+@pytest.fixture(scope="session")
+def api_role_url(migrated_url: str) -> str:
+    """A login role with only listenup_api's rights, so row-level security applies.
+
+    The migration owner bypasses row-level security, so tests that connect as it
+    would miss a query that the real API role cannot see.
+    """
+    with psycopg.connect(migrated_url, autocommit=True) as connection:
+        connection.execute("""
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'listenup_api_test') THEN
+                CREATE ROLE listenup_api_test LOGIN PASSWORD 'listenup-test';
+              END IF;
+            END $$;
+            GRANT listenup_api TO listenup_api_test;
+        """)
+    params = psycopg.conninfo.conninfo_to_dict(migrated_url)
+    params.update(user="listenup_api_test", password="listenup-test")
+    return conninfo_to_url(psycopg.conninfo.make_conninfo(**params))  # type: ignore[arg-type]

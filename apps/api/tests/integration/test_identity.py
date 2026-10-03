@@ -66,7 +66,9 @@ def test_deleting_a_user_removes_their_login_sessions(conn: Conn) -> None:
 
     conn.execute("DELETE FROM identity.users WHERE id = %s", [user_id])
 
-    row = conn.execute("SELECT count(*) FROM identity.auth_sessions").fetchone()
+    row = conn.execute(
+        "SELECT count(*) FROM identity.auth_sessions WHERE user_id = %s", [user_id]
+    ).fetchone()
     assert row == (0,)
 
 
