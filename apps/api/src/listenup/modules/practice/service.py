@@ -280,3 +280,14 @@ async def _transition(
         entry_locked_at=stamps.entry_locked_at,
         completed_at=stamps.completed_at,
     )
+
+
+async def latest_session_status(
+    db: AsyncSession, content_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, SessionStatus]:
+    """For each content item, the status of the learner's newest session on it (FR-LB-1).
+
+    Items without a session are left out. Row-level security limits it to the learner.
+    """
+    found = await repository.latest_status_by_content(db, content_ids)
+    return {content_id: SessionStatus(status) for content_id, status in found.items()}

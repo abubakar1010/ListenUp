@@ -212,3 +212,21 @@ async def delete_unfinished_steps(session: AsyncSession, session_id: uuid.UUID) 
         """),
         {"session_id": session_id},
     )
+
+
+async def latest_status_by_content(
+    session: AsyncSession, content_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    """The status of the newest session on each content item that has one."""
+    if not content_ids:
+        return {}
+    rows = await session.execute(
+        text("""
+        SELECT DISTINCT ON (content_id) content_id, status
+          FROM practice.sessions
+         WHERE content_id = ANY(:content_ids)
+         ORDER BY content_id, created_at DESC, id DESC
+        """),
+        {"content_ids": content_ids},
+    )
+    return {row.content_id: row.status for row in rows}

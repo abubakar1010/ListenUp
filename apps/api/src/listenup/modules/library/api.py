@@ -14,11 +14,10 @@ from pydantic import BaseModel, Field
 
 from listenup.modules.content import service as content
 from listenup.modules.identity.service import CurrentLearner
+from listenup.modules.practice import service as practice
 from listenup.platform.database import DbSession
 
 router = APIRouter(tags=["library"])
-
-SessionStatus = Literal["active", "completed", "abandoned"]
 
 
 class LibraryItem(BaseModel):
@@ -30,7 +29,7 @@ class LibraryItem(BaseModel):
     )
     duration_ms: int | None
     created_at: datetime
-    last_session_status: SessionStatus | None = Field(
+    last_session_status: practice.SessionStatus | None = Field(
         description="Status of the newest practice session on this item; null when none"
     )
 
@@ -55,6 +54,7 @@ async def library_contents(
 ) -> LibraryPage | Response:
     """The learner's library, newest first, 20 per page by default (FR-LB-1)."""
     page = await content.list_contents(session, learner, cursor, limit)
+    last_status = await practice.latest_session_status(session, [item.id for item in page.items])
     body = LibraryPage(
         items=[
             LibraryItem(
@@ -64,9 +64,7 @@ async def library_contents(
                 status=item.status,  # type: ignore[arg-type]
                 duration_ms=item.duration_ms,
                 created_at=item.created_at,
-                # TODO(#47): join the newest practice session's status through
-                # practice/service.py once practice sessions exist.
-                last_session_status=None,
+                last_session_status=last_status.get(item.id),
             )
             for item in page.items
         ],

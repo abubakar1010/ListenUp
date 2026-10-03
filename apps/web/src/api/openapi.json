@@ -151,15 +151,13 @@
           "last_session_status": {
             "anyOf": [
               {
-                "enum": ["active", "completed", "abandoned"],
-                "type": "string"
+                "$ref": "#/components/schemas/SessionStatus"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Status of the newest practice session on this item; null when none",
-            "title": "Last Session Status"
+            "description": "Status of the newest practice session on this item; null when none"
           },
           "source": {
             "enum": ["upload", "youtube"],
@@ -286,6 +284,11 @@
         "required": ["detail"],
         "title": "PasswordResetRequested",
         "type": "object"
+      },
+      "SessionStatus": {
+        "enum": ["active", "completed", "abandoned"],
+        "title": "SessionStatus",
+        "type": "string"
       },
       "StorageUse": {
         "properties": {

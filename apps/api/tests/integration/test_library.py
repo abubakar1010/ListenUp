@@ -4,9 +4,11 @@ The app connects as a role with only the API's rights, so row-level security is 
 force exactly as in production. Storage is an in-memory fake; nothing here needs S3.
 """
 
+import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime
 
+import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
@@ -146,3 +148,37 @@ def test_the_same_library_appears_from_a_second_browser(
 def test_the_library_needs_a_signed_in_learner(client: TestClient) -> None:
     client.post("/api/v1/auth/logout")
     assert client.get(LIBRARY).status_code == 401
+
+
+def add_session(migrated_url: str, user: str, content_id: str, status: str, minute: int) -> None:
+    completed = "now()" if status == "completed" else "NULL"
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO practice.sessions (id, user_id, content_id, passage, entry, "
+            "current_step, status, created_at, completed_at) "
+            f"VALUES (%s, %s, %s, int4range(0, 60000), 'blind', 'blind', %s, "
+            f"now() - make_interval(mins => %s), {completed})",
+            [uuid.uuid4(), user, content_id, status, minute],
+        )
+
+
+def test_each_item_shows_the_status_of_its_newest_session(
+    make_client: ClientFactory, migrated_url: str
+) -> None:
+    client, other = make_client(), make_client()
+    user = learner_id(client)
+    never, practised, abandoned_then_redone = add_items(migrated_url, user, 3)
+    add_session(migrated_url, user, practised, "completed", minute=5)
+    add_session(migrated_url, user, abandoned_then_redone, "abandoned", minute=10)
+    add_session(migrated_url, user, abandoned_then_redone, "active", minute=1)
+    # Another learner's newer session, on their own copy of a clip, never shows here.
+    [theirs] = add_items(migrated_url, learner_id(other), 1)
+    add_session(migrated_url, learner_id(other), theirs, "active", minute=0)
+
+    items = {i["id"]: i["last_session_status"] for i in client.get(LIBRARY).json()["items"]}
+
+    assert items == {
+        never: None,
+        practised: "completed",
+        abandoned_then_redone: "active",
+    }

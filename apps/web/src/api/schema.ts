@@ -346,11 +346,8 @@ export interface components {
        * Format: uuid
        */
       id: string;
-      /**
-       * Last Session Status
-       * @description Status of the newest practice session on this item; null when none
-       */
-      last_session_status: ('active' | 'completed' | 'abandoned') | null;
+      /** @description Status of the newest practice session on this item; null when none */
+      last_session_status: components['schemas']['SessionStatus'] | null;
       /**
        * Source
        * @enum {string}
@@ -406,6 +403,11 @@ export interface components {
       /** Detail */
       detail: string;
     };
+    /**
+     * SessionStatus
+     * @enum {string}
+     */
+    SessionStatus: 'active' | 'completed' | 'abandoned';
     /** StorageUse */
     StorageUse: {
       /** Max File Bytes */
