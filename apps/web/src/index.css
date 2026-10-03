@@ -1,1 +1,178 @@
 @import 'tailwindcss';
+
+/*
+ * Design tokens from the ListenUp design system v2 (tokens.json, 2 Oct 2026):
+ * https://claude.ai/artifact/LsijobynKEzf1P5fvyYiRw
+ * Utilities follow the token names: bg-surface-raised, text-ink-muted, border-line-strong,
+ * text-title, font-display, rounded-md, shadow-raised. Spacing uses Tailwind's 4 px scale,
+ * which matches space-1 to space-8 (1, 2, 3, 4, 6, 8, 12, 16). Breakpoints use Tailwind's
+ * md (768 px), lg (1024 px) and xl (1280 px); the smallest supported width is 360 px (UI-4).
+ */
+@theme {
+  /* Colour, light theme. The dark theme overrides the same names below. */
+  --color-surface: #f5f4ef;
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: #ebe9e2;
+  --color-line: #d5d3ca;
+  --color-line-strong: #7f7d74;
+  --color-ink: #1a1e1d;
+  --color-ink-muted: #575c58;
+  --color-accent: #0d5c63;
+  --color-accent-hover: #0a4a50;
+  --color-on-accent: #ffffff;
+  --color-accent-soft: #d8ebea;
+  --color-focus-ring: var(--color-accent);
+  --color-mark-bg: #fbe1a0;
+  --color-mark-strong: #9a6a00;
+  --color-rec: #b8321c;
+  --color-success: #1e7046;
+  --color-warning: #8f5500;
+  --color-danger: #b02a20;
+  --color-diff-missing: #1d5fa8;
+  --color-diff-wrong: #a84300;
+  --color-toast-bg: var(--color-ink);
+  --color-toast-ink: var(--color-surface);
+  --color-scrim: rgba(14, 17, 16, 0.55);
+
+  /*
+   * Bridge for the auth pages, which were styled before the tokens existed. Remove each
+   * alias once nothing uses the Tailwind colour it replaces.
+   */
+  --color-blue-700: var(--color-accent);
+  --color-blue-800: var(--color-accent-hover);
+  --color-gray-400: var(--color-line-strong);
+  --color-gray-700: var(--color-ink-muted);
+  --color-red-800: var(--color-danger);
+  --color-white: var(--color-on-accent);
+
+  /* Type. Fonts are self-hosted from @fontsource (imported in main.tsx). */
+  --font-display:
+    'Bricolage Grotesque Variable', 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+  --font-sans: 'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+  --font-ipa: 'Charis SIL', 'Doulos SIL', 'Gentium Plus', Georgia, serif;
+
+  /* Type scale (UX-14). The -compact sizes are the 360 px versions; switch at md. */
+  --text-display: 2.5rem;
+  --text-display--line-height: 3rem;
+  --text-display--font-weight: 750;
+  --text-display--letter-spacing: -0.015em;
+  --text-display-compact: 2rem;
+  --text-display-compact--line-height: 2.5rem;
+  --text-display-compact--font-weight: 750;
+  --text-display-compact--letter-spacing: -0.015em;
+  --text-title: 1.75rem;
+  --text-title--line-height: 2.25rem;
+  --text-title--font-weight: 650;
+  --text-title-compact: 1.5rem;
+  --text-title-compact--line-height: 2rem;
+  --text-title-compact--font-weight: 650;
+  --text-heading: 1.25rem;
+  --text-heading--line-height: 1.75rem;
+  --text-heading--font-weight: 650;
+  --text-heading-compact: 1.125rem;
+  --text-heading-compact--line-height: 1.5rem;
+  --text-heading-compact--font-weight: 650;
+  --text-body-l: 1.125rem;
+  --text-body-l--line-height: 2rem;
+  --text-body: 1rem;
+  --text-body--line-height: 1.5rem;
+  --text-body-s: 0.875rem;
+  --text-body-s--line-height: 1.25rem;
+  --text-label: 0.8125rem;
+  --text-label--line-height: 1rem;
+  --text-label--font-weight: 700;
+  --text-label--letter-spacing: 0.06em;
+  --text-numeral: 2rem;
+  --text-numeral--line-height: 2.25rem;
+  --text-numeral--font-weight: 600;
+  --text-mono: 0.875rem;
+  --text-mono--line-height: 1.25rem;
+  --text-mono--font-weight: 500;
+
+  /* Radius: radius-s, radius-m, radius-l; radius-pill is rounded-full. */
+  --radius-sm: 4px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  /* Elevation: shadow-raised on sticky bars and toasts, shadow-dialog on dialogs only. */
+  --shadow-raised: 0 1px 2px rgba(26, 30, 29, 0.08), 0 2px 8px rgba(26, 30, 29, 0.06);
+  --shadow-dialog: 0 12px 40px rgba(26, 30, 29, 0.22);
+
+  /* Motion: durations are duration-120, -200 and -320; easing for entering and leaving. */
+  --ease-enter: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 1, 1);
+
+  /* Layout: practice and library content is at most 1120 px wide. */
+  --container-content: 70rem;
+}
+
+/* Dark theme, from the same tokens.json. It follows the operating system setting. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-surface: #131716;
+    --color-surface-raised: #1b201f;
+    --color-surface-sunken: #0e1110;
+    --color-line: #2d3331;
+    --color-line-strong: #88908c;
+    --color-ink: #eaece8;
+    --color-ink-muted: #a3aaa6;
+    --color-accent: #5cc2c6;
+    --color-accent-hover: #7fd3d6;
+    --color-on-accent: #0a1c1d;
+    --color-accent-soft: #173a3b;
+    --color-mark-bg: #4d3c10;
+    --color-mark-strong: #e9b437;
+    --color-rec: #ff7b63;
+    --color-success: #62cd8f;
+    --color-warning: #efa847;
+    --color-danger: #ff8a7f;
+    --color-diff-missing: #8db8ef;
+    --color-diff-wrong: #ffa166;
+    --color-scrim: rgba(0, 0, 0, 0.7);
+    --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-dialog: 0 12px 40px rgba(0, 0, 0, 0.6);
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+
+  body {
+    background-color: var(--color-surface);
+    color: var(--color-ink);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+  }
+
+  /* Focus: a 3 px focus-ring outline with a 2 px offset, on every surface. */
+  :focus-visible {
+    outline: 3px solid var(--color-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* Containers that only take focus after navigation or a skip link show no ring. */
+  [tabindex='-1']:focus {
+    outline: none;
+  }
+
+  a {
+    color: var(--color-accent);
+  }
+
+  a:hover {
+    color: var(--color-accent-hover);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0s !important;
+      transition-duration: 0s !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
