@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint, types, boundaries, tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: listenup
+          POSTGRES_PASSWORD: listenup
+          POSTGRES_DB: listenup
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U listenup -d listenup"
+          --health-interval 2s --health-retries 30
+    env:
+      LISTENUP_DATABASE_URL: postgresql://listenup:listenup@localhost:5432/listenup
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - run: uv sync --frozen --python 3.12
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - name: Module boundaries (import-linter)
+        run: uv run lint-imports
+      - run: uv run pytest
+      # Migration checks are added by the database migrations story.
+
+  web:
+    name: Web (lint, format, types, tests, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  api-contract:
+    name: API client matches the API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Export the OpenAPI schema
+        working-directory: apps/api
+        run: uv sync --frozen --python 3.12 && uv run python scripts/export_openapi.py
+      - name: Regenerate the TypeScript types
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile && pnpm api:generate
+      - name: Fail if the committed client is out of date
+        run: |
+          git diff --exit-code -- apps/web/src/api \
+            || { echo "::error::Run scripts/export_openapi.py and pnpm api:generate, then commit the result."; exit 1; }
+
+  images:
+    name: Docker image (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [api, worker, worker-media]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/backend.Dockerfile
+          target: ${{ matrix.target }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+
+  audit:
+    name: Dependency vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/web/package.json
+      - name: Python (pip-audit)
+        working-directory: apps/api
+        run: |
+          uv export --frozen --no-dev --no-hashes --no-emit-project -o requirements.txt
+          uvx pip-audit -r requirements.txt
+      - name: JavaScript (pnpm audit)
+        working-directory: apps/web
+        run: pnpm audit --audit-level=high
