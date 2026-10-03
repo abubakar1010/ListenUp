@@ -30,6 +30,7 @@ class FakeStorage:
         self.data: dict[str, bytes] = {}
         self.signed: list[tuple[str, str, int | None]] = []
         self.deleted: list[str] = []
+        self.downloads: list[tuple[str, int | None]] = []
 
     def signed_upload(
         self, key: str, content_type: str, content_length: int | None = None
@@ -42,7 +43,10 @@ class FakeStorage:
             {"Content-Type": content_type},
         )
 
-    def signed_download(self, key: str, download_name: str | None = None) -> SignedUrl:
+    def signed_download(
+        self, key: str, download_name: str | None = None, ttl_seconds: int | None = None
+    ) -> SignedUrl:
+        self.downloads.append((key, ttl_seconds))
         return SignedUrl(f"http://storage.test/bucket/{key}?sig", "GET", 0, {})
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:

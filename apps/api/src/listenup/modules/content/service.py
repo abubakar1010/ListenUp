@@ -333,13 +333,15 @@ async def media_url(
     learner: uuid.UUID,
     media_id: uuid.UUID,
     file: MediaFile = "playback",
+    ttl_seconds: int | None = None,
 ) -> str:
     """A short-lived signed URL for a media object's file (NFR-SEC-2, FR-CI-6).
 
     Only a learner with a content item on the media object gets one; anyone else gets
     404, the same as for a media object that does not exist. Signed URLs are reused
     while fresh, so the browser cache keeps working; range requests then go straight
-    to storage (System Design 6.4).
+    to storage (System Design 6.4). With `ttl_seconds` the URL is fresh and lives only
+    that long, for Blind's attempt-bound media (#62).
     """
     files = await repository.learner_media(session, learner, media_id)
     if files is None:
@@ -352,7 +354,7 @@ async def media_url(
             "This clip is not ready to play yet. Wait until it shows as ready.",
             media_status=files.status,
         )
-    return storage.signed_download(key).url
+    return storage.signed_download(key, ttl_seconds=ttl_seconds).url
 
 
 def get_uploads(request: Request) -> Uploads:

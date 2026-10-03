@@ -58,7 +58,9 @@ class Storage(Protocol):
     def signed_upload(
         self, key: str, content_type: str, content_length: int | None = None
     ) -> SignedUrl: ...
-    def signed_download(self, key: str, download_name: str | None = None) -> SignedUrl: ...
+    def signed_download(
+        self, key: str, download_name: str | None = None, ttl_seconds: int | None = None
+    ) -> SignedUrl: ...
     async def put(self, key: str, data: bytes, content_type: str) -> None: ...
     async def put_file(self, key: str, path: Path, content_type: str) -> None: ...
     async def download(self, key: str, destination: Path) -> Downloaded | None: ...
@@ -116,9 +118,19 @@ class S3Storage:
         url = self._signer.generate_presigned_url("put_object", Params=params, ExpiresIn=self.ttl)
         return SignedUrl(url, "PUT", self._clock() + self.ttl, {"Content-Type": content_type})
 
-    def signed_download(self, key: str, download_name: str | None = None) -> SignedUrl:
-        """A URL the browser can GET one object from; reused while fresh."""
+    def signed_download(
+        self, key: str, download_name: str | None = None, ttl_seconds: int | None = None
+    ) -> SignedUrl:
+        """A URL the browser can GET one object from; reused while fresh.
+
+        With `ttl_seconds` (at most the configured lifetime), the URL is signed afresh
+        for that long and never reused: Blind's media URL must stop working when the
+        attempt's window ends (#62).
+        """
         check_key(key)
+        if ttl_seconds is not None:
+            ttl = max(1, min(ttl_seconds, self.ttl))
+            return self._sign_download(key, download_name, ttl, self._clock())
         cache_key = (key, download_name)
         now = self._clock()
         cached = self._cache.get(cache_key)
@@ -126,17 +138,22 @@ class S3Storage:
             self._cache.move_to_end(cache_key)
             return cached
 
-        params = {"Bucket": self.bucket, "Key": key}
-        if download_name is not None:
-            safe = download_name.replace('"', "")
-            params["ResponseContentDisposition"] = f'attachment; filename="{safe}"'
-        url = self._signer.generate_presigned_url("get_object", Params=params, ExpiresIn=self.ttl)
-        signed = SignedUrl(url, "GET", now + self.ttl, {})
+        signed = self._sign_download(key, download_name, self.ttl, now)
         self._cache[cache_key] = signed
         self._cache.move_to_end(cache_key)
         while len(self._cache) > CACHE_SIZE:
             self._cache.popitem(last=False)
         return signed
+
+    def _sign_download(
+        self, key: str, download_name: str | None, ttl: int, now: float
+    ) -> SignedUrl:
+        params = {"Bucket": self.bucket, "Key": key}
+        if download_name is not None:
+            safe = download_name.replace('"', "")
+            params["ResponseContentDisposition"] = f'attachment; filename="{safe}"'
+        url = self._signer.generate_presigned_url("get_object", Params=params, ExpiresIn=ttl)
+        return SignedUrl(url, "GET", now + ttl, {})
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         check_key(key)
