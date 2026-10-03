@@ -176,7 +176,7 @@ def test_tokens_map_back_to_source_words_when_split_or_merged() -> None:
     assert tokens == [
         Token("i", "i", 0, 0),
         Token("could", "could", 1, 1),
-        Token("have", "have", 1, 1),
+        Token("have", "ve", 1, 1),
         Token("seen", "seen", 2, 2),
         Token("#1990", "nineteenninety", 3, 4, is_number=True),
         Token("#1990s", "#1990s", 5, 5, is_number=True),
@@ -187,6 +187,20 @@ def test_punctuation_only_word_gives_no_tokens() -> None:
     assert tokenize(["Hello", "—", "there"]) == [
         Token("hello", "hello", 0, 0),
         Token("there", "there", 2, 2),
+    ]
+
+
+def test_contraction_parts_keep_their_written_form() -> None:
+    assert [t.surface for t in tokenize(["don't", "won't", "he'd", "it's", "colour"])] == [
+        "do",
+        "nt",
+        "wo",
+        "nt",
+        "he",
+        "d",
+        "it",
+        "s",
+        "color",
     ]
 
 

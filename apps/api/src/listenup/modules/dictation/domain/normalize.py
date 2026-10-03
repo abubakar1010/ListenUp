@@ -33,8 +33,9 @@ from listenup.modules.dictation.domain.spelling_variants import BRITISH_TO_AMERI
 class Token:
     """One normalised unit of comparison.
 
-    ``key`` is what is compared. ``surface`` is the normalised spelling without
-    apostrophes, used to detect words typed joined or split ("alot", "every one").
+    ``key`` is what is compared. ``surface`` is the normalised written form without
+    apostrophes ("nt" for the "not" of "don't"), used to detect words typed joined or
+    split ("alot" for "a lot", "every one" for "everyone", "dont" for "don't").
     ``first_word`` and ``last_word`` are the source word indexes it came from, inclusive.
     """
 
@@ -59,22 +60,24 @@ _PIECE_RE: Final = re.compile(
 )
 _CURRENCIES: Final = {"$": "dollars", "£": "pounds", "€": "euros"}
 
+# Each part is (key, written form). The written forms, joined, spell the contraction
+# without its apostrophe, so "dont" typed for "don't" is found as a spelling slip.
 _WHOLE_CONTRACTIONS: Final = {
-    "won't": ("will", "not"),
-    "can't": ("can", "not"),
-    "cannot": ("can", "not"),
-    "shan't": ("shall", "not"),
-    "let's": ("let", "us"),
-    "y'all": ("you", "all"),
-    "ain't": ("aint",),
+    "won't": (("will", "wo"), ("not", "nt")),
+    "can't": (("can", "ca"), ("not", "nt")),
+    "cannot": (("can", "can"), ("not", "not")),
+    "shan't": (("shall", "sha"), ("not", "nt")),
+    "let's": (("let", "let"), ("us", "s")),
+    "y'all": (("you", "y"), ("all", "all")),
+    "ain't": (("aint", "aint"),),
 }
 _SUFFIX_CONTRACTIONS: Final = (
-    ("n't", "not"),
-    ("'ve", "have"),
-    ("'re", "are"),
-    ("'ll", "will"),
-    ("'m", "am"),
-    ("'d", "'d"),
+    ("n't", ("not", "nt")),
+    ("'ve", ("have", "ve")),
+    ("'re", ("are", "re")),
+    ("'ll", ("will", "ll")),
+    ("'m", ("am", "m")),
+    ("'d", ("'d", "d")),
 )
 # Words whose "'s" is a contraction of "is" or "has" rather than a possessive.
 _S_CONTRACTION_STEMS: Final = frozenset(
@@ -108,8 +111,8 @@ def tokenize(words: Iterable[str]) -> list[Token]:
     """Normalise a sequence of source words into tokens that map back to word indexes."""
     tokens: list[Token] = []
     for index, word in enumerate(words):
-        for key, is_number in _word_keys(word):
-            tokens.append(Token(key, _surface(key), index, index, is_number))
+        for key, surface, is_number in _word_keys(word):
+            tokens.append(Token(key, surface, index, index, is_number))
     return _merge_words(tokens)
 
 
@@ -126,52 +129,53 @@ def keys_equal(a: str, b: str) -> bool:
     return b in CONTRACTION_ALIASES.get(a, ()) or a in CONTRACTION_ALIASES.get(b, ())
 
 
-def _surface(key: str) -> str:
-    return key.replace("'", "")
-
-
 def _fold(text: str) -> str:
     # Apostrophes first: NFKD would split the acute accent into a space and a mark.
     decomposed = unicodedata.normalize("NFKD", text.translate(_APOSTROPHES))
     return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
 
 
-def _word_keys(word: str) -> list[tuple[str, bool]]:
-    keys: list[tuple[str, bool]] = []
+def _word_keys(word: str) -> list[tuple[str, str, bool]]:
+    """(key, written form, is a number) for each token of one source word."""
+    keys: list[tuple[str, str, bool]] = []
     for match in _PIECE_RE.finditer(_fold(word)):
         body = match["body"]
-        numeric = digit_keys(body)
-        if numeric is not None:
-            keys.extend((key, key.startswith("#")) for key in numeric)
-        else:
-            for part in body.split(","):
-                part_numeric = digit_keys(part)
-                if part_numeric is not None:
-                    keys.extend((key, key.startswith("#")) for key in part_numeric)
-                else:
-                    keys.extend((key, False) for key in _word_parts(part.replace(".", "")))
+        parts = [body] if digit_keys(body) is not None else body.split(",")
+        for part in parts:
+            numeric = digit_keys(part)
+            if numeric is not None:
+                keys.extend((key, key, key.startswith("#")) for key in numeric)
+            else:
+                keys.extend((key, written, False) for key, written in _word_parts(part))
         if match["currency"]:
-            keys.append((_CURRENCIES[match["currency"]], False))
+            currency = _CURRENCIES[match["currency"]]
+            keys.append((currency, currency, False))
         if match["percent"]:
-            keys.append(("percent", False))
+            keys.append(("percent", "percent", False))
     return keys
 
 
-def _word_parts(word: str) -> list[str]:
-    return [BRITISH_TO_AMERICAN.get(part, part) for part in _expand(word) if part]
+def _word_parts(word: str) -> list[tuple[str, str]]:
+    parts: list[tuple[str, str]] = []
+    for key, written in _expand(word.replace(".", "")):
+        if key:
+            american = BRITISH_TO_AMERICAN.get(key, key)
+            parts.append((american, american if written == key else written))
+    return parts
 
 
-def _expand(word: str) -> list[str]:
+def _expand(word: str) -> list[tuple[str, str]]:
     if word in _WHOLE_CONTRACTIONS:
         return list(_WHOLE_CONTRACTIONS[word])
     if "'" not in word:
-        return [word]
+        return [(word, word)]
     for suffix, expansion in _SUFFIX_CONTRACTIONS:
         if word.endswith(suffix) and len(word) > len(suffix):
             return [*_expand(word[: -len(suffix)]), expansion]
     if word.endswith("'s") and word[:-2] in _S_CONTRACTION_STEMS:
-        return [word[:-2], "'s"]
-    return [word.replace("'", "")]
+        return [(word[:-2], word[:-2]), ("'s", "s")]
+    plain = word.replace("'", "")
+    return [(plain, plain)]
 
 
 def _merge_words(tokens: Sequence[Token]) -> list[Token]:
