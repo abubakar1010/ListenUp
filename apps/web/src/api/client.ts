@@ -14,11 +14,14 @@ export interface Problem {
 
 export class ApiError extends Error {
   readonly problem: Problem;
+  /** Seconds from a `Retry-After` header (a 503 while the database is down), if any. */
+  readonly retryAfterSeconds: number | null;
 
-  constructor(problem: Problem) {
+  constructor(problem: Problem, retryAfterSeconds: number | null = null) {
     super(problem.detail);
     this.name = 'ApiError';
     this.problem = problem;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 
   get code(): string {
@@ -58,6 +61,15 @@ async function toProblem(response: Response): Promise<Problem> {
   };
 }
 
+/** `Retry-After` as seconds: either a number of seconds or an HTTP date. */
+export function retryAfter(value: string | null, now = Date.now()): number | null {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds);
+  const date = Date.parse(value);
+  return Number.isNaN(date) ? null : Math.max(0, Math.ceil((date - now) / 1000));
+}
+
 /**
  * Call the API. Throws ApiError with the server's problem on any non-2xx response.
  * `keepalive` lets the request outlive the page, for a report sent from `pagehide`.
@@ -86,7 +98,9 @@ export async function api<T>(
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
     ...(options.keepalive ? { keepalive: true } : {}),
   });
-  if (!response.ok) throw new ApiError(await toProblem(response));
+  if (!response.ok) {
+    throw new ApiError(await toProblem(response), retryAfter(response.headers.get('Retry-After')));
+  }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
