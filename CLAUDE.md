@@ -31,11 +31,16 @@ Run from the repository root unless a directory is given.
 - `uv run pytest` — all tests; single test: `uv run pytest tests/unit/test_health.py::test_health_returns_ok`.
 - `uv run ruff check .` and `uv run ruff format .` — lint and format.
 - `uv run mypy` — type check (strict).
+- `uv run lint-imports` — module-boundary contracts (Architecture 4.3); `tests/architecture/` checks that modules use each other only through `service.py`.
+- `uv run python scripts/export_openapi.py` — write the OpenAPI schema into the web client; run it after any API change.
 
 **Web** (`cd apps/web`; pnpm):
 - `pnpm install`, then `pnpm dev` — Vite dev server on http://localhost:5173, proxying `/api` to :8000.
 - `pnpm test` — all tests; single test: `pnpm vitest run src/App.test.tsx -t "shows the product name"`.
 - `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm build`.
+- `pnpm api:generate` — regenerate `src/api/schema.ts` from the exported OpenAPI schema. CI fails if the committed client is out of date.
+
+**CI** (`.github/workflows/ci.yml`) runs all of the above on every push, plus Docker image builds and dependency vulnerability scans.
 
 TypeScript is pinned to 6.x because typescript-eslint does not support TypeScript 7 yet.
 
