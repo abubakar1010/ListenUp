@@ -1,8 +1,10 @@
 """Shared pieces of the intake and library tests: a fake storage and API helpers."""
 
+import hashlib
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
@@ -11,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from listenup.main import create_app
 from listenup.platform.config import Settings
-from listenup.platform.storage import SignedUrl, StoredObject
+from listenup.platform.storage import Downloaded, SignedUrl, StoredObject
 from tests.integration.conftest import with_csrf
 
 MB = 1024 * 1024
@@ -25,6 +27,7 @@ class FakeStorage:
 
     def __init__(self) -> None:
         self.objects: dict[str, StoredObject] = {}
+        self.data: dict[str, bytes] = {}
         self.signed: list[tuple[str, str, int | None]] = []
         self.deleted: list[str] = []
 
@@ -44,6 +47,17 @@ class FakeStorage:
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         self.objects[key] = StoredObject(len(data), content_type)
+        self.data[key] = data
+
+    async def put_file(self, key: str, path: Path, content_type: str) -> None:
+        await self.put(key, path.read_bytes(), content_type)
+
+    async def download(self, key: str, destination: Path) -> Downloaded | None:
+        data = self.data.get(key)
+        if data is None:
+            return None
+        destination.write_bytes(data)
+        return Downloaded(len(data), hashlib.sha256(data).hexdigest())
 
     async def head(self, key: str) -> StoredObject | None:
         return self.objects.get(key)
@@ -51,16 +65,22 @@ class FakeStorage:
     async def delete(self, key: str) -> None:
         self.deleted.append(key)
         self.objects.pop(key, None)
+        self.data.pop(key, None)
 
     async def delete_prefix(self, prefix: str) -> int:
         keys = [k for k in self.objects if k.startswith(prefix)]
         for key in keys:
             del self.objects[key]
+            self.data.pop(key, None)
         return len(keys)
 
-    def arrive(self, key: str, size: int, content_type: str = "audio/mpeg") -> None:
-        """The browser's PUT reached storage."""
+    def arrive(
+        self, key: str, size: int, content_type: str = "audio/mpeg", data: bytes | None = None
+    ) -> None:
+        """The browser's PUT reached storage (with its bytes, when a test needs them)."""
         self.objects[key] = StoredObject(size, content_type)
+        if data is not None:
+            self.data[key] = data
 
 
 def client_factory(api_role_url: str, storage: FakeStorage) -> Iterator[ClientFactory]:

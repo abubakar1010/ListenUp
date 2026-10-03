@@ -10,10 +10,12 @@ in-memory LRU cache, so a page that asks for the same file repeatedly gets the s
 URL and the browser cache keeps working.
 """
 
+import hashlib
 import time
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 import anyio.to_thread
@@ -29,6 +31,7 @@ if TYPE_CHECKING:
 REUSE_FRACTION = 0.8
 CACHE_SIZE = 10_000
 DELETE_BATCH = 1000  # the S3 limit for one DeleteObjects call
+DOWNLOAD_CHUNK = 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -45,12 +48,20 @@ class StoredObject:
     content_type: str | None
 
 
+@dataclass(frozen=True)
+class Downloaded:
+    size: int  # bytes written
+    sha256: str  # hex digest of the bytes, computed while they streamed
+
+
 class Storage(Protocol):
     def signed_upload(
         self, key: str, content_type: str, content_length: int | None = None
     ) -> SignedUrl: ...
     def signed_download(self, key: str, download_name: str | None = None) -> SignedUrl: ...
     async def put(self, key: str, data: bytes, content_type: str) -> None: ...
+    async def put_file(self, key: str, path: Path, content_type: str) -> None: ...
+    async def download(self, key: str, destination: Path) -> Downloaded | None: ...
     async def head(self, key: str) -> StoredObject | None: ...
     async def delete(self, key: str) -> None: ...
     async def delete_prefix(self, prefix: str) -> int: ...
@@ -134,6 +145,44 @@ class S3Storage:
                 Bucket=self.bucket, Key=key, Body=data, ContentType=content_type
             )
         )
+
+    async def put_file(self, key: str, path: Path, content_type: str) -> None:
+        """Upload a local file; large files go up in parts without being read into memory."""
+        check_key(key)
+        await anyio.to_thread.run_sync(
+            lambda: self._client.upload_file(
+                str(path), self.bucket, key, ExtraArgs={"ContentType": content_type}
+            )
+        )
+
+    async def download(self, key: str, destination: Path) -> Downloaded | None:
+        """Stream one object into a local file, hashing it on the way.
+
+        Returns None when there is no such object. Memory use stays at one chunk
+        whatever the object's size.
+        """
+        check_key(key)
+        return await anyio.to_thread.run_sync(self._download_sync, key, destination)
+
+    def _download_sync(self, key: str, destination: Path) -> Downloaded | None:
+        try:
+            found = self._client.get_object(Bucket=self.bucket, Key=key)
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
+                return None
+            raise
+        digest = hashlib.sha256()
+        size = 0
+        body = found["Body"]
+        try:
+            with destination.open("wb") as out:
+                for chunk in body.iter_chunks(DOWNLOAD_CHUNK):
+                    digest.update(chunk)
+                    out.write(chunk)
+                    size += len(chunk)
+        finally:
+            body.close()
+        return Downloaded(size, digest.hexdigest())
 
     async def head(self, key: str) -> StoredObject | None:
         """Size and type of a stored object, or None when there is no such object."""
