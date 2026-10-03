@@ -34,6 +34,7 @@ Run from the repository root unless a directory is given.
 - `uv run mypy` — type check (strict).
 - `uv run lint-imports` — module-boundary contracts (Architecture 4.3); `tests/architecture/` checks that modules use each other only through `service.py`.
 - `uv run python scripts/export_openapi.py` — write the OpenAPI schema into the web client; run it after any API change.
+- `uv run python scripts/seed_dev.py` — seed a local database (as its owner) with a learner who can sign in, a clip, a pending upload and a session at each step; it prints the credentials and ids. The same fixture script (`tests/integration/seed.py`) builds test data.
 
 **Web** (`cd apps/web`; pnpm):
 - `pnpm install`, then `pnpm dev` — Vite dev server on http://localhost:5173, proxying `/api` to :8000.
@@ -43,6 +44,7 @@ Run from the repository root unless a directory is given.
 - `pnpm e2e` — Playwright smoke test against the production build, with the API mocked in the test. Where `playwright install` is not possible, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium`; `E2E_PORT` changes the preview port (default 4173).
 - `pnpm size` — after `pnpm build`, fails if the initial JavaScript is over 200 KB gzip.
 - `LISTENUP_API_URL=http://localhost:8103 pnpm dev` — point the dev proxy at another API.
+- Confirmations use `ConfirmDialog` (`src/components/ConfirmDialog.tsx`): focus starts on the safe action, stays inside, and Escape cancels. Session data lives under the `['sessions']` query key (`src/features/session/api.ts`).
 - Routes live in `src/App.tsx` (lazy pages; guards `RequireAuth` and `RedirectIfSignedIn` in `src/app/guards.tsx`). Design tokens are Tailwind theme variables in `src/index.css` (`bg-surface-raised`, `text-ink-muted`, `text-title`). Show API errors with `ErrorPanel` (ADR 0018). Live events map to query keys in `queryKeysForEvent` in `src/app/guards.tsx`.
 
 **CI** (`.github/workflows/ci.yml`) runs all of the above on every push, plus Docker image builds and dependency vulnerability scans.
@@ -62,6 +64,9 @@ TypeScript is pinned to 6.x because typescript-eslint does not support TypeScrip
 - Uploads go straight from the browser to storage (ADR 0020): `POST /uploads` records a row in `content.uploads` and returns a PUT URL signed for the exact type and size; `POST /contents` confirms it. Limits are `LISTENUP_UPLOAD_*` settings. `Storage` has `head` and `delete`; tests swap `app.state.uploads.storage` for the fake in `tests/integration/intake_helpers.py`.
 - List endpoints page by keyset: an opaque `cursor` (`content/domain/cursor.py`) and `next_cursor` in the response, never OFFSET.
 - A child row references its parent together with `user_id` (composite foreign keys), so it can never belong to another learner; sessions reference `(content_id, user_id)`.
+- Media files of an upload live under `users/<user id>/media/<media id>/` (`playback.mp4`, `peaks.json`); the conversion job `content.convert_upload` (ADR 0022) runs ffprobe and ffmpeg as async subprocesses in `LISTENUP_MEDIA_SCRATCH_DIR`. The browser plays media through `GET /api/v1/media/{media_object_id}` (and `/peaks`), which checks for the caller's content item and redirects (307) to a signed storage URL; never put storage URLs in cached API bodies.
+- Session writes carry the version the client last saw: `PATCH /sessions/{id}/entry` and `POST /sessions/{id}/steps/{step}/skip` take `version` in the body (409 `session_changed`). Plans start only on playable clips through `practice.service.start_plan` (409 `content_not_ready`, ADR 0023).
+- Every route must be registered in `tests/integration/access_registry.py` with what a second learner gets (`Owned` 404, `Scoped` without the other learner's ids, `Stream`, or `Public` with a reason); `test_access_cross_learner.py` fails on an unregistered route and checks NFR-SEC-2 for every route (#34).
 - Integration tests that go through the API connect as `api_role_url` (a role with only `listenup_api`'s rights); the migration owner bypasses row-level security and hides bugs.
 
 ## Decisions that shape the architecture
