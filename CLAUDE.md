@@ -40,6 +40,10 @@ Run from the repository root unless a directory is given.
 - `pnpm test` — all tests; single test: `pnpm vitest run src/App.test.tsx -t "shows the product name"`.
 - `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm build`.
 - `pnpm api:generate` — regenerate `src/api/schema.ts` from the exported OpenAPI schema. CI fails if the committed client is out of date.
+- `pnpm e2e` — Playwright smoke test against the production build, with the API mocked in the test. Where `playwright install` is not possible, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium`; `E2E_PORT` changes the preview port (default 4173).
+- `pnpm size` — after `pnpm build`, fails if the initial JavaScript is over 200 KB gzip.
+- `LISTENUP_API_URL=http://localhost:8103 pnpm dev` — point the dev proxy at another API.
+- Routes live in `src/App.tsx` (lazy pages; guards `RequireAuth` and `RedirectIfSignedIn` in `src/app/guards.tsx`). Design tokens are Tailwind theme variables in `src/index.css` (`bg-surface-raised`, `text-ink-muted`, `text-title`). Show API errors with `ErrorPanel` (ADR 0018). Live events map to query keys in `queryKeysForEvent` in `src/app/guards.tsx`.
 
 **CI** (`.github/workflows/ci.yml`) runs all of the above on every push, plus Docker image builds and dependency vulnerability scans.
 
@@ -53,12 +57,15 @@ TypeScript is pinned to 6.x because typescript-eslint does not support TypeScrip
 - Storage keys live under `users/<user id>/`; the browser only ever gets signed URLs from `S3Storage`.
 - Endpoints that need a signed-in learner take `CurrentLearner` from `modules/identity/service.py`; it resolves the session cookie and calls `set_learner`. Every POST, PUT, PATCH and DELETE needs the `X-CSRF-Token` header (the web client's `api()` adds it; tests use `with_csrf`).
 - Background work is a job: declare it with `@job(Lane.X, "module.name")` from `listenup.platform.jobs` (an async handler that takes `JobDeps` and writes results as idempotent upserts) and queue it with `enqueue(session, ...)` in the transaction that changes the data. Raise `PermanentError` for input that can never succeed. Add the module's jobs package to `JOB_MODULES` in `listenup/worker.py` (ADR 0015). Run a pool locally with `uv run python -m listenup.worker default` (or `media`).
+- Tell the browser that background work finished with `publish(session, user_id, EventType.X, resource_id)` from `listenup.platform.events`, in the transaction that stores the result. Events carry ids only and reach that learner's `GET /api/v1/events` stream (ADR 0016).
+- Email goes only through `modules/notifications/service.py` and is sent from background jobs. Never put a secret token in job arguments, because the queue keeps them (ADR 0017). Settings are `LISTENUP_SMTP_*`; tests swap the transport with `notifications.service.use_transport`.
 - Integration tests that go through the API connect as `api_role_url` (a role with only `listenup_api`'s rights); the migration owner bypasses row-level security and hides bugs.
 
 ## Decisions that shape the architecture
 
 - **Mode rules are enforced on the server and in the app, never by interface text alone.** Blind has no pause, seek, rewind or speed change, and leaving, reloading or seeking voids the attempt; one resume per attempt is allowed after an interruption the learner did not cause (a network stall, or a device or OS pause under 5 s), and a second interruption voids it. Dictation hides the transcript. Cards are capped at two per session. A Shadow segment is 60 to 90 seconds, or the whole passage when the passage is 30 to 60 seconds, with three rounds. Keep these rules in one place with automated tests (NFR-MNT-2).
 - **Step order is gated.** A step unlocks only when the previous one is complete. The entry choice can change only until Transcript starts. Transcript cannot be skipped; Card and Shadow can be skipped after confirmation.
+- **Dictation scoring is a pure function** in `modules/dictation/domain` (`score_dictation`, ADR 0008 and 0019): spelling slips count as correct (`SPELLING_SLIPS_COUNT_AS_CORRECT`), and only wrong or missing words become mark candidates. Add British spellings to `spelling_variants.py`.
 - **Marks are the shared spine.** Dictation and Transcript create marks (places where the sound did not match the text). Card and Shadow read them.
 - **Slow work runs in background workers**, not in request handling: downloading YouTube media, transcription, and grading of gists and Shadow rounds.
 - **All AI goes through one provider-neutral adapter layer.** Four roles (transcription, text AI, speech assessment, alignment), each reached only through its interface, with the active provider and fallbacks chosen by configuration. No other code may call a vendor directly. Prompts, rubrics and output schemas live in our own versioned files, and every result stores provider, model and version (NFR-AI-1 to NFR-AI-10).
