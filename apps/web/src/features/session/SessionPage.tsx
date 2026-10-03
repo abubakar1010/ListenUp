@@ -8,6 +8,7 @@ import { ErrorPanel } from '../../components/ErrorPanel';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { BlindStep } from '../blind/BlindStep';
 import { CheckIcon, LockIcon } from '../../components/icons';
+import { DictationScreen } from '../dictation/DictationScreen';
 import { useSession, useSkipStep, type Session } from './api';
 import { ChangeEntryPanel } from './ChangeEntryPanel';
 import { PracticeLayout } from './PracticeLayout';
@@ -50,6 +51,10 @@ function SessionView({ session }: { session: Session }) {
   const open = session.open_step;
   if (open === 'blind')
     return <BlindStep session={session} progress={<Progress session={session} />} />;
+  // The session opens at its current step (#50); each mode fills its own screen.
+  if (open === 'dictation') {
+    return <DictationScreen session={session} progress={<Progress session={session} />} />;
+  }
   const passage = `Passage ${formatClock(session.passage.start_ms)} to ${formatClock(session.passage.end_ms)}`;
   return (
     <PracticeLayout
