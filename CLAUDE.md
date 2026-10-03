@@ -28,7 +28,7 @@ Run from the repository root unless a directory is given.
 **Backend** (`cd apps/api`; uv manages the virtual environment):
 - `uv sync` — install dependencies, including dev tools.
 - `uv run uvicorn listenup.main:app --reload` — run the API without Docker (needs PostgreSQL).
-- `uv run pytest` — all tests; single test: `uv run pytest tests/unit/test_health.py::test_health_returns_ok`. `tests/integration/` creates throwaway databases on the server in `LISTENUP_DATABASE_URL` and skips when none is reachable (CI sets `LISTENUP_REQUIRE_DB=1` to fail instead).
+- `uv run pytest` — all tests; single test: `uv run pytest tests/unit/test_health.py::test_health_returns_ok`. `tests/integration/` creates throwaway databases on the server in `LISTENUP_DATABASE_URL` and throwaway buckets on the S3 server in `LISTENUP_S3_ENDPOINT_URL` (`docker compose up postgres storage` provides both), and skips when either is unreachable (CI sets `LISTENUP_REQUIRE_DB=1` and `LISTENUP_REQUIRE_S3=1` to fail instead).
 - `uv run alembic upgrade head` — apply migrations; `uv run alembic downgrade -1` steps back; `uv run alembic check` fails if the models in `modules/*/models.py` drift from the schema. Migrations are hand-written SQL (ADR 0013): every table with `user_id` gets the `own_rows` policy from `migrations/rls.py`, and each new table needs explicit grants for `listenup_api`.
 - `uv run ruff check .` and `uv run ruff format .` — lint and format.
 - `uv run mypy` — type check (strict).
@@ -44,6 +44,13 @@ Run from the repository root unless a directory is given.
 **CI** (`.github/workflows/ci.yml`) runs all of the above on every push, plus Docker image builds and dependency vulnerability scans.
 
 TypeScript is pinned to 6.x because typescript-eslint does not support TypeScript 7 yet.
+
+## Platform conventions (`apps/api/src/listenup/platform`, ADR 0014)
+
+- Route handlers take the database through `DbSession`: one transaction per request, committed before the response is sent. Call `set_learner` once the caller is known, so row-level security applies. Never commit by hand inside a request.
+- Raise `ProblemError(status, code, detail)` for every refusal; clients branch on `code`. Database trigger errors (`step_locked` and the others) already map to their codes.
+- Submissions wrap their work in `run_once` with the `Idempotency-Key` header. Rate limits go through `RateLimiter.enforce`, which commits on its own.
+- Storage keys live under `users/<user id>/`; the browser only ever gets signed URLs from `S3Storage`.
 
 ## Decisions that shape the architecture
 
