@@ -26,7 +26,7 @@ Run from the repository root unless a directory is given.
 - Mailpit (sent email) is at http://localhost:8025.
 
 **Backend** (`cd apps/api`; uv manages the virtual environment):
-- `uv sync` — install dependencies, including dev tools.
+- `uv sync` — install dependencies, including dev tools. The conversion tests also need `ffmpeg` and `ffprobe` on the PATH (as in the `worker-media` image and CI).
 - `uv run uvicorn listenup.main:app --reload` — run the API without Docker (needs PostgreSQL).
 - `uv run pytest` — all tests; single test: `uv run pytest tests/unit/test_health.py::test_health_returns_ok`. `tests/integration/` creates throwaway databases on the server in `LISTENUP_DATABASE_URL` and throwaway buckets on the S3 server in `LISTENUP_S3_ENDPOINT_URL` (`docker compose up postgres storage` provides both), and skips when either is unreachable (CI sets `LISTENUP_REQUIRE_DB=1` and `LISTENUP_REQUIRE_S3=1` to fail instead).
 - `uv run alembic upgrade head` — apply migrations; `uv run alembic downgrade -1` steps back; `uv run alembic check` fails if the models in `modules/*/models.py` drift from the schema. Migrations are hand-written SQL (ADR 0013): every table with `user_id` gets the `own_rows` policy from `migrations/rls.py`, and each new table needs explicit grants for `listenup_api`.
