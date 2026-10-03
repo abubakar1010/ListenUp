@@ -1,0 +1,59 @@
+"""Tables of the identity schema (Database Design section 3)."""
+
+import uuid
+from datetime import datetime
+from ipaddress import IPv4Address, IPv6Address
+
+from sqlalchemy import CheckConstraint, ForeignKey, Index, LargeBinary, Text, func, text
+from sqlalchemy.dialects.postgresql import CITEXT, INET, TIMESTAMP
+from sqlalchemy.orm import Mapped, mapped_column
+
+from listenup.platform.db import Base
+
+Timestamp = TIMESTAMP(timezone=True)
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("char_length(email) <= 254"),
+        CheckConstraint("char_length(display_name) <= 80"),
+        CheckConstraint("status IN ('active', 'pending_deletion', 'deleting')"),
+        # DR-1: a pending deletion always has its date, and nothing else has one.
+        CheckConstraint("(status = 'pending_deletion') = (deletion_scheduled_at IS NOT NULL)"),
+        Index(
+            "users_deletion_due_idx",
+            "deletion_scheduled_at",
+            postgresql_where=text("status = 'pending_deletion'"),
+        ),
+        {"schema": "identity"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(CITEXT, unique=True)
+    password_hash: Mapped[str | None] = mapped_column(Text)
+    display_name: Mapped[str | None] = mapped_column(Text)
+    email_verified_at: Mapped[datetime | None] = mapped_column(Timestamp)
+    status: Mapped[str] = mapped_column(Text, server_default="active")
+    deletion_scheduled_at: Mapped[datetime | None] = mapped_column(Timestamp)
+    created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+
+
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+    __table_args__ = (
+        CheckConstraint("char_length(user_agent) <= 400"),
+        Index("auth_sessions_user_idx", "user_id"),
+        Index("auth_sessions_expires_idx", "expires_at"),
+        {"schema": "identity"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("identity.users.id", ondelete="CASCADE"))
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary, unique=True)  # SHA-256 of the cookie
+    created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(Timestamp)
+    user_agent: Mapped[str | None] = mapped_column(Text)
+    ip: Mapped[IPv4Address | IPv6Address | None] = mapped_column(INET)
