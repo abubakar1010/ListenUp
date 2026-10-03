@@ -20,6 +20,7 @@ dev = [
     "httpx>=0.27",
     "ruff>=0.6",
     "mypy>=1.11",
+    "import-linter>=2.15",
 ]
 
 [build-system]
@@ -46,3 +47,35 @@ python_version = "3.12"
 strict = true
 mypy_path = "src"
 packages = ["listenup"]
+
+# Module boundaries from Architecture section 4.3, checked by `uv run lint-imports`.
+# The rule that modules call each other only through service.py is checked by
+# tests/architecture/test_module_boundaries.py.
+[tool.importlinter]
+root_package = "listenup"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Domain packages import no framework, database or network code"
+type = "forbidden"
+source_modules = ["listenup.modules.*.domain"]
+forbidden_modules = ["fastapi", "starlette", "sqlalchemy", "psycopg", "procrastinate", "httpx", "listenup.platform", "listenup.ai"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "practice never imports a mode module"
+type = "forbidden"
+source_modules = ["listenup.modules.practice"]
+forbidden_modules = ["listenup.modules.blind", "listenup.modules.dictation", "listenup.modules.review", "listenup.modules.cards", "listenup.modules.shadow"]
+
+[[tool.importlinter.contracts]]
+name = "Only grading and transcript call the AI layer"
+type = "forbidden"
+source_modules = ["listenup.modules.identity", "listenup.modules.content", "listenup.modules.practice", "listenup.modules.blind", "listenup.modules.dictation", "listenup.modules.review", "listenup.modules.cards", "listenup.modules.shadow", "listenup.modules.library", "listenup.modules.notifications", "listenup.modules.admin", "listenup.main"]
+forbidden_modules = ["listenup.ai"]
+
+[[tool.importlinter.contracts]]
+name = "The AI layer depends only on platform"
+type = "forbidden"
+source_modules = ["listenup.ai"]
+forbidden_modules = ["listenup.modules", "listenup.main", "listenup.worker"]
