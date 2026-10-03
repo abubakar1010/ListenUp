@@ -14,6 +14,7 @@ import { RegisterPage, SignInPage } from './auth/pages';
 // visitors land on them.
 const LibraryPage = lazy(() => import('./features/library/LibraryPage'));
 const AddClipPage = lazy(() => import('./features/library/AddClipPage'));
+const ContentPage = lazy(() => import('./features/content/ContentPage'));
 const SessionPage = lazy(() => import('./features/session/SessionPage'));
 const NotFoundPage = lazy(() => import('./app/NotFoundPage'));
 const PasswordResetRequestPage = lazy(() =>
@@ -78,6 +79,7 @@ export function App() {
           <Route element={<AppLayout />}>
             <Route path="/library" element={<LibraryPage />} />
             <Route path="/library/add" element={<AddClipPage />} />
+            <Route path="/contents/:contentId" element={<ContentPage />} />
           </Route>
           <Route path="/sessions/:sessionId" element={<SessionPage />} />
         </Route>

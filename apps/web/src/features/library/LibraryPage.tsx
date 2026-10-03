@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { usePageTitle } from '../../app/usePageTitle';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
+import { formatDuration } from '../../components/formatDuration';
 import { AlertIcon } from '../../components/icons';
 import { ACCEPTED_NAMES } from './files';
 import { useLibraryContents, type LibraryItem } from './useLibrary';
@@ -146,7 +147,9 @@ function ClipRow({ item }: { item: LibraryItem }) {
   return (
     <li className="flex flex-col gap-2 rounded-md border border-line bg-surface-raised p-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 flex-col gap-1">
-        <b className="break-words">{item.title}</b>
+        <Link to={`/contents/${item.id}`} className="font-bold break-words">
+          {item.title}
+        </Link>
         <span className="text-body-s text-ink-muted">
           {SOURCE_LABEL[item.source]}
           {item.duration_ms !== null && (
@@ -196,16 +199,6 @@ function StatusBadge({ status }: { status: LibraryItem['status'] }) {
       {status === 'downloading' ? 'Downloading' : 'Processing'}
     </span>
   );
-}
-
-function formatDuration(ms: number): string {
-  const total = Math.round(ms / 1000);
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = String(total % 60).padStart(2, '0');
-  return hours > 0
-    ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`
-    : `${String(minutes).padStart(2, '0')}:${seconds}`;
 }
 
 function formatDate(iso: string): string {

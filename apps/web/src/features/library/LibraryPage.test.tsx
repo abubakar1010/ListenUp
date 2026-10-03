@@ -71,6 +71,9 @@ test('clips show title, source, length and status', async () => {
   expect(rows[1]).toHaveTextContent('Last session: Completed');
   expect(rows[2]).toHaveTextContent('Could not be processed');
   expect(screen.getByRole('link', { name: 'Add a clip' })).toHaveAttribute('href', '/library/add');
+  expect(
+    within(rows[0]).getByRole('link', { name: 'Why cities plant street trees' }),
+  ).toHaveAttribute('href', '/contents/item-1');
   expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
 });
 

@@ -4,6 +4,7 @@ import { Navigate, Outlet, useLocation, useSearchParams } from 'react-router';
 import { DEFAULT_SIGNED_IN_PATH, nextPath, signInPath } from '../auth/next';
 import { useMe } from '../auth/useMe';
 import { useLiveEvents, type LiveEvent } from '../events/useLiveEvents';
+import { CONTENTS_KEY, contentKey } from '../features/content/useContent';
 import { LIBRARY_KEY } from '../features/library/useLibrary';
 import { ErrorPage } from './ErrorPage';
 import { PageLoading } from './PageLoading';
@@ -30,7 +31,8 @@ export function RequireAuth() {
 function SignedInRoot() {
   useLiveEvents({
     keysFor: queryKeysForEvent,
-    // Clips still processing show in the library; refetch it when events may be missed.
+    // Clips still processing show in the library and on their own page; refetch both
+    // when events may be missed.
     pendingKeys: PENDING_KEYS,
     // Not every environment has EventSource (jsdom in unit tests); the hook then stays off.
     enabled: typeof EventSource !== 'undefined',
@@ -43,7 +45,7 @@ function SignedInRoot() {
 }
 
 const NO_KEYS: readonly QueryKey[] = [];
-const PENDING_KEYS: readonly QueryKey[] = [LIBRARY_KEY];
+const PENDING_KEYS: readonly QueryKey[] = [LIBRARY_KEY, CONTENTS_KEY];
 
 /**
  * Which cached queries each live event makes stale (ADR 0016). Feature stories add their
@@ -52,7 +54,7 @@ const PENDING_KEYS: readonly QueryKey[] = [LIBRARY_KEY];
 function queryKeysForEvent(event: LiveEvent): readonly QueryKey[] {
   switch (event.type) {
     case 'content.ready':
-      return [LIBRARY_KEY];
+      return [LIBRARY_KEY, contentKey(event.resourceId)];
     default:
       return NO_KEYS;
   }
