@@ -31,8 +31,9 @@ jobs:
           --health-interval 2s --health-retries 30
     env:
       LISTENUP_DATABASE_URL: postgresql://listenup:listenup@localhost:5432/listenup
-      # Database integration tests fail instead of skipping when PostgreSQL is missing.
+      # Integration tests fail instead of skipping when PostgreSQL or storage is missing.
       LISTENUP_REQUIRE_DB: "1"
+      LISTENUP_REQUIRE_S3: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -51,6 +52,22 @@ jobs:
           uv run alembic downgrade -1
           uv run alembic upgrade head
           uv run alembic check
+      - name: Start S3 storage (SeaweedFS, as in Docker Compose)
+        working-directory: .
+        run: |
+          docker run -d --name storage -p 9000:9000 \
+            -v "$PWD/infra/compose/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro" \
+            chrislusf/seaweedfs:latest \
+            server -dir=/data -s3 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json
+          for _ in $(seq 1 60); do
+            if docker exec storage sh -c "echo cluster.check | weed shell -master=localhost:9333" \
+                 >/dev/null 2>&1 && curl -s -o /dev/null http://localhost:9000; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs storage
+          exit 1
       - run: uv run pytest
 
   web:
