@@ -15,6 +15,8 @@ WORKDIR /app
 COPY apps/api/pyproject.toml apps/api/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY apps/api/src ./src
+COPY apps/api/alembic.ini ./
+COPY apps/api/migrations ./migrations
 RUN uv sync --frozen --no-dev && useradd --system --uid 10001 app
 
 FROM base AS api
