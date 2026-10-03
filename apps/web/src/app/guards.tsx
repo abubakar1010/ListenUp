@@ -4,6 +4,7 @@ import { Navigate, Outlet, useLocation, useSearchParams } from 'react-router';
 import { DEFAULT_SIGNED_IN_PATH, nextPath, signInPath } from '../auth/next';
 import { useMe } from '../auth/useMe';
 import { useLiveEvents, type LiveEvent } from '../events/useLiveEvents';
+import { LIBRARY_KEY } from '../features/library/useLibrary';
 import { ErrorPage } from './ErrorPage';
 import { PageLoading } from './PageLoading';
 import { RouteBoundary } from './RouteBoundary';
@@ -29,7 +30,8 @@ export function RequireAuth() {
 function SignedInRoot() {
   useLiveEvents({
     keysFor: queryKeysForEvent,
-    pendingKeys: NO_KEYS,
+    // Clips still processing show in the library; refetch it when events may be missed.
+    pendingKeys: PENDING_KEYS,
     // Not every environment has EventSource (jsdom in unit tests); the hook then stays off.
     enabled: typeof EventSource !== 'undefined',
   });
@@ -41,14 +43,19 @@ function SignedInRoot() {
 }
 
 const NO_KEYS: readonly QueryKey[] = [];
+const PENDING_KEYS: readonly QueryKey[] = [LIBRARY_KEY];
 
 /**
  * Which cached queries each live event makes stale (ADR 0016). Feature stories add their
  * mappings here, for example `content.ready` to the content item and the library list.
  */
 function queryKeysForEvent(event: LiveEvent): readonly QueryKey[] {
-  void event;
-  return NO_KEYS;
+  switch (event.type) {
+    case 'content.ready':
+      return [LIBRARY_KEY];
+    default:
+      return NO_KEYS;
+  }
 }
 
 /** Sign-in and register: a learner who is already signed in goes on to `next`. */
