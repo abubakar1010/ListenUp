@@ -4,6 +4,7 @@ import { Navigate, Outlet, useLocation, useSearchParams } from 'react-router';
 import { DEFAULT_SIGNED_IN_PATH, nextPath, signInPath } from '../auth/next';
 import { useMe } from '../auth/useMe';
 import { useLiveEvents, type LiveEvent } from '../events/useLiveEvents';
+import { BLIND_KEY } from '../features/blind/api';
 import { CONTENTS_KEY, contentKey } from '../features/content/useContent';
 import { LIBRARY_KEY } from '../features/library/useLibrary';
 import { ErrorPage } from './ErrorPage';
@@ -55,6 +56,9 @@ function queryKeysForEvent(event: LiveEvent): readonly QueryKey[] {
   switch (event.type) {
     case 'content.ready':
       return [LIBRARY_KEY, contentKey(event.resourceId)];
+    case 'attempt.voided':
+      // The event names the attempt only; refresh every Blind step shown (ADR 0024).
+      return [BLIND_KEY];
     default:
       return NO_KEYS;
   }

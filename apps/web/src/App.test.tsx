@@ -10,6 +10,7 @@ import {
   renderWithProviders,
   SIGNED_OUT,
 } from './test-utils';
+import { blindStepFixture } from './features/blind/fixtures';
 import { sessionFixture } from './features/session/fixtures';
 
 afterEach(() => vi.restoreAllMocks());
@@ -95,6 +96,7 @@ test('a signed-out learner who opens a session signs in and comes back to it', a
       return jsonResponse(200, LEARNER);
     },
     '/sessions/abc-123': () => jsonResponse(200, sessionFixture({ id: 'abc-123' })),
+    '/sessions/abc-123/blind': () => jsonResponse(200, blindStepFixture(null, 'abc-123')),
   });
   renderApp('/sessions/abc-123?step=transcript');
 
@@ -126,6 +128,7 @@ test('the practice screen has its slots in order: progress, player, rule, work',
   mockApi({
     '/me': () => jsonResponse(200, LEARNER),
     '/sessions/abc-123': () => jsonResponse(200, sessionFixture({ id: 'abc-123' })),
+    '/sessions/abc-123/blind': () => jsonResponse(200, blindStepFixture(null, 'abc-123')),
   });
   renderApp('/sessions/abc-123');
 

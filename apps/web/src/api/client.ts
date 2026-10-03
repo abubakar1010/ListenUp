@@ -58,10 +58,18 @@ async function toProblem(response: Response): Promise<Problem> {
   };
 }
 
-/** Call the API. Throws ApiError with the server's problem on any non-2xx response. */
+/**
+ * Call the API. Throws ApiError with the server's problem on any non-2xx response.
+ * `keepalive` lets the request outlive the page, for a report sent from `pagehide`.
+ */
 export async function api<T>(
   path: string,
-  options: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
+  options: {
+    method?: string;
+    body?: unknown;
+    headers?: Record<string, string>;
+    keepalive?: boolean;
+  } = {},
 ): Promise<T> {
   const method = options.method ?? 'GET';
   const headers: Record<string, string> = { Accept: 'application/json', ...options.headers };
@@ -76,6 +84,7 @@ export async function api<T>(
     headers,
     credentials: 'same-origin',
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    ...(options.keepalive ? { keepalive: true } : {}),
   });
   if (!response.ok) throw new ApiError(await toProblem(response));
   if (response.status === 204) return undefined as T;

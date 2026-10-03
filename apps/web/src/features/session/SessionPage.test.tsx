@@ -41,7 +41,9 @@ test('a new plan of both shows "Step 1 of 5" with Blind open', async () => {
     screen.getByRole('heading', { name: 'Blind: Why cities plant street trees', level: 1 }),
   ).toBeInTheDocument();
   expect(screen.getByText('Passage 02:10 to 04:40')).toBeInTheDocument();
-  expect(screen.getByText('Listen once. No pausing, no rewinding.')).toBeInTheDocument();
+  expect(
+    await screen.findByText('No pausing. Listen once, all the way through.'),
+  ).toBeInTheDocument();
 });
 
 test('finished steps are marked done and the open step is current', async () => {

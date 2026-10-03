@@ -129,6 +129,17 @@ async function fakeApi(page: Page, sessions: FakeSession[] = []) {
     const session = match && sessions.find((s) => s.id === match[1]);
     if (match && !session) return problem(route, 404, 'session_not_found', 'No such session.');
     if (session && !match![2] && method === 'GET') return route.fulfill({ json: view(session) });
+    if (session && match![2] === '/blind' && method === 'GET') {
+      return route.fulfill({
+        json: {
+          session_id: session.id,
+          passage_start_ms: session.passage.start_ms,
+          passage_end_ms: session.passage.end_ms,
+          step_status: session.statuses.blind ?? 'locked',
+          attempt: null,
+        },
+      });
+    }
     if (session && method !== 'GET') {
       const body = request.postDataJSON() as { version: number; entry?: Entry };
       if (body.version !== session.version) {

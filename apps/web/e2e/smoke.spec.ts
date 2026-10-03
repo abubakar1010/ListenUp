@@ -53,6 +53,17 @@ async function fakeApi(page: Page, { signedIn = false } = {}) {
       if (path === '/library/contents' || path === '/sessions')
         return route.fulfill({ json: { items: [], next_cursor: null } });
       if (path === '/sessions/abc-123') return route.fulfill({ json: SESSION });
+      if (path === '/sessions/abc-123/blind') {
+        return route.fulfill({
+          json: {
+            session_id: 'abc-123',
+            passage_start_ms: 130_000,
+            passage_end_ms: 280_000,
+            step_status: 'open',
+            attempt: null,
+          },
+        });
+      }
       return route.fulfill({
         status: 404,
         contentType: 'application/problem+json',

@@ -1,4 +1,5 @@
-import { problem } from '../../test-utils';
+import { jsonResponse, problem } from '../../test-utils';
+import { blindStepFixture } from '../blind/fixtures';
 
 export interface Call {
   method: string;
@@ -11,7 +12,8 @@ type Handler = (call: Call) => Response;
 
 /**
  * Mocks fetch by "METHOD /path" (path after /api/v1, with its query). Records every
- * call; routes without an entry answer 404.
+ * call; routes without an entry answer 404, except a session's Blind step, which
+ * answers an untried step.
  */
 export function mockRoutes(routes: Record<string, Handler | Response>) {
   const calls: Call[] = [];
@@ -26,6 +28,9 @@ export function mockRoutes(routes: Record<string, Handler | Response>) {
     };
     calls.push(call);
     const handler = routes[`${method} ${path}`];
+    // A session with Blind open also loads its Blind step: untried unless mocked.
+    const blind = method === 'GET' && path.match(/^\/sessions\/([^/]+)\/blind$/);
+    if (!handler && blind) return jsonResponse(200, blindStepFixture(null, blind[1]));
     if (!handler) return problem(404, 'not_found', `No mock for ${method} ${path}.`);
     return typeof handler === 'function' ? handler(call) : handler.clone();
   });

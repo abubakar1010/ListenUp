@@ -6,6 +6,7 @@ import { usePageTitle } from '../../app/usePageTitle';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { BlindStep } from '../blind/BlindStep';
 import { CheckIcon, LockIcon } from '../../components/icons';
 import { useSession, useSkipStep, type Session } from './api';
 import { ChangeEntryPanel } from './ChangeEntryPanel';
@@ -47,6 +48,8 @@ export default function SessionPage() {
 
 function SessionView({ session }: { session: Session }) {
   const open = session.open_step;
+  if (open === 'blind')
+    return <BlindStep session={session} progress={<Progress session={session} />} />;
   const passage = `Passage ${formatClock(session.passage.start_ms)} to ${formatClock(session.passage.end_ms)}`;
   return (
     <PracticeLayout
