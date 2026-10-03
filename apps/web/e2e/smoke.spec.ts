@@ -10,6 +10,29 @@ const LEARNER = {
   email_verified: false,
 };
 
+const SESSION = {
+  id: 'abc-123',
+  content_id: 'clip-1',
+  content_title: 'Why cities plant street trees',
+  passage: { start_ms: 130_000, end_ms: 280_000 },
+  entry: 'blind',
+  status: 'active',
+  version: 0,
+  steps: ['blind', 'transcript', 'card', 'shadow'].map((step, index) => ({
+    step,
+    position: index + 1,
+    status: index === 0 ? 'open' : 'locked',
+  })),
+  step_count: 4,
+  open_step: 'blind',
+  open_position: 1,
+  entry_locked: false,
+  entry_locked_at: null,
+  completed_at: null,
+  created_at: '2026-10-03T09:00:00Z',
+  updated_at: '2026-10-03T09:00:00Z',
+};
+
 /** Answers the API in the browser: signed out until the login call succeeds. */
 async function fakeApi(page: Page, { signedIn = false } = {}) {
   await page.route('**/api/v1/**', async (route) => {
@@ -27,8 +50,9 @@ async function fakeApi(page: Page, { signedIn = false } = {}) {
     if (path === '/me' && signedIn) return route.fulfill({ json: LEARNER });
     if (signedIn) {
       // Endpoints this test does not fake: an empty answer, not a sign-out.
-      if (path === '/library/contents')
+      if (path === '/library/contents' || path === '/sessions')
         return route.fulfill({ json: { items: [], next_cursor: null } });
+      if (path === '/sessions/abc-123') return route.fulfill({ json: SESSION });
       return route.fulfill({
         status: 404,
         contentType: 'application/problem+json',
@@ -72,13 +96,13 @@ test('a signed-out learner opens a session, signs in and lands back on it', asyn
   await page.getByLabel('Password').press('Enter');
 
   await expect(page).toHaveURL('/sessions/abc-123');
-  await expect(page).toHaveTitle('Practice · ListenUp');
+  await expect(page).toHaveTitle('Blind · ListenUp');
   const main = page.getByRole('main');
   // Focus moves to the new page's content after the learner's own navigation.
   await expect(main).toBeFocused();
   await expect(main.getByRole('region', { name: 'Plan progress' })).toBeVisible();
   await expect(main.getByRole('region', { name: 'Player' })).toBeVisible();
-  await expect(main.getByRole('region', { name: 'Practice' })).toBeVisible();
+  await expect(main.getByRole('region', { name: 'Blind' })).toBeVisible();
 });
 
 test('the shell fits a 360 px screen without sideways scrolling', async ({ page }) => {
@@ -110,6 +134,7 @@ test('a learner uploads a clip with progress and sees it in the library', async 
     }
     if (path === '/me') return route.fulfill({ json: LEARNER });
     if (path === '/library/contents') return route.fulfill({ json: { items, next_cursor: null } });
+    if (path === '/sessions') return route.fulfill({ json: { items: [], next_cursor: null } });
     if (path === '/uploads/usage') {
       return route.fulfill({
         json: { used_bytes: 0, quota_bytes: 2 ** 31, max_file_bytes: 500 * 2 ** 20 },

@@ -39,3 +39,11 @@ export function LockIcon({ className = 'size-4' }: { className?: string }) {
     </svg>
   );
 }
+
+export function CheckIcon({ className = 'size-4' }: { className?: string }) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M3 8.5l3 3 7-7" />
+    </svg>
+  );
+}

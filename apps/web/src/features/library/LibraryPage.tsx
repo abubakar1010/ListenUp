@@ -5,6 +5,7 @@ import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { formatDuration } from '../../components/formatDuration';
 import { AlertIcon } from '../../components/icons';
+import { SessionsSection } from '../session/SessionsSection';
 import { ACCEPTED_NAMES } from './files';
 import { useLibraryContents, type LibraryItem } from './useLibrary';
 
@@ -65,6 +66,7 @@ export default function LibraryPage() {
           Add a clip
         </Link>
       </div>
+      <SessionsSection />
       <section aria-labelledby="library-clips" className="flex flex-col gap-3">
         <h2 id="library-clips" className="font-display text-heading-compact md:text-heading">
           Clips
@@ -162,10 +164,15 @@ function ClipRow({ item }: { item: LibraryItem }) {
           {formatDate(item.created_at)}
         </span>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <StatusBadge status={item.status} />
         {item.last_session_status && (
           <span className={BADGE}>Last session: {SESSION_LABEL[item.last_session_status]}</span>
+        )}
+        {item.status === 'playable' && (
+          <Link to={`/contents/${item.id}/plan`} className={buttonClass('secondary')}>
+            Start a plan <span className="sr-only">on {item.title}</span>
+          </Link>
         )}
       </div>
     </li>

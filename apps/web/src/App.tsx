@@ -16,6 +16,7 @@ const LibraryPage = lazy(() => import('./features/library/LibraryPage'));
 const AddClipPage = lazy(() => import('./features/library/AddClipPage'));
 const ContentPage = lazy(() => import('./features/content/ContentPage'));
 const SessionPage = lazy(() => import('./features/session/SessionPage'));
+const StartPlanPage = lazy(() => import('./features/session/StartPlanPage'));
 const NotFoundPage = lazy(() => import('./app/NotFoundPage'));
 const PasswordResetRequestPage = lazy(() =>
   import('./auth/PasswordResetPages').then((m) => ({ default: m.PasswordResetRequestPage })),
@@ -80,6 +81,7 @@ export function App() {
             <Route path="/library" element={<LibraryPage />} />
             <Route path="/library/add" element={<AddClipPage />} />
             <Route path="/contents/:contentId" element={<ContentPage />} />
+            <Route path="/contents/:contentId/plan" element={<StartPlanPage />} />
           </Route>
           <Route path="/sessions/:sessionId" element={<SessionPage />} />
         </Route>

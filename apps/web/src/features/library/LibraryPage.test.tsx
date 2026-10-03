@@ -96,7 +96,10 @@ test('"Load more" fetches the next page with the cursor', async () => {
   expect(await screen.findByText('Clip 1')).toBeInTheDocument();
   expect(screen.getAllByRole('listitem')).toHaveLength(30);
   expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
-  expect(fetchMock).toHaveBeenCalledTimes(2);
+  const libraryCalls = fetchMock.mock.calls.filter(([input]) =>
+    String(input).startsWith('/api/v1/library/'),
+  );
+  expect(libraryCalls).toHaveLength(2);
 });
 
 test('a library that cannot load says why and offers a retry', async () => {
@@ -116,4 +119,19 @@ test('a library that cannot load says why and offers a retry', async () => {
   fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
 
   expect(await screen.findByText('Clip 1')).toBeInTheDocument();
+});
+
+test('a ready clip offers "Start a plan" without adding it again (FR-LB-2)', async () => {
+  mockApi({
+    '/library/contents': jsonResponse(200, {
+      items: [item(1, { title: 'Street trees' }), item(2, { status: 'pending' })],
+      next_cursor: null,
+    }),
+    '/sessions': jsonResponse(200, { items: [], next_cursor: null }),
+  });
+  renderLibrary();
+
+  const start = await screen.findByRole('link', { name: 'Start a plan on Street trees' });
+  expect(start).toHaveAttribute('href', '/contents/item-1/plan');
+  expect(screen.getAllByRole('link', { name: /Start a plan/ })).toHaveLength(1);
 });

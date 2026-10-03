@@ -61,10 +61,10 @@ async function toProblem(response: Response): Promise<Problem> {
 /** Call the API. Throws ApiError with the server's problem on any non-2xx response. */
 export async function api<T>(
   path: string,
-  options: { method?: string; body?: unknown } = {},
+  options: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
 ): Promise<T> {
   const method = options.method ?? 'GET';
-  const headers: Record<string, string> = { Accept: 'application/json' };
+  const headers: Record<string, string> = { Accept: 'application/json', ...options.headers };
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
   if (UNSAFE.has(method)) {
     const token = await ensureCsrfToken();

@@ -10,6 +10,7 @@ import {
   renderWithProviders,
   SIGNED_OUT,
 } from './test-utils';
+import { sessionFixture } from './features/session/fixtures';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -93,6 +94,7 @@ test('a signed-out learner who opens a session signs in and comes back to it', a
       signedIn = true;
       return jsonResponse(200, LEARNER);
     },
+    '/sessions/abc-123': () => jsonResponse(200, sessionFixture({ id: 'abc-123' })),
   });
   renderApp('/sessions/abc-123?step=transcript');
 
@@ -104,7 +106,10 @@ test('a signed-out learner who opens a session signs in and comes back to it', a
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
   expect(
-    await screen.findByRole('heading', { name: 'Practice session', level: 1 }),
+    await screen.findByRole('heading', {
+      name: 'Blind: Why cities plant street trees',
+      level: 1,
+    }),
   ).toBeInTheDocument();
   expect(url()).toBe('/sessions/abc-123?step=transcript');
 });
@@ -118,12 +123,16 @@ test('sign-in ignores a next address on another site', async () => {
 });
 
 test('the practice screen has its slots in order: progress, player, rule, work', async () => {
-  mockApi({ '/me': () => jsonResponse(200, LEARNER) });
+  mockApi({
+    '/me': () => jsonResponse(200, LEARNER),
+    '/sessions/abc-123': () => jsonResponse(200, sessionFixture({ id: 'abc-123' })),
+  });
   renderApp('/sessions/abc-123');
 
-  const main = await screen.findByRole('main');
+  await screen.findByRole('region', { name: 'Plan progress' });
+  const main = screen.getByRole('main');
   const slots = [...main.querySelectorAll('[data-slot]')].map((el) => el.getAttribute('data-slot'));
-  expect(slots).toEqual(['progress', 'player', 'rule', 'work', 'aside']);
+  expect(slots).toEqual(['progress', 'player', 'rule', 'work']);
   expect(screen.getByRole('region', { name: 'Player' })).toBeInTheDocument();
   expect(screen.getByRole('region', { name: 'Plan progress' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute('href', '/library');
