@@ -106,3 +106,19 @@ groups:
         annotations:
           summary: "{{ $value | humanizePercentage }} of API requests fail with 5xx"
           runbook_url: "docs/runbooks/alerts.md#apierrorratespike"
+
+  - name: listenup-backups
+    rules:
+      - alert: BackupMissing
+        # No database dump reached storage in 26 hours (a nightly job plus slack), or the
+        # backup service stopped reporting (NFR-REL-4, ADR 0032).
+        expr: |
+          time() - max(listenup_backup_last_success_timestamp_seconds) > 26 * 3600
+          or
+          absent(listenup_backup_last_success_timestamp_seconds)
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No database backup in over 26 hours"
+          runbook_url: "docs/runbooks/alerts.md#backupmissing"

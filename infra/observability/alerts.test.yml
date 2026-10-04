@@ -148,3 +148,26 @@ tests:
       - eval_time: 15m
         alertname: ApiErrorRateSpike
         exp_alerts: []
+
+  # A backup 30 hours old fires; one from 2 hours ago does not.
+  - interval: 1m
+    input_series:
+      - series: 'listenup_backup_last_success_timestamp_seconds'
+        values: '-100800x60'  # 28 h before the test's time zero
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: BackupMissing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "No database backup in over 26 hours"
+              runbook_url: "docs/runbooks/alerts.md#backupmissing"
+  - interval: 1m
+    input_series:
+      - series: 'listenup_backup_last_success_timestamp_seconds'
+        values: '-7200x60'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: BackupMissing
+        exp_alerts: []

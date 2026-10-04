@@ -33,6 +33,7 @@ Instrument names are Prometheus-style (`listenup.job.wait_seconds`), so Promethe
 | `listenup_grading_results_total` | counter | kind, outcome | `record_grading`, a seam for the grading jobs |
 | `listenup_ai_latency_seconds` | histogram | provider, task, outcome | `record_ai_call`, a seam for the AI gateway (#64) |
 | `listenup_ai_quota_remaining_ratio` | gauge | provider | `record_ai_quota`, a seam for the AI gateway (#64) |
+| `listenup_backup_last_success_timestamp_seconds` | gauge | | the backup service (ADR 0032) |
 
 ### Off by default; self-hosted or a free tier when on
 
@@ -52,6 +53,7 @@ For local runs and the stage 0 server, the `observability` Compose profile runs 
 | GradingFailureRateHigh | over 5% of gradings in 30 minutes failed, with at least 20 gradings |
 | AiQuotaLow | a provider has under 20% of its free quota left, for 2 minutes |
 | ApiErrorRateSpike | over 5% of API requests in 5 minutes answered 5xx, with at least 20 requests, for 5 minutes |
+| BackupMissing | no dump reached storage in 26 hours, or the backup service stopped reporting |
 
 The quota threshold follows Architecture 12.3 and the issue (20% left). System Design 7.3 mentions an alert at 75% use and 7.2 a quota-saving mode below 25% left; that mode belongs to the gateway (#64), and the alert stays at 20%.
 

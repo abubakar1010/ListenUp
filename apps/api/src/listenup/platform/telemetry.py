@@ -61,6 +61,7 @@ class Instruments:
     grading_results: Counter
     ai_latency: Histogram
     ai_quota_remaining: Gauge
+    backup_last_success: Gauge
 
     @classmethod
     def create(cls, meter: Meter) -> "Instruments":
@@ -112,6 +113,11 @@ class Instruments:
                 "listenup.ai.quota_remaining_ratio",
                 "1",
                 "Share of a provider's free quota left for the current period (0 to 1)",
+            ),
+            backup_last_success=meter.create_gauge(
+                "listenup.backup.last_success_timestamp_seconds",
+                "s",
+                "Unix time of the newest database dump in storage",
             ),
         )
 
@@ -360,6 +366,12 @@ def record_ai_quota(provider: str, remaining_ratio: float) -> None:
     instruments().ai_quota_remaining.set(
         min(1.0, max(0.0, remaining_ratio)), {"provider": provider}
     )
+
+
+def record_backup_success(taken_at: float) -> None:
+    """The newest database dump in storage was taken at `taken_at` (Unix time); the
+    BackupMissing alert fires when it is over 26 hours old (ADR 0032)."""
+    instruments().backup_last_success.set(taken_at)
 
 
 # --- HTTP ---------------------------------------------------------------------------

@@ -90,6 +90,15 @@ class Settings(BaseSettings):
     otel_metrics_interval_seconds: int = 30
     otel_trace_sample_ratio: float = 1.0
 
+    # Nightly database dump to object storage (NFR-REL-4, ADR 0032). The dump runs as
+    # the database owner; the bucket defaults to the media bucket under `backups/`.
+    backup_database_url: str | None = None  # defaults to database_url
+    backup_bucket: str | None = None
+    backup_prefix: str = "backups/postgres/"
+    backup_retention_days: int = 14
+    backup_hour_utc: int = 2
+    backup_minute_utc: int = 30
+
     # YouTube intake stays off until the legal review (OQ-6) clears it.
     youtube_intake_enabled: bool = False
 

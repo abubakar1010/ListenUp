@@ -85,3 +85,14 @@ Locally, Alertmanager emails every alert to Mailpit. On the stage 0 server (#112
 1. All routes failing: check PostgreSQL and the API container (`docker compose logs api`).
 2. One route failing after a deploy: roll back to the previous image tag (`docker compose up -d` with the old tag) and fix forward.
 3. Storage errors on media routes: check the S3 provider's status.
+
+## BackupMissing
+
+**Meaning.** No database dump has reached storage in 26 hours, or the backup service stopped reporting for 30 minutes (NFR-REL-4, ADR 0032). Nothing is wrong for learners yet, but the RPO of 24 hours is no longer met. Locally the alert also fires when the observability profile runs without the `backup` profile; ignore it there or start `docker compose --profile backup up backup`.
+
+**Confirm.** `docker compose ps backup` and `docker compose logs backup` (`database dump stored`, or `database dump failed` with the pg_dump error); `docker compose run --rm backup python -m listenup.ops.backup list` shows the newest backup.
+
+**Act.**
+1. Container down: `docker compose up -d backup`. On start it reports the newest backup in storage, which clears the alert if that one is recent.
+2. Dump failing: the log names the cause. Common ones: the database URL or password changed (`LISTENUP_BACKUP_DATABASE_URL`), the storage credentials or bucket changed (`LISTENUP_S3_*`, `LISTENUP_BACKUP_BUCKET`), or the disk under `/tmp` in the container is full.
+3. Once fixed, take a backup now: `docker compose run --rm backup python -m listenup.ops.backup dump`, and check it with `restore-test` (see `backups.md`).

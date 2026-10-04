@@ -1,7 +1,8 @@
-# One Dockerfile, three images (Architecture section 10):
+# One Dockerfile, four images (Architecture section 10):
 #   --target api           FastAPI API
 #   --target worker        default worker pool: lanes ai, background
 #   --target worker-media  media worker pool: lanes speech-interactive, intake
+#   --target backup        nightly pg_dump to object storage (ADR 0032)
 # Worker containers are healthy only once the pool has loaded its models and written
 # its ready file (listenup.worker).
 # Build from the repository root: docker build -f infra/docker/backend.Dockerfile --target api .
@@ -42,3 +43,15 @@ RUN apt-get update \
 USER app
 HEALTHCHECK --interval=10s --start-period=120s CMD test -f /tmp/listenup-worker-ready
 CMD ["python", "-m", "listenup.worker", "media"]
+
+FROM base AS backup
+# pg_dump and pg_restore 16, matching the server (PostgreSQL 16), from the PostgreSQL
+# project's own repository: the Debian release in the base image may ship another major.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates postgresql-common \
+    && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && rm -rf /var/lib/apt/lists/* \
+    && pg_dump --version | grep -q " 16\."
+USER app
+CMD ["python", "-m", "listenup.ops.backup", "schedule"]

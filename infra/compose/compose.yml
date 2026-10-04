@@ -107,6 +107,21 @@ services:
       dockerfile: infra/docker/backend.Dockerfile
       target: worker-media
 
+  # Nightly pg_dump to object storage, kept 14 days (ADR 0032). Opt in locally with
+  # `docker compose --profile backup up backup`; production always runs it.
+  backup:
+    build:
+      context: ../..
+      dockerfile: infra/docker/backend.Dockerfile
+      target: backup
+    profiles: [backup]
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage-bucket:
+        condition: service_completed_successfully
+
   # Self-hosted observability (ADR 0031): `LISTENUP_OTEL_ENABLED=true docker compose
   # --profile observability up`. Alerts are emailed to Mailpit.
   jaeger:
