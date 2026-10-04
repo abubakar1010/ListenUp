@@ -90,14 +90,35 @@ type = "forbidden"
 source_modules = ["listenup.modules.practice"]
 forbidden_modules = ["listenup.modules.blind", "listenup.modules.dictation", "listenup.modules.review", "listenup.modules.cards", "listenup.modules.shadow"]
 
+# Every module, present or future, is a source; the ignore lines carve out grading and
+# transcript. Indirect imports are allowed so a module may call grading.service (ADR 0028).
 [[tool.importlinter.contracts]]
 name = "Only grading and transcript call the AI layer"
 type = "forbidden"
-source_modules = ["listenup.modules.identity", "listenup.modules.content", "listenup.modules.practice", "listenup.modules.blind", "listenup.modules.dictation", "listenup.modules.review", "listenup.modules.cards", "listenup.modules.shadow", "listenup.modules.library", "listenup.modules.notifications", "listenup.modules.admin", "listenup.main"]
+source_modules = ["listenup.modules.*", "listenup.main", "listenup.platform"]
 forbidden_modules = ["listenup.ai"]
+ignore_imports = [
+    "listenup.modules.grading.** -> listenup.ai.**",
+    "listenup.modules.transcript.** -> listenup.ai.**",
+    "listenup.modules.grading.** -> listenup.ai",
+    "listenup.modules.transcript.** -> listenup.ai",
+]
+# The carve-outs match nothing until grading and transcript use the AI layer.
+unmatched_ignore_imports_alerting = "none"
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 name = "The AI layer depends only on platform"
 type = "forbidden"
 source_modules = ["listenup.ai"]
 forbidden_modules = ["listenup.modules", "listenup.main", "listenup.worker"]
+
+# NFR-AI-1: AI vendor libraries only in listenup.ai.providers. tests/architecture/
+# test_ai_boundaries.py checks the same rule by reading every file, including imports
+# made through importlib, and covers libraries no file imports yet.
+[[tool.importlinter.contracts]]
+name = "AI vendor libraries only in ai.providers"
+type = "forbidden"
+source_modules = ["listenup.modules", "listenup.platform", "listenup.main", "listenup.worker", "listenup.ai.ports", "listenup.ai.gateway", "listenup.ai.config", "listenup.ai.registry", "listenup.ai.errors"]
+forbidden_modules = ["faster_whisper", "torch", "torchaudio"]
+allow_indirect_imports = true  # going through an adapter is the point
