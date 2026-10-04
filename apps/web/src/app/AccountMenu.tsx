@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useRef, useState } from 'react';
+import { Link } from 'react-router';
 
 import { api, type Me } from '../api/client';
 import { ME_KEY } from '../auth/useMe';
@@ -14,7 +15,7 @@ function initials(me: Me): string {
 
 /**
  * The account button in the header. It opens a small panel with who is signed in
- * and "Sign out". Escape or a click outside closes it.
+ * a link to the settings, and "Sign out". Escape or a click outside closes it.
  */
 export function AccountMenu({ me }: { me: Me }) {
   const [open, setOpen] = useState(false);
@@ -78,6 +79,9 @@ export function AccountMenu({ me }: { me: Me }) {
         <p className="text-body-s break-words">
           Signed in as <span className="font-bold">{me.email}</span>
         </p>
+        <Link to="/settings" className={buttonClass('quiet')} onClick={() => setOpen(false)}>
+          Settings
+        </Link>
         <button
           type="button"
           onClick={() => signOut.mutate()}

@@ -2,7 +2,7 @@ import type { QueryKey } from '@tanstack/react-query';
 import { Navigate, Outlet, useLocation, useSearchParams } from 'react-router';
 
 import { DEFAULT_SIGNED_IN_PATH, nextPath, signInPath } from '../auth/next';
-import { useMe } from '../auth/useMe';
+import { ME_KEY, useMe } from '../auth/useMe';
 import { useLiveEvents, type LiveEvent } from '../events/useLiveEvents';
 import { BLIND_KEY } from '../features/blind/api';
 import { ClipNotices } from '../features/content/ClipNotices';
@@ -70,6 +70,10 @@ function queryKeysForEvent(event: LiveEvent): readonly QueryKey[] {
     case 'attempt.voided':
       // The event names the attempt only; refresh every Blind step shown (ADR 0024).
       return [BLIND_KEY];
+    case 'account.disabled':
+      // The account was deleted, perhaps in another tab (ADR 0029): refetching the
+      // learner finds nobody signed in, and the guard goes to sign in.
+      return [ME_KEY];
     default:
       return NO_KEYS;
   }

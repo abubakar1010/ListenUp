@@ -7,6 +7,7 @@ export const LIVE_EVENT_TYPES = [
   'content.ready',
   'grade.ready',
   'attempt.voided',
+  'account.disabled',
 ] as const;
 
 export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number];
