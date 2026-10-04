@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useRef, useState } from 'react';
+import { Link } from 'react-router';
 
 import { api, type Me } from '../api/client';
 import { ME_KEY } from '../auth/useMe';
@@ -78,6 +79,9 @@ export function AccountMenu({ me }: { me: Me }) {
         <p className="text-body-s break-words">
           Signed in as <span className="font-bold">{me.email}</span>
         </p>
+        <Link to="/settings" onClick={() => setOpen(false)} className={buttonClass('secondary')}>
+          Settings
+        </Link>
         <button
           type="button"
           onClick={() => signOut.mutate()}
