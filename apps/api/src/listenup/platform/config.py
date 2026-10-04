@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     # system's temporary directory when unset. Each job removes its own files.
     media_scratch_dir: str | None = None
 
+    # AI providers per role (ADR 0028): a path to an ai.yaml; the packaged
+    # listenup/ai/ai.yaml when unset. listenup/ai/ai.fake.yaml needs no models.
+    ai_config: str | None = None
+
     # First retry waits about this long; later ones four times longer each time.
     job_retry_base_seconds: float = 10.0
 

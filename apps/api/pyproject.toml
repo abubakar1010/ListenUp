@@ -14,7 +14,15 @@ dependencies = [
     "procrastinate>=2.0",
     "boto3>=1.35",
     "argon2-cffi>=23.1",
+    "pyyaml>=6.0",
 ]
+
+[project.optional-dependencies]
+# Self-hosted speech models for the media worker only (ADR 0028); the API, the default
+# worker and CI do without them. torch and torchaudio (wav2vec2 alignment) are installed
+# in the worker-media image from the PyTorch CPU index instead, because the PyPI wheels
+# bundle CUDA libraries the CPU server never uses.
+speech = ["faster-whisper>=1.1"]
 
 [dependency-groups]
 dev = [
@@ -25,6 +33,7 @@ dev = [
     "import-linter>=2.15",
     "types-boto3[s3]>=1.35",
     "hypothesis>=6.168.3",
+    "types-pyyaml>=6.0",
 ]
 
 [build-system]
@@ -54,6 +63,12 @@ python_version = "3.12"
 strict = true
 mypy_path = "src"
 packages = ["listenup"]
+
+# Speech libraries live in the `speech` extra and the worker-media image only; their
+# adapters import them lazily (ADR 0028).
+[[tool.mypy.overrides]]
+module = ["faster_whisper", "faster_whisper.*", "torch", "torch.*", "torchaudio", "torchaudio.*"]
+ignore_missing_imports = true
 
 # Module boundaries from Architecture section 4.3, checked by `uv run lint-imports`.
 # The rule that modules call each other only through service.py is checked by

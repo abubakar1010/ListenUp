@@ -1,0 +1,20 @@
+# Fake providers for every role: tests and local runs without speech models (ADR 0028).
+# Use with LISTENUP_AI_CONFIG=src/listenup/ai/ai.fake.yaml. Refused in production.
+version: 1
+roles:
+  transcription:
+    - provider: fake
+      model: fake-transcript
+      timeout_seconds: 5
+  alignment:
+    - provider: fake
+      model: fake-alignment
+      timeout_seconds: 5
+  speech_assessment:
+    - provider: fake
+      model: fake-assessment
+      timeout_seconds: 5
+  text_ai:
+    - provider: fake
+      model: fake-text
+      timeout_seconds: 5
