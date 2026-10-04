@@ -1,4 +1,4 @@
-"""Accounts, sign-in and password reset (FR-ACC-1, FR-ACC-2, FR-ACC-3, NFR-SEC-1, D17).
+"""Accounts, sign-in, password reset and deletion (FR-ACC-1 to FR-ACC-4, NFR-SEC-1, D9, D17).
 
 The public face of the identity module: other modules use `CurrentLearner` to require
 a signed-in learner and get their id, with row-level security already scoped to them.
@@ -13,6 +13,7 @@ from typing import Annotated
 from fastapi import Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.modules.content import service as content
 from listenup.modules.identity import jobs, passwords, repository
 from listenup.modules.identity.domain.credentials import (
     email_problem,
@@ -20,9 +21,11 @@ from listenup.modules.identity.domain.credentials import (
     password_problem,
 )
 from listenup.modules.identity.domain.tokens import new_token, token_hash
+from listenup.modules.identity.repository import Account
 from listenup.platform.config import Settings, get_settings
 from listenup.platform.database import Database, DbSession, set_learner
 from listenup.platform.errors import ProblemError
+from listenup.platform.events import EventType, publish
 from listenup.platform.ids import uuid7
 from listenup.platform.rate_limit import Limit, RateLimiter, ip_key
 
@@ -42,6 +45,14 @@ def _client_ip(request: Request) -> str | None:
 
 def _not_signed_in() -> ProblemError:
     return ProblemError(401, "not_signed_in", "Sign in to continue.")
+
+
+def _invalid_credentials() -> ProblemError:
+    return ProblemError(
+        401,
+        "invalid_credentials",
+        "The email or password is wrong. Check both and try again.",
+    )
 
 
 async def current_learner(request: Request, session: DbSession) -> uuid.UUID:
@@ -114,6 +125,7 @@ class Accounts:
         response: Response,
         email: str,
         password: str,
+        restore: bool = False,
     ) -> uuid.UUID:
         ip = _client_ip(request)
         if ip:
@@ -121,7 +133,7 @@ class Accounts:
             await self.limiter.enforce(self.login_by_ip, ip_key(self.login_by_ip, ip))
 
         account = await repository.find_account(session, normalize_email(email))
-        if account is not None and account.status != "deleting":
+        if account is not None and not account.gone:
             async with self.database.transaction() as own:
                 until = await repository.locked_until(own, account.id, self.lock)
             if until is not None:
@@ -130,8 +142,9 @@ class Accounts:
         valid = await passwords.verify_password(
             account.password_hash if account else None, password
         )
-        if account is None or not valid or account.status == "deleting":
-            if account is not None and account.status != "deleting":
+        # A deleted account past its grace period answers exactly like an unknown one.
+        if account is None or not valid or account.gone:
+            if account is not None and not account.gone:
                 # Committed on its own: this request is about to be refused and rolled back.
                 async with self.database.transaction() as own:
                     until = await repository.record_failure(
@@ -139,11 +152,7 @@ class Accounts:
                     )
                 if until is not None:
                     raise self._locked(until)
-            raise ProblemError(
-                401,
-                "invalid_credentials",
-                "The email or password is wrong. Check both and try again.",
-            )
+            raise _invalid_credentials()
 
         async with self.database.transaction() as own:
             await repository.clear_failures(own, account.id)
@@ -151,9 +160,112 @@ class Accounts:
             await repository.update_password_hash(
                 session, account.id, await passwords.hash_password(password)
             )
-        await repository.restore_account(session, account.id)
-        await self._start_session(session, request, response, account.id)
+        await self.complete_sign_in(session, request, response, account, restore=restore)
         return account.id
+
+    async def complete_sign_in(
+        self,
+        session: AsyncSession,
+        request: Request,
+        response: Response,
+        account: Account,
+        *,
+        restore: bool,
+    ) -> None:
+        """Start a login session for an account whose owner has just proved who they are.
+
+        Every way of signing in ends here: email and password today, and Google
+        sign-in (#32) once it is built, so the restore step (#120) applies to both.
+        An account waiting for deletion (D9) is never signed in silently: without
+        `restore` the caller gets 409 `account_pending_deletion` with the date the
+        data will be deleted, and nothing changes, so declining leaves the learner
+        signed out with the deletion still scheduled. With `restore` the deletion
+        request is cancelled and the account is active again, with all its data.
+        """
+        if account.waiting_for_deletion:
+            assert account.deletion_scheduled_at is not None
+            if not restore:
+                raise ProblemError(
+                    409,
+                    "account_pending_deletion",
+                    "This account was deleted and is waiting to be removed. "
+                    "Restore it to sign in, or leave it to be deleted.",
+                    deletion_scheduled_at=account.deletion_scheduled_at.isoformat(),
+                )
+            await set_learner(session, account.id)
+            if not await repository.restore_account(session, account.id):
+                # The grace period ended between the lookup and now.
+                raise _invalid_credentials()
+            await repository.cancel_deletion_requests(session, account.id)
+        await self._start_session(session, request, response, account.id)
+
+    async def delete_account(
+        self,
+        session: AsyncSession,
+        response: Response,
+        learner: uuid.UUID,
+        password: str,
+    ) -> datetime:
+        """Delete the signed-in learner's account (FR-ACC-4, DR-1, D9; ADR 0029).
+
+        The account is disabled at once: it waits as 'pending_deletion' for the grace
+        period, every login session and unused reset link ends, open event streams
+        close, and an `ops.deletion_requests` row records what the purge job will
+        remove and when. Returns when the grace period ends.
+        """
+        account = await repository.get_account(session, learner)
+        if account is None or account.status != "active":
+            raise _not_signed_in()
+        await self._reauthenticate(account, password)
+
+        grace = timedelta(days=self.settings.account_deletion_grace_days)
+        until = await repository.schedule_deletion(session, learner, grace)
+        if until is None:
+            raise _not_signed_in()  # deleted by a parallel request
+        await repository.insert_deletion_request(
+            session,
+            request_id=uuid7(),
+            user_id=learner,
+            due_at=until,
+            media_object_ids=await content.upload_media_ids(session, learner),
+        )
+        await repository.retire_reset_tokens(session, learner)
+        await repository.delete_user_sessions(session, learner)
+        await publish(session, learner, EventType.ACCOUNT_DISABLED, learner)
+        await jobs.queue_deletion_notice(session, learner)
+        self._clear_cookie(response)
+        return until
+
+    async def _reauthenticate(self, account: Account, password: str) -> None:
+        """Ask for the password again before an irreversible change (NFR-SEC-5).
+
+        Wrong passwords count towards the sign-in lockout (D17), so a stolen session
+        cannot be used to guess the password. Accounts without a password (Google
+        sign-in, #32, not built yet) will re-authenticate with Google instead.
+        """
+        if account.password_hash is None:
+            raise ProblemError(
+                409,
+                "reauthentication_unavailable",
+                "This account signs in with Google, and confirming with Google is not "
+                "available yet. Contact support to delete the account.",
+            )
+        async with self.database.transaction() as own:
+            until = await repository.locked_until(own, account.id, self.lock)
+        if until is not None:
+            raise self._locked(until)
+        if not await passwords.verify_password(account.password_hash, password):
+            async with self.database.transaction() as own:
+                until = await repository.record_failure(
+                    own, account.id, self.lock, self.settings.login_lock_threshold
+                )
+            if until is not None:
+                raise self._locked(until)
+            raise ProblemError(
+                403,
+                "wrong_password",
+                "The password is wrong. Enter the password you use to sign in.",
+            )
 
     async def request_password_reset(
         self, session: AsyncSession, request: Request, email: str
@@ -180,7 +292,9 @@ class Accounts:
         if not hit.allowed:
             return
         account = await repository.find_account(session, email)
-        if account is not None and account.status != "deleting":
+        # An account waiting for deletion may reset its password (the learner may need
+        # it to restore the account); signing in afterwards still asks to restore.
+        if account is not None and not account.gone:
             await jobs.queue_password_reset(session, account.id)
 
     async def reset_password(
@@ -195,6 +309,9 @@ class Accounts:
 
         The token works once. Every login session of the learner ends, including the
         caller's, and the sign-in lockout is lifted, so the new password works at once.
+        Deleting the account retires its unused links; a reset during the grace period
+        starts no session, so the data stays out of reach until the learner signs in
+        and confirms the restore (#120).
         """
         ip = _client_ip(request)
         if ip:
@@ -203,7 +320,7 @@ class Accounts:
             raise ProblemError(422, "weak_password", problem)
         learner = await repository.consume_reset_token(session, token_hash(token))
         account = await repository.get_account(session, learner) if learner else None
-        if learner is None or account is None or account.status == "deleting":
+        if learner is None or account is None or account.gone:
             raise ProblemError(
                 400,
                 "invalid_reset_link",

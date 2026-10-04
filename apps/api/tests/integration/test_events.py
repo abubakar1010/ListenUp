@@ -304,3 +304,26 @@ async def test_a_finished_job_reaches_the_browser_within_a_second(
 
     assert (datetime.now(UTC) - finished).total_seconds() < 1.0
     assert data(message) == {"type": "content.ready", "resource_id": "clip-9"}
+
+
+def test_deleting_the_account_ends_its_open_streams(server: str, streams: list[Stream]) -> None:
+    """ADR 0029: a disabled account gets account.disabled, then its stream ends, and a
+    reconnect is refused because every login session ended."""
+    client, learner = signed_in(server)
+    other, _ = signed_in(server)
+    stream, others = open_stream(streams, client), open_stream(streams, other)
+
+    deleted = client.request("DELETE", "/api/v1/me", json={"password": PASSWORD, "confirm": True})
+
+    assert deleted.status_code == 202, deleted.text
+    message = stream.next()
+    assert message["event"] == "account.disabled"
+    assert json.loads(message["data"]) == {
+        "type": "account.disabled",
+        "resource_id": str(learner),
+    }
+    stream._thread.join(WAIT)
+    assert not stream._thread.is_alive(), "the stream did not end"
+    assert others.nothing_within(0.3)
+    reconnect = client.get("/api/v1/events")
+    assert (reconnect.status_code, reconnect.json()["code"]) == (401, "not_signed_in")

@@ -15,7 +15,7 @@ import asyncio
 import json
 import logging
 import random
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -143,9 +143,11 @@ class JobType:
     name: str
     lane: Lane
     spec: LaneSpec
+    schedule: str | None = None  # cron expression (UTC) for a job that runs on its own
 
 
 _registry: dict[str, JobType] = {}
+_scheduled: set[str] = set()
 
 
 def job(
@@ -154,8 +156,15 @@ def job(
     *,
     timeout: timedelta | None = None,
     max_attempts: int | None = None,
+    schedule: str | None = None,
 ) -> Callable[[Handler], Handler]:
-    """Register `handler` as job `name` on `lane`."""
+    """Register `handler` as job `name` on `lane`.
+
+    `schedule` (a cron expression in UTC) makes it a scheduled job as well: the worker
+    pool that serves `lane` queues it at each tick (`install_schedules`), with a
+    `timestamp` argument. Procrastinate records each tick it queued, so several
+    processes serving the lane still queue a tick once.
+    """
     base = LANES[lane]
     spec = LaneSpec(
         timeout or base.timeout,
@@ -190,10 +199,30 @@ def job(
             pass_context=True,
             retry=Backoff(spec.max_attempts, get_settings().job_retry_base_seconds),
         )(run)
-        _registry[name] = JobType(name, lane, spec)
+        _registry[name] = JobType(name, lane, spec, schedule)
         return handler
 
     return register
+
+
+def install_schedules(lanes: Iterable[Lane]) -> list[str]:
+    """Turn on the scheduled jobs of `lanes` in this process; returns their names.
+
+    Only worker processes call this (`listenup.worker`), for the lanes they serve, so
+    tests and the API never queue scheduled work on their own.
+    """
+    served = set(lanes)
+    installed: list[str] = []
+    for job_type in _registry.values():
+        if job_type.schedule is None or job_type.lane not in served:
+            continue
+        if job_type.name not in _scheduled:
+            app.periodic(cron=job_type.schedule, periodic_id=job_type.name)(
+                app.tasks[job_type.name]
+            )
+            _scheduled.add(job_type.name)
+        installed.append(job_type.name)
+    return installed
 
 
 async def enqueue(

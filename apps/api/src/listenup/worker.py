@@ -20,7 +20,14 @@ from pathlib import Path
 
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database
-from listenup.platform.jobs import Lane, SpeechBacklogGate, app, configure_runtime, set_gate
+from listenup.platform.jobs import (
+    Lane,
+    SpeechBacklogGate,
+    app,
+    configure_runtime,
+    install_schedules,
+    set_gate,
+)
 from listenup.platform.log import configure_logging
 
 logger = logging.getLogger(__name__)
@@ -68,6 +75,8 @@ async def run_pool(pool: str) -> None:
     configure_runtime(database)
     if pool == "media":
         set_gate(Lane.INTAKE, SpeechBacklogGate())
+    # Scheduled jobs (the account purge sweep, ADR 0029) tick in the pool of their lane.
+    install_schedules(lane for spec in POOLS[pool] for lane in spec.lanes)
 
     READY_FILE.unlink(missing_ok=True)
     await load_models(pool)

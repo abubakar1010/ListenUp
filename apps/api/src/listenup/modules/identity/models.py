@@ -3,9 +3,10 @@
 import uuid
 from datetime import datetime
 from ipaddress import IPv4Address, IPv6Address
+from typing import Any
 
 from sqlalchemy import CheckConstraint, ForeignKey, Index, LargeBinary, Text, func, text
-from sqlalchemy.dialects.postgresql import CITEXT, INET, TIMESTAMP
+from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, INET, JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from listenup.platform.db import Base
@@ -73,3 +74,48 @@ class OneTimeToken(Base):
     expires_at: Mapped[datetime] = mapped_column(Timestamp)
     used_at: Mapped[datetime | None] = mapped_column(Timestamp)
     created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+
+
+class DeletionRequest(Base):
+    """A deletion and its audit record (Database Design 7, 10.1; ADR 0029).
+
+    Account requests are written when the learner deletes the account and purged by
+    the background job once `due_at` passes, unless a restore cancelled them. No
+    foreign key: the row outlives the account it deletes.
+    """
+
+    __tablename__ = "deletion_requests"
+    __table_args__ = (
+        CheckConstraint("scope IN ('account', 'content', 'session', 'recordings')"),
+        CheckConstraint(
+            "status IN ('pending', 'storage_deleted', 'completed', 'failed', 'cancelled')"
+        ),
+        CheckConstraint("(status = 'cancelled') = (cancelled_at IS NOT NULL)"),
+        CheckConstraint("(status = 'completed') = (completed_at IS NOT NULL)"),
+        CheckConstraint("due_at >= requested_at"),
+        Index(
+            "deletion_requests_due_idx",
+            "due_at",
+            postgresql_where=text("status IN ('pending', 'storage_deleted')"),
+        ),
+        Index(
+            "deletion_requests_one_open_account_idx",
+            "subject_user_id",
+            unique=True,
+            postgresql_where=text("scope = 'account' AND status IN ('pending', 'storage_deleted')"),
+        ),
+        {"schema": "ops"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    subject_user_id: Mapped[uuid.UUID]
+    scope: Mapped[str] = mapped_column(Text)
+    target_id: Mapped[uuid.UUID | None]
+    status: Mapped[str] = mapped_column(Text, server_default="pending")
+    storage_prefixes: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default="{}")
+    media_object_ids: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(UUID), server_default="{}")
+    report: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    requested_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+    due_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+    cancelled_at: Mapped[datetime | None] = mapped_column(Timestamp)
+    completed_at: Mapped[datetime | None] = mapped_column(Timestamp)

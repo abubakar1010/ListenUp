@@ -482,3 +482,22 @@ async def content_titles(
         {"ids": list(set(content_ids))},
     )
     return {row.id: row.title for row in rows}
+
+
+# --- For account deletion (#91, ADR 0029) --------------------------------------------
+
+
+async def upload_media_ids(session: AsyncSession, learner: uuid.UUID) -> list[uuid.UUID]:
+    """The media objects of the learner's own uploads, oldest first.
+
+    Their files live under the learner's storage prefix and the rows go with the
+    account; shared YouTube media is not listed, so it stays for other learners.
+    """
+    rows = await session.execute(
+        text(
+            "SELECT id FROM content.media_objects WHERE uploaded_by = :learner "
+            "ORDER BY created_at, id"
+        ),
+        {"learner": learner},
+    )
+    return [row.id for row in rows]
