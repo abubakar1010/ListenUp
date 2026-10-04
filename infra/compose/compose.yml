@@ -10,6 +10,11 @@ x-backend-env: &backend-env
   LISTENUP_S3_BUCKET: listenup
   LISTENUP_SMTP_HOST: mailpit
   LISTENUP_SMTP_PORT: "1025"
+  # Traces and metrics stay off unless started with LISTENUP_OTEL_ENABLED=true and the
+  # observability profile (ADR 0031): Jaeger at :16686, Prometheus at :9090.
+  LISTENUP_OTEL_ENABLED: ${LISTENUP_OTEL_ENABLED:-false}
+  LISTENUP_OTEL_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+  LISTENUP_OTEL_METRICS_ENDPOINT: http://prometheus:9090/api/v1/otlp/v1/metrics
 
 x-backend: &backend
   build:
@@ -102,6 +107,34 @@ services:
       dockerfile: infra/docker/backend.Dockerfile
       target: worker-media
 
+  # Self-hosted observability (ADR 0031): `LISTENUP_OTEL_ENABLED=true docker compose
+  # --profile observability up`. Alerts are emailed to Mailpit.
+  jaeger:
+    image: jaegertracing/jaeger:2.10.0
+    profiles: [observability]
+    ports: ["16686:16686"]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-otlp-receiver
+      - --storage.tsdb.retention.time=15d
+    ports: ["9090:9090"]
+    volumes:
+      - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    profiles: [observability]
+    ports: ["9093:9093"]
+    volumes:
+      - ../observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+
 volumes:
   postgres-data:
   storage-data:
+  prometheus-data:

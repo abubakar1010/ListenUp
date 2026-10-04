@@ -1,0 +1,108 @@
+# Alert rules for ListenUp (Architecture 12.3, ADR 0031). Prometheus loads this file;
+# `promtool test rules alerts.test.yml` proves each rule fires on simulated data, and
+# CI runs it. Every alert links to its entry in docs/runbooks/alerts.md.
+#
+# Metric names: the app records OpenTelemetry instruments with Prometheus-style names
+# (listenup/platform/telemetry.py); Prometheus' OTLP receiver adds `_total` to counters
+# and `_bucket`, `_sum`, `_count` to histograms.
+
+groups:
+  - name: listenup-jobs
+    rules:
+      - alert: JobBacklogGrowing
+        # At least 10 jobs due on a lane and more than 15 minutes ago, for 15 minutes.
+        expr: |
+          max by (lane) (listenup_job_backlog) >= 10
+          and
+          max by (lane) (delta(listenup_job_backlog[15m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Job backlog on lane {{ $labels.lane }} keeps growing ({{ $value }} due)"
+          runbook_url: "docs/runbooks/alerts.md#jobbackloggrowing"
+
+      - alert: JobWaitTooLong
+        # The oldest due job has waited past what learners tolerate on its lane
+        # (System Design 3.2, 4.1, 11.1).
+        expr: |
+          max by (lane) (listenup_job_oldest_wait_seconds{lane="speech-interactive"}) > 60
+          or max by (lane) (listenup_job_oldest_wait_seconds{lane="ai"}) > 30
+          or max by (lane) (listenup_job_oldest_wait_seconds{lane="intake"}) > 900
+          or max by (lane) (listenup_job_oldest_wait_seconds{lane="background"}) > 1800
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Oldest job on lane {{ $labels.lane }} has waited {{ $value | humanizeDuration }}"
+          runbook_url: "docs/runbooks/alerts.md#jobwaittoolong"
+
+      - alert: JobFailureRateHigh
+        # More than 5% of a lane's job runs in 30 minutes failed for good (attempts used
+        # up or a PermanentError), with at least 3 such failures (NFR-REL-2).
+        expr: |
+          (
+            sum by (lane) (increase(listenup_job_runs_total{outcome="failed"}[30m]))
+            /
+            sum by (lane) (increase(listenup_job_runs_total{outcome=~"succeeded|retried|failed"}[30m]))
+          ) > 0.05
+          and
+          sum by (lane) (increase(listenup_job_runs_total{outcome="failed"}[30m])) >= 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of jobs on lane {{ $labels.lane }} are failing"
+          runbook_url: "docs/runbooks/alerts.md#jobfailureratehigh"
+
+  - name: listenup-grading
+    rules:
+      - alert: GradingFailureRateHigh
+        # More than 5% of gist and Shadow gradings in 30 minutes failed, with at least
+        # 20 gradings so a single failure at night does not page.
+        expr: |
+          (
+            sum(increase(listenup_grading_results_total{outcome="failed"}[30m]))
+            /
+            sum(increase(listenup_grading_results_total[30m]))
+          ) > 0.05
+          and
+          sum(increase(listenup_grading_results_total[30m])) >= 20
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of gradings are failing"
+          runbook_url: "docs/runbooks/alerts.md#gradingfailureratehigh"
+
+  - name: listenup-ai
+    rules:
+      - alert: AiQuotaLow
+        # A provider has less than 20% of its free quota left for the period (NFR-AI-8).
+        expr: min by (provider) (listenup_ai_quota_remaining_ratio) < 0.20
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.provider }} has {{ $value | humanizePercentage }} of its free quota left"
+          runbook_url: "docs/runbooks/alerts.md#aiquotalow"
+
+  - name: listenup-api
+    rules:
+      - alert: ApiErrorRateSpike
+        # More than 5% of API requests in 5 minutes answered with a server error, with
+        # at least 20 requests in that window.
+        expr: |
+          (
+            sum(increase(listenup_http_server_requests_total{status_class="5xx"}[5m]))
+            /
+            sum(increase(listenup_http_server_requests_total[5m]))
+          ) > 0.05
+          and
+          sum(increase(listenup_http_server_requests_total[5m])) >= 20
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of API requests fail with 5xx"
+          runbook_url: "docs/runbooks/alerts.md#apierrorratespike"
