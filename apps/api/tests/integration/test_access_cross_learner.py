@@ -418,6 +418,7 @@ def events_of_a_reaching_b(server: str, migrated_url: str, streams: list[EventSt
         EventType.CONTENT_READY: str(world.content_id),
         EventType.GRADE_READY: str(world.sessions["card"]),
         EventType.ATTEMPT_VOIDED: str(world.sessions["blind"]),
+        EventType.EXPORT_READY: str(world.export_id),
     }
     tab_a, tab_b = open_stream(streams, client_a), open_stream(streams, client_b)
 

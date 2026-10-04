@@ -23,6 +23,7 @@ from listenup.modules.identity.domain.tokens import new_token, token_hash
 from listenup.platform.config import Settings, get_settings
 from listenup.platform.database import Database, DbSession, set_learner
 from listenup.platform.errors import ProblemError
+from listenup.platform.export import ExportPart, learner_rows
 from listenup.platform.ids import uuid7
 from listenup.platform.rate_limit import Limit, RateLimiter, ip_key
 
@@ -313,3 +314,32 @@ async def get_profile(session: AsyncSession, learner: uuid.UUID) -> dict[str, ob
 
 
 AccountsDep = Annotated[Accounts, Depends(get_accounts)]
+
+
+async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
+    """The learner's identity rows for their data export (#92, NFR-SEC-5).
+
+    Password and token hashes are secrets of the service, not the learner's data, and
+    are left out; everything else about the account and its sign-ins is included.
+    """
+    return ExportPart(
+        tables=(
+            await learner_rows(
+                session, "identity.users", learner, column="id", omit=("password_hash",)
+            ),
+            await learner_rows(
+                session,
+                "identity.auth_sessions",
+                learner,
+                omit=("token_hash",),
+                order_by="created_at",
+            ),
+            await learner_rows(
+                session,
+                "identity.one_time_tokens",
+                learner,
+                omit=("token_hash",),
+                order_by="created_at",
+            ),
+        )
+    )

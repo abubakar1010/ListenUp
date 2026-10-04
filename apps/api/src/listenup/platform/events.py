@@ -57,6 +57,7 @@ class EventType(StrEnum):
     CONTENT_READY = "content.ready"
     GRADE_READY = "grade.ready"
     ATTEMPT_VOIDED = "attempt.voided"
+    EXPORT_READY = "export.ready"  # a data export finished: ready or failed (#92)
 
 
 RESYNC = "resync"
@@ -419,7 +420,8 @@ def events_router(learner: Callable[..., Any]) -> APIRouter:
             200: {
                 "description": (
                     "A Server-Sent Events stream of the learner's events: "
-                    "job.progress, content.ready, grade.ready, attempt.voided and resync."
+                    "job.progress, content.ready, grade.ready, attempt.voided, export.ready "
+                    "and resync."
                 ),
                 "content": {"text/event-stream": {"schema": {"type": "string"}}},
             }

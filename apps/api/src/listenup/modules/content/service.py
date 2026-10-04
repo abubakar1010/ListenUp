@@ -48,6 +48,7 @@ from listenup.modules.content.domain.files import (
 from listenup.modules.content.domain.media import failure_message
 from listenup.platform.config import Settings
 from listenup.platform.errors import ProblemError
+from listenup.platform.export import ExportFile, ExportPart, ExportTable, learner_rows, select_rows
 from listenup.platform.ids import uuid7
 from listenup.platform.rate_limit import Limit, RateLimiter, ip_key, user_key, window_count
 from listenup.platform.storage import Storage
@@ -482,3 +483,62 @@ async def content_titles(
         {"ids": list(set(content_ids))},
     )
     return {row.id: row.title for row in rows}
+
+
+# -- Data export (#92, NFR-SEC-5, ADR 0030) ---------------------------------------------
+
+# The learner's media objects: the ones they uploaded and the ones their items use
+# (YouTube media is shared). Storage keys are internal; the reference count and last
+# use of shared media are counted across learners, so they are not the learner's data.
+_EXPORT_MEDIA = """
+SELECT * FROM content.media_objects m
+ WHERE m.uploaded_by = :learner
+    OR m.id IN (SELECT c.media_object_id FROM content.contents c WHERE c.user_id = :learner)
+ ORDER BY m.created_at, m.id
+"""
+_MEDIA_OMIT = ("playback_key", "video_key", "peaks_key", "ref_count", "last_used_at")
+
+# Files: only media the learner uploaded. YouTube media is never exported, even when the
+# learner added the clip (D10); its item, link and title are exported as data.
+_EXPORT_PLAYBACK = """
+SELECT m.id, m.playback_key FROM content.media_objects m
+ WHERE m.source = 'upload' AND m.uploaded_by = :learner
+   AND m.status = 'playable' AND m.playback_key IS NOT NULL
+ ORDER BY m.created_at, m.id
+"""
+# Originals still in storage: uploads not yet converted (the conversion deletes them).
+_EXPORT_ORIGINALS = """
+SELECT u.storage_key FROM content.uploads u
+  LEFT JOIN content.media_objects m ON m.id = u.media_object_id
+ WHERE u.user_id = :learner AND (m.id IS NULL OR m.status NOT IN ('playable', 'failed'))
+ ORDER BY u.created_at, u.id
+"""
+
+
+async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
+    """The learner's content rows and uploaded media for their data export."""
+    params = {"learner": learner}
+    media = ExportTable(
+        "content.media_objects",
+        await select_rows(session, _EXPORT_MEDIA, params, _MEDIA_OMIT),
+        _MEDIA_OMIT,
+    )
+    files = [
+        ExportFile(row["playback_key"], f"media/{row['id']}/playback.mp4")
+        for row in await select_rows(session, _EXPORT_PLAYBACK, params)
+    ]
+    files += [
+        ExportFile(row["storage_key"], "uploads/" + row["storage_key"].rsplit("/", 1)[-1])
+        for row in await select_rows(session, _EXPORT_ORIGINALS, params)
+    ]
+    return ExportPart(
+        tables=(
+            await learner_rows(session, "content.contents", learner, order_by="created_at"),
+            media,
+            await learner_rows(session, "content.uploads", learner, order_by="created_at"),
+            await learner_rows(
+                session, "content.duplicate_uploads", learner, order_by="created_at"
+            ),
+        ),
+        files=tuple(files),
+    )

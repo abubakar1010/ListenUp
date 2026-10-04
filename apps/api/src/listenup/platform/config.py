@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     # rest wait in the learner's own queue.
     intake_running_limit: int = 2
 
+    # Data exports (#92, NFR-SEC-5, ADR 0030): requests per learner per UTC day (one is
+    # built at a time), days a finished archive is kept, and seconds the signed link
+    # behind the download endpoint works.
+    export_daily_limit: int = 3
+    export_keep_days: int = 7
+    export_link_seconds: int = 120
+
     # Where media workers write source and converted files while a job runs; the
     # system's temporary directory when unset. Each job removes its own files.
     media_scratch_dir: str | None = None
