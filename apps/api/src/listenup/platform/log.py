@@ -5,6 +5,10 @@ response, and is stored in a context variable so every log line written while
 handling the request carries it. Code that enqueues a job passes
 `current_request_id()` along, and the worker wraps the job in `request_id_bound(...)`,
 so the id follows a request into the jobs it creates.
+
+When tracing is on (ADR 0031), each line also carries the trace and span ids, so a
+log line leads to its trace. Email addresses never reach the logs: the JSON formatter
+replaces anything that looks like one, whatever logged it (Architecture 12.2).
 """
 
 import json
@@ -18,6 +22,7 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any
 
+from opentelemetry import trace
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 REQUEST_ID_HEADER = "x-request-id"
@@ -41,6 +46,10 @@ def _stamp_request_id(
         record = factory(*args, **kwargs)
         if not hasattr(record, "request_id"):
             record.request_id = _request_id.get()
+        span = trace.get_current_span().get_span_context()
+        if span.is_valid and not hasattr(record, "trace_id"):
+            record.trace_id = format(span.trace_id, "032x")
+            record.span_id = format(span.span_id, "016x")
         return record
 
     return make_record
@@ -60,6 +69,15 @@ def request_id_bound(request_id: str | None) -> Iterator[None]:
         _request_id.reset(token)
 
 
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+REDACTED_EMAIL = "[email]"
+
+
+def redact(text: str) -> str:
+    """Replace email addresses, so a log line never identifies a learner by address."""
+    return _EMAIL.sub(REDACTED_EMAIL, text)
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         entry: dict[str, Any] = {
@@ -76,7 +94,14 @@ class JsonFormatter(logging.Formatter):
                 entry[name] = value
         if record.exc_info:
             entry["exception"] = self.formatException(record.exc_info)
-        return json.dumps(entry, default=str)
+        return redact(json.dumps(entry, default=str))
+
+
+class RedactingFormatter(logging.Formatter):
+    """Plain-text logs for an interactive terminal, with email addresses replaced."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return redact(super().format(record))
 
 
 def configure_logging(level: str = "INFO", json_logs: bool = True) -> None:
@@ -84,7 +109,7 @@ def configure_logging(level: str = "INFO", json_logs: bool = True) -> None:
     if json_logs:
         handler.setFormatter(JsonFormatter())
     else:
-        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        handler.setFormatter(RedactingFormatter("%(levelname)s %(name)s: %(message)s"))
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(level)

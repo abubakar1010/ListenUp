@@ -20,8 +20,16 @@ from pathlib import Path
 
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database
-from listenup.platform.jobs import Lane, SpeechBacklogGate, app, configure_runtime, set_gate
+from listenup.platform.jobs import (
+    Lane,
+    SpeechBacklogGate,
+    app,
+    configure_runtime,
+    sample_queue_forever,
+    set_gate,
+)
 from listenup.platform.log import configure_logging
+from listenup.platform.telemetry import configure_telemetry, shutdown_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +69,7 @@ async def load_models(pool: str) -> None:
 async def run_pool(pool: str) -> None:
     settings = get_settings()
     configure_logging(settings.log_level, settings.log_json)
+    configure_telemetry(settings, f"worker-{pool}")
     for module in JOB_MODULES:
         __import__(module)
 
@@ -93,6 +102,8 @@ async def run_pool(pool: str) -> None:
                 )
                 for spec in POOLS[pool]
             ]
+            if pool == "default":  # one pool samples the queue for the backlog alerts
+                workers.append(asyncio.create_task(sample_queue_forever(database)))
             await stop.wait()
             logger.info("worker pool stopping", extra={"pool": pool})
             for task in workers:
@@ -103,6 +114,7 @@ async def run_pool(pool: str) -> None:
     finally:
         READY_FILE.unlink(missing_ok=True)
         await database.dispose()
+        shutdown_telemetry()
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -79,6 +79,17 @@ class Settings(BaseSettings):
     # JSON logs everywhere except an interactive terminal, where plain text reads better.
     log_json: bool = True
 
+    # Traces and metrics over OTLP/HTTP (Architecture 12.3, ADR 0031). Off by default, so
+    # tests and local runs export nothing; a signal without an endpoint stays off. The
+    # `observability` Compose profile runs Jaeger and Prometheus for these endpoints.
+    otel_enabled: bool = False
+    otel_service_name: str = "listenup"
+    otel_traces_endpoint: str | None = None  # e.g. http://jaeger:4318/v1/traces
+    otel_metrics_endpoint: str | None = None  # e.g. http://prometheus:9090/api/v1/otlp/v1/metrics
+    otel_headers: SecretStr | None = None  # "key=value,..." for a hosted free tier
+    otel_metrics_interval_seconds: int = 30
+    otel_trace_sample_ratio: float = 1.0
+
     # YouTube intake stays off until the legal review (OQ-6) clears it.
     youtube_intake_enabled: bool = False
 

@@ -22,6 +22,11 @@ from listenup.platform.events import EventHub, EventListener, events_router
 from listenup.platform.log import RequestIdMiddleware, configure_logging
 from listenup.platform.rate_limit import RateLimiter
 from listenup.platform.storage import S3Storage
+from listenup.platform.telemetry import (
+    TelemetryMiddleware,
+    configure_telemetry,
+    shutdown_telemetry,
+)
 
 
 def health() -> dict[str, str]:
@@ -34,6 +39,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        configure_telemetry(settings, "api")
         app.state.database = Database(settings.database_url, settings.database_pool_size)
         app.state.storage = S3Storage(settings)
         app.state.rate_limiter = RateLimiter(app.state.database)
@@ -46,11 +52,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.events.close()
         await app.state.event_listener.stop()
         await app.state.database.dispose()
+        shutdown_telemetry()
 
     app = FastAPI(title="ListenUp API", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     install_error_handlers(app)
     app.add_middleware(CsrfMiddleware, secure=settings.cookies_secure)
+    app.add_middleware(TelemetryMiddleware)  # inside RequestIdMiddleware, to see the id
     app.add_middleware(RequestIdMiddleware)  # added last, so it wraps everything
     api = APIRouter(prefix="/api/v1")
     api.add_api_route("/health", health, methods=["GET"])
