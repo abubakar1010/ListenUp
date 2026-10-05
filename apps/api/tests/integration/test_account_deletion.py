@@ -32,7 +32,7 @@ from listenup.platform.database import Database
 from listenup.platform.errors import ProblemError
 from listenup.platform.jobs import JobDeps, run_handler
 from listenup.platform.rate_limit import RateLimiter
-from listenup.platform.storage import StoredObject
+from listenup.platform.storage import StoredObject, use_storage
 from tests.integration.conftest import conninfo_to_url, with_csrf
 from tests.integration.intake_helpers import FakeStorage
 from tests.integration.seed import SeededLearner, seed_learner_data
@@ -58,9 +58,9 @@ def outbox(migrated_url: str) -> Iterator[Outbox]:
 @pytest.fixture
 def storage() -> Iterator[FakeStorage]:
     fake = FakeStorage()
-    identity_jobs.use_storage(fake)
+    use_storage(fake)
     yield fake
-    identity_jobs.use_storage(None)
+    use_storage(None)
 
 
 @pytest.fixture
@@ -547,6 +547,73 @@ def test_a_password_reset_during_the_grace_period_still_needs_the_restore(
     assert again.json()["code"] == "account_pending_deletion"
 
 
+def test_a_reset_asked_for_during_the_grace_period_is_not_swallowed_by_an_older_one(
+    client: TestClient, migrated_url: str, outbox: Outbox
+) -> None:
+    """A reset job from before the deletion is still waiting when the learner asks again."""
+    email = unique_email()
+    register(client, email)
+    assert client.post("/api/v1/auth/password-reset", json={"email": email}).status_code == 202
+    assert delete_me(client).status_code == 202
+    assert client.post("/api/v1/auth/password-reset", json={"email": email}).status_code == 202
+
+    deliver(migrated_url)
+
+    assert len(outbox.tokens()) == 1  # the older job sends nothing; the new one does
+
+
+def test_an_email_past_its_grace_period_can_register_again_before_the_purge(
+    client: TestClient, make_client: ClientFactory, migrated_url: str
+) -> None:
+    email = unique_email()
+    old_id = register(client, email)
+    delete_me(client)
+    make_due(migrated_url, old_id)
+
+    fresh = make_client()
+    response = fresh.post("/api/v1/auth/register", json={"email": email, "password": PASSWORD})
+
+    assert response.status_code == 201
+    new_id = uuid.UUID(response.json()["id"])
+    assert new_id != old_id
+    assert login(fresh, email).json()["id"] == str(new_id)
+    assert user_row(migrated_url, old_id) is not None  # still waits for its purge
+    # While the grace period runs, the email stays taken.
+    other = unique_email()
+    pending_id = register(make_client(), other)
+    delete_me_client = make_client()
+    assert login(delete_me_client, other).status_code == 200
+    assert delete_me(delete_me_client).status_code == 202
+    taken = make_client().post("/api/v1/auth/register", json={"email": other, "password": PASSWORD})
+    assert taken.json()["code"] == "email_taken"
+    assert user_row(migrated_url, pending_id) is not None
+
+
+def test_the_purge_removes_the_sign_in_counters_of_the_learner(
+    client: TestClient, migrated_url: str
+) -> None:
+    email = unique_email()
+    user_id = register(client, email)
+    wrong = client.post("/api/v1/auth/login", json={"email": email, "password": "not the one"})
+    assert wrong.status_code == 401
+    delete_me(client)
+    make_due(migrated_url, user_id)
+    with psycopg.connect(migrated_url) as conn:
+        before = conn.execute(
+            "SELECT count(*) FROM ops.rate_counters WHERE key LIKE %s", [f"%:user:{user_id}"]
+        ).fetchone()
+    assert before is not None and before[0] > 0
+
+    request_id = str(deletion_request(migrated_url, user_id)["id"])
+    run_job(migrated_url, identity_jobs.purge_account, request_id=request_id)
+
+    with psycopg.connect(migrated_url) as conn:
+        after = conn.execute(
+            "SELECT count(*) FROM ops.rate_counters WHERE key LIKE %s", [f"%{user_id}%"]
+        ).fetchone()
+    assert after == (0,)
+
+
 # -- the purge job (#91) -----------------------------------------------------------------
 
 
@@ -721,14 +788,14 @@ def test_a_purge_that_gives_up_is_marked_failed_and_retried_later(
             await asyncio.sleep(60)
             return 0
 
-    identity_jobs.use_storage(Broken())
+    use_storage(Broken())
     with pytest.raises(RuntimeError):
         run_purge_attempt(migrated_url, request_id, attempt=1)
     assert (
         deletion_request(migrated_url, user_id)["status"] == "pending"
     )  # retried by Procrastinate
 
-    identity_jobs.use_storage(Stalled())
+    use_storage(Stalled())
     with pytest.raises(TimeoutError):
         run_purge_attempt(migrated_url, request_id, attempt=identity_jobs.PURGE_ATTEMPTS)
 
@@ -748,10 +815,33 @@ def test_a_purge_that_gives_up_is_marked_failed_and_retried_later(
             [request_id],
         )
     assert sweep_queues_purge(migrated_url, user_id)
-    identity_jobs.use_storage(storage)
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "DELETE FROM procrastinate.procrastinate_jobs "
+            "WHERE task_name = %s AND args->>'request_id' = %s",
+            [identity_jobs.PURGE_ACCOUNT, request_id],
+        )
+
+    # Giving up again is recorded too: the count grows and the hour starts over.
+    use_storage(Broken())
+    with pytest.raises(RuntimeError):
+        run_purge_attempt(migrated_url, request_id, attempt=identity_jobs.PURGE_ATTEMPTS)
+    request = deletion_request(migrated_url, user_id)
+    assert request["status"] == "failed"
+    assert request["report"]["failures"] == 2
+    assert request["report"]["failed_step"] == "pending"
+    assert not sweep_queues_purge(migrated_url, user_id)
+
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE ops.deletion_requests SET failed_at = now() - interval '61 minutes' "
+            "WHERE id = %s",
+            [request_id],
+        )
+    use_storage(storage)
     report = run_job(migrated_url, identity_jobs.purge_account, request_id=request_id)
 
-    assert report is not None and report["objects_removed"] == 1 and report["failures"] == 1
+    assert report is not None and report["objects_removed"] == 1 and report["failures"] == 2
     assert user_row(migrated_url, user_id) is None
     finished = deletion_request(migrated_url, user_id)
     assert finished["status"] == "completed"
