@@ -7,16 +7,21 @@ endpoints are finished through the practice service, as their endpoints will.
 Acceptance criteria:
 - AC1, each event once per occurrence: the API flows below, plus the recording
   functions that marks, cards, Shadow and Dictation submission will call.
+- AC2, the report: `test_the_report_*`, run as `listenup_readonly`.
 - AC3, removed on account deletion: `test_deleting_the_account_removes_its_events`
   (the purge in #91 deletes the `identity.users` row); the export side is in
   test_export.py.
 """
 
 import asyncio
+import importlib.util
 import json
 import uuid
 from collections import Counter
 from collections.abc import Awaitable, Callable, Iterator
+from datetime import UTC, datetime
+from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import psycopg
@@ -53,6 +58,8 @@ from tests.integration.test_blind import (
     with_clock,
 )
 from tests.integration.test_sessions_api import change_entry, finish, load, skip
+
+SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "analytics_report.py"
 
 Recorded = tuple[str, str | None, dict[str, Any]]
 
@@ -337,3 +344,134 @@ def test_deleting_the_account_removes_its_events(migrated_url: str) -> None:
 
     assert events_of(migrated_url, gone) == []
     assert len(events_of(migrated_url, kept)) == 1
+
+
+# -- AC2: the report ------------------------------------------------------------------
+
+# Far from the other tests' events (stamped now), so this range holds only these.
+DAY = datetime(2031, 3, 2, tzinfo=UTC)
+
+
+def at(hours: float) -> datetime:
+    return datetime.fromtimestamp(DAY.timestamp() + hours * 3600, UTC)
+
+
+@pytest.fixture
+def history(migrated_url: str) -> Iterator[tuple[uuid.UUID, uuid.UUID]]:
+    """Two learners' events in March 2031, written as past events with their times."""
+    a, b = uuid.uuid4(), uuid.uuid4()
+    s1, s2, s3, s4, clip = (uuid.uuid4() for _ in range(5))
+    new = uuid.uuid4
+    # (learner, event, subject, step, content, session, properties, hours after DAY)
+    rows: list[tuple[uuid.UUID, str, uuid.UUID, str | None, Any, Any, str, float]] = [
+        (a, "content_added", clip, None, clip, None, '{"source_type": "upload"}', 0),
+        (a, "plan_started", s1, None, clip, s1, '{"path": "blind"}', 0.005),
+        (a, "listen_started", new(), None, clip, s1, '{"mode": "blind"}', 0.01),
+        (a, "step_started", s1, "transcript", clip, s1, "{}", 1),
+        (a, "mark_created", new(), None, None, s1, '{"pattern": "p1"}', 1),
+        (a, "step_started", s1, "shadow", clip, s1, "{}", 2),
+        (a, "card_created", new(), None, None, s1, "{}", 2),
+        (a, "step_completed", s1, "shadow", clip, s1, '{"outcome": "done"}', 3),
+        (a, "plan_started", s2, None, clip, s2, '{"path": "blind"}', 24),
+        (a, "mark_created", new(), None, None, s2, '{"pattern": "p1"}', 25),
+        (a, "plan_started", s3, None, clip, s3, '{"path": "blind"}', 48),
+        (b, "plan_started", s4, None, None, s4, '{"path": "both"}', 1),
+    ]
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        for user in (a, b):
+            conn.execute(
+                "INSERT INTO identity.users (id, email) VALUES (%s, %s)",
+                [user, f"{user}@example.com"],
+            )
+        for user, kind, subject, step, content, session, props, hours in rows:
+            conn.execute(
+                "INSERT INTO ops.analytics_events (id, user_id, event_type, subject_id, step, "
+                "content_id, session_id, properties, occurred_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                [new(), user, kind, subject, step, content, session, props, at(hours)],
+            )
+        yield a, b
+        conn.execute("DELETE FROM identity.users WHERE id = ANY(%s)", [[a, b]])
+
+
+def load_script() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("analytics_report", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_report_computes_the_five_metrics_for_a_date_range(
+    history: tuple[uuid.UUID, uuid.UUID], migrated_url: str
+) -> None:
+    script = load_script()
+    output = script.main(
+        [
+            "--from=2031-03-02",
+            "--to=2031-03-02",  # one day: A's later plans are follow-ups, not cohort
+            "--as-of=2031-04-01T00:00:00",
+            "--role=listenup_readonly",
+            f"--database-url={conninfo_to_url(migrated_url)}",
+            "--json",
+        ]
+    )
+    report = json.loads(output)
+
+    assert report["plan_completion"] == {
+        "started": 2,
+        "reached_final_step": 1,
+        "completed": 1,
+        "reach_rate": 0.5,
+        "completion_rate": 0.5,
+    }
+    assert report["first_listen"]["clips_added"] == 1
+    assert report["first_listen"]["median_seconds"] == pytest.approx(36)
+    assert report["first_listen"]["under_target_rate"] == 1.0
+    assert report["return_rate"] == {
+        "new_learners": 2,
+        "returned": 1,
+        "window_open": 0,
+        "rate": 0.5,
+    }
+    assert report["mark_reuse"]["sessions_reached_transcript"] == 1
+    assert report["mark_reuse"]["cards"] == 1
+    assert report["mark_reuse"]["rate"] == 1.0
+    assert report["repeat_failures"]["marks"] == 1  # the second mark is on 3 March
+    assert report["repeat_failures"]["repeats"] == 0
+
+
+def test_the_report_follows_repeats_into_later_days(
+    history: tuple[uuid.UUID, uuid.UUID], migrated_url: str
+) -> None:
+    text = load_script().main(
+        [
+            "--from=2031-03-02",
+            "--to=2031-03-08",
+            "--as-of=2031-04-01T00:00:00",
+            "--role=listenup_readonly",
+            f"--database-url={conninfo_to_url(migrated_url)}",
+        ]
+    )
+
+    assert "Plan completion rate   25% reached the final step" in text
+    assert "Repeat-failure trend   50% of 2 marks" in text
+    assert "session 2: 100% of 1 marks" in text
+
+
+def test_the_report_role_reads_events_but_no_account_data(
+    history: tuple[uuid.UUID, uuid.UUID], migrated_url: str
+) -> None:
+    with psycopg.connect(migrated_url) as conn:
+        conn.execute("SET ROLE listenup_readonly")
+        seen = conn.execute(
+            "SELECT count(DISTINCT user_id) FROM ops.analytics_events WHERE user_id = ANY(%s)",
+            [list(history)],
+        ).fetchone()
+        assert seen == (2,)
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute("INSERT INTO ops.analytics_events DEFAULT VALUES")
+        conn.rollback()
+        conn.execute("SET ROLE listenup_readonly")
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute("SELECT count(*) FROM identity.users")

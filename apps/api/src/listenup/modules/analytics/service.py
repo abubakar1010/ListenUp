@@ -1,4 +1,4 @@
-"""The analytics module's public API: record product events and export them.
+"""The analytics module's public API: record product events, export them, report on them.
 
 #101, PRD 2 and 8.2, ADR 0033. Other modules use only this file (Architecture 4.3),
 with one call per place where an event happens, inside the transaction that makes the
@@ -20,6 +20,7 @@ Events hold the learner's id and nothing else personal.
 """
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +30,8 @@ from listenup.modules.analytics.domain import (
     PATHS,
     SOURCE_TYPES,
     EventType,
+    Report,
+    compute_report,
     mark_pattern,
     require_one_of,
     step_changes,
@@ -37,6 +40,8 @@ from listenup.platform.export import ExportPart, learner_rows
 
 __all__ = [
     "EventType",
+    "Report",
+    "build_report",
     "export_data",
     "record_blind_abandoned",
     "record_card_created",
@@ -224,6 +229,15 @@ async def record_shadow_round_completed(
         session_id=session_id,
         properties={"round": round_number},
     )
+
+
+async def build_report(db: AsyncSession, start: datetime, end: datetime, as_of: datetime) -> Report:
+    """The five PRD 2 metrics for [start, end), following events up to `as_of`.
+
+    Run it as `listenup_readonly` (scripts/analytics_report.py), which sees every
+    learner's events but no account data.
+    """
+    return compute_report(await repository.events_before(db, as_of), start, end, as_of)
 
 
 async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
