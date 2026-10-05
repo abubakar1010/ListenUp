@@ -27,6 +27,12 @@ Read the section for the area you are changing before you change it. The rules e
 
 - Data export (ADR 0030): a module that owns learner data offers `export_data(session, learner) -> ExportPart` (from `listenup.platform.export`) in its `service.py`, using `learner_rows(..., omit=(secret columns,))`, and is listed in `modules/export/collect.py`; `test_export.py` fails while a table with `user_id` is missing from the export. YouTube media files are never exported. `POST /me/exports` queues `export.build_archive`; the archive is reached only through `GET /me/exports/{id}/download` (a 307 to a short-lived signed link) and is deleted after `LISTENUP_EXPORT_KEEP_DAYS`.
 
+## Accounts and deletion (ADR 0017, 0029)
+
+- Every way of signing in ends in `Accounts.complete_sign_in` (`modules/identity/service.py`), which owns the restore step of an account waiting for deletion (409 `account_pending_deletion` until the learner sends `restore: true`). Google sign-in (#32) must call it too.
+- A disabled account reaches nothing: `identity.resolve_auth_session` returns a learner only while `users.status = 'active'`. Background work that must not run for a deleted account checks `identity.service.account_is_active` (the export build does).
+- The purge (`identity.purge_account`) deletes storage under `users/<id>/` first, then the `identity.users` row; every learner table must be deleted with it (a foreign key to `identity.users`, or to a parent that has one, with `ON DELETE CASCADE`), so a new table needs no purge code; `test_account_deletion.py` fails while any row with the learner's `user_id` survives. A module that keeps a learner's files outside `users/<id>/` needs its own step in the purge.
+
 ## Web client (ADR 0018, 0025, 0026)
 
 - Confirmations use `ConfirmDialog` (`src/components/ConfirmDialog.tsx`): focus starts on the safe action, stays inside, and Escape cancels. Session data lives under the `['sessions']` query key (`src/features/session/api.ts`).
@@ -34,4 +40,4 @@ Read the section for the area you are changing before you change it. The rules e
 - The passage picker (#42, ADR 0026) draws the server's peaks without wavesurfer.js: the rules are pure functions in `src/features/session/passage.ts`, the state is the reducer in `passageState.ts`, and the handles are `role="slider"` elements in `Waveform.tsx`. Playwright does not follow redirects for routed requests, so e2e fakes answer `/api/v1/media/{id}` and `/peaks` directly.
 - Drafts and marks save through `src/lib/autosave` (`useAutosave`, `SaveStatus`): a local copy at once, a server save 2 s after the last edit on the server's version, `SaveConflict` on a stale version (ADR 0025). The Dictation player's control policy is `src/features/dictation/policy.ts`; Blind's playback policy and heartbeat protocol are in `src/features/blind/listen.ts`, and it reports a leave with `api(..., {keepalive: true})` because sendBeacon cannot send the CSRF header.
 - Clip notices (`src/features/content/ClipNotices.tsx`) turn `content.ready` into a polite live-region notice that never takes focus and waits while a `/sessions/` page is open. Upload refusals map to messages in `src/features/library/refusals.ts`.
-- Account settings live at `/settings` (`src/features/account/SettingsPage.tsx`); each section is its own component (`DataExportSection.tsx`).
+- Account settings live at `/settings` (`src/features/account/SettingsPage.tsx`); each section is its own component (`DataExportSection.tsx`, `DeleteAccountSection.tsx`).
