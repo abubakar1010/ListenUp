@@ -33,17 +33,33 @@ class BackupStore(Protocol):
     def delete(self, keys: list[str]) -> None: ...
 
 
+def backup_bucket_name(settings: Settings) -> str:
+    """The bucket for dumps. Outside local and test runs it must be its own bucket:
+    dumps hold every learner's email, gists and transcripts, and a bucket shared with
+    media is within reach of the API's storage key (ADR 0032)."""
+    bucket = settings.backup_bucket
+    if settings.environment in ("local", "test"):
+        return bucket or settings.s3_bucket
+    if not bucket or bucket == settings.s3_bucket:
+        raise ValueError(
+            "LISTENUP_BACKUP_BUCKET must name a bucket separate from the media bucket "
+            f"({settings.s3_bucket!r}) when LISTENUP_ENVIRONMENT is {settings.environment!r}"
+        )
+    return bucket
+
+
 class S3BackupStore:
-    """The backup bucket (LISTENUP_BACKUP_BUCKET, else the media bucket)."""
+    """The backup bucket, with its own storage credentials when they are set."""
 
     def __init__(self, settings: Settings) -> None:
-        self.bucket = settings.backup_bucket or settings.s3_bucket
+        self.bucket = backup_bucket_name(settings)
+        secret = settings.backup_s3_secret_key or settings.s3_secret_key
         self._client: S3Client = boto3.client(
             "s3",
-            endpoint_url=settings.s3_endpoint_url,
-            region_name=settings.s3_region,
-            aws_access_key_id=settings.s3_access_key,
-            aws_secret_access_key=settings.s3_secret_key.get_secret_value(),
+            endpoint_url=settings.backup_s3_endpoint_url or settings.s3_endpoint_url,
+            region_name=settings.backup_s3_region or settings.s3_region,
+            aws_access_key_id=settings.backup_s3_access_key or settings.s3_access_key,
+            aws_secret_access_key=secret.get_secret_value(),
             config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
         )
 

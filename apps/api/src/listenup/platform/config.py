@@ -102,11 +102,18 @@ class Settings(BaseSettings):
     otel_trace_sample_ratio: float = 1.0
 
     # Nightly database dump to object storage (NFR-REL-4, ADR 0032). The dump runs as
-    # the database owner; the bucket defaults to the media bucket under `backups/`.
+    # the database owner. Outside local and test runs the bucket must be set and differ
+    # from the media bucket (checked when the store is built); locally it falls back to
+    # the media bucket under `backups/`. The storage endpoint, region and keys fall back
+    # to the API's; set them so the API's key cannot read or delete the backups.
     # Must name the database owner: a role under row-level security (`listenup_api`) is
     # refused. Falls back to database_url for local runs, where that is the owner.
     backup_database_url: str | None = None
     backup_bucket: str | None = None
+    backup_s3_endpoint_url: str | None = None
+    backup_s3_region: str | None = None
+    backup_s3_access_key: str | None = None
+    backup_s3_secret_key: SecretStr | None = None
     backup_prefix: str = "backups/postgres/"
     backup_retention_days: int = 14
     backup_hour_utc: int = 2
