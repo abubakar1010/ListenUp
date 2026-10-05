@@ -26,6 +26,12 @@ PURGE_ACCOUNT = "identity.purge_account"
 PURGE_SCHEDULE = "*/15 * * * *"
 # Requests queued per sweep; the next sweep takes the rest.
 PURGE_BATCH = 100
+# Deleting a learner's files is one storage call per thousand objects; a full library
+# takes seconds, so half an hour means storage or the database is in trouble.
+PURGE_TIMEOUT = timedelta(minutes=30)
+PURGE_ATTEMPTS = 3
+# A purge that gave up is queued again by the first sweep this long after it failed.
+PURGE_RETRY_AFTER = timedelta(hours=1)
 
 
 class _Storage:
@@ -133,7 +139,8 @@ async def purge_due_accounts(deps: JobDeps, timestamp: int | None = None) -> int
     """
     queued = 0
     async with deps.database.transaction() as session:
-        for request_id in await repository.due_deletion_requests(session, PURGE_BATCH):
+        due = await repository.due_deletion_requests(session, PURGE_BATCH, PURGE_RETRY_AFTER)
+        for request_id in due:
             if await queue_purge(session, request_id) is not None:
                 queued += 1
     return queued
@@ -149,7 +156,22 @@ async def queue_purge(session: AsyncSession, request_id: uuid.UUID) -> int | Non
     )
 
 
-@job(Lane.BACKGROUND, PURGE_ACCOUNT)
+async def _give_up_purge(deps: JobDeps, request_id: str) -> None:
+    """The last attempt failed or timed out: mark the request 'failed', so a purge left
+    half done shows, and the sweep queues it again after `PURGE_RETRY_AFTER`. The
+    account stays unable to sign in or be restored meanwhile."""
+    async with deps.database.transaction() as session:
+        if await repository.mark_deletion_failed(session, uuid.UUID(request_id)):
+            logger.error("account purge gave up; retried later", extra={"request": request_id})
+
+
+@job(
+    Lane.BACKGROUND,
+    PURGE_ACCOUNT,
+    timeout=PURGE_TIMEOUT,
+    max_attempts=PURGE_ATTEMPTS,
+    on_give_up=_give_up_purge,
+)
 async def purge_account(deps: JobDeps, request_id: str) -> dict[str, Any] | None:
     """Delete an account and everything it owns (FR-ACC-4, DR-1; Database Design 10.1).
 
@@ -165,13 +187,15 @@ async def purge_account(deps: JobDeps, request_id: str) -> dict[str, Any] | None
 
     Idempotent: each step checks the request's state, deleting what is already gone
     is not an error, and a request that is not due, cancelled or completed is left
-    alone. Returns the report, or None when there was nothing to do.
+    alone. When the last attempt fails, the request becomes 'failed' and a later sweep
+    runs it again from the storage step. Returns the report, or None when there was
+    nothing to do.
     """
     request_uuid = uuid.UUID(request_id)
     storage = _storage()
     async with deps.database.transaction() as session:
         request = await repository.lock_deletion_request(session, request_uuid)
-        if request is None or request.status not in ("pending", "storage_deleted"):
+        if request is None or request.status not in ("pending", "storage_deleted", "failed"):
             return None
         if not request.due:
             return None

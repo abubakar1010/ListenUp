@@ -7,6 +7,7 @@ by calling its handler directly, where a test needs its return value.
 """
 
 import asyncio
+import dataclasses
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
@@ -21,9 +22,10 @@ from listenup.main import create_app
 from listenup.modules.identity import jobs as identity_jobs
 from listenup.modules.identity.domain.tokens import new_token, token_hash
 from listenup.modules.notifications import service as notifications
+from listenup.platform import jobs as platform_jobs
 from listenup.platform.config import Settings
 from listenup.platform.database import Database
-from listenup.platform.jobs import JobDeps
+from listenup.platform.jobs import JobDeps, run_handler
 from listenup.platform.storage import StoredObject
 from tests.integration.conftest import conninfo_to_url, with_csrf
 from tests.integration.intake_helpers import FakeStorage
@@ -626,6 +628,87 @@ def test_the_purge_finishes_after_stopping_between_storage_and_rows(
     assert report is not None and report["objects_removed"] == 4
     assert user_row(migrated_url, user_id) is None
     assert deletion_request(migrated_url, user_id)["status"] == "completed"
+
+
+def run_purge_attempt(migrated_url: str, request_id: str, attempt: int) -> None:
+    """One worker attempt of the purge: under its timeout, settled on the last one."""
+
+    async def run() -> None:
+        database = Database(conninfo_to_url(migrated_url), pool_size=2)
+        try:
+            await run_handler(
+                identity_jobs.PURGE_ACCOUNT, JobDeps(database, None, attempt), request_id=request_id
+            )
+        finally:
+            await database.dispose()
+
+    asyncio.run(run())
+
+
+def test_a_purge_that_gives_up_is_marked_failed_and_retried_later(
+    client: TestClient,
+    migrated_url: str,
+    storage: FakeStorage,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A timed-out last attempt leaves a visible 'failed' request, never a silent half."""
+    email, user_id, _ = signed_in_learner_with_data(client, migrated_url)
+    storage.objects[f"users/{user_id}/a.bin"] = STORED
+    delete_me(client)
+    make_due(migrated_url, user_id)
+    request_id = str(deletion_request(migrated_url, user_id)["id"])
+    entry = platform_jobs._registry[identity_jobs.PURGE_ACCOUNT]
+    short = dataclasses.replace(entry.spec, timeout=timedelta(seconds=0.2))
+    monkeypatch.setitem(
+        platform_jobs._registry,
+        identity_jobs.PURGE_ACCOUNT,
+        dataclasses.replace(entry, spec=short),
+    )
+
+    class Broken(FakeStorage):
+        async def delete_prefix(self, prefix: str) -> int:
+            raise RuntimeError("storage is down")
+
+    class Stalled(FakeStorage):
+        async def delete_prefix(self, prefix: str) -> int:
+            await asyncio.sleep(60)
+            return 0
+
+    identity_jobs.use_storage(Broken())
+    with pytest.raises(RuntimeError):
+        run_purge_attempt(migrated_url, request_id, attempt=1)
+    assert (
+        deletion_request(migrated_url, user_id)["status"] == "pending"
+    )  # retried by Procrastinate
+
+    identity_jobs.use_storage(Stalled())
+    with pytest.raises(TimeoutError):
+        run_purge_attempt(migrated_url, request_id, attempt=identity_jobs.PURGE_ATTEMPTS)
+
+    request = deletion_request(migrated_url, user_id)
+    assert request["status"] == "failed"
+    assert request["report"]["failures"] == 1
+    assert request["report"]["failed_step"] == "pending"
+    # Half done is still disabled: no sign-in, no restore, and the sweep waits an hour.
+    assert user_row(migrated_url, user_id) == ("deleting", None)
+    assert login(client, email, restore=True).json()["code"] == "invalid_credentials"
+    assert not sweep_queues_purge(migrated_url, user_id)
+
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE ops.deletion_requests SET failed_at = now() - interval '61 minutes' "
+            "WHERE id = %s",
+            [request_id],
+        )
+    assert sweep_queues_purge(migrated_url, user_id)
+    identity_jobs.use_storage(storage)
+    report = run_job(migrated_url, identity_jobs.purge_account, request_id=request_id)
+
+    assert report is not None and report["objects_removed"] == 1 and report["failures"] == 1
+    assert user_row(migrated_url, user_id) is None
+    finished = deletion_request(migrated_url, user_id)
+    assert finished["status"] == "completed"
+    assert learner_rows(migrated_url, user_id) == 0
 
 
 def test_the_purge_never_deletes_an_active_account(

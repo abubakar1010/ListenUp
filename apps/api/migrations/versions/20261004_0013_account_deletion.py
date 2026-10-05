@@ -9,6 +9,9 @@
     signing in before `due_at`. A cancelled request is kept as an audit record.
   - `media_object_ids`: the learner's upload media objects when the request was made,
     for the report (their files live under the storage prefix).
+  - `failed_at` and status 'failed': the purge gave up after its last attempt (a
+    timeout included). The request stays open: the sweep queues it again an hour later,
+    resuming where it stopped, because a deletion must finish.
   At most one open account request per learner. There is no foreign key to the
   learner: the request must outlive the account it deletes. Row-level security
   limits the API to the signed-in learner's own requests; the purge job (the workers'
@@ -49,16 +52,18 @@ CREATE TABLE ops.deletion_requests (
   due_at           timestamptz NOT NULL DEFAULT now(),
   cancelled_at     timestamptz,
   completed_at     timestamptz,
+  failed_at        timestamptz,       -- the purge's last attempt failed; retried later
   CHECK ((status = 'cancelled') = (cancelled_at IS NOT NULL)),
   CHECK ((status = 'completed') = (completed_at IS NOT NULL)),
+  CHECK ((status = 'failed') = (failed_at IS NOT NULL)),
   CHECK (due_at >= requested_at)
 );
 -- The purge job's sweep: open requests by due time.
 CREATE INDEX deletion_requests_due_idx ON ops.deletion_requests (due_at)
-  WHERE status IN ('pending', 'storage_deleted');
+  WHERE status IN ('pending', 'storage_deleted', 'failed');
 CREATE UNIQUE INDEX deletion_requests_one_open_account_idx
   ON ops.deletion_requests (subject_user_id)
-  WHERE scope = 'account' AND status IN ('pending', 'storage_deleted');
+  WHERE scope = 'account' AND status IN ('pending', 'storage_deleted', 'failed');
 
 -- The API writes the request and cancels it on restore; only the purge job (workers,
 -- BYPASSRLS) completes it.

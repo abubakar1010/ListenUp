@@ -92,17 +92,20 @@ class DeletionRequest(Base):
         ),
         CheckConstraint("(status = 'cancelled') = (cancelled_at IS NOT NULL)"),
         CheckConstraint("(status = 'completed') = (completed_at IS NOT NULL)"),
+        CheckConstraint("(status = 'failed') = (failed_at IS NOT NULL)"),
         CheckConstraint("due_at >= requested_at"),
         Index(
             "deletion_requests_due_idx",
             "due_at",
-            postgresql_where=text("status IN ('pending', 'storage_deleted')"),
+            postgresql_where=text("status IN ('pending', 'storage_deleted', 'failed')"),
         ),
         Index(
             "deletion_requests_one_open_account_idx",
             "subject_user_id",
             unique=True,
-            postgresql_where=text("scope = 'account' AND status IN ('pending', 'storage_deleted')"),
+            postgresql_where=text(
+                "scope = 'account' AND status IN ('pending', 'storage_deleted', 'failed')"
+            ),
         ),
         {"schema": "ops"},
     )
@@ -119,3 +122,4 @@ class DeletionRequest(Base):
     due_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
     cancelled_at: Mapped[datetime | None] = mapped_column(Timestamp)
     completed_at: Mapped[datetime | None] = mapped_column(Timestamp)
+    failed_at: Mapped[datetime | None] = mapped_column(Timestamp)

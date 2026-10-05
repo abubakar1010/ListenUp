@@ -344,16 +344,23 @@ class DeletionRequest:
     due: bool  # the grace period has ended
 
 
-async def due_deletion_requests(session: AsyncSession, limit: int) -> list[uuid.UUID]:
-    """Open account requests whose grace period has ended, oldest due first."""
+async def due_deletion_requests(
+    session: AsyncSession, limit: int, retry_after: timedelta
+) -> list[uuid.UUID]:
+    """Open account requests whose grace period has ended, oldest due first.
+
+    A request whose purge gave up ('failed') is due again `retry_after` after it failed.
+    """
     rows = await session.execute(
         text("""
         SELECT id FROM ops.deletion_requests
-         WHERE status IN ('pending', 'storage_deleted') AND due_at <= now() AND scope = :scope
+         WHERE scope = :scope AND due_at <= now()
+           AND (status IN ('pending', 'storage_deleted')
+                OR (status = 'failed' AND failed_at <= now() - :retry_after))
          ORDER BY due_at, id
          LIMIT :limit
         """),
-        {"scope": ACCOUNT_SCOPE, "limit": limit},
+        {"scope": ACCOUNT_SCOPE, "limit": limit, "retry_after": retry_after},
     )
     return [row.id for row in rows]
 
@@ -416,7 +423,9 @@ async def update_deletion_request(
         UPDATE ops.deletion_requests
            SET status = :status, report = CAST(:report AS jsonb),
                media_object_ids = coalesce(CAST(:media AS uuid[]), media_object_ids),
-               completed_at = CASE WHEN :status = 'completed' THEN coalesce(completed_at, now()) END
+               completed_at = CASE WHEN :status = 'completed'
+                                   THEN coalesce(completed_at, now()) END,
+               failed_at = NULL
          WHERE id = :id
         """),
         {
@@ -426,6 +435,28 @@ async def update_deletion_request(
             "media": None if media_object_ids is None else [str(m) for m in media_object_ids],
         },
     )
+
+
+async def mark_deletion_failed(session: AsyncSession, request_id: uuid.UUID) -> bool:
+    """The purge gave up: record it on an open request, keeping the step it reached.
+
+    The report counts the failures. False when the request is no longer open.
+    """
+    failed = await session.scalar(
+        text("""
+        UPDATE ops.deletion_requests
+           SET status = 'failed', failed_at = now(),
+               report = jsonb_set(
+                 coalesce(report, '{}'),
+                 '{failures}',
+                 to_jsonb(coalesce((report->>'failures')::int, 0) + 1)
+               ) || jsonb_build_object('failed_step', status)
+         WHERE id = :id AND status IN ('pending', 'storage_deleted')
+        RETURNING id
+        """),
+        {"id": request_id},
+    )
+    return failed is not None
 
 
 async def count_learner_rows(session: AsyncSession, user_id: uuid.UUID) -> dict[str, int]:
