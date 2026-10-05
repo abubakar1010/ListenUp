@@ -1,11 +1,12 @@
 """Traces and metrics (#96; Architecture 12.3, ADR 0031)."""
 
+import asyncio
 import json
 import logging
 import time
 
 import pytest
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 from opentelemetry.trace import SpanKind, StatusCode
 
@@ -23,6 +24,7 @@ from listenup.platform.telemetry import (
     record_ai_call,
     record_ai_quota,
     record_grading,
+    route_template,
 )
 from tests.telemetry_helpers import capture
 
@@ -233,3 +235,67 @@ def test_redact_keeps_text_without_addresses() -> None:
     assert redact("job listenup.platform.jobs ran in 2.5 s") == (
         "job listenup.platform.jobs ran in 2.5 s"
     )
+
+
+def test_a_route_template_is_exact_even_when_a_value_equals_a_path_segment() -> None:
+    app = FastAPI()
+    app.add_middleware(TelemetryMiddleware)
+    inner = APIRouter(prefix="/sessions")
+    outer = APIRouter(prefix="/v1")
+
+    @inner.get("/{session_id}/blind/{other}")
+    def blind(session_id: str, other: str) -> dict[str, str]:
+        return {}
+
+    outer.include_router(inner)
+    app.include_router(outer, prefix="/api")
+    seen: list[str] = []
+
+    @app.middleware("http")
+    async def spy(request, call_next):  # type: ignore[no-untyped-def]
+        response = await call_next(request)
+        seen.append(route_template(request.scope))
+        return response
+
+    # session_id equals a fixed segment and both parameters hold the same value
+    TestClient(app).get("/api/v1/sessions/api/blind/api")
+
+    assert seen == ["/api/v1/sessions/{session_id}/blind/{other}"]
+
+
+def test_a_job_cancelled_by_shutdown_is_not_counted_as_failed() -> None:
+    async def interrupted() -> None:
+        with observe_job(
+            "test.job",
+            "ai",
+            job_id=1,
+            attempt=4,
+            scheduled_at=None,
+            trace_carrier=None,
+            classify_error=never_retried,
+        ):
+            raise asyncio.CancelledError
+
+    with capture() as captured, pytest.raises(asyncio.CancelledError):
+        asyncio.run(interrupted())
+
+    assert captured.points("listenup.job.runs") == [
+        ({"job": "test.job", "lane": "ai", "outcome": "cancelled"}, 1)
+    ]
+    assert captured.span("job test.job").status.status_code != StatusCode.ERROR
+
+
+def test_each_process_has_its_own_instance_id() -> None:
+    settings = Settings(
+        otel_enabled=True,
+        otel_traces_endpoint="http://127.0.0.1:9/v1/traces",
+        otel_metrics_interval_seconds=3600,
+    )
+    ids = []
+    for _ in range(2):
+        configure_telemetry(settings, "api")
+        provider = telemetry._state.tracer_provider
+        ids.append(provider.resource.attributes["service.instance.id"])  # type: ignore[union-attr]
+        telemetry.use_providers()  # without shutdown, so nothing is sent
+
+    assert ids[0] != ids[1]

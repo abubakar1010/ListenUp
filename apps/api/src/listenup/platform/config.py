@@ -103,7 +103,9 @@ class Settings(BaseSettings):
 
     # Nightly database dump to object storage (NFR-REL-4, ADR 0032). The dump runs as
     # the database owner; the bucket defaults to the media bucket under `backups/`.
-    backup_database_url: str | None = None  # defaults to database_url
+    # Must name the database owner: a role under row-level security (`listenup_api`) is
+    # refused. Falls back to database_url for local runs, where that is the owner.
+    backup_database_url: str | None = None
     backup_bucket: str | None = None
     backup_prefix: str = "backups/postgres/"
     backup_retention_days: int = 14

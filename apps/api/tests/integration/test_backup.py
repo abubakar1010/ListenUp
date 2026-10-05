@@ -167,3 +167,14 @@ def test_the_cli_restore_test_reports_json_and_exit_code(
     assert code == 0
     result = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert (result["ok"], result["within_rto"], result["mismatches"]) == (True, True, {})
+
+
+def test_a_dump_as_a_role_under_row_level_security_is_refused(
+    api_role_url: str, store: DirectoryBackupStore
+) -> None:
+    settings = Settings(database_url=api_role_url, backup_prefix=PREFIX)
+
+    with pytest.raises(RuntimeError, match="row-level security"):
+        dump(settings, store)
+
+    assert store.list_files(PREFIX) == []

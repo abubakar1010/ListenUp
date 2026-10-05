@@ -69,3 +69,26 @@ def test_a_job_can_carry_the_request_id(caplog: pytest.LogCaptureFixture) -> Non
     first, second = formatted(caplog)
     assert first["request_id"] == "from-request"
     assert "request_id" not in second
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["sent to:\nuser@example.com", "sent to:\tuser@example.com", "café user@example.com"],
+)
+def test_an_email_after_a_json_escape_leaves_a_valid_line(message: str) -> None:
+    record = logging.LogRecord("t", logging.INFO, __file__, 1, message, None, None)
+
+    entry = json.loads(JsonFormatter().format(record))
+
+    assert entry["message"] == message.replace("user@example.com", "[email]")
+
+
+def test_emails_in_extra_fields_and_nested_values_are_redacted() -> None:
+    record = logging.LogRecord("t", logging.INFO, __file__, 1, "x", None, None)
+    record.who = {"to": ["a@example.com"], "n": 3}  # type: ignore[attr-defined]
+    record.error = ValueError("bad address b@example.com")  # type: ignore[attr-defined]
+
+    entry = json.loads(JsonFormatter().format(record))
+
+    assert entry["who"] == {"to": ["[email]"], "n": 3}
+    assert entry["error"] == "bad address [email]"

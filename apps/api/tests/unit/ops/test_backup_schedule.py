@@ -128,3 +128,67 @@ def test_on_start_the_newest_backup_in_storage_is_reported(store: DirectoryBacku
 
     points = captured.points("listenup.backup.last_success_timestamp_seconds")
     assert points == [({}, datetime(2026, 10, 3, 2, 30, tzinfo=UTC).timestamp())]
+
+
+def test_the_client_tools_get_every_connection_setting_psycopg_uses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PGPASSFILE", "/secrets/pgpass")
+    monkeypatch.setenv("PGHOST", "ignored-by-the-url")
+
+    env = backup._pg_env(
+        "postgresql://owner:pw@db.example.com:6543/listenup"
+        "?sslmode=verify-full&sslrootcert=/certs/ca.pem&connect_timeout=5&options=-c%20x%3D1"
+    )
+
+    assert env["PGHOST"] == "db.example.com"
+    assert env["PGPORT"] == "6543"
+    assert env["PGUSER"] == "owner"
+    assert env["PGPASSWORD"] == "pw"
+    assert env["PGDATABASE"] == "listenup"
+    assert env["PGSSLMODE"] == "verify-full"
+    assert env["PGSSLROOTCERT"] == "/certs/ca.pem"
+    assert env["PGCONNECT_TIMEOUT"] == "5"
+    assert env["PGOPTIONS"] == "-c x=1"
+    assert env["PGPASSFILE"] == "/secrets/pgpass"  # the container's own setting stays
+
+
+def test_the_schedule_survives_storage_being_down_at_start(
+    store: DirectoryBackupStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unreachable(store_: object, prefix: str) -> None:
+        raise ConnectionError("storage is down")
+
+    monkeypatch.setattr(backup, "_report_latest", unreachable)
+    clock = Clock(datetime(2026, 10, 4, 1, 0, tzinfo=UTC))
+    ran: list[datetime] = []
+    monkeypatch.setattr(backup, "run_once", lambda *_: ran.append(clock.now))
+
+    schedule(Settings(), store, sleep=clock.sleep, now=lambda: clock.now, runs=1)
+
+    assert ran == [datetime(2026, 10, 4, 2, 30, tzinfo=UTC)]
+
+
+def test_a_failed_prune_does_not_make_the_dump_look_failed(
+    store: DirectoryBackupStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = backup.Manifest(
+        stamp="20261004T023000Z",
+        created_at=datetime(2026, 10, 4, 2, 30, tzinfo=UTC).isoformat(),
+        database="listenup",
+        server_version="160000",
+        alembic_revision=None,
+        dump_key="k",
+        dump_bytes=1,
+        dump_sha256="0",
+        dump_seconds=1.0,
+        row_counts={},
+    )
+    monkeypatch.setattr(backup, "dump", lambda *_: manifest)
+
+    def broken(*_: object) -> list[str]:
+        raise RuntimeError("AccessDenied")
+
+    monkeypatch.setattr(backup, "prune", broken)
+
+    assert backup.run_once(Settings(), store) is manifest

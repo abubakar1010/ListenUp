@@ -64,9 +64,16 @@ class S3BackupStore:
     def delete(self, keys: list[str]) -> None:
         for start in range(0, len(keys), 1000):  # the S3 limit for one call
             batch = keys[start : start + 1000]
-            self._client.delete_objects(
+            response = self._client.delete_objects(
                 Bucket=self.bucket, Delete={"Objects": [{"Key": key} for key in batch]}
             )
+            # A 200 response can still refuse single keys (a bucket policy, object lock).
+            errors = response.get("Errors", [])
+            if errors:
+                failed = ", ".join(
+                    f"{error.get('Key')} ({error.get('Code')})" for error in errors[:5]
+                )
+                raise RuntimeError(f"could not delete {len(errors)} backup object(s): {failed}")
 
 
 class DirectoryBackupStore:

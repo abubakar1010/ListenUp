@@ -121,19 +121,48 @@ def backup_url(settings: Settings) -> str:
     return settings.backup_database_url or settings.database_url
 
 
+# libpq connection parameters and the environment variable that carries each, so
+# pg_dump and pg_restore connect the way psycopg does (certificates, options, timeouts).
+_LIBPQ_ENV = {
+    "host": "PGHOST",
+    "hostaddr": "PGHOSTADDR",
+    "port": "PGPORT",
+    "dbname": "PGDATABASE",
+    "user": "PGUSER",
+    "password": "PGPASSWORD",
+    "passfile": "PGPASSFILE",
+    "service": "PGSERVICE",
+    "options": "PGOPTIONS",
+    "application_name": "PGAPPNAME",
+    "connect_timeout": "PGCONNECT_TIMEOUT",
+    "channel_binding": "PGCHANNELBINDING",
+    "sslmode": "PGSSLMODE",
+    "sslcert": "PGSSLCERT",
+    "sslkey": "PGSSLKEY",
+    "sslrootcert": "PGSSLROOTCERT",
+    "sslcrl": "PGSSLCRL",
+    "sslcrldir": "PGSSLCRLDIR",
+    "sslsni": "PGSSLSNI",
+    "ssl_min_protocol_version": "PGSSLMINPROTOCOLVERSION",
+    "ssl_max_protocol_version": "PGSSLMAXPROTOCOLVERSION",
+    "gssencmode": "PGGSSENCMODE",
+    "krbsrvname": "PGKRBSRVNAME",
+    "requirepeer": "PGREQUIREPEER",
+    "target_session_attrs": "PGTARGETSESSIONATTRS",
+}
+
+
 def _pg_env(url: str) -> dict[str, str]:
-    """libpq variables for pg_dump and pg_restore, so no password shows in `ps`."""
+    """libpq variables for pg_dump and pg_restore, so no password shows in `ps`.
+
+    The container's own PG* variables stay (psycopg honours them too); what the URL
+    sets wins over them.
+    """
     params = psycopg.conninfo.conninfo_to_dict(url)
-    names = {
-        "host": "PGHOST",
-        "port": "PGPORT",
-        "user": "PGUSER",
-        "password": "PGPASSWORD",
-        "dbname": "PGDATABASE",
-        "sslmode": "PGSSLMODE",
-    }
-    env = {key: value for key, value in os.environ.items() if not key.startswith("PG")}
-    env.update({names[k]: str(v) for k, v in params.items() if k in names and v is not None})
+    env = dict(os.environ)
+    env.update(
+        {_LIBPQ_ENV[k]: str(v) for k, v in params.items() if k in _LIBPQ_ENV and v is not None}
+    )
     return env
 
 
@@ -175,6 +204,33 @@ def _alembic_revision(conn: psycopg.Connection[Any]) -> str | None:
     return str(row[0]) if row else None
 
 
+RLS_EXPOSED_TABLES = """
+SELECT count(*)
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+ WHERE c.relkind IN ('r', 'p')
+   AND c.relrowsecurity
+   AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+   AND NOT (pg_has_role(current_user, c.relowner, 'USAGE') AND NOT c.relforcerowsecurity)
+   AND NOT (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user)
+"""
+
+
+def _require_full_access(conn: psycopg.Connection[Any]) -> None:
+    """Refuse a role that row-level security hides rows from, such as `listenup_api`.
+
+    With such a role pg_dump aborts, and the manifest's row counts would read 0, so
+    LISTENUP_BACKUP_DATABASE_URL must name the database owner.
+    """
+    row = conn.execute(RLS_EXPOSED_TABLES).fetchone()
+    if row and row[0]:
+        raise RuntimeError(
+            f"database role {conn.info.user!r} is subject to row-level security on "
+            f"{row[0]} table(s) and cannot take a complete dump; set "
+            "LISTENUP_BACKUP_DATABASE_URL to the database owner"
+        )
+
+
 def _keys(prefix: str, stamp: str) -> tuple[str, str]:
     return f"{prefix}{stamp}/{DUMP_NAME}", f"{prefix}{stamp}/{MANIFEST_NAME}"
 
@@ -192,6 +248,9 @@ def dump(settings: Settings, store: BackupStore, now: datetime | None = None) ->
             # One snapshot for the counts and the dump, held open until pg_dump is done.
             conn.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
             conn.read_only = True
+            # The connection sits idle while pg_dump runs; a role timeout must not end it.
+            conn.execute("SET idle_in_transaction_session_timeout = 0")
+            _require_full_access(conn)
             snapshot_row = conn.execute("SELECT pg_export_snapshot()").fetchone()
             assert snapshot_row is not None
             database = str(conn.info.dbname)
@@ -424,7 +483,11 @@ def _report_latest(store: BackupStore, prefix: str) -> None:
 def run_once(settings: Settings, store: BackupStore) -> Manifest:
     manifest = dump(settings, store)
     record_backup_success(datetime.fromisoformat(manifest.created_at).timestamp())
-    prune(store, settings.backup_prefix, settings.backup_retention_days)
+    try:
+        prune(store, settings.backup_prefix, settings.backup_retention_days)
+    except Exception:
+        # The dump is stored; failing here would make the scheduler dump again.
+        logger.exception("pruning old database dumps failed; they stay until the next run")
     return manifest
 
 
@@ -436,7 +499,11 @@ def schedule(
     runs: int | None = None,
 ) -> None:
     """Dump daily at the configured time; a failure is retried after 30 minutes."""
-    _report_latest(store, settings.backup_prefix)
+    try:
+        _report_latest(store, settings.backup_prefix)
+    except Exception:
+        # Storage may be briefly unreachable at start; the next dump reports itself.
+        logger.exception("could not read the newest backup from storage")
     due = next_run(now(), settings.backup_hour_utc, settings.backup_minute_utc)
     done = 0
     while runs is None or done < runs:

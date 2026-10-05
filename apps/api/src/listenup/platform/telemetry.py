@@ -17,7 +17,10 @@ request or response body, exception message, email address or media content is e
 recorded; exceptions are recorded by type name only.
 """
 
+import asyncio
+import socket
 import time
+import uuid
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -90,7 +93,7 @@ class Instruments:
             job_runs=meter.create_counter(
                 "listenup.job.runs",
                 "{run}",
-                "Job runs by outcome: succeeded, retried, failed (final) or postponed",
+                "Job runs by outcome: succeeded, retried, failed (final), postponed or cancelled",
             ),
             job_backlog=meter.create_gauge(
                 "listenup.job.backlog", "{job}", "Jobs due and waiting for a worker, per lane"
@@ -200,6 +203,9 @@ def configure_telemetry(settings: Settings, role: str) -> None:
             "service.name": f"{settings.otel_service_name}-{role}",
             "service.namespace": settings.otel_service_name,
             "service.version": __version__,
+            # Each process pushes its own cumulative counters; without an instance id,
+            # replicas would write the same Prometheus series and look like resets.
+            "service.instance.id": f"{socket.gethostname()}-{uuid.uuid4().hex[:8]}",
             "deployment.environment.name": settings.environment,
         }
     )
@@ -291,7 +297,8 @@ def observe_job(
 
     The span continues the trace in `trace_carrier`, so it joins the request that
     queued the job. `classify_error(exc)` names the outcome of a run that raised:
-    "retried" or "failed".
+    "retried" or "failed". A run cancelled by a worker shutting down is "cancelled",
+    which no alert counts, and its span is not marked as an error.
     """
     carrier = dict(trace_carrier or {})
     enqueued_at = carrier.pop("enqueued_at", None)
@@ -325,6 +332,9 @@ def observe_job(
     ) as span:
         try:
             yield run
+        except asyncio.CancelledError:
+            run.outcome = "cancelled"
+            raise
         except BaseException as error:
             run.outcome = classify_error(error)
             _record_error(span, error)
@@ -380,15 +390,25 @@ def record_backup_success(taken_at: float) -> None:
 def route_template(scope: Scope) -> str:
     """The matched route with its parameters as placeholders: `/api/v1/sessions/{id}`.
 
-    Built from the path and the matched path parameters, because a route inside an
-    included router knows only its own part of the path. "unmatched" when no route
-    matched, so a mistyped or probing path never becomes a label.
+    A route in an included router knows only its own part of the path (`path_format`),
+    so the prefix in front of it is taken from the request path: the shortest leading
+    part after which the rest matches the route. Prefixes are fixed text, and the route
+    supplies every placeholder, so no parameter value can reach a label or be mistaken
+    for a path segment. "unmatched" when no route matched, so a mistyped or probing path
+    never becomes a label.
     """
-    if scope.get("route") is None:
+    route = scope.get("route")
+    template = getattr(route, "path_format", None)
+    if not template:
         return "unmatched"
-    by_value = {str(value): name for name, value in (scope.get("path_params") or {}).items()}
+    regex = getattr(route, "path_regex", None)
     segments = str(scope.get("path", "")).split("/")
-    return "/".join(f"{{{by_value[s]}}}" if s in by_value else s for s in segments)
+    if regex is not None:
+        for start in range(len(segments)):
+            tail = "/".join(segments[start:]) if start == 0 else "/" + "/".join(segments[start:])
+            if regex.match(tail):
+                return "/".join(segments[:start]) + str(template)
+    return str(template)
 
 
 class TelemetryMiddleware:

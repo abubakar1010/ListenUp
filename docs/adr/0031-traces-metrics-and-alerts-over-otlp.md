@@ -28,7 +28,7 @@ Instrument names are Prometheus-style (`listenup.job.wait_seconds`), so Promethe
 | --- | --- | --- | --- |
 | `listenup_http_server_requests_total`, `listenup_http_server_duration_seconds` | counter, histogram | method, route, status_class | API middleware |
 | `listenup_job_wait_seconds` | histogram | job, lane | job runner: from when the job was due (queued, or scheduled for a retry or postponement) until a worker took it |
-| `listenup_job_duration_seconds`, `listenup_job_runs_total` | histogram, counter | job, lane, outcome | job runner; outcome is `succeeded`, `retried`, `failed` (attempts used up or `PermanentError`) or `postponed` |
+| `listenup_job_duration_seconds`, `listenup_job_runs_total` | histogram, counter | job, lane, outcome | job runner; outcome is `succeeded`, `retried`, `failed` (attempts used up or `PermanentError`), `postponed` or `cancelled` (the worker was shutting down; no alert counts it) |
 | `listenup_job_backlog`, `listenup_job_oldest_wait_seconds` | gauge | lane | `sample_queue`, every 30 s in the default worker pool |
 | `listenup_grading_results_total` | counter | kind, outcome | `record_grading`, a seam for the grading jobs |
 | `listenup_ai_latency_seconds` | histogram | provider, task, outcome | `record_ai_call`, a seam for the AI gateway (#64) |

@@ -78,6 +78,23 @@ def redact(text: str) -> str:
     return _EMAIL.sub(REDACTED_EMAIL, text)
 
 
+def _redact_value(value: Any) -> Any:
+    """Redact every string inside a log value, before it is serialised.
+
+    Redacting the serialised text instead would let an email that follows a JSON
+    escape (`\\n`, `\\t`, `\\u00e9`) swallow the escape's letter and break the line.
+    """
+    if isinstance(value, str):
+        return redact(value)
+    if isinstance(value, dict):
+        return {redact(str(key)): _redact_value(item) for key, item in value.items()}
+    if isinstance(value, list | tuple | set | frozenset):
+        return [_redact_value(item) for item in value]
+    if value is None or isinstance(value, bool | int | float):
+        return value
+    return redact(str(value))
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         entry: dict[str, Any] = {
@@ -94,7 +111,7 @@ class JsonFormatter(logging.Formatter):
                 entry[name] = value
         if record.exc_info:
             entry["exception"] = self.formatException(record.exc_info)
-        return redact(json.dumps(entry, default=str))
+        return json.dumps(_redact_value(entry), default=str)
 
 
 class RedactingFormatter(logging.Formatter):
