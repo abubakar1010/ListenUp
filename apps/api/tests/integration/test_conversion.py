@@ -10,12 +10,14 @@ LISTENUP_REQUIRE_S3=1 (as in CI).
 """
 
 import asyncio
+import dataclasses
 import json
 import os
 import subprocess
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 
 import boto3
@@ -27,9 +29,10 @@ from botocore.exceptions import BotoCoreError, ClientError
 from fastapi.testclient import TestClient
 
 from listenup.modules.content import jobs
+from listenup.platform import jobs as platform_jobs
 from listenup.platform.config import Settings
 from listenup.platform.database import Database
-from listenup.platform.jobs import JobDeps, PermanentError
+from listenup.platform.jobs import JobDeps, PermanentError, run_handler
 from listenup.platform.storage import Downloaded, S3Storage, Storage
 from tests.integration.conftest import conninfo_to_url
 from tests.integration.intake_helpers import (
@@ -154,7 +157,8 @@ def run_job(migrated_url: str, added: Added, attempt: int = 1) -> None:
     async def run() -> None:
         database = Database(conninfo_to_url(migrated_url), pool_size=1)
         try:
-            await jobs.convert_upload(
+            await run_handler(
+                jobs.CONVERT_UPLOAD,
                 JobDeps(database, None, attempt),
                 media_object_id=added.media_id,
                 upload_id=added.upload_id,
@@ -418,6 +422,37 @@ def test_the_last_failed_attempt_marks_the_item_failed(
 
     with pytest.raises(ConnectionError):
         run_job(migrated_url, added, attempt=5)
+    row = media_row(migrated_url, added.media_id)
+    assert row is not None and (row["status"], row["error_code"]) == ("failed", "processing_failed")
+
+
+def test_a_last_attempt_that_times_out_marks_the_item_failed(
+    client: TestClient,
+    storage: FakeStorage,
+    media: Media,
+    migrated_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The timeout cancels the handler, so only the job wrapper can settle it.
+    added = add_file(client, storage, media.mp3, migrated_url)
+    entry = platform_jobs._registry[jobs.CONVERT_UPLOAD]
+    short = dataclasses.replace(entry.spec, timeout=timedelta(seconds=0.2))
+    monkeypatch.setitem(
+        platform_jobs._registry, jobs.CONVERT_UPLOAD, dataclasses.replace(entry, spec=short)
+    )
+
+    class Stalled(FakeStorage):
+        async def download(self, key: str, destination: Path) -> None:
+            await asyncio.sleep(60)
+
+    jobs.use_storage(Stalled())
+    with pytest.raises(TimeoutError):
+        run_job(migrated_url, added, attempt=1)
+    row = media_row(migrated_url, added.media_id)
+    assert row is not None and row["status"] == "pending"  # retried later
+
+    with pytest.raises(TimeoutError):
+        run_job(migrated_url, added, attempt=short.max_attempts)
     row = media_row(migrated_url, added.media_id)
     assert row is not None and (row["status"], row["error_code"]) == ("failed", "processing_failed")
 

@@ -24,6 +24,9 @@ function mockAccount(onDelete: (body: unknown) => Response) {
       deleted = response.ok;
       return response;
     }
+    if (path === '/me/exports/latest') {
+      return jsonResponse(200, { export: null });
+    }
     if (path === '/me') {
       return deleted
         ? problem(401, 'not_signed_in', 'Sign in to continue.')

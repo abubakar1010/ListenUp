@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router';
 
 import { ME_KEY } from '../../auth/useMe';
 import { buttonClass } from '../../components/button';
-import { formatDeletionDate, GRACE_DAYS } from './api';
+import { formatDeletionDate, GRACE_DAYS } from './deletionApi';
 
 /**
  * Shown after the learner deletes their account (`/account-deleted?until=...`, #91).

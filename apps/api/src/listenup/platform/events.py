@@ -57,6 +57,7 @@ class EventType(StrEnum):
     CONTENT_READY = "content.ready"
     GRADE_READY = "grade.ready"
     ATTEMPT_VOIDED = "attempt.voided"
+    EXPORT_READY = "export.ready"  # a data export finished: ready or failed (#92)
     # The learner's account was disabled (deleted, ADR 0029). Their open streams get
     # this event and then end; reconnecting needs a login session, which is gone.
     ACCOUNT_DISABLED = "account.disabled"
@@ -432,7 +433,7 @@ def events_router(learner: Callable[..., Any]) -> APIRouter:
             200: {
                 "description": (
                     "A Server-Sent Events stream of the learner's events: "
-                    "job.progress, content.ready, grade.ready, attempt.voided, "
+                    "job.progress, content.ready, grade.ready, attempt.voided, export.ready, "
                     "account.disabled (the stream then ends) and resync."
                 ),
                 "content": {"text/event-stream": {"schema": {"type": "string"}}},

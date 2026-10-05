@@ -15,7 +15,7 @@ function initials(me: Me): string {
 
 /**
  * The account button in the header. It opens a small panel with who is signed in
- * a link to the settings, and "Sign out". Escape or a click outside closes it.
+ * and "Sign out". Escape or a click outside closes it.
  */
 export function AccountMenu({ me }: { me: Me }) {
   const [open, setOpen] = useState(false);
@@ -79,7 +79,7 @@ export function AccountMenu({ me }: { me: Me }) {
         <p className="text-body-s break-words">
           Signed in as <span className="font-bold">{me.email}</span>
         </p>
-        <Link to="/settings" className={buttonClass('quiet')} onClick={() => setOpen(false)}>
+        <Link to="/settings" onClick={() => setOpen(false)} className={buttonClass('secondary')}>
           Settings
         </Link>
         <button

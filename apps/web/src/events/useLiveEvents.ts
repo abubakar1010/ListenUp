@@ -7,6 +7,7 @@ export const LIVE_EVENT_TYPES = [
   'content.ready',
   'grade.ready',
   'attempt.voided',
+  'export.ready',
   'account.disabled',
 ] as const;
 

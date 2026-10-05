@@ -47,6 +47,7 @@ from listenup.modules.practice import service as practice
 from listenup.modules.practice.service import Attempt, AttemptStatus, Step, StepStatus
 from listenup.platform.errors import ProblemError
 from listenup.platform.events import EventType, publish
+from listenup.platform.export import ExportPart, learner_rows
 from listenup.platform.storage import Storage
 
 logger = logging.getLogger(__name__)
@@ -311,3 +312,18 @@ async def submit_gist(
     # exists (`enqueue(db, GRADE_GIST_JOB, attempt_id=...)`). Grading never blocks the
     # plan, so the step is complete whatever happens to it.
     return GistSubmitted(_view(submitted, row), advanced.open_step, advanced.version)
+
+
+async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
+    """The learner's Blind attempts, gists included, for their data export (#92).
+
+    The media token's hash only guarded the attempt's playback window; it is left out.
+    """
+    table = await learner_rows(
+        session,
+        "practice.blind_attempts",
+        learner,
+        omit=("media_token_hash",),
+        order_by="attempt_id",
+    )
+    return ExportPart(tables=(table,))

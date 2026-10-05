@@ -151,6 +151,50 @@ test('the end of the passage stops playback and sends the last beat', async () =
   expect(listen.inProgress).toBe(false);
 });
 
+test('the last beat waits for a slow beat in flight instead of being dropped', async () => {
+  let release: () => void = () => {};
+  let hang = false;
+  const { media, beats, listen } = setup(async () => {
+    if (hang) {
+      hang = false;
+      await new Promise<void>((resolve) => (release = resolve));
+    }
+    return answer();
+  });
+  await started(media, listen);
+
+  hang = true;
+  media.progress(5_000);
+  await vi.advanceTimersByTimeAsync(5_000); // a regular beat goes out and hangs
+  media.progress(END - START);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(beats.at(-1)?.state).toBe('playing');
+
+  release();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(beats.at(-1)).toMatchObject({ position_ms: END, state: 'ended' });
+});
+
+test('the last beat is sent again after a network failure', async () => {
+  let failures = 1;
+  const { media, beats, listen } = setup(async (beat) => {
+    if (beat.state === 'ended' && failures > 0) {
+      failures -= 1;
+      throw new TypeError('network down');
+    }
+    return answer();
+  });
+  await started(media, listen);
+
+  media.progress(END - START + 200);
+  await vi.advanceTimersByTimeAsync(0);
+  const sent = beats.filter((beat) => beat.state === 'ended').length;
+  await vi.advanceTimersByTimeAsync(10_000);
+
+  expect(beats.filter((beat) => beat.state === 'ended').length).toBe(sent + 1);
+  expect(listen.getSnapshot().phase.kind).toBe('ended');
+});
+
 test('a stop from the server ends the listen with its reason', async () => {
   const voided = attemptFixture({ status: 'voided', void_reason: 'too_fast' });
   const { media, listen } = setup(async () => answer({ action: 'stop', attempt: voided }));

@@ -211,3 +211,18 @@ test('switching between sign-in and register keeps where to return', async () =>
     '/register?next=%2Fsessions%2Fabc',
   );
 });
+
+test('the account menu leads to the settings page with the data download', async () => {
+  mockApi({
+    '/me': () => jsonResponse(200, LEARNER),
+    '/me/exports/latest': () => jsonResponse(200, { export: null }),
+  });
+  renderApp('/library');
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
+  fireEvent.click(screen.getByRole('link', { name: 'Settings' }));
+
+  expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Download your data' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Account' })).toHaveAttribute('aria-expanded', 'false');
+});

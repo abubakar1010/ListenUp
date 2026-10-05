@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 
 import { api, ApiError, type Me } from '../api/client';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { formatDeletionDate } from '../features/account/api';
+import { formatDeletionDate } from '../features/account/deletionApi';
 import { errorMessage } from './errorMessage';
 import { nextPath } from './next';
 import { ME_KEY } from './useMe';

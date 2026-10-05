@@ -223,6 +223,13 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ("GET", "/api/v1/media/{media_object_id}/peaks"): Owned(
         "media_not_found", params=lambda w: {"media_object_id": w.a.media_id}
     ),
+    # -- data export -------------------------------------------------------------------
+    ("POST", "/api/v1/me/exports"): Scoped(status=202),
+    ("GET", "/api/v1/me/exports/latest"): Scoped(a_sees=lambda w: [w.a.export_id]),
+    # B holds the id of A's ready export and still gets no link to it.
+    ("GET", "/api/v1/me/exports/{export_id}/download"): Owned(
+        "export_not_found", params=lambda w: {"export_id": w.a.export_id}
+    ),
     # -- library -----------------------------------------------------------------------
     ("GET", "/api/v1/library/contents"): Scoped(a_sees=lambda w: [w.a.content_id]),
 }

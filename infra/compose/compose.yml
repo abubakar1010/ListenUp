@@ -101,7 +101,12 @@ services:
       context: ../..
       dockerfile: infra/docker/backend.Dockerfile
       target: worker-media
+    volumes:
+      - ../../apps/api/src:/app/src:ro
+      # Speech models (ADR 0028), downloaded on the first start and kept here.
+      - ai-models:/models
 
 volumes:
   postgres-data:
   storage-data:
+  ai-models:

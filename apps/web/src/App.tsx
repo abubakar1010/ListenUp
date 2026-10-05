@@ -17,8 +17,8 @@ const AddClipPage = lazy(() => import('./features/library/AddClipPage'));
 const ContentPage = lazy(() => import('./features/content/ContentPage'));
 const SessionPage = lazy(() => import('./features/session/SessionPage'));
 const StartPlanPage = lazy(() => import('./features/session/StartPlanPage'));
-const NotFoundPage = lazy(() => import('./app/NotFoundPage'));
 const SettingsPage = lazy(() => import('./features/account/SettingsPage'));
+const NotFoundPage = lazy(() => import('./app/NotFoundPage'));
 const AccountDeletedPage = lazy(() => import('./features/account/AccountDeletedPage'));
 const PasswordResetRequestPage = lazy(() =>
   import('./auth/PasswordResetPages').then((m) => ({ default: m.PasswordResetRequestPage })),

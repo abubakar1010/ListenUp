@@ -1,0 +1,30 @@
+# AI providers per role (Architecture 7.2 and 7.5, NFR-AI-2, ADR 0028).
+#
+# Each role lists providers in order of preference; the gateway calls the first. To switch
+# provider, change this file (or point LISTENUP_AI_CONFIG at another one): no code
+# changes. Every switch is gated by the golden-set regression run (NFR-AI-6).
+# `version` is the file format; history lives in git.
+version: 1
+roles:
+  transcription:
+    - provider: faster-whisper
+      model: base.en  # spike #18 (B1) picks the size: tiny.en, base.en or small.en
+      timeout_seconds: 600  # a 15-minute clip on 2 CPU threads, with headroom
+      retries: 0  # local CPU work: a timeout will not pass on retry
+      preload: true
+      options:
+        compute_type: int8
+        cpu_threads: 2  # matches OMP_NUM_THREADS in the worker-media image
+        beam_size: 5
+        vad_filter: true
+  alignment:
+    - provider: wav2vec2-ctc
+      model: MMS_FA  # spike #19 (B2) confirms the model
+      timeout_seconds: 300
+      retries: 0
+      preload: true
+      options:
+        threads: 2
+  # No adapter yet: Shadow grading (#20, #21) and the hosted Text AI (#23) add them.
+  speech_assessment: []
+  text_ai: []
