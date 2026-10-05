@@ -65,7 +65,23 @@ async def queue_build(session: AsyncSession, export_id: uuid.UUID, learner: uuid
     )
 
 
-@job(Lane.BACKGROUND, BUILD_ARCHIVE, timeout=BUILD_TIMEOUT, max_attempts=BUILD_ATTEMPTS)
+async def _give_up_build(deps: JobDeps, export_id: str, user_id: str) -> None:
+    """The last attempt failed or timed out: mark the request failed and say so, so it
+    no longer blocks a new export."""
+    export = uuid.UUID(export_id)
+    learner = uuid.UUID(user_id)
+    async with deps.database.transaction(learner) as session:
+        if await repository.mark_failed(session, export, learner, "export_failed"):
+            await publish(session, learner, EventType.EXPORT_READY, export)
+
+
+@job(
+    Lane.BACKGROUND,
+    BUILD_ARCHIVE,
+    timeout=BUILD_TIMEOUT,
+    max_attempts=BUILD_ATTEMPTS,
+    on_give_up=_give_up_build,
+)
 async def build_archive(deps: JobDeps, export_id: str, user_id: str) -> None:
     """Build the learner's export archive and tell the browser it is ready.
 
@@ -79,16 +95,7 @@ async def build_archive(deps: JobDeps, export_id: str, user_id: str) -> None:
     When the last attempt fails, the request is marked 'failed' and announced the same
     way, so the learner can ask again.
     """
-    export = uuid.UUID(export_id)
-    learner = uuid.UUID(user_id)
-    try:
-        await _build(deps.database, _storage(), export, learner)
-    except Exception:
-        if deps.attempt >= BUILD_ATTEMPTS:
-            async with deps.database.transaction(learner) as session:
-                if await repository.mark_failed(session, export, learner, "export_failed"):
-                    await publish(session, learner, EventType.EXPORT_READY, export)
-        raise
+    await _build(deps.database, _storage(), uuid.UUID(export_id), uuid.UUID(user_id))
 
 
 async def _build(

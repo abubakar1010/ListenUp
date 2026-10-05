@@ -9,6 +9,10 @@ writing its results as upserts on a natural key, because a crashed or timed-out
 attempt is run again (System Design 11.1, 11.3). Raise `PermanentError` for input
 that can never succeed (validation errors), so the job fails at once instead of
 retrying; anything else is retried with exponential backoff and jitter.
+
+A job whose failure must leave a visible state (an item marked failed instead of
+processing for ever) passes `on_give_up`: it runs after the last attempt fails, timeouts
+included, outside the timeout, with the job's own arguments.
 """
 
 import asyncio
@@ -143,6 +147,8 @@ class JobType:
     name: str
     lane: Lane
     spec: LaneSpec
+    handler: Handler
+    on_give_up: Handler | None = None
 
 
 _registry: dict[str, JobType] = {}
@@ -154,8 +160,10 @@ def job(
     *,
     timeout: timedelta | None = None,
     max_attempts: int | None = None,
+    on_give_up: Handler | None = None,
 ) -> Callable[[Handler], Handler]:
-    """Register `handler` as job `name` on `lane`."""
+    """Register `handler` as job `name` on `lane`; see the module docstring for
+    `on_give_up`."""
     base = LANES[lane]
     spec = LaneSpec(
         timeout or base.timeout,
@@ -180,8 +188,7 @@ def job(
                     await _postpone(database, context.job, args, request_id)
                     return None
                 deps = JobDeps(database, context.job.id, context.job.attempts + 1)
-                async with asyncio.timeout(spec.timeout.total_seconds()):
-                    return await handler(deps, **args)
+                return await run_handler(name, deps, **args)
 
         app.task(
             name=name,
@@ -190,10 +197,29 @@ def job(
             pass_context=True,
             retry=Backoff(spec.max_attempts, get_settings().job_retry_base_seconds),
         )(run)
-        _registry[name] = JobType(name, lane, spec)
+        _registry[name] = JobType(name, lane, spec, handler, on_give_up)
         return handler
 
     return register
+
+
+async def run_handler(name: str, deps: JobDeps, /, **args: Any) -> Any:
+    """Run job `name` as a worker does: under its timeout, and settled by its
+    `on_give_up` when this was the last attempt.
+
+    The timeout cancels the handler, so the handler itself never sees a timeout as an
+    ordinary error; settling here, outside the timeout, covers it as well.
+    """
+    entry = _registry[name]
+    try:
+        async with asyncio.timeout(entry.spec.timeout.total_seconds()):
+            return await entry.handler(deps, **args)
+    except PermanentError:
+        raise
+    except Exception:
+        if entry.on_give_up is not None and deps.attempt >= entry.spec.max_attempts:
+            await entry.on_give_up(deps, **args)
+        raise
 
 
 async def enqueue(

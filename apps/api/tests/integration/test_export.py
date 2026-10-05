@@ -7,6 +7,7 @@ Storage is the in-memory fake.
 """
 
 import asyncio
+import dataclasses
 import io
 import json
 import uuid
@@ -20,8 +21,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from listenup.modules.export import jobs
+from listenup.platform import jobs as platform_jobs
 from listenup.platform.database import Database
-from listenup.platform.jobs import JobDeps
+from listenup.platform.jobs import JobDeps, run_handler
 from tests.integration.conftest import conninfo_to_url
 from tests.integration.intake_helpers import ClientFactory, FakeStorage, client_factory, learner_id
 from tests.integration.seed import SeededLearner, seed_learner_data
@@ -56,8 +58,11 @@ def run_build(migrated_url: str, export_id: str, user_id: str, attempt: int = 1)
     async def run() -> None:
         database = Database(conninfo_to_url(migrated_url), pool_size=1)
         try:
-            await jobs.build_archive(
-                JobDeps(database, None, attempt), export_id=export_id, user_id=user_id
+            await run_handler(
+                jobs.BUILD_ARCHIVE,
+                JobDeps(database, None, attempt),
+                export_id=export_id,
+                user_id=user_id,
             )
         finally:
             await database.dispose()
@@ -336,6 +341,34 @@ def test_a_failed_build_is_marked_and_announced(
     shown = latest(client)
     assert shown is not None and shown["status"] == "failed"
     assert request_export(client)["status"] == "pending"  # the learner can ask again
+
+
+def test_a_last_build_that_times_out_frees_the_learner_to_ask_again(
+    make_client: ClientFactory,
+    storage: FakeStorage,
+    migrated_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The timeout cancels the handler, so only the job wrapper can settle it.
+    client = make_client()
+    user = learner_id(client)
+    started = request_export(client)
+    entry = platform_jobs._registry[jobs.BUILD_ARCHIVE]
+    short = dataclasses.replace(entry.spec, timeout=timedelta(seconds=0.2))
+    monkeypatch.setitem(
+        platform_jobs._registry, jobs.BUILD_ARCHIVE, dataclasses.replace(entry, spec=short)
+    )
+
+    class Stalled(FakeStorage):
+        async def put_file(self, key: str, path: object, content_type: str) -> None:
+            await asyncio.sleep(60)
+
+    jobs.use_storage(Stalled())
+    with pytest.raises(TimeoutError):
+        run_build(migrated_url, started["id"], user, attempt=jobs.BUILD_ATTEMPTS)
+    shown = latest(client)
+    assert shown is not None and shown["status"] == "failed"
+    assert request_export(client)["status"] == "pending"
 
 
 def test_a_ready_export_is_announced(

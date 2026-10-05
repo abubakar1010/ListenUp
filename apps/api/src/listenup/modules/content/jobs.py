@@ -13,7 +13,7 @@ from listenup.modules.content.domain import admission, media
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database
 from listenup.platform.events import EventType, publish
-from listenup.platform.jobs import LANES, JobDeps, Lane, PermanentError, enqueue, job
+from listenup.platform.jobs import JobDeps, Lane, PermanentError, enqueue, job
 from listenup.platform.rate_limit import add_to_window
 from listenup.platform.storage import S3Storage, Storage
 
@@ -89,7 +89,15 @@ class _Claim(enum.Enum):
     DUPLICATE = "duplicate"  # the learner already has this file; the new item is gone
 
 
-@job(Lane.INTAKE, CONVERT_UPLOAD)
+async def _give_up_conversion(
+    deps: JobDeps, media_object_id: str, upload_id: str, user_id: str | None = None
+) -> None:
+    """The last attempt failed or timed out: the item must not stay processing for
+    ever (FR-CI-5), and the learner's next waiting upload may start."""
+    await _fail(deps.database, uuid.UUID(media_object_id), "processing_failed")
+
+
+@job(Lane.INTAKE, CONVERT_UPLOAD, on_give_up=_give_up_conversion)
 async def convert_upload(
     deps: JobDeps, media_object_id: str, upload_id: str, user_id: str | None = None
 ) -> None:
@@ -120,15 +128,7 @@ async def convert_upload(
     media_id = uuid.UUID(media_object_id)
     # Jobs queued before #41 have no user_id; they end without starting the next one.
     learner = uuid.UUID(user_id) if user_id else None
-    try:
-        await _convert(deps.database, _storage(), media_id, uuid.UUID(upload_id), learner)
-    except PermanentError:
-        raise
-    except Exception:
-        # The last attempt must not leave the item processing for ever (FR-CI-5).
-        if deps.attempt >= LANES[Lane.INTAKE].max_attempts:
-            await _fail(deps.database, media_id, "processing_failed")
-        raise
+    await _convert(deps.database, _storage(), media_id, uuid.UUID(upload_id), learner)
 
 
 async def _convert(
