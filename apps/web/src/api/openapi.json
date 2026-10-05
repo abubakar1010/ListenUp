@@ -1,10 +1,2143 @@
 {
+  "components": {
+    "schemas": {
+      "Action": {
+        "enum": ["continue", "resume", "stop"],
+        "title": "Action",
+        "type": "string"
+      },
+      "AttemptStatus": {
+        "enum": ["active", "submitted", "voided"],
+        "title": "AttemptStatus",
+        "type": "string"
+      },
+      "BlindAttempt": {
+        "description": "One try at the Blind step. Positions are in the clip, in milliseconds.",
+        "properties": {
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "gist_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gist Text"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "listen_complete": {
+            "description": "The whole passage has played: write the gist",
+            "title": "Listen Complete",
+            "type": "boolean"
+          },
+          "passage_end_ms": {
+            "title": "Passage End Ms",
+            "type": "integer"
+          },
+          "passage_start_ms": {
+            "title": "Passage Start Ms",
+            "type": "integer"
+          },
+          "position_ms": {
+            "description": "The last position the server accepted",
+            "title": "Position Ms",
+            "type": "integer"
+          },
+          "resume_count": {
+            "description": "0 or 1: the one resume after an interruption (D13)",
+            "title": "Resume Count",
+            "type": "integer"
+          },
+          "resume_stop_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the interruption that resumed stopped",
+            "title": "Resume Stop Ms"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AttemptStatus"
+          },
+          "void_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoidReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the attempt ended, when voided"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "status",
+          "void_reason",
+          "started_at",
+          "finished_at",
+          "passage_start_ms",
+          "passage_end_ms",
+          "position_ms",
+          "resume_count",
+          "resume_stop_ms",
+          "listen_complete",
+          "gist_text"
+        ],
+        "title": "BlindAttempt",
+        "type": "object"
+      },
+      "BlindStep": {
+        "properties": {
+          "attempt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlindAttempt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The newest attempt, live or ended"
+          },
+          "passage_end_ms": {
+            "title": "Passage End Ms",
+            "type": "integer"
+          },
+          "passage_start_ms": {
+            "title": "Passage Start Ms",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "step_status": {
+            "$ref": "#/components/schemas/StepStatus"
+          }
+        },
+        "required": ["session_id", "passage_start_ms", "passage_end_ms", "step_status", "attempt"],
+        "title": "BlindStep",
+        "type": "object"
+      },
+      "ChangeEntry": {
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/Entry"
+          },
+          "version": {
+            "description": "The session `version` the client last saw",
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": ["entry", "version"],
+        "title": "ChangeEntry",
+        "type": "object"
+      },
+      "ConfirmUpload": {
+        "description": "Add an uploaded file to the library. YouTube links (#37) will be another shape.",
+        "properties": {
+          "keep_video": {
+            "default": false,
+            "description": "Keep the picture of a video (H.264 360p); otherwise only the sound is kept",
+            "title": "Keep Video",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Defaults to the file name without its extension",
+            "title": "Title"
+          },
+          "upload_id": {
+            "format": "uuid",
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": ["upload_id"],
+        "title": "ConfirmUpload",
+        "type": "object"
+      },
+      "ContentDetail": {
+        "description": "One item, with what its page needs to show and play it.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why processing failed; null unless failed",
+            "title": "Error Code"
+          },
+          "error_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The reason, as the learner reads it",
+            "title": "Error Detail"
+          },
+          "has_video": {
+            "description": "The playback file has a picture (only with keep_video)",
+            "title": "Has Video",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "keep_video": {
+            "title": "Keep Video",
+            "type": "boolean"
+          },
+          "media_object_id": {
+            "format": "uuid",
+            "title": "Media Object Id",
+            "type": "string"
+          },
+          "media_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Play from here (redirects to a signed URL); null until playable",
+            "title": "Media Url"
+          },
+          "peaks_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Waveform peaks JSON (redirects to a signed URL); null until playable",
+            "title": "Peaks Url"
+          },
+          "queue_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a `queued` item: 1 when it is the next of the learner's clips to start",
+            "title": "Queue Position"
+          },
+          "source": {
+            "enum": ["upload", "youtube"],
+            "title": "Source",
+            "type": "string"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "enum": ["queued", "waiting", "downloading", "checking", "converting", "saving"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where an item still being prepared is: `queued` in the learner's own queue (two of their clips are prepared at a time), `waiting` for a free worker, then the job's own stages. Null once prepared or failed",
+            "title": "Stage"
+          },
+          "status": {
+            "enum": ["pending", "downloading", "playable", "failed", "expired"],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "source",
+          "status",
+          "duration_ms",
+          "created_at",
+          "media_object_id",
+          "has_video",
+          "keep_video",
+          "error_code",
+          "error_detail",
+          "media_url",
+          "peaks_url"
+        ],
+        "title": "ContentDetail",
+        "type": "object"
+      },
+      "ContentItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "queue_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a `queued` item: 1 when it is the next of the learner's clips to start",
+            "title": "Queue Position"
+          },
+          "source": {
+            "enum": ["upload", "youtube"],
+            "title": "Source",
+            "type": "string"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "enum": ["queued", "waiting", "downloading", "checking", "converting", "saving"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where an item still being prepared is: `queued` in the learner's own queue (two of their clips are prepared at a time), `waiting` for a free worker, then the job's own stages. Null once prepared or failed",
+            "title": "Stage"
+          },
+          "status": {
+            "enum": ["pending", "downloading", "playable", "failed", "expired"],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": ["id", "title", "source", "status", "duration_ms", "created_at"],
+        "title": "ContentItem",
+        "type": "object"
+      },
+      "ContentList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContentItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pass as `cursor` for the next page",
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items", "next_cursor"],
+        "title": "ContentList",
+        "type": "object"
+      },
+      "Credentials": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 1000,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": ["email", "password"],
+        "title": "Credentials",
+        "type": "object"
+      },
+      "DailyAudio": {
+        "description": "Today's allowance of new audio (D16). Days are UTC days.",
+        "properties": {
+          "can_add": {
+            "description": "Whether a new clip is accepted now",
+            "title": "Can Add",
+            "type": "boolean"
+          },
+          "clips_in_progress": {
+            "description": "Clips not prepared yet, queued or running",
+            "title": "Clips In Progress",
+            "type": "integer"
+          },
+          "limit_seconds": {
+            "title": "Limit Seconds",
+            "type": "integer"
+          },
+          "reserved_seconds": {
+            "description": "Held for the clips in progress, 15 minutes each",
+            "title": "Reserved Seconds",
+            "type": "integer"
+          },
+          "resets_at": {
+            "description": "When the count starts again (midnight UTC)",
+            "format": "date-time",
+            "title": "Resets At",
+            "type": "string"
+          },
+          "used_seconds": {
+            "description": "Counted today: each clip with at most 15 minutes",
+            "title": "Used Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "used_seconds",
+          "limit_seconds",
+          "clips_in_progress",
+          "reserved_seconds",
+          "can_add",
+          "resets_at"
+        ],
+        "title": "DailyAudio",
+        "type": "object"
+      },
+      "DataExport": {
+        "properties": {
+          "archive_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Bytes"
+          },
+          "download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "API path that redirects to a short-lived link of the archive; null unless the export is ready",
+            "title": "Download Url"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the archive is deleted",
+            "title": "Expires At"
+          },
+          "file_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Media files in the archive besides data.json",
+            "title": "File Count"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "ready_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ready At"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["pending", "building", "ready", "failed", "expired"],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "requested_at",
+          "ready_at",
+          "expires_at",
+          "archive_bytes",
+          "file_count",
+          "download_url"
+        ],
+        "title": "DataExport",
+        "type": "object"
+      },
+      "DictationAttempt": {
+        "description": "The learner's Dictation attempt with its saved draft (FR-DI-1, FR-DI-4).",
+        "properties": {
+          "draft_text": {
+            "title": "Draft Text",
+            "type": "string"
+          },
+          "draft_updated_at": {
+            "format": "date-time",
+            "title": "Draft Updated At",
+            "type": "string"
+          },
+          "draft_version": {
+            "description": "Send it back with the next draft save",
+            "title": "Draft Version",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "media_url": {
+            "description": "The API path that redirects to the playback file (ADR 0022); play only `passage` of it",
+            "title": "Media Url",
+            "type": "string"
+          },
+          "passage": {
+            "$ref": "#/components/schemas/DictationPassage"
+          },
+          "resumed": {
+            "description": "True when an attempt already in progress was resumed",
+            "title": "Resumed",
+            "type": "boolean"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AttemptStatus"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "status",
+          "started_at",
+          "resumed",
+          "draft_text",
+          "draft_version",
+          "draft_updated_at",
+          "passage",
+          "media_url"
+        ],
+        "title": "DictationAttempt",
+        "type": "object"
+      },
+      "DictationPassage": {
+        "description": "The part of the clip the player may play, in milliseconds, [start_ms, end_ms).",
+        "properties": {
+          "end_ms": {
+            "title": "End Ms",
+            "type": "integer"
+          },
+          "start_ms": {
+            "title": "Start Ms",
+            "type": "integer"
+          }
+        },
+        "required": ["start_ms", "end_ms"],
+        "title": "DictationPassage",
+        "type": "object"
+      },
+      "Entry": {
+        "enum": ["blind", "dictation", "both"],
+        "title": "Entry",
+        "type": "string"
+      },
+      "GistIn": {
+        "properties": {
+          "text": {
+            "description": "Three sentences or more",
+            "maxLength": 20000,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": ["text"],
+        "title": "GistIn",
+        "type": "object"
+      },
+      "GistSubmitted": {
+        "properties": {
+          "attempt": {
+            "$ref": "#/components/schemas/BlindAttempt"
+          },
+          "open_step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Step"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The step that opened next"
+          },
+          "session_version": {
+            "title": "Session Version",
+            "type": "integer"
+          }
+        },
+        "required": ["attempt", "open_step", "session_version"],
+        "title": "GistSubmitted",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HeartbeatIn": {
+        "description": "One beat; `state` is `playing`, `buffering`, `interrupted`, `resuming` or `ended`.",
+        "properties": {
+          "buffering_ms": {
+            "default": 0,
+            "description": "Time the audio waited since the last accepted beat (loading, waiting for data, the resume's wait and count); it pauses the server's clock, up to 20 s",
+            "maximum": 3600000.0,
+            "minimum": 0.0,
+            "title": "Buffering Ms",
+            "type": "integer"
+          },
+          "interruption": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Interruption"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With `interrupted`: a network stall or a device pause"
+          },
+          "interruption_ms": {
+            "default": 0,
+            "description": "How long a device pause lasted",
+            "maximum": 3600000.0,
+            "minimum": 0.0,
+            "title": "Interruption Ms",
+            "type": "integer"
+          },
+          "position_ms": {
+            "description": "The player's position in the clip",
+            "minimum": 0.0,
+            "title": "Position Ms",
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PlayerState"
+          },
+          "visible": {
+            "default": true,
+            "description": "The page is visible (not hidden)",
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": ["position_ms", "state"],
+        "title": "HeartbeatIn",
+        "type": "object"
+      },
+      "HeartbeatOut": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/Action",
+            "description": "`continue`; `resume`: carry on from `resume_from_ms` after `resume_delay_ms` once the audio is ready; `stop`: the attempt has ended"
+          },
+          "attempt": {
+            "$ref": "#/components/schemas/BlindAttempt"
+          },
+          "resume_delay_ms": {
+            "title": "Resume Delay Ms",
+            "type": "integer"
+          },
+          "resume_from_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume From Ms"
+          }
+        },
+        "required": ["action", "attempt", "resume_from_ms", "resume_delay_ms"],
+        "title": "HeartbeatOut",
+        "type": "object"
+      },
+      "Interruption": {
+        "enum": ["network", "device"],
+        "title": "Interruption",
+        "type": "string"
+      },
+      "LatestExport": {
+        "properties": {
+          "export": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataExport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["export"],
+        "title": "LatestExport",
+        "type": "object"
+      },
+      "LibraryItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_session_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Status of the newest practice session on this item; null when none"
+          },
+          "queue_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a `queued` clip: 1 when it is the next of the learner's clips to start",
+            "title": "Queue Position"
+          },
+          "source": {
+            "enum": ["upload", "youtube"],
+            "title": "Source",
+            "type": "string"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "enum": ["queued", "waiting", "downloading", "checking", "converting", "saving"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where a clip still being prepared is; null once prepared or failed",
+            "title": "Stage"
+          },
+          "status": {
+            "description": "Processing status of the clip's media",
+            "enum": ["pending", "downloading", "playable", "failed", "expired"],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "source",
+          "status",
+          "duration_ms",
+          "created_at",
+          "last_session_status"
+        ],
+        "title": "LibraryItem",
+        "type": "object"
+      },
+      "LibraryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pass as `cursor` for the next page",
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items", "next_cursor"],
+        "title": "LibraryPage",
+        "type": "object"
+      },
+      "Me": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "email_verified": {
+            "title": "Email Verified",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": ["id", "email", "display_name", "email_verified"],
+        "title": "Me",
+        "type": "object"
+      },
+      "PassageRange": {
+        "description": "The practised part of the clip in milliseconds, half-open [start_ms, end_ms) (C2).",
+        "properties": {
+          "end_ms": {
+            "description": "30 s to 15 min after start_ms, within the clip",
+            "exclusiveMinimum": 0.0,
+            "title": "End Ms",
+            "type": "integer"
+          },
+          "start_ms": {
+            "minimum": 0.0,
+            "title": "Start Ms",
+            "type": "integer"
+          }
+        },
+        "required": ["start_ms", "end_ms"],
+        "title": "PassageRange",
+        "type": "object"
+      },
+      "PasswordReset": {
+        "properties": {
+          "password": {
+            "maxLength": 1000,
+            "title": "Password",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": ["token", "password"],
+        "title": "PasswordReset",
+        "type": "object"
+      },
+      "PasswordResetRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": ["email"],
+        "title": "PasswordResetRequest",
+        "type": "object"
+      },
+      "PasswordResetRequested": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": ["detail"],
+        "title": "PasswordResetRequested",
+        "type": "object"
+      },
+      "PlayerState": {
+        "description": "What the player says it is doing when it sends a beat.",
+        "enum": ["playing", "buffering", "interrupted", "resuming", "ended"],
+        "title": "PlayerState",
+        "type": "string"
+      },
+      "SaveDraft": {
+        "properties": {
+          "draft_text": {
+            "description": "The whole text, at most 20,000 characters",
+            "title": "Draft Text",
+            "type": "string"
+          },
+          "draft_version": {
+            "description": "The `draft_version` this text was based on",
+            "minimum": 0.0,
+            "title": "Draft Version",
+            "type": "integer"
+          }
+        },
+        "required": ["draft_text", "draft_version"],
+        "title": "SaveDraft",
+        "type": "object"
+      },
+      "SavedDraft": {
+        "properties": {
+          "draft_version": {
+            "description": "The new version; base the next save on it",
+            "title": "Draft Version",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": ["draft_version", "updated_at"],
+        "title": "SavedDraft",
+        "type": "object"
+      },
+      "Session": {
+        "description": "A practice session with its plan, for \"Step N of M\" (UI-1).",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "content_id": {
+            "format": "uuid",
+            "title": "Content Id",
+            "type": "string"
+          },
+          "content_title": {
+            "title": "Content Title",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/Entry"
+          },
+          "entry_locked": {
+            "description": "True once Transcript has opened (FR-PL-5)",
+            "title": "Entry Locked",
+            "type": "boolean"
+          },
+          "entry_locked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Locked At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "open_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "N in 'Step N of M'; null when closed",
+            "title": "Open Position"
+          },
+          "open_step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Step"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The step the learner can work on; null if closed"
+          },
+          "passage": {
+            "$ref": "#/components/schemas/PassageRange"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionStatus"
+          },
+          "step_count": {
+            "description": "M in 'Step N of M': 4 or 5",
+            "title": "Step Count",
+            "type": "integer"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/SessionStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "description": "Send it back with every change; a stale one gets 409",
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "content_id",
+          "content_title",
+          "passage",
+          "entry",
+          "status",
+          "version",
+          "steps",
+          "step_count",
+          "open_step",
+          "open_position",
+          "entry_locked",
+          "entry_locked_at",
+          "completed_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Session",
+        "type": "object"
+      },
+      "SessionList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pass as `cursor` for the next page",
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items", "next_cursor"],
+        "title": "SessionList",
+        "type": "object"
+      },
+      "SessionStatus": {
+        "enum": ["active", "completed", "abandoned"],
+        "title": "SessionStatus",
+        "type": "string"
+      },
+      "SessionStep": {
+        "properties": {
+          "position": {
+            "description": "1-based place in the plan",
+            "title": "Position",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StepStatus"
+          },
+          "step": {
+            "$ref": "#/components/schemas/Step"
+          }
+        },
+        "required": ["step", "position", "status"],
+        "title": "SessionStep",
+        "type": "object"
+      },
+      "SkipStep": {
+        "properties": {
+          "confirmed": {
+            "default": false,
+            "description": "The learner confirmed the skip; without it, 422",
+            "title": "Confirmed",
+            "type": "boolean"
+          },
+          "version": {
+            "description": "The session `version` the client last saw",
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": ["version"],
+        "title": "SkipStep",
+        "type": "object"
+      },
+      "StartSession": {
+        "properties": {
+          "content_id": {
+            "format": "uuid",
+            "title": "Content Id",
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/Entry",
+            "description": "Blind, Dictation or both (Blind first, OQ-1)"
+          },
+          "passage": {
+            "$ref": "#/components/schemas/PassageRange"
+          }
+        },
+        "required": ["content_id", "passage", "entry"],
+        "title": "StartSession",
+        "type": "object"
+      },
+      "StartedAttempt": {
+        "properties": {
+          "attempt": {
+            "$ref": "#/components/schemas/BlindAttempt"
+          },
+          "heartbeat_interval_ms": {
+            "title": "Heartbeat Interval Ms",
+            "type": "integer"
+          },
+          "media_url": {
+            "description": "The passage's audio for this attempt only; it stops working shortly after the passage's length",
+            "title": "Media Url",
+            "type": "string"
+          },
+          "resume_delay_ms": {
+            "description": "The wait before playback carries on (D18)",
+            "title": "Resume Delay Ms",
+            "type": "integer"
+          }
+        },
+        "required": ["attempt", "media_url", "heartbeat_interval_ms", "resume_delay_ms"],
+        "title": "StartedAttempt",
+        "type": "object"
+      },
+      "Step": {
+        "enum": ["blind", "dictation", "transcript", "card", "shadow"],
+        "title": "Step",
+        "type": "string"
+      },
+      "StepStatus": {
+        "enum": ["locked", "open", "done", "skipped"],
+        "title": "StepStatus",
+        "type": "string"
+      },
+      "StorageUse": {
+        "properties": {
+          "daily_audio": {
+            "$ref": "#/components/schemas/DailyAudio"
+          },
+          "max_file_bytes": {
+            "title": "Max File Bytes",
+            "type": "integer"
+          },
+          "quota_bytes": {
+            "title": "Quota Bytes",
+            "type": "integer"
+          },
+          "used_bytes": {
+            "title": "Used Bytes",
+            "type": "integer"
+          }
+        },
+        "required": ["used_bytes", "quota_bytes", "max_file_bytes", "daily_audio"],
+        "title": "StorageUse",
+        "type": "object"
+      },
+      "UploadRequest": {
+        "properties": {
+          "content_type": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "size_bytes": {
+            "description": "The file's exact size; storage refuses any other",
+            "exclusiveMinimum": 0.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": ["filename", "content_type", "size_bytes"],
+        "title": "UploadRequest",
+        "type": "object"
+      },
+      "UploadTarget": {
+        "description": "Where and how the browser sends the file: one PUT with exactly these headers.",
+        "properties": {
+          "expires_at": {
+            "description": "The upload must start before this time",
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "method": {
+            "const": "PUT",
+            "title": "Method",
+            "type": "string"
+          },
+          "upload_id": {
+            "format": "uuid",
+            "title": "Upload Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": ["upload_id", "url", "method", "headers", "expires_at"],
+        "title": "UploadTarget",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": ["loc", "msg", "type"],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VoidIn": {
+        "properties": {
+          "reason": {
+            "enum": ["left_page", "reload", "seek"],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["reason"],
+        "title": "VoidIn",
+        "type": "object"
+      },
+      "VoidReason": {
+        "enum": ["left_page", "reload", "seek", "missed_heartbeat", "too_fast", "interrupted"],
+        "title": "VoidReason",
+        "type": "string"
+      }
+    }
+  },
   "info": {
     "title": "ListenUp API",
     "version": "0.1.0"
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Credentials"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/auth/password-reset": {
+      "post": {
+        "description": "Email a reset link. The answer is the same whether or not the email has an account.",
+        "operationId": "request_password_reset_api_v1_auth_password_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordResetRequested"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Password Reset",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/auth/password-reset/confirm": {
+      "post": {
+        "description": "Set a new password with the token from the email; signs the learner out everywhere.",
+        "operationId": "reset_password_api_v1_auth_password_reset_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Password",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "operationId": "register_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Credentials"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/blind/attempts/{attempt_id}/gist": {
+      "post": {
+        "description": "Submit the three-sentence gist after the whole passage has played (FR-BL-4, #65).\n\nCompletes the Blind step. An `Idempotency-Key` makes a retry return the first answer.",
+        "operationId": "submit_gist_api_v1_blind_attempts__attempt_id__gist_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GistIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GistSubmitted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "409": {
+            "description": "`listen_incomplete`, `attempt_closed` or `step_locked`"
+          },
+          "422": {
+            "description": "`gist_too_short` (with `sentences`) or `gist_too_long`"
+          }
+        },
+        "summary": "Submit Gist",
+        "tags": ["blind"]
+      }
+    },
+    "/api/v1/blind/attempts/{attempt_id}/heartbeat": {
+      "post": {
+        "description": "Report the player's position every 5 s (FR-BL-3, System Design 9.2).\n\nThe answer is `continue`, `resume` (the one resume after an interruption the\nlearner did not cause, D13 and D18) or `stop` with the attempt's `void_reason`.",
+        "operationId": "heartbeat_api_v1_blind_attempts__attempt_id__heartbeat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeartbeatOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Heartbeat",
+        "tags": ["blind"]
+      }
+    },
+    "/api/v1/blind/attempts/{attempt_id}/media/{token}": {
+      "get": {
+        "description": "The passage's audio for this attempt only (#62). Range requests go to storage.\n\nThe token in the path comes from starting the attempt; the redirect's signed URL\nlives only until the attempt's window ends.",
+        "operationId": "attempt_media_api_v1_blind_attempts__attempt_id__media__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Redirect to a signed storage URL that ends with the attempt"
+          },
+          "404": {
+            "description": "`attempt_not_found` or `media_not_found` (wrong token)"
+          },
+          "409": {
+            "description": "`media_not_ready`"
+          },
+          "410": {
+            "description": "`media_expired`: the attempt ended or its window is over"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Attempt Media",
+        "tags": ["blind"]
+      }
+    },
+    "/api/v1/blind/attempts/{attempt_id}/void": {
+      "post": {
+        "description": "The page reports leaving, a reload or a seek: the listen ends (FR-BL-3).\n\nSent with `fetch(..., {keepalive: true})` from `pagehide` and `visibilitychange`.\nAfter the whole passage has played it changes nothing.",
+        "operationId": "void_attempt_api_v1_blind_attempts__attempt_id__void_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlindAttempt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Void Attempt",
+        "tags": ["blind"]
+      }
+    },
+    "/api/v1/contents": {
+      "get": {
+        "description": "The learner's content items, newest first, in keyset pages.",
+        "operationId": "list_contents_api_v1_contents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Contents",
+        "tags": ["content"]
+      },
+      "post": {
+        "description": "Confirm an upload: the file must be in storage with the declared size.\n\nCreates a pending content item and queues its conversion, or keeps it in the\nlearner's own queue while two of theirs are being prepared. Refused with 429\n`daily_audio_limit` once today's new audio is used up. Confirming the same upload\nagain returns the same item with 200; an `Idempotency-Key` replays the first\nresponse exactly.",
+        "operationId": "add_content_api_v1_contents_post",
+        "parameters": [
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmUpload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentItem"
+                }
+              }
+            },
+            "description": "Already confirmed"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Content",
+        "tags": ["content"]
+      }
+    },
+    "/api/v1/contents/{content_id}": {
+      "get": {
+        "description": "One of the learner's items: its processing status, or why it failed, and where\nto play it once it is playable.",
+        "operationId": "get_content_api_v1_contents__content_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "content_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Content Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Not in your library (`content_not_found`)"
+          },
+          "410": {
+            "description": "Removed as a copy of a clip the learner already has (`duplicate_upload`, with `existing_content_id` and `existing_title`)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Content",
+        "tags": ["content"]
+      }
+    },
+    "/api/v1/dictation/attempts/{attempt_id}/draft": {
+      "put": {
+        "description": "Save the Dictation draft if it is still at `draft_version` (FR-DI-4, #50).\n\nA save based on an older version gets 409 `draft_conflict`, so two tabs never\nsilently overwrite each other; resending a save that already landed succeeds.",
+        "operationId": "save_draft_api_v1_dictation_attempts__attempt_id__draft_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "409": {
+            "description": "`draft_conflict` (with the current `draft_text` and `draft_version`), `attempt_closed`, `step_locked` or `session_closed`"
+          },
+          "422": {
+            "description": "`draft_too_long` (with `max_chars`)"
+          }
+        },
+        "summary": "Save Draft",
+        "tags": ["dictation"]
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "description": "Stream the learner's live events (System Design 9.1).\n\nEach event carries only its type and the id of the resource to refetch.",
+        "operationId": "events_api_v1_events_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "last-event-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "A Server-Sent Events stream of the learner's events: job.progress, content.ready, grade.ready, attempt.voided, export.ready and resync."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Events",
+        "tags": ["events"]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "health_api_v1_health_get",
@@ -25,6 +2158,820 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/api/v1/library/contents": {
+      "get": {
+        "description": "The learner's library, newest first, 20 per page by default (FR-LB-1).",
+        "operationId": "library_contents_api_v1_library_contents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not modified since the ETag in If-None-Match"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Library Contents",
+        "tags": ["library"]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "me_api_v1_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Me",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/me/exports": {
+      "post": {
+        "description": "Start a copy of all the learner's data: a ZIP with data.json and their uploaded\nmedia. It is built in the background; `export.ready` tells the browser when it is\nready or has failed. YouTube media files are not included (D10).",
+        "operationId": "request_export_api_v1_me_exports_post",
+        "parameters": [
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataExport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "An export is already being prepared (`export_in_progress`)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many exports today (`rate_limited`, with `retry_after`)"
+          }
+        },
+        "summary": "Request Export",
+        "tags": ["export"]
+      }
+    },
+    "/api/v1/me/exports/latest": {
+      "get": {
+        "description": "The learner's most recent export and its status; `export` is null if none.",
+        "operationId": "latest_export_api_v1_me_exports_latest_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LatestExport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Latest Export",
+        "tags": ["export"]
+      }
+    },
+    "/api/v1/me/exports/{export_id}/download": {
+      "get": {
+        "description": "Download the archive. Needs the owner's session; the link it redirects to works\nfor a short time only.",
+        "operationId": "download_export_api_v1_me_exports__export_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "export_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Export Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Redirect to a short-lived signed link of the archive"
+          },
+          "404": {
+            "description": "Not an export of yours (`export_not_found`)"
+          },
+          "409": {
+            "description": "Not ready (`export_not_ready`)"
+          },
+          "410": {
+            "description": "Expired and deleted (`export_expired`)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Export",
+        "tags": ["export"]
+      }
+    },
+    "/api/v1/media/{media_object_id}": {
+      "get": {
+        "description": "The playback file. Redirects to a signed storage URL that serves range requests,\nso the player starts on the first bytes and seeks without downloading everything.",
+        "operationId": "play_media_api_v1_media__media_object_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "media_object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Media Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Redirect to a short-lived signed storage URL"
+          },
+          "404": {
+            "description": "No item of yours uses this media object"
+          },
+          "409": {
+            "description": "Not playable yet (`media_not_ready`)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Play Media",
+        "tags": ["content"]
+      }
+    },
+    "/api/v1/media/{media_object_id}/peaks": {
+      "get": {
+        "description": "The waveform peaks: JSON with `per_second` values a second on a 0 to `scale` range.",
+        "operationId": "media_peaks_api_v1_media__media_object_id__peaks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "media_object_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Media Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Redirect to a short-lived signed storage URL"
+          },
+          "404": {
+            "description": "No item of yours uses this media object"
+          },
+          "409": {
+            "description": "Not playable yet (`media_not_ready`)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Media Peaks",
+        "tags": ["content"]
+      }
+    },
+    "/api/v1/sessions": {
+      "get": {
+        "description": "The learner's sessions, most recently active first, in keyset pages.",
+        "operationId": "list_sessions_api_v1_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sessions",
+        "tags": ["sessions"]
+      },
+      "post": {
+        "description": "Start a plan on a clip from the library, with its first step open (FR-PL-1, FR-LB-2).\n\nThe clip must be playable, and the passage 30 s to 15 min long and within the clip.\nAn `Idempotency-Key` makes a retry return the first session instead of a second one.",
+        "operationId": "start_session_api_v1_sessions_post",
+        "parameters": [
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartSession"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`content_not_found`"
+          },
+          "409": {
+            "description": "`content_not_ready`: the clip cannot be played yet"
+          },
+          "422": {
+            "description": "`invalid_passage`, `clip_too_short` or `passage_outside_clip`"
+          }
+        },
+        "summary": "Start Session",
+        "tags": ["sessions"]
+      }
+    },
+    "/api/v1/sessions/{session_id}": {
+      "get": {
+        "description": "One session with its plan: steps, the open step and the entry lock.",
+        "operationId": "get_session_api_v1_sessions__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Session",
+        "tags": ["sessions"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/blind": {
+      "get": {
+        "description": "The Blind step with its newest attempt, so a reloaded page knows where it stands.",
+        "operationId": "get_blind_step_api_v1_sessions__session_id__blind_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlindStep"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked` or `step_not_in_plan`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Blind Step",
+        "tags": ["blind"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/blind/attempts": {
+      "post": {
+        "description": "Start one listen of the passage (FR-BL-1, #62).\n\nReturns a media URL bound to this attempt. The player sends a heartbeat every\n`heartbeat_interval_ms` from now on.",
+        "operationId": "start_attempt_api_v1_sessions__session_id__blind_attempts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartedAttempt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`, or `attempt_active` with `attempt_id`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Attempt",
+        "tags": ["blind"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/dictation/attempts": {
+      "post": {
+        "description": "Start the Dictation attempt (201), or resume the one in progress with its draft\n(200). Leaving or reloading never voids a Dictation attempt (FR-PL-6, NFR-REL-1).\n\nThe answer holds what the player needs, the passage and the media path, and never\nany reference text (FR-DI-3, FR-TX-5).",
+        "operationId": "open_attempt_api_v1_sessions__session_id__dictation_attempts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictationAttempt"
+                }
+              }
+            },
+            "description": "The live attempt, resumed"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictationAttempt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`, `step_not_in_plan` or `session_closed`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Attempt",
+        "tags": ["dictation"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/entry": {
+      "patch": {
+        "description": "Change Blind, Dictation or both until Transcript opens (FR-PL-5, SR-3).\n\nThe unfinished steps are rebuilt; a finished entry exercise stays and cannot be\nremoved. Choosing the current entry again changes nothing.",
+        "operationId": "change_entry_api_v1_sessions__session_id__entry_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeEntry"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`entry_locked`, `session_changed` or `session_closed`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Entry",
+        "tags": ["sessions"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/steps/{step}/skip": {
+      "post": {
+        "description": "Skip Card or Shadow after the learner confirmed (FR-PL-7, SR-4).\n\nSkipping Shadow completes the session, whatever happened to Card (SR-6, D12).",
+        "operationId": "skip_step_api_v1_sessions__session_id__steps__step__skip_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Step"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkipStep"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_not_skippable` (Blind, Dictation, Transcript), `step_locked`, `step_not_in_plan`, `session_changed` or `session_closed`"
+          },
+          "422": {
+            "description": "`confirmation_required`: `confirmed` was not true"
+          }
+        },
+        "summary": "Skip Step",
+        "tags": ["sessions"]
+      }
+    },
+    "/api/v1/uploads": {
+      "post": {
+        "description": "Check the declared file and return a signed URL to PUT it straight to storage.\n\nRefused before any byte is sent: an unsupported type (`unsupported_file_type`), a\nfile over the size limit (`file_too_large`), one that would take the account over\nits storage cap (`storage_full`), or any new clip once today's new audio is used up\n(429 `daily_audio_limit`, with `resets_at`). Rate-limited per learner and per IP.",
+        "operationId": "start_upload_api_v1_uploads_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadTarget"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Upload",
+        "tags": ["content"]
+      }
+    },
+    "/api/v1/uploads/usage": {
+      "get": {
+        "description": "How much of the per-account upload storage is used, the per-file limit (D5), and\ntoday's allowance of new audio (D16).",
+        "operationId": "upload_usage_api_v1_uploads_usage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageUse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Upload Usage",
+        "tags": ["content"]
+      }
+    },
+    "/api/v1/uploads/{upload_id}": {
+      "delete": {
+        "description": "Forget an upload that was cancelled before it was added to the library.",
+        "operationId": "cancel_upload_api_v1_uploads__upload_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "upload_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Upload Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Upload",
+        "tags": ["content"]
       }
     }
   }

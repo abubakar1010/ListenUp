@@ -10,9 +10,12 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.platform.database import Database
 from listenup.platform.errors import ProblemError
+
+_WINDOW_START = "date_bin(:window, now(), timestamptz '2000-01-01 00:00:00+00')"
 
 _HIT = text("""
 INSERT INTO ops.rate_counters AS c (key, window_start, count)
@@ -67,3 +70,32 @@ class RateLimiter:
                 retry_after=hit.retry_after,
             )
         return hit
+
+
+# -- Counters of an amount, in the caller's transaction --------------------------------
+# For limits on a quantity rather than on requests, such as seconds of new audio per
+# learner per day (#41, Database Design 7: 'intake:user:<id>'). Unlike `hit`, they run
+# in the caller's transaction, so the amount is counted only if its work commits.
+# Windows start at fixed multiples of `window` from 2000-01-01 UTC: a one-day window
+# runs from midnight to midnight UTC.
+
+_ADD = text(f"""
+INSERT INTO ops.rate_counters AS c (key, window_start, count)
+VALUES (:key, {_WINDOW_START}, :amount)
+ON CONFLICT (key, window_start) DO UPDATE SET count = c.count + :amount
+""")
+
+_COUNT = text(f"""
+SELECT count FROM ops.rate_counters WHERE key = :key AND window_start = {_WINDOW_START}
+""")
+
+
+async def add_to_window(session: AsyncSession, key: str, window: timedelta, amount: int) -> None:
+    """Add `amount` to the current window's count of `key`."""
+    await session.execute(_ADD, {"key": key, "window": window, "amount": amount})
+
+
+async def window_count(session: AsyncSession, key: str, window: timedelta) -> int:
+    """The current window's count of `key`; 0 when nothing was counted."""
+    count = await session.scalar(_COUNT, {"key": key, "window": window})
+    return int(count or 0)

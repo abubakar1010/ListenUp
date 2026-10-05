@@ -64,8 +64,7 @@ services:
     image: axllent/mailpit:latest
     ports: ["8025:8025", "1025:1025"]
 
-  # Applies the database migrations, then creates the job-queue tables once
-  # (Procrastinate manages its own schema in `public`).
+  # Applies the database migrations, including the job-queue schema (migration 0003).
   migrate:
     build:
       context: ../..
@@ -75,11 +74,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: >
-      sh -c "alembic upgrade head &&
-      (python -c \"import psycopg,os,sys; c=psycopg.connect(os.environ['LISTENUP_DATABASE_URL']);
-      sys.exit(0 if c.execute(\\\"select to_regclass('procrastinate_jobs')\\\").fetchone()[0] else 1)\"
-      || procrastinate --app=listenup.worker.app schema --apply)"
+    command: alembic upgrade head
+    healthcheck:
+      disable: true
 
   api:
     <<: *backend
@@ -87,7 +84,8 @@ services:
       context: ../..
       dockerfile: infra/docker/backend.Dockerfile
       target: api
-    command: uvicorn listenup.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+    # Open event streams would otherwise hold up a reload or shutdown until browsers leave.
+    command: uvicorn listenup.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src --timeout-graceful-shutdown 5
     ports: ["8000:8000"]
 
   worker:
@@ -103,7 +101,12 @@ services:
       context: ../..
       dockerfile: infra/docker/backend.Dockerfile
       target: worker-media
+    volumes:
+      - ../../apps/api/src:/app/src:ro
+      # Speech models (ADR 0028), downloaded on the first start and kept here.
+      - ai-models:/models
 
 volumes:
   postgres-data:
   storage-data:
+  ai-models:

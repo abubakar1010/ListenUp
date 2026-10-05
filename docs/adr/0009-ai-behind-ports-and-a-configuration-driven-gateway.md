@@ -15,3 +15,7 @@ All AI goes through four provider-neutral ports (transcription, alignment, speec
 ## Consequences
 
 Switching provider is a configuration change gated by the golden-set regression run (NFR-AI-6).
+
+## Implementation
+
+The ports are the Protocols in `apps/api/src/listenup/ai/ports.py` (`TranscriptionPort`, `AlignmentPort`, `SpeechAssessmentPort`, `TextAIPort`), the providers per role are listed in `listenup/ai/ai.yaml`, and the entry point is `listenup/ai/gateway.py`. ADR 0028 records the first part (timeout and retry on the first provider, the self-hosted transcription and alignment adapters); eligibility, quotas, output validation, fallbacks and the call log follow in #64.

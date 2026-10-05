@@ -22,7 +22,7 @@ from listenup.platform.database import DbSession, set_learner
 from listenup.platform.errors import ProblemError
 from listenup.platform.idempotency import IdempotencyKeyHeader, request_fingerprint, run_once
 from listenup.platform.rate_limit import Limit, RateLimiter
-from tests.integration.conftest import conninfo_to_url
+from tests.integration.conftest import conninfo_to_url, with_csrf
 
 LOGIN = Limit("login", max_hits=3, window=timedelta(minutes=15))
 
@@ -75,7 +75,7 @@ def client(migrated_url: str, learner: uuid.UUID) -> Iterator[TestClient]:
     with TestClient(
         build_app(conninfo_to_url(migrated_url), learner), raise_server_exceptions=False
     ) as test_client:
-        yield test_client
+        yield with_csrf(test_client)
 
 
 def test_a_repeated_post_with_the_same_key_returns_the_first_response(

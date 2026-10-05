@@ -2,6 +2,8 @@
 #   --target api           FastAPI API
 #   --target worker        default worker pool: lanes ai, background
 #   --target worker-media  media worker pool: lanes speech-interactive, intake
+# Worker containers are healthy only once the pool has loaded its models and written
+# its ready file (listenup.worker).
 # Build from the repository root: docker build -f infra/docker/backend.Dockerfile --target api .
 
 FROM python:3.12-slim AS base
@@ -22,18 +24,32 @@ RUN uv sync --frozen --no-dev && useradd --system --uid 10001 app
 FROM base AS api
 USER app
 EXPOSE 8000
-CMD ["uvicorn", "listenup.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Open event streams (GET /api/v1/events) would otherwise hold up a shutdown.
+CMD ["uvicorn", "listenup.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "5"]
 
 FROM base AS worker
 USER app
-CMD ["procrastinate", "--app=listenup.worker.app", "worker", "--queues=ai,background"]
+HEALTHCHECK --interval=10s --start-period=30s CMD test -f /tmp/listenup-worker-ready
+CMD ["python", "-m", "listenup.worker", "default"]
 
 FROM base AS worker-media
-# Media tools for download, conversion and snippet cutting. Speech models are
-# added by the speech spikes (#18 to #21) and stay out of the other images.
+# Media tools for download, conversion and snippet cutting, and the self-hosted speech
+# libraries (ADR 0028), which stay out of the other images. `uv sync` adds the locked
+# `speech` extra first, because it removes packages the lock does not list; torch and
+# torchaudio then come from the PyTorch CPU index (the PyPI wheels bundle CUDA).
+# Models download on first start into /models; mount a volume there to keep them.
+ENV OMP_NUM_THREADS=2 \
+    HF_HOME=/models/huggingface \
+    TORCH_HOME=/models/torch
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
-    && uv pip install --python /opt/venv/bin/python yt-dlp
+    && uv sync --frozen --no-dev --extra speech \
+    && uv pip install --python /opt/venv/bin/python \
+        --index-url https://download.pytorch.org/whl/cpu "torch>=2.4,<2.9" "torchaudio>=2.4,<2.9" \
+    && uv pip install --python /opt/venv/bin/python yt-dlp \
+    && mkdir -p /models && chown app /models
 USER app
-CMD ["procrastinate", "--app=listenup.worker.app", "worker", "--queues=speech-interactive,intake"]
+# The first start downloads the speech models before the pool reports ready.
+HEALTHCHECK --interval=10s --start-period=600s CMD test -f /tmp/listenup-worker-ready
+CMD ["python", "-m", "listenup.worker", "media"]

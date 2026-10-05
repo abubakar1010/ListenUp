@@ -4,6 +4,284 @@
  */
 
 export interface paths {
+  '/api/v1/auth/login': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Login */
+    post: operations['login_api_v1_auth_login_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/auth/logout': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Logout */
+    post: operations['logout_api_v1_auth_logout_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/auth/password-reset': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Request Password Reset
+     * @description Email a reset link. The answer is the same whether or not the email has an account.
+     */
+    post: operations['request_password_reset_api_v1_auth_password_reset_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/auth/password-reset/confirm': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Reset Password
+     * @description Set a new password with the token from the email; signs the learner out everywhere.
+     */
+    post: operations['reset_password_api_v1_auth_password_reset_confirm_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/auth/register': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Register */
+    post: operations['register_api_v1_auth_register_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/blind/attempts/{attempt_id}/gist': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Submit Gist
+     * @description Submit the three-sentence gist after the whole passage has played (FR-BL-4, #65).
+     *
+     *     Completes the Blind step. An `Idempotency-Key` makes a retry return the first answer.
+     */
+    post: operations['submit_gist_api_v1_blind_attempts__attempt_id__gist_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/blind/attempts/{attempt_id}/heartbeat': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Heartbeat
+     * @description Report the player's position every 5 s (FR-BL-3, System Design 9.2).
+     *
+     *     The answer is `continue`, `resume` (the one resume after an interruption the
+     *     learner did not cause, D13 and D18) or `stop` with the attempt's `void_reason`.
+     */
+    post: operations['heartbeat_api_v1_blind_attempts__attempt_id__heartbeat_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/blind/attempts/{attempt_id}/media/{token}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Attempt Media
+     * @description The passage's audio for this attempt only (#62). Range requests go to storage.
+     *
+     *     The token in the path comes from starting the attempt; the redirect's signed URL
+     *     lives only until the attempt's window ends.
+     */
+    get: operations['attempt_media_api_v1_blind_attempts__attempt_id__media__token__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/blind/attempts/{attempt_id}/void': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Void Attempt
+     * @description The page reports leaving, a reload or a seek: the listen ends (FR-BL-3).
+     *
+     *     Sent with `fetch(..., {keepalive: true})` from `pagehide` and `visibilitychange`.
+     *     After the whole passage has played it changes nothing.
+     */
+    post: operations['void_attempt_api_v1_blind_attempts__attempt_id__void_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/contents': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Contents
+     * @description The learner's content items, newest first, in keyset pages.
+     */
+    get: operations['list_contents_api_v1_contents_get'];
+    put?: never;
+    /**
+     * Add Content
+     * @description Confirm an upload: the file must be in storage with the declared size.
+     *
+     *     Creates a pending content item and queues its conversion, or keeps it in the
+     *     learner's own queue while two of theirs are being prepared. Refused with 429
+     *     `daily_audio_limit` once today's new audio is used up. Confirming the same upload
+     *     again returns the same item with 200; an `Idempotency-Key` replays the first
+     *     response exactly.
+     */
+    post: operations['add_content_api_v1_contents_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/contents/{content_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Content
+     * @description One of the learner's items: its processing status, or why it failed, and where
+     *     to play it once it is playable.
+     */
+    get: operations['get_content_api_v1_contents__content_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/dictation/attempts/{attempt_id}/draft': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Save Draft
+     * @description Save the Dictation draft if it is still at `draft_version` (FR-DI-4, #50).
+     *
+     *     A save based on an older version gets 409 `draft_conflict`, so two tabs never
+     *     silently overwrite each other; resending a save that already landed succeeds.
+     */
+    put: operations['save_draft_api_v1_dictation_attempts__attempt_id__draft_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Events
+     * @description Stream the learner's live events (System Design 9.1).
+     *
+     *     Each event carries only its type and the id of the resource to refetch.
+     */
+    get: operations['events_api_v1_events_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/health': {
     parameters: {
       query?: never;
@@ -21,10 +299,1151 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/library/contents': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Library Contents
+     * @description The learner's library, newest first, 20 per page by default (FR-LB-1).
+     */
+    get: operations['library_contents_api_v1_library_contents_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Me */
+    get: operations['me_api_v1_me_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/exports': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Request Export
+     * @description Start a copy of all the learner's data: a ZIP with data.json and their uploaded
+     *     media. It is built in the background; `export.ready` tells the browser when it is
+     *     ready or has failed. YouTube media files are not included (D10).
+     */
+    post: operations['request_export_api_v1_me_exports_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/exports/latest': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Latest Export
+     * @description The learner's most recent export and its status; `export` is null if none.
+     */
+    get: operations['latest_export_api_v1_me_exports_latest_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/exports/{export_id}/download': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Download Export
+     * @description Download the archive. Needs the owner's session; the link it redirects to works
+     *     for a short time only.
+     */
+    get: operations['download_export_api_v1_me_exports__export_id__download_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/media/{media_object_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Play Media
+     * @description The playback file. Redirects to a signed storage URL that serves range requests,
+     *     so the player starts on the first bytes and seeks without downloading everything.
+     */
+    get: operations['play_media_api_v1_media__media_object_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/media/{media_object_id}/peaks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Media Peaks
+     * @description The waveform peaks: JSON with `per_second` values a second on a 0 to `scale` range.
+     */
+    get: operations['media_peaks_api_v1_media__media_object_id__peaks_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Sessions
+     * @description The learner's sessions, most recently active first, in keyset pages.
+     */
+    get: operations['list_sessions_api_v1_sessions_get'];
+    put?: never;
+    /**
+     * Start Session
+     * @description Start a plan on a clip from the library, with its first step open (FR-PL-1, FR-LB-2).
+     *
+     *     The clip must be playable, and the passage 30 s to 15 min long and within the clip.
+     *     An `Idempotency-Key` makes a retry return the first session instead of a second one.
+     */
+    post: operations['start_session_api_v1_sessions_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Session
+     * @description One session with its plan: steps, the open step and the entry lock.
+     */
+    get: operations['get_session_api_v1_sessions__session_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/blind': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Blind Step
+     * @description The Blind step with its newest attempt, so a reloaded page knows where it stands.
+     */
+    get: operations['get_blind_step_api_v1_sessions__session_id__blind_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/blind/attempts': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Start Attempt
+     * @description Start one listen of the passage (FR-BL-1, #62).
+     *
+     *     Returns a media URL bound to this attempt. The player sends a heartbeat every
+     *     `heartbeat_interval_ms` from now on.
+     */
+    post: operations['start_attempt_api_v1_sessions__session_id__blind_attempts_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/dictation/attempts': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Open Attempt
+     * @description Start the Dictation attempt (201), or resume the one in progress with its draft
+     *     (200). Leaving or reloading never voids a Dictation attempt (FR-PL-6, NFR-REL-1).
+     *
+     *     The answer holds what the player needs, the passage and the media path, and never
+     *     any reference text (FR-DI-3, FR-TX-5).
+     */
+    post: operations['open_attempt_api_v1_sessions__session_id__dictation_attempts_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/entry': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Change Entry
+     * @description Change Blind, Dictation or both until Transcript opens (FR-PL-5, SR-3).
+     *
+     *     The unfinished steps are rebuilt; a finished entry exercise stays and cannot be
+     *     removed. Choosing the current entry again changes nothing.
+     */
+    patch: operations['change_entry_api_v1_sessions__session_id__entry_patch'];
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/steps/{step}/skip': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Skip Step
+     * @description Skip Card or Shadow after the learner confirmed (FR-PL-7, SR-4).
+     *
+     *     Skipping Shadow completes the session, whatever happened to Card (SR-6, D12).
+     */
+    post: operations['skip_step_api_v1_sessions__session_id__steps__step__skip_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/uploads': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Start Upload
+     * @description Check the declared file and return a signed URL to PUT it straight to storage.
+     *
+     *     Refused before any byte is sent: an unsupported type (`unsupported_file_type`), a
+     *     file over the size limit (`file_too_large`), one that would take the account over
+     *     its storage cap (`storage_full`), or any new clip once today's new audio is used up
+     *     (429 `daily_audio_limit`, with `resets_at`). Rate-limited per learner and per IP.
+     */
+    post: operations['start_upload_api_v1_uploads_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/uploads/usage': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Upload Usage
+     * @description How much of the per-account upload storage is used, the per-file limit (D5), and
+     *     today's allowance of new audio (D16).
+     */
+    get: operations['upload_usage_api_v1_uploads_usage_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/uploads/{upload_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Cancel Upload
+     * @description Forget an upload that was cancelled before it was added to the library.
+     */
+    delete: operations['cancel_upload_api_v1_uploads__upload_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-  schemas: never;
+  schemas: {
+    /**
+     * Action
+     * @enum {string}
+     */
+    Action: 'continue' | 'resume' | 'stop';
+    /**
+     * AttemptStatus
+     * @enum {string}
+     */
+    AttemptStatus: 'active' | 'submitted' | 'voided';
+    /**
+     * BlindAttempt
+     * @description One try at the Blind step. Positions are in the clip, in milliseconds.
+     */
+    BlindAttempt: {
+      /** Finished At */
+      finished_at: string | null;
+      /** Gist Text */
+      gist_text: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Listen Complete
+       * @description The whole passage has played: write the gist
+       */
+      listen_complete: boolean;
+      /** Passage End Ms */
+      passage_end_ms: number;
+      /** Passage Start Ms */
+      passage_start_ms: number;
+      /**
+       * Position Ms
+       * @description The last position the server accepted
+       */
+      position_ms: number;
+      /**
+       * Resume Count
+       * @description 0 or 1: the one resume after an interruption (D13)
+       */
+      resume_count: number;
+      /**
+       * Resume Stop Ms
+       * @description Where the interruption that resumed stopped
+       */
+      resume_stop_ms: number | null;
+      /**
+       * Session Id
+       * Format: uuid
+       */
+      session_id: string;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      status: components['schemas']['AttemptStatus'];
+      /** @description Why the attempt ended, when voided */
+      void_reason: components['schemas']['VoidReason'] | null;
+    };
+    /** BlindStep */
+    BlindStep: {
+      /** @description The newest attempt, live or ended */
+      attempt: components['schemas']['BlindAttempt'] | null;
+      /** Passage End Ms */
+      passage_end_ms: number;
+      /** Passage Start Ms */
+      passage_start_ms: number;
+      /**
+       * Session Id
+       * Format: uuid
+       */
+      session_id: string;
+      step_status: components['schemas']['StepStatus'];
+    };
+    /** ChangeEntry */
+    ChangeEntry: {
+      entry: components['schemas']['Entry'];
+      /**
+       * Version
+       * @description The session `version` the client last saw
+       */
+      version: number;
+    };
+    /**
+     * ConfirmUpload
+     * @description Add an uploaded file to the library. YouTube links (#37) will be another shape.
+     */
+    ConfirmUpload: {
+      /**
+       * Keep Video
+       * @description Keep the picture of a video (H.264 360p); otherwise only the sound is kept
+       * @default false
+       */
+      keep_video: boolean;
+      /**
+       * Title
+       * @description Defaults to the file name without its extension
+       */
+      title?: string | null;
+      /**
+       * Upload Id
+       * Format: uuid
+       */
+      upload_id: string;
+    };
+    /**
+     * ContentDetail
+     * @description One item, with what its page needs to show and play it.
+     */
+    ContentDetail: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Duration Ms */
+      duration_ms: number | null;
+      /**
+       * Error Code
+       * @description Why processing failed; null unless failed
+       */
+      error_code: string | null;
+      /**
+       * Error Detail
+       * @description The reason, as the learner reads it
+       */
+      error_detail: string | null;
+      /**
+       * Has Video
+       * @description The playback file has a picture (only with keep_video)
+       */
+      has_video: boolean;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Keep Video */
+      keep_video: boolean;
+      /**
+       * Media Object Id
+       * Format: uuid
+       */
+      media_object_id: string;
+      /**
+       * Media Url
+       * @description Play from here (redirects to a signed URL); null until playable
+       */
+      media_url: string | null;
+      /**
+       * Peaks Url
+       * @description Waveform peaks JSON (redirects to a signed URL); null until playable
+       */
+      peaks_url: string | null;
+      /**
+       * Queue Position
+       * @description For a `queued` item: 1 when it is the next of the learner's clips to start
+       */
+      queue_position?: number | null;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: 'upload' | 'youtube';
+      /**
+       * Stage
+       * @description Where an item still being prepared is: `queued` in the learner's own queue (two of their clips are prepared at a time), `waiting` for a free worker, then the job's own stages. Null once prepared or failed
+       */
+      stage?: ('queued' | 'waiting' | 'downloading' | 'checking' | 'converting' | 'saving') | null;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'pending' | 'downloading' | 'playable' | 'failed' | 'expired';
+      /** Title */
+      title: string;
+    };
+    /** ContentItem */
+    ContentItem: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Duration Ms */
+      duration_ms: number | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Queue Position
+       * @description For a `queued` item: 1 when it is the next of the learner's clips to start
+       */
+      queue_position?: number | null;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: 'upload' | 'youtube';
+      /**
+       * Stage
+       * @description Where an item still being prepared is: `queued` in the learner's own queue (two of their clips are prepared at a time), `waiting` for a free worker, then the job's own stages. Null once prepared or failed
+       */
+      stage?: ('queued' | 'waiting' | 'downloading' | 'checking' | 'converting' | 'saving') | null;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'pending' | 'downloading' | 'playable' | 'failed' | 'expired';
+      /** Title */
+      title: string;
+    };
+    /** ContentList */
+    ContentList: {
+      /** Items */
+      items: components['schemas']['ContentItem'][];
+      /**
+       * Next Cursor
+       * @description Pass as `cursor` for the next page
+       */
+      next_cursor: string | null;
+    };
+    /** Credentials */
+    Credentials: {
+      /** Email */
+      email: string;
+      /** Password */
+      password: string;
+    };
+    /**
+     * DailyAudio
+     * @description Today's allowance of new audio (D16). Days are UTC days.
+     */
+    DailyAudio: {
+      /**
+       * Can Add
+       * @description Whether a new clip is accepted now
+       */
+      can_add: boolean;
+      /**
+       * Clips In Progress
+       * @description Clips not prepared yet, queued or running
+       */
+      clips_in_progress: number;
+      /** Limit Seconds */
+      limit_seconds: number;
+      /**
+       * Reserved Seconds
+       * @description Held for the clips in progress, 15 minutes each
+       */
+      reserved_seconds: number;
+      /**
+       * Resets At
+       * Format: date-time
+       * @description When the count starts again (midnight UTC)
+       */
+      resets_at: string;
+      /**
+       * Used Seconds
+       * @description Counted today: each clip with at most 15 minutes
+       */
+      used_seconds: number;
+    };
+    /** DataExport */
+    DataExport: {
+      /** Archive Bytes */
+      archive_bytes: number | null;
+      /**
+       * Download Url
+       * @description API path that redirects to a short-lived link of the archive; null unless the export is ready
+       */
+      download_url: string | null;
+      /**
+       * Expires At
+       * @description When the archive is deleted
+       */
+      expires_at: string | null;
+      /**
+       * File Count
+       * @description Media files in the archive besides data.json
+       */
+      file_count: number | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Ready At */
+      ready_at: string | null;
+      /**
+       * Requested At
+       * Format: date-time
+       */
+      requested_at: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'pending' | 'building' | 'ready' | 'failed' | 'expired';
+    };
+    /**
+     * DictationAttempt
+     * @description The learner's Dictation attempt with its saved draft (FR-DI-1, FR-DI-4).
+     */
+    DictationAttempt: {
+      /** Draft Text */
+      draft_text: string;
+      /**
+       * Draft Updated At
+       * Format: date-time
+       */
+      draft_updated_at: string;
+      /**
+       * Draft Version
+       * @description Send it back with the next draft save
+       */
+      draft_version: number;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Media Url
+       * @description The API path that redirects to the playback file (ADR 0022); play only `passage` of it
+       */
+      media_url: string;
+      passage: components['schemas']['DictationPassage'];
+      /**
+       * Resumed
+       * @description True when an attempt already in progress was resumed
+       */
+      resumed: boolean;
+      /**
+       * Session Id
+       * Format: uuid
+       */
+      session_id: string;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      status: components['schemas']['AttemptStatus'];
+    };
+    /**
+     * DictationPassage
+     * @description The part of the clip the player may play, in milliseconds, [start_ms, end_ms).
+     */
+    DictationPassage: {
+      /** End Ms */
+      end_ms: number;
+      /** Start Ms */
+      start_ms: number;
+    };
+    /**
+     * Entry
+     * @enum {string}
+     */
+    Entry: 'blind' | 'dictation' | 'both';
+    /** GistIn */
+    GistIn: {
+      /**
+       * Text
+       * @description Three sentences or more
+       */
+      text: string;
+    };
+    /** GistSubmitted */
+    GistSubmitted: {
+      attempt: components['schemas']['BlindAttempt'];
+      /** @description The step that opened next */
+      open_step: components['schemas']['Step'] | null;
+      /** Session Version */
+      session_version: number;
+    };
+    /** HTTPValidationError */
+    HTTPValidationError: {
+      /** Detail */
+      detail?: components['schemas']['ValidationError'][];
+    };
+    /**
+     * HeartbeatIn
+     * @description One beat; `state` is `playing`, `buffering`, `interrupted`, `resuming` or `ended`.
+     */
+    HeartbeatIn: {
+      /**
+       * Buffering Ms
+       * @description Time the audio waited since the last accepted beat (loading, waiting for data, the resume's wait and count); it pauses the server's clock, up to 20 s
+       * @default 0
+       */
+      buffering_ms: number;
+      /** @description With `interrupted`: a network stall or a device pause */
+      interruption?: components['schemas']['Interruption'] | null;
+      /**
+       * Interruption Ms
+       * @description How long a device pause lasted
+       * @default 0
+       */
+      interruption_ms: number;
+      /**
+       * Position Ms
+       * @description The player's position in the clip
+       */
+      position_ms: number;
+      state: components['schemas']['PlayerState'];
+      /**
+       * Visible
+       * @description The page is visible (not hidden)
+       * @default true
+       */
+      visible: boolean;
+    };
+    /** HeartbeatOut */
+    HeartbeatOut: {
+      /** @description `continue`; `resume`: carry on from `resume_from_ms` after `resume_delay_ms` once the audio is ready; `stop`: the attempt has ended */
+      action: components['schemas']['Action'];
+      attempt: components['schemas']['BlindAttempt'];
+      /** Resume Delay Ms */
+      resume_delay_ms: number;
+      /** Resume From Ms */
+      resume_from_ms: number | null;
+    };
+    /**
+     * Interruption
+     * @enum {string}
+     */
+    Interruption: 'network' | 'device';
+    /** LatestExport */
+    LatestExport: {
+      export: components['schemas']['DataExport'] | null;
+    };
+    /** LibraryItem */
+    LibraryItem: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Duration Ms */
+      duration_ms: number | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** @description Status of the newest practice session on this item; null when none */
+      last_session_status: components['schemas']['SessionStatus'] | null;
+      /**
+       * Queue Position
+       * @description For a `queued` clip: 1 when it is the next of the learner's clips to start
+       */
+      queue_position?: number | null;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: 'upload' | 'youtube';
+      /**
+       * Stage
+       * @description Where a clip still being prepared is; null once prepared or failed
+       */
+      stage?: ('queued' | 'waiting' | 'downloading' | 'checking' | 'converting' | 'saving') | null;
+      /**
+       * Status
+       * @description Processing status of the clip's media
+       * @enum {string}
+       */
+      status: 'pending' | 'downloading' | 'playable' | 'failed' | 'expired';
+      /** Title */
+      title: string;
+    };
+    /** LibraryPage */
+    LibraryPage: {
+      /** Items */
+      items: components['schemas']['LibraryItem'][];
+      /**
+       * Next Cursor
+       * @description Pass as `cursor` for the next page
+       */
+      next_cursor: string | null;
+    };
+    /** Me */
+    Me: {
+      /** Display Name */
+      display_name: string | null;
+      /** Email */
+      email: string;
+      /** Email Verified */
+      email_verified: boolean;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+    };
+    /**
+     * PassageRange
+     * @description The practised part of the clip in milliseconds, half-open [start_ms, end_ms) (C2).
+     */
+    PassageRange: {
+      /**
+       * End Ms
+       * @description 30 s to 15 min after start_ms, within the clip
+       */
+      end_ms: number;
+      /** Start Ms */
+      start_ms: number;
+    };
+    /** PasswordReset */
+    PasswordReset: {
+      /** Password */
+      password: string;
+      /** Token */
+      token: string;
+    };
+    /** PasswordResetRequest */
+    PasswordResetRequest: {
+      /** Email */
+      email: string;
+    };
+    /** PasswordResetRequested */
+    PasswordResetRequested: {
+      /** Detail */
+      detail: string;
+    };
+    /**
+     * PlayerState
+     * @description What the player says it is doing when it sends a beat.
+     * @enum {string}
+     */
+    PlayerState: 'playing' | 'buffering' | 'interrupted' | 'resuming' | 'ended';
+    /** SaveDraft */
+    SaveDraft: {
+      /**
+       * Draft Text
+       * @description The whole text, at most 20,000 characters
+       */
+      draft_text: string;
+      /**
+       * Draft Version
+       * @description The `draft_version` this text was based on
+       */
+      draft_version: number;
+    };
+    /** SavedDraft */
+    SavedDraft: {
+      /**
+       * Draft Version
+       * @description The new version; base the next save on it
+       */
+      draft_version: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /**
+     * Session
+     * @description A practice session with its plan, for "Step N of M" (UI-1).
+     */
+    Session: {
+      /** Completed At */
+      completed_at: string | null;
+      /**
+       * Content Id
+       * Format: uuid
+       */
+      content_id: string;
+      /** Content Title */
+      content_title: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      entry: components['schemas']['Entry'];
+      /**
+       * Entry Locked
+       * @description True once Transcript has opened (FR-PL-5)
+       */
+      entry_locked: boolean;
+      /** Entry Locked At */
+      entry_locked_at: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Open Position
+       * @description N in 'Step N of M'; null when closed
+       */
+      open_position: number | null;
+      /** @description The step the learner can work on; null if closed */
+      open_step: components['schemas']['Step'] | null;
+      passage: components['schemas']['PassageRange'];
+      status: components['schemas']['SessionStatus'];
+      /**
+       * Step Count
+       * @description M in 'Step N of M': 4 or 5
+       */
+      step_count: number;
+      /** Steps */
+      steps: components['schemas']['SessionStep'][];
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /**
+       * Version
+       * @description Send it back with every change; a stale one gets 409
+       */
+      version: number;
+    };
+    /** SessionList */
+    SessionList: {
+      /** Items */
+      items: components['schemas']['Session'][];
+      /**
+       * Next Cursor
+       * @description Pass as `cursor` for the next page
+       */
+      next_cursor: string | null;
+    };
+    /**
+     * SessionStatus
+     * @enum {string}
+     */
+    SessionStatus: 'active' | 'completed' | 'abandoned';
+    /** SessionStep */
+    SessionStep: {
+      /**
+       * Position
+       * @description 1-based place in the plan
+       */
+      position: number;
+      status: components['schemas']['StepStatus'];
+      step: components['schemas']['Step'];
+    };
+    /** SkipStep */
+    SkipStep: {
+      /**
+       * Confirmed
+       * @description The learner confirmed the skip; without it, 422
+       * @default false
+       */
+      confirmed: boolean;
+      /**
+       * Version
+       * @description The session `version` the client last saw
+       */
+      version: number;
+    };
+    /** StartSession */
+    StartSession: {
+      /**
+       * Content Id
+       * Format: uuid
+       */
+      content_id: string;
+      /** @description Blind, Dictation or both (Blind first, OQ-1) */
+      entry: components['schemas']['Entry'];
+      passage: components['schemas']['PassageRange'];
+    };
+    /** StartedAttempt */
+    StartedAttempt: {
+      attempt: components['schemas']['BlindAttempt'];
+      /** Heartbeat Interval Ms */
+      heartbeat_interval_ms: number;
+      /**
+       * Media Url
+       * @description The passage's audio for this attempt only; it stops working shortly after the passage's length
+       */
+      media_url: string;
+      /**
+       * Resume Delay Ms
+       * @description The wait before playback carries on (D18)
+       */
+      resume_delay_ms: number;
+    };
+    /**
+     * Step
+     * @enum {string}
+     */
+    Step: 'blind' | 'dictation' | 'transcript' | 'card' | 'shadow';
+    /**
+     * StepStatus
+     * @enum {string}
+     */
+    StepStatus: 'locked' | 'open' | 'done' | 'skipped';
+    /** StorageUse */
+    StorageUse: {
+      daily_audio: components['schemas']['DailyAudio'];
+      /** Max File Bytes */
+      max_file_bytes: number;
+      /** Quota Bytes */
+      quota_bytes: number;
+      /** Used Bytes */
+      used_bytes: number;
+    };
+    /** UploadRequest */
+    UploadRequest: {
+      /** Content Type */
+      content_type: string;
+      /** Filename */
+      filename: string;
+      /**
+       * Size Bytes
+       * @description The file's exact size; storage refuses any other
+       */
+      size_bytes: number;
+    };
+    /**
+     * UploadTarget
+     * @description Where and how the browser sends the file: one PUT with exactly these headers.
+     */
+    UploadTarget: {
+      /**
+       * Expires At
+       * Format: date-time
+       * @description The upload must start before this time
+       */
+      expires_at: string;
+      /** Headers */
+      headers: {
+        [key: string]: string;
+      };
+      /**
+       * Method
+       * @constant
+       */
+      method: 'PUT';
+      /**
+       * Upload Id
+       * Format: uuid
+       */
+      upload_id: string;
+      /** Url */
+      url: string;
+    };
+    /** ValidationError */
+    ValidationError: {
+      /** Context */
+      ctx?: Record<string, never>;
+      /** Input */
+      input?: unknown;
+      /** Location */
+      loc: (string | number)[];
+      /** Message */
+      msg: string;
+      /** Error Type */
+      type: string;
+    };
+    /** VoidIn */
+    VoidIn: {
+      /**
+       * Reason
+       * @enum {string}
+       */
+      reason: 'left_page' | 'reload' | 'seek';
+    };
+    /**
+     * VoidReason
+     * @enum {string}
+     */
+    VoidReason: 'left_page' | 'reload' | 'seek' | 'missed_heartbeat' | 'too_fast' | 'interrupted';
+  };
   responses: never;
   parameters: never;
   requestBodies: never;
@@ -33,6 +1452,539 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  login_api_v1_auth_login_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['Credentials'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Me'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  logout_api_v1_auth_logout_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  request_password_reset_api_v1_auth_password_reset_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PasswordResetRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PasswordResetRequested'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  reset_password_api_v1_auth_password_reset_confirm_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PasswordReset'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  register_api_v1_auth_register_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['Credentials'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Me'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  submit_gist_api_v1_blind_attempts__attempt_id__gist_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['GistIn'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GistSubmitted'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `listen_incomplete`, `attempt_closed` or `step_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `gist_too_short` (with `sentences`) or `gist_too_long` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  heartbeat_api_v1_blind_attempts__attempt_id__heartbeat_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['HeartbeatIn'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HeartbeatOut'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  attempt_media_api_v1_blind_attempts__attempt_id__media__token__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+        token: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to a signed storage URL that ends with the attempt */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `attempt_not_found` or `media_not_found` (wrong token) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `media_not_ready` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `media_expired`: the attempt ended or its window is over */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  void_attempt_api_v1_blind_attempts__attempt_id__void_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['VoidIn'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BlindAttempt'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_contents_api_v1_contents_get: {
+    parameters: {
+      query?: {
+        cursor?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ContentList'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  add_content_api_v1_contents_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ConfirmUpload'];
+      };
+    };
+    responses: {
+      /** @description Already confirmed */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ContentItem'];
+        };
+      };
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ContentItem'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_content_api_v1_contents__content_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        content_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ContentDetail'];
+        };
+      };
+      /** @description Not in your library (`content_not_found`) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Removed as a copy of a clip the learner already has (`duplicate_upload`, with `existing_content_id` and `existing_title`) */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  save_draft_api_v1_dictation_attempts__attempt_id__draft_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SaveDraft'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SavedDraft'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `draft_conflict` (with the current `draft_text` and `draft_version`), `attempt_closed`, `step_locked` or `session_closed` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `draft_too_long` (with `max_chars`) */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  events_api_v1_events_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        'last-event-id'?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description A Server-Sent Events stream of the learner's events: job.progress, content.ready, grade.ready, attempt.voided, export.ready and resync. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/event-stream': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   health_api_v1_health_get: {
     parameters: {
       query?: never;
@@ -51,6 +2003,708 @@ export interface operations {
           'application/json': {
             [key: string]: string;
           };
+        };
+      };
+    };
+  };
+  library_contents_api_v1_library_contents_get: {
+    parameters: {
+      query?: {
+        cursor?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['LibraryPage'];
+        };
+      };
+      /** @description Not modified since the ETag in If-None-Match */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  me_api_v1_me_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Me'];
+        };
+      };
+    };
+  };
+  request_export_api_v1_me_exports_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DataExport'];
+        };
+      };
+      /** @description An export is already being prepared (`export_in_progress`) */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+      /** @description Too many exports today (`rate_limited`, with `retry_after`) */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  latest_export_api_v1_me_exports_latest_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['LatestExport'];
+        };
+      };
+    };
+  };
+  download_export_api_v1_me_exports__export_id__download_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        export_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to a short-lived signed link of the archive */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not an export of yours (`export_not_found`) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not ready (`export_not_ready`) */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Expired and deleted (`export_expired`) */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  play_media_api_v1_media__media_object_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        media_object_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to a short-lived signed storage URL */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No item of yours uses this media object */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not playable yet (`media_not_ready`) */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  media_peaks_api_v1_media__media_object_id__peaks_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        media_object_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to a short-lived signed storage URL */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No item of yours uses this media object */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not playable yet (`media_not_ready`) */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_sessions_api_v1_sessions_get: {
+    parameters: {
+      query?: {
+        cursor?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SessionList'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  start_session_api_v1_sessions_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['StartSession'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Session'];
+        };
+      };
+      /** @description `content_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `content_not_ready`: the clip cannot be played yet */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `invalid_passage`, `clip_too_short` or `passage_outside_clip` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  get_session_api_v1_sessions__session_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Session'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_blind_step_api_v1_sessions__session_id__blind_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BlindStep'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` or `step_not_in_plan` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  start_attempt_api_v1_sessions__session_id__blind_attempts_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['StartedAttempt'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked`, or `attempt_active` with `attempt_id` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  open_attempt_api_v1_sessions__session_id__dictation_attempts_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The live attempt, resumed */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationAttempt'];
+        };
+      };
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationAttempt'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked`, `step_not_in_plan` or `session_closed` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  change_entry_api_v1_sessions__session_id__entry_patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ChangeEntry'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Session'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `entry_locked`, `session_changed` or `session_closed` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  skip_step_api_v1_sessions__session_id__steps__step__skip_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+        step: components['schemas']['Step'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SkipStep'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Session'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_not_skippable` (Blind, Dictation, Transcript), `step_locked`, `step_not_in_plan`, `session_changed` or `session_closed` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `confirmation_required`: `confirmed` was not true */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  start_upload_api_v1_uploads_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UploadRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UploadTarget'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  upload_usage_api_v1_uploads_usage_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['StorageUse'];
+        };
+      };
+    };
+  };
+  cancel_upload_api_v1_uploads__upload_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        upload_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

@@ -1,0 +1,25 @@
+# ADR 0025: Dictation drafts, the shared autosave helper and the passage player
+
+- Status: Accepted
+- Date: 2026-10-03
+- Source: issues #50, #51 and #52; [SRS FR-DI-1 to FR-DI-4, FR-PL-6, FR-TX-5, NFR-REL-1, NFR-PERF-3, NFR-PERF-4](https://claude.ai/code/artifact/fd47a9cb-6515-4fde-a232-3ab8cc14f0dd); [Database Design 5](https://claude.ai/code/artifact/ba05f7b3-f881-41e5-86d6-dcb94a509644); [Software Architecture 9.2 (Dictation)](https://claude.ai/code/artifact/6a30920f-b6a0-4131-a486-f2044c71bb13); [System Design 9.3, 11.1](https://claude.ai/code/artifact/98274889-96ba-4424-afad-c2cd056206e2); final UI screen E01
+
+## Context
+
+Dictation is the first mode with typed work that must survive a refresh, a closed tab and a lost connection (NFR-REL-1), and the first that needs the shared save helper the System Design describes: debounced to 2 s, a version number for safe concurrent saves, a local copy in the browser, and a resend after a reconnect or a 503 with Retry-After. The design leaves open what a stale save gets, what happens to a save whose answer was lost, whether leaving voids a Dictation attempt as it does in Blind, and how long "the last segment" of FR-DI-2 is before a transcript exists.
+
+## Decision
+
+- **One row per attempt.** `practice.dictation_attempts` (migration 0010) follows the Database Design, but references the attempt together with its learner, `(attempt_id, user_id)` to `practice.attempts (id, user_id)`, instead of the attempt id alone, so a draft can never belong to another learner. It has the `own_rows` policy, a `touch_updated_at` trigger and `SELECT, INSERT, UPDATE` for `listenup_api`; drafts are never deleted on their own.
+- **Start or resume.** `POST /sessions/{id}/dictation/attempts` calls `require_step(Step.DICTATION)` and returns the live attempt with its draft (200, `resumed: true`) or starts one (201). Unlike Blind, leaving or reloading never voids a Dictation attempt; the text is the learner's work. Two tabs starting at once both get the same attempt (the loser of `attempts_one_active` resumes). The answer carries the passage and `media_url` (the API path of ADR 0022), and no reference text.
+- **Versioned draft saves.** `PUT /dictation/attempts/{id}/draft` takes `draft_text` and the `draft_version` it was based on, and writes only where the stored version still matches, bumping it. A stale save gets 409 `draft_conflict` with the current `draft_text`, `draft_version` and `updated_at`, so the client shows both texts and the learner chooses; nothing is overwritten silently. A stale save whose text equals the stored text succeeds: it is the resend of a save whose answer was lost. Over 20,000 characters is 422 `draft_too_long` (with `max_chars`); a submitted or voided attempt is 409 `attempt_closed`; a Dictation step that is no longer open gets `require_step`'s refusals; anyone else's attempt, or a Blind one, is 404 `attempt_not_found`.
+- **The shared helper** lives in `apps/web/src/lib/autosave` (`Autosave`, `useAutosave`, `SaveStatus`, `SaveConflict`). Every edit is copied to `localStorage` at once and sent 2 s after the last one, one request at a time. On load, a local copy that differs from the server's value is restored and sent when it was based on the server's current version, and shown as a conflict when the server has moved on since. A network failure waits for the `online` event (and polls every 15 s); a 429 or 5xx is resent after `Retry-After` (now carried on `ApiError.retryAfterSeconds`) or after 2, 4, 8 ... up to 30 s; any other refusal stops until the next edit. Leaving the page sends unsent edits once more; the local copy covers the rest.
+- **The player** plays only the passage: positions are relative to it, seeks are clamped, and playback is stopped at its end on every animation frame. Replays are unlimited and counted on screen. Speeds are 1x (default), 0.9x and 0.75x (design E01). Until a transcript exists, "the last segment" is the 8-second segment being heard, or the one before within 1 s of a boundary (design E01: "Segments are 8-second chunks"). Controls are Back 5 s, play or pause, replay segment, speed and a seek bar, with the design's keys: Space or K, J, R, [ and ] outside the text area; Esc and Ctrl+Alt (Ctrl+Option) chords inside it, matched by key position.
+
+## Consequences
+
+- Submission and scoring (#53, #54) fill `submitted_text`, `scoring_status`, `diff`, `accuracy` and `scored_at` of the same row, and call `finish_attempt` and `complete_step`; until then the Dictation step cannot be finished in the app.
+- The replay count is shown but not stored; logging it (design E01, UX-13) needs a column or an event and comes with the effort statistics.
+- Two tabs on one browser share the local copy of an attempt; the newest unsent edit wins locally, and the server's version check still catches a stale save.
+- Segments become sentences, and the 8-second rule goes, once the transcript stories land.
+- The player's control policy lives in `features/dictation/policy.ts`, not in a shared `media/` folder (Architecture 10), because Blind is built in parallel; the two can move there together.

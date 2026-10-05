@@ -57,3 +57,19 @@ class AuthSession(Base):
     expires_at: Mapped[datetime] = mapped_column(Timestamp)
     user_agent: Mapped[str | None] = mapped_column(Text)
     ip: Mapped[IPv4Address | IPv6Address | None] = mapped_column(INET)
+
+
+class OneTimeToken(Base):
+    __tablename__ = "one_time_tokens"
+    __table_args__ = (
+        CheckConstraint("purpose IN ('verify_email', 'reset_password')"),
+        Index("one_time_tokens_user_idx", "user_id", "purpose"),
+        {"schema": "identity"},
+    )
+
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary, primary_key=True)  # SHA-256
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("identity.users.id", ondelete="CASCADE"))
+    purpose: Mapped[str] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(Timestamp)
+    used_at: Mapped[datetime | None] = mapped_column(Timestamp)
+    created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())

@@ -1,0 +1,133 @@
+{
+ "source": "synthetic: hand-made in the engine's raw output format because the models could not be downloaded where this adapter was written; replace with a real recording from scripts/record_ai_contract.py on the stage 0 server (#18, #19)",
+ "port": "alignment",
+ "provider": "wav2vec2-ctc",
+ "model": "MMS_FA",
+ "version": "torchaudio 2.8.0; torch 2.8.0",
+ "input": {
+  "audio": "fox.wav",
+  "text": "The quick, brown fox — 42 jumps!"
+ },
+ "raw": {
+  "sample_rate": 16000,
+  "num_samples": 37120,
+  "num_frames": 116,
+  "spans": [
+   [
+    {
+     "start": 5,
+     "end": 8,
+     "score": 0.967
+    },
+    {
+     "start": 9,
+     "end": 10,
+     "score": 0.582
+    },
+    {
+     "start": 12,
+     "end": 13,
+     "score": 0.711
+    }
+   ],
+   [
+    {
+     "start": 19,
+     "end": 21,
+     "score": 0.566
+    },
+    {
+     "start": 22,
+     "end": 26,
+     "score": 0.581
+    },
+    {
+     "start": 26,
+     "end": 30,
+     "score": 0.576
+    },
+    {
+     "start": 32,
+     "end": 33,
+     "score": 0.967
+    },
+    {
+     "start": 35,
+     "end": 36,
+     "score": 0.804
+    }
+   ],
+   [
+    {
+     "start": 43,
+     "end": 44,
+     "score": 0.98
+    },
+    {
+     "start": 44,
+     "end": 46,
+     "score": 0.677
+    },
+    {
+     "start": 46,
+     "end": 47,
+     "score": 0.801
+    },
+    {
+     "start": 49,
+     "end": 51,
+     "score": 0.595
+    },
+    {
+     "start": 53,
+     "end": 55,
+     "score": 0.714
+    }
+   ],
+   [
+    {
+     "start": 63,
+     "end": 64,
+     "score": 0.798
+    },
+    {
+     "start": 66,
+     "end": 68,
+     "score": 0.768
+    },
+    {
+     "start": 70,
+     "end": 74,
+     "score": 0.892
+    }
+   ],
+   [
+    {
+     "start": 81,
+     "end": 85,
+     "score": 0.709
+    },
+    {
+     "start": 85,
+     "end": 87,
+     "score": 0.858
+    },
+    {
+     "start": 87,
+     "end": 88,
+     "score": 0.803
+    },
+    {
+     "start": 90,
+     "end": 94,
+     "score": 0.935
+    },
+    {
+     "start": 96,
+     "end": 100,
+     "score": 0.677
+    }
+   ]
+  ]
+ }
+}
