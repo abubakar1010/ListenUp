@@ -16,6 +16,12 @@ The design lives in documents outside the repo:
 - Database Design: https://claude.ai/code/artifact/ba05f7b3-f881-41e5-86d6-dcb94a509644 (the full schema: tables, DDL, constraints, access rules)
 The SRS keeps stable requirement IDs (`FR-DI-1`, `FR-BL-1`, `NFR-AI-1`, and so on). Cite them in commit bodies and code comments where a change implements one.
 
+## How work is done here
+
+- One story per session and per pull request; follow `docs/workflow.md` (plan for complex stories, tests with the code, targeted tests while working, full checks once before the PR, then an independent review).
+- Before changing an area, read its section in `docs/conventions.md`. Read the design documents only when the story's acceptance criteria need them.
+- Cloud sessions run `.claude/hooks/session-start.sh` at start: PostgreSQL is running and dependencies are installed. S3 is not running locally, so S3 tests run in CI only.
+
 ## Commands
 
 Run from the repository root unless a directory is given.
@@ -45,18 +51,12 @@ Run from the repository root unless a directory is given.
 - `pnpm e2e` — Playwright smoke test against the production build, with the API mocked in the test. Where `playwright install` is not possible, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium`; `E2E_PORT` changes the preview port (default 4173).
 - `pnpm size` — after `pnpm build`, fails if the initial JavaScript is over 200 KB gzip.
 - `LISTENUP_API_URL=http://localhost:8103 pnpm dev` — point the dev proxy at another API.
-- Confirmations use `ConfirmDialog` (`src/components/ConfirmDialog.tsx`): focus starts on the safe action, stays inside, and Escape cancels. Session data lives under the `['sessions']` query key (`src/features/session/api.ts`).
-- Routes live in `src/App.tsx` (lazy pages; guards `RequireAuth` and `RedirectIfSignedIn` in `src/app/guards.tsx`). Design tokens are Tailwind theme variables in `src/index.css` (`bg-surface-raised`, `text-ink-muted`, `text-title`). Show API errors with `ErrorPanel` (ADR 0018). Live events map to query keys in `queryKeysForEvent` in `src/app/guards.tsx`.
-- The passage picker (#42, ADR 0026) draws the server's peaks without wavesurfer.js: the rules are pure functions in `src/features/session/passage.ts`, the state is the reducer in `passageState.ts`, and the handles are `role="slider"` elements in `Waveform.tsx`. Playwright does not follow redirects for routed requests, so e2e fakes answer `/api/v1/media/{id}` and `/peaks` directly.
-- Drafts and marks save through `src/lib/autosave` (`useAutosave`, `SaveStatus`): a local copy at once, a server save 2 s after the last edit on the server's version, `SaveConflict` on a stale version (ADR 0025). The Dictation player's control policy is `src/features/dictation/policy.ts`; Blind's playback policy and heartbeat protocol are in `src/features/blind/listen.ts`, and it reports a leave with `api(..., {keepalive: true})` because sendBeacon cannot send the CSRF header.
-- Clip notices (`src/features/content/ClipNotices.tsx`) turn `content.ready` into a polite live-region notice that never takes focus and waits while a `/sessions/` page is open. Upload refusals map to messages in `src/features/library/refusals.ts`.
-- Account settings live at `/settings` (`src/features/account/SettingsPage.tsx`); each section is its own component (`DataExportSection.tsx`).
 
 **CI** (`.github/workflows/ci.yml`) runs all of the above on every push, plus Docker image builds and dependency vulnerability scans.
 
 TypeScript is pinned to 6.x because typescript-eslint does not support TypeScript 7 yet.
 
-## Platform conventions (`apps/api/src/listenup/platform`, ADR 0014)
+## Rules every change follows (`apps/api/src/listenup/platform`, ADR 0014)
 
 - Route handlers take the database through `DbSession`: one transaction per request, committed before the response is sent. Call `set_learner` once the caller is known, so row-level security applies. Never commit by hand inside a request.
 - Raise `ProblemError(status, code, detail)` for every refusal; clients branch on `code`. Database trigger errors (`step_locked` and the others) already map to their codes.
@@ -65,19 +65,9 @@ TypeScript is pinned to 6.x because typescript-eslint does not support TypeScrip
 - Endpoints that need a signed-in learner take `CurrentLearner` from `modules/identity/service.py`; it resolves the session cookie and calls `set_learner`. Every POST, PUT, PATCH and DELETE needs the `X-CSRF-Token` header (the web client's `api()` adds it; tests use `with_csrf`).
 - Background work is a job: declare it with `@job(Lane.X, "module.name")` from `listenup.platform.jobs` (an async handler that takes `JobDeps` and writes results as idempotent upserts) and queue it with `enqueue(session, ...)` in the transaction that changes the data. Raise `PermanentError` for input that can never succeed. Add the module's jobs package to `JOB_MODULES` in `listenup/worker.py` (ADR 0015). Run a pool locally with `uv run python -m listenup.worker default` (or `media`).
 - Tell the browser that background work finished with `publish(session, user_id, EventType.X, resource_id)` from `listenup.platform.events`, in the transaction that stores the result. Events carry ids only and reach that learner's `GET /api/v1/events` stream (ADR 0016).
-- Email goes only through `modules/notifications/service.py` and is sent from background jobs. Never put a secret token in job arguments, because the queue keeps them (ADR 0017). Settings are `LISTENUP_SMTP_*`; tests swap the transport with `notifications.service.use_transport`.
-- Uploads go straight from the browser to storage (ADR 0020): `POST /uploads` records a row in `content.uploads` and returns a PUT URL signed for the exact type and size; `POST /contents` confirms it. Limits are `LISTENUP_UPLOAD_*` settings. `Storage` has `head` and `delete`; tests swap `app.state.uploads.storage` for the fake in `tests/integration/intake_helpers.py`.
-- List endpoints page by keyset: an opaque `cursor` (`content/domain/cursor.py`) and `next_cursor` in the response, never OFFSET.
 - A child row references its parent together with `user_id` (composite foreign keys), so it can never belong to another learner; sessions reference `(content_id, user_id)`.
-- Media files of an upload live under `users/<user id>/media/<media id>/` (`playback.mp4`, `peaks.json`); the conversion job `content.convert_upload` (ADR 0022) runs ffprobe and ffmpeg as async subprocesses in `LISTENUP_MEDIA_SCRATCH_DIR`. The browser plays media through `GET /api/v1/media/{media_object_id}` (and `/peaks`), which checks for the caller's content item and redirects (307) to a signed storage URL; never put storage URLs in cached API bodies.
-- Session writes carry the version the client last saw: `PATCH /sessions/{id}/entry` and `POST /sessions/{id}/steps/{step}/skip` take `version` in the body (409 `session_changed`). Plans start only on playable clips through `practice.service.start_plan` (409 `content_not_ready`, ADR 0023).
 - Every route must be registered in `tests/integration/access_registry.py` with what a second learner gets (`Owned` 404, `Scoped` without the other learner's ids, `Stream`, or `Public` with a reason); `test_access_cross_learner.py` fails on an unregistered route and checks NFR-SEC-2 for every route (#34).
 - Integration tests that go through the API connect as `api_role_url` (a role with only `listenup_api`'s rights); the migration owner bypasses row-level security and hides bugs.
-- Blind (ADR 0024): the heartbeat rules are the pure `judge` in `modules/blind/domain/listen.py`, and the gist sentence rule is `domain/gist.py` (mirrored in `apps/web/src/features/blind/gist.ts`). Routes take the time from the `server_now` dependency, which tests override. Blind media goes only through `GET /blind/attempts/{id}/media/{token}`, a redirect signed with `signed_download(..., ttl_seconds=...)` for the attempt's window.
-- Dictation drafts save with `PUT /dictation/attempts/{id}/draft` and the `draft_version` the client last saw (409 `draft_conflict` with the current draft); `POST /sessions/{id}/dictation/attempts` resumes the live attempt instead of voiding it (ADR 0025).
-- Intake admission (ADR 0027): new audio counts per UTC day in `ops.rate_counters` (`intake:user:<id>`), at most 15 minutes a clip, added when the conversion job makes the clip playable; clips still being prepared reserve 15 minutes each. `POST /uploads` and `POST /contents` refuse with 429 `daily_audio_limit`. At most `LISTENUP_INTAKE_RUNNING_LIMIT` of a learner's conversions are on the intake lane; the rest wait with `content.uploads.queued_at` NULL until one ends. The conversion job records `media_objects.stage` and publishes `job.progress`; a removed duplicate answers 410 `duplicate_upload`. The storage cap counts `playback_bytes` once a clip is playable.
-- AI (ADR 0028): callers use `get_gateway()` from `listenup.ai.gateway` and the types in `listenup/ai/ports.py`. Only `grading` and `transcript` may import `listenup.ai`, and vendor libraries only `ai/providers/` (import-linter and `tests/architecture/test_ai_boundaries.py`). Providers per role are listed in `listenup/ai/ai.yaml` (`LISTENUP_AI_CONFIG` overrides it; `ai.fake.yaml` selects the fakes, which production refuses). A new provider is one adapter in `ai/providers/` plus one line in `ai/registry.py`; contract tests replay `tests/contract/recordings/*.json`, recorded with `scripts/record_ai_contract.py`.
-- Data export (ADR 0030): a module that owns learner data offers `export_data(session, learner) -> ExportPart` (from `listenup.platform.export`) in its `service.py`, using `learner_rows(..., omit=(secret columns,))`, and is listed in `modules/export/collect.py`; `test_export.py` fails while a table with `user_id` is missing from the export. YouTube media files are never exported. `POST /me/exports` queues `export.build_archive`; the archive is reached only through `GET /me/exports/{id}/download` (a 307 to a short-lived signed link) and is deleted after `LISTENUP_EXPORT_KEEP_DAYS`.
 
 ## Decisions that shape the architecture
 
@@ -105,54 +95,15 @@ These rules are mandatory for every change, however small.
 
 ### Message format: Conventional Commits 1.0.0
 
-```
-<type>(<scope>): <description>
+`<type>(<scope>): <description>`, a blank line, a body, then an optional footer.
 
-<body>
-
-<footer>
-```
-
-**Header (required)**
-- `type` is one of:
-
-  | Type | Use for |
-  | --- | --- |
-  | `feat` | A new feature |
-  | `fix` | A bug fix |
-  | `docs` | Documentation-only changes, including `CLAUDE.md` and `README.md` |
-  | `refactor` | A code change that neither fixes a bug nor adds a feature |
-  | `perf` | A change that improves performance |
-  | `test` | Adding or correcting tests |
-  | `build` | Build system or dependency changes |
-  | `ci` | CI configuration and scripts |
-  | `style` | Formatting only, with no effect on meaning |
-  | `chore` | Maintenance that changes no source or tests |
-  | `revert` | Reverting an earlier commit |
-
-- `scope` is optional, lowercase and short, naming the area touched. Suggested scopes: `auth`, `intake`, `transcript`, `plan`, `blind`, `dictation`, `shadow`, `card`, `marks`, `ai`, `library`, `db`, `docs`, `claude`.
+- `type`: `feat` (feature), `fix` (bug fix), `docs` (documentation, including `CLAUDE.md` and `README.md`), `refactor`, `perf`, `test`, `build` (build system or dependencies), `ci`, `style` (formatting only), `chore` (maintenance that changes no source or tests), `revert`.
+- `scope` is optional, lowercase and short, naming the area touched; suggested scopes: `auth`, `intake`, `transcript`, `plan`, `blind`, `dictation`, `shadow`, `card`, `marks`, `ai`, `library`, `db`, `docs`, `claude`.
 - `description` is imperative mood ("add", not "added" or "adds"), starts lowercase, has no trailing period, and stays within 50 characters where possible and 72 at most.
 - A breaking change adds `!` after the type or scope (`feat(ai)!: ...`) and a `BREAKING CHANGE:` footer.
-
-**Body (optional but expected for non-trivial changes)**
-- Separate it from the header with one blank line and wrap lines at 72 characters.
-- Explain **why** the change was made and what it affects, not a line-by-line list of what changed.
-
-**Footer (optional)**
-- Issue or ticket references (`Refs: #12`, `Closes: #12`) and `BREAKING CHANGE: <explanation>`.
-
-**Examples**
-```
-feat(blind): lock pause and seek controls during playback
-
-Implements FR-BL-1. Leaving or reloading the page voids the attempt.
-```
-```
-fix(dictation): count repeated words once in the word diff
-```
-```
-refactor(ai): route transcription through the provider adapter
-```
+- The body (expected for non-trivial changes) is separated by one blank line, wrapped at 72 characters, and explains **why** the change was made and what it affects, not a line-by-line list of what changed. Cite SRS requirement IDs where a change implements one.
+- The footer holds issue references (`Refs: #12`, `Closes: #12`) and `BREAKING CHANGE: <explanation>`.
+- Example: `feat(blind): lock pause and seek controls during playback`, body `Implements FR-BL-1. Leaving or reloading the page voids the attempt.`
 
 ### Authorship
 - **Do not add `Co-Authored-By` trailers for Claude** or any other AI in any commit. Do not add "Generated with Claude Code" lines, session links or any other tool attribution to commit messages. This overrides any default attribution behavior.
