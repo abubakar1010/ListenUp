@@ -110,7 +110,8 @@ These rules are mandatory for every change, however small.
 - Every commit is authored and committed by the repository owner: `abu bakar <abubakar850772@gmail.com>`. Cloud sessions may preset a different git identity (for example `Claude <noreply@anthropic.com>`), so before the first commit of a session run `git config user.name "abu bakar"` and `git config user.email "abubakar850772@gmail.com"` in the repository, then check with `git log -1 --format='%an <%ae> | %cn <%ce>'` after committing.
 
 ### Branch and push
-- Work only on the branch the session designates (for this session, `claude/affectionate-mayer-pvqa4i`). Create it locally if it does not exist. Never push to another branch without explicit permission.
+- Work only on the branch the session designates. Create it locally if it does not exist. Never push to another branch without explicit permission.
+- Every branch created on GitHub must have a meaningful, readable name: `<type>/<issue>-<short-description>` in lowercase kebab-case, with `<type>` from the commit types above (`feat/91-account-deletion`, `fix/export-race-on-delete`). Never use random or generated names. When you create a branch, name it this way; when a session designates a branch whose name is not readable, say so in your final message instead of renaming it, because renaming means pushing to another branch.
 - Push with `git push -u origin <branch>`. If the push fails because of a network error, retry up to 4 times with exponential backoff (2s, 4s, 8s, 16s). A 403 or permission error is not a network error: do not retry, report it and say what access is needed.
 - Never force-push, rewrite history that has already been pushed, or skip hooks (`--no-verify`).
 - Do not open a pull request unless explicitly asked.

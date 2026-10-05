@@ -5,6 +5,7 @@ const LEARNER = {
   email: 'learner@example.com',
   display_name: null,
   email_verified: false,
+  deletion_grace_days: 7,
 };
 const UNTIL = '2026-10-11T20:30:00Z';
 
@@ -131,10 +132,12 @@ test('declining the restore keeps the learner signed out', async ({ page }) => {
 });
 
 test('the settings page fits a 360 px screen without sideways scrolling', async ({ page }) => {
-  await fakeAccountApi(page);
+  const state = await fakeAccountApi(page);
   await page.setViewportSize({ width: 360, height: 740 });
 
   for (const path of ['/settings', '/account-deleted?until=2026-10-11T20%3A30%3A00Z']) {
+    // The deleted page only shows to someone who is signed out.
+    state.signedIn = path === '/settings';
     await page.goto(path);
     await expect(page.getByRole('main')).toBeVisible();
     const overflow = await page.evaluate(

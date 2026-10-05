@@ -34,6 +34,9 @@ class Me(BaseModel):
     email: str
     display_name: str | None
     email_verified: bool
+    deletion_grace_days: int = Field(
+        description="Days a deleted account can be restored before its data is removed."
+    )
 
 
 @router.post("/auth/register", status_code=201)

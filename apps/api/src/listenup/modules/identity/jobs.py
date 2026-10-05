@@ -14,7 +14,7 @@ from listenup.modules.identity.domain.tokens import new_token, reset_link, token
 from listenup.modules.notifications import service as notifications
 from listenup.platform.config import get_settings
 from listenup.platform.jobs import JobDeps, Lane, enqueue, job
-from listenup.platform.storage import S3Storage, Storage
+from listenup.platform.storage import get_storage
 
 logger = logging.getLogger(__name__)
 
@@ -35,34 +35,20 @@ PURGE_ATTEMPTS = 3
 PURGE_RETRY_AFTER = timedelta(hours=1)
 
 
-class _Storage:
-    """The storage the purge uses: S3 from the settings, or a fake in tests."""
-
-    instance: Storage | None = None
-
-
-def use_storage(storage: Storage | None) -> None:
-    """Swap the storage the purge job uses (tests); None goes back to S3."""
-    _Storage.instance = storage
-
-
-def _storage() -> Storage:
-    if _Storage.instance is None:
-        _Storage.instance = S3Storage(get_settings())
-    return _Storage.instance
-
-
-async def queue_password_reset(session: AsyncSession, user_id: uuid.UUID) -> None:
+async def queue_password_reset(
+    session: AsyncSession, user_id: uuid.UUID, *, in_grace_period: bool = False
+) -> None:
     """Queue the reset email in the caller's transaction.
 
     While one is waiting, asking again queues nothing more, so repeated clicks send
-    one email.
+    one email. A reset asked for during the grace period has its own key: a job queued
+    before the deletion will send nothing, and must not swallow this one.
     """
     requested_at: datetime = await session.scalar(text("SELECT now()"))
     await enqueue(
         session,
         SEND_PASSWORD_RESET,
-        unique_key=f"password_reset:{user_id}",
+        unique_key=f"password_reset:{user_id}:{'grace' if in_grace_period else 'active'}",
         user_id=str(user_id),
         requested_at=requested_at.isoformat(),
     )
@@ -204,7 +190,7 @@ async def purge_account(deps: JobDeps, request_id: str) -> dict[str, Any] | None
     nothing to do.
     """
     request_uuid = uuid.UUID(request_id)
-    storage = _storage()
+    storage = get_storage()
     async with deps.database.transaction() as session:
         request = await repository.lock_deletion_request(session, request_uuid)
         if request is None or request.status not in ("pending", "storage_deleted", "failed"):
@@ -246,6 +232,9 @@ async def purge_account(deps: JobDeps, request_id: str) -> dict[str, Any] | None
         if await repository.lock_user_status(session, learner) is not None:
             rows = await repository.count_learner_rows(session, learner)
             await repository.delete_user(session, learner)
+            # Sign-in counters are keyed by the id with no foreign key, so the cascade
+            # misses them (DR-1).
+            await repository.clear_failures(session, learner)
         report["rows_removed"] = rows
         report["rows_total"] = sum(rows.values())
         await repository.update_deletion_request(

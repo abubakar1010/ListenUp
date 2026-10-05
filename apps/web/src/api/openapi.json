@@ -979,6 +979,11 @@
       },
       "Me": {
         "properties": {
+          "deletion_grace_days": {
+            "description": "Days a deleted account can be restored before its data is removed.",
+            "title": "Deletion Grace Days",
+            "type": "integer"
+          },
           "display_name": {
             "anyOf": [
               {
@@ -1004,7 +1009,7 @@
             "type": "string"
           }
         },
-        "required": ["id", "email", "display_name", "email_verified"],
+        "required": ["id", "email", "display_name", "email_verified", "deletion_grace_days"],
         "title": "Me",
         "type": "object"
       },

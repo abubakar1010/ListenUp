@@ -33,7 +33,7 @@ from listenup.platform import jobs as platform_jobs
 from listenup.platform.config import Settings
 from listenup.platform.database import Database
 from listenup.platform.jobs import JobDeps, PermanentError, run_handler
-from listenup.platform.storage import Downloaded, S3Storage, Storage
+from listenup.platform.storage import Downloaded, S3Storage, Storage, use_storage
 from tests.integration.conftest import conninfo_to_url
 from tests.integration.intake_helpers import (
     ClientFactory,
@@ -105,9 +105,9 @@ def media(tmp_path_factory: pytest.TempPathFactory) -> Media:
 @pytest.fixture
 def storage() -> Iterator[FakeStorage]:
     fake = FakeStorage()
-    jobs.use_storage(fake)
+    use_storage(fake)
     yield fake
-    jobs.use_storage(None)
+    use_storage(None)
 
 
 @pytest.fixture
@@ -293,7 +293,7 @@ def test_each_stage_is_recorded_while_the_job_runs_and_cleared_at_the_end(
             await storage.put_file(key, path, content_type)
 
     watching = Watching()
-    jobs.use_storage(watching)
+    use_storage(watching)
     stage_now("before")
     run_job(migrated_url, added)
 
@@ -414,7 +414,7 @@ def test_the_last_failed_attempt_marks_the_item_failed(
         async def download(self, key: str, destination: Path) -> None:
             raise ConnectionError("storage is down")
 
-    jobs.use_storage(Broken())
+    use_storage(Broken())
     with pytest.raises(ConnectionError):
         run_job(migrated_url, added, attempt=1)
     row = media_row(migrated_url, added.media_id)
@@ -445,7 +445,7 @@ def test_a_last_attempt_that_times_out_marks_the_item_failed(
         async def download(self, key: str, destination: Path) -> None:
             await asyncio.sleep(60)
 
-    jobs.use_storage(Stalled())
+    use_storage(Stalled())
     with pytest.raises(TimeoutError):
         run_job(migrated_url, added, attempt=1)
     row = media_row(migrated_url, added.media_id)
@@ -653,7 +653,7 @@ def test_a_real_upload_is_converted_and_plays_with_range_requests(
 ) -> None:
     client = make_client(fake=False, s3_bucket=bucket)
     real: Storage = S3Storage(Settings(s3_bucket=bucket))
-    jobs.use_storage(real)
+    use_storage(real)
     try:
         data = media.mp4.read_bytes()
         target = start(client, filename="talk.mp4", content_type="video/mp4", size=len(data))
@@ -683,4 +683,4 @@ def test_a_real_upload_is_converted_and_plays_with_range_requests(
         # The original is gone from the bucket.
         assert httpx.get(real.signed_download(added.source_key).url).status_code == 404
     finally:
-        jobs.use_storage(None)
+        use_storage(None)

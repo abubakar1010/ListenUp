@@ -108,6 +108,7 @@ class Accounts:
             raise ProblemError(422, "weak_password", problem)
 
         user_id = uuid7()
+        await repository.release_email_of_gone_account(session, email)
         if not await repository.insert_user(
             session, user_id, email, await passwords.hash_password(password)
         ):
@@ -194,10 +195,13 @@ class Accounts:
                     deletion_scheduled_at=account.deletion_scheduled_at.isoformat(),
                 )
             await set_learner(session, account.id)
+            # The request row is locked before the users row, the order the purge uses,
+            # so the two cannot wait for each other. If the account cannot be restored
+            # after all, the refusal rolls the cancellation back with the request.
+            await repository.cancel_deletion_requests(session, account.id)
             if not await repository.restore_account(session, account.id):
                 # The grace period ended between the lookup and now.
                 raise _invalid_credentials()
-            await repository.cancel_deletion_requests(session, account.id)
         await self._start_session(session, request, response, account.id)
 
     async def delete_account(
@@ -296,7 +300,9 @@ class Accounts:
         # An account waiting for deletion may reset its password (the learner may need
         # it to restore the account); signing in afterwards still asks to restore.
         if account is not None and not account.gone:
-            await jobs.queue_password_reset(session, account.id)
+            await jobs.queue_password_reset(
+                session, account.id, in_grace_period=account.waiting_for_deletion
+            )
 
     async def reset_password(
         self,
@@ -433,11 +439,20 @@ async def account_is_active(session: AsyncSession, learner: uuid.UUID) -> bool:
     return account is not None and account.status == "active"
 
 
+async def hold_active_account(session: AsyncSession, learner: uuid.UUID) -> bool:
+    """Like `account_is_active`, and a deletion cannot start before the caller commits.
+
+    For the transaction that stores a result which must not outlive a deletion, such
+    as a finished data export (ADR 0029, ADR 0030).
+    """
+    return await repository.hold_active_account(session, learner)
+
+
 async def get_profile(session: AsyncSession, learner: uuid.UUID) -> dict[str, object]:
     profile = await repository.get_profile(session, learner)
     if profile is None:
         raise ProblemError(401, "not_signed_in", "Sign in to continue.")
-    return profile
+    return {**profile, "deletion_grace_days": get_settings().account_deletion_grace_days}
 
 
 AccountsDep = Annotated[Accounts, Depends(get_accounts)]

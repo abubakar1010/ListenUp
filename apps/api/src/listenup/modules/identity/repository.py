@@ -47,6 +47,23 @@ async def insert_user(
     return result.first() is not None
 
 
+async def release_email_of_gone_account(session: AsyncSession, email: str) -> None:
+    """Free the email of an account whose grace period ended and is not purged yet.
+
+    Such an account behaves like an unknown one (ADR 0029), so the email must be free
+    to register again. The row keeps its id and is deleted by the purge as usual.
+    """
+    await session.execute(
+        text("""
+        UPDATE identity.users SET email = 'deleted-' || id || '@listenup.invalid'
+         WHERE email = :email
+           AND (status = 'deleting'
+                OR (status = 'pending_deletion' AND deletion_scheduled_at <= now()))
+        """),
+        {"email": email},
+    )
+
+
 async def find_account(session: AsyncSession, email: str) -> Account | None:
     row = (
         await session.execute(
@@ -237,6 +254,17 @@ async def get_account(session: AsyncSession, user_id: uuid.UUID) -> Account | No
         )
     ).first()
     return Account(*row) if row else None
+
+
+async def hold_active_account(session: AsyncSession, user_id: uuid.UUID) -> bool:
+    """True when the account is active; its row stays share-locked until the commit.
+
+    A deletion has to update that row, so it waits for the caller's transaction.
+    """
+    status: str | None = await session.scalar(
+        text("SELECT status FROM identity.users WHERE id = :id FOR SHARE"), {"id": user_id}
+    )
+    return status == "active"
 
 
 async def retire_reset_tokens(session: AsyncSession, user_id: uuid.UUID) -> None:
@@ -440,7 +468,9 @@ async def update_deletion_request(
 async def mark_deletion_failed(session: AsyncSession, request_id: uuid.UUID) -> bool:
     """The purge gave up: record it on an open request, keeping the step it reached.
 
-    The report counts the failures. False when the request is no longer open.
+    The report counts the failures, and a request that was already 'failed' counts
+    again and gets a new `failed_at`, so the retry delay starts over. False when the
+    request is no longer open.
     """
     failed = await session.scalar(
         text("""
@@ -450,8 +480,12 @@ async def mark_deletion_failed(session: AsyncSession, request_id: uuid.UUID) -> 
                  coalesce(report, '{}'),
                  '{failures}',
                  to_jsonb(coalesce((report->>'failures')::int, 0) + 1)
-               ) || jsonb_build_object('failed_step', status)
-         WHERE id = :id AND status IN ('pending', 'storage_deleted')
+               ) || jsonb_build_object(
+                 'failed_step',
+                 CASE WHEN status = 'failed'
+                      THEN coalesce(report->>'failed_step', 'pending') ELSE status END
+               )
+         WHERE id = :id AND status IN ('pending', 'storage_deleted', 'failed')
         RETURNING id
         """),
         {"id": request_id},
@@ -490,15 +524,20 @@ async def count_learner_rows(session: AsyncSession, user_id: uuid.UUID) -> dict[
          ORDER BY 1, 2, 3
         """)
     )
+    tables = [(schema, table, column) for schema, table, column in columns]
     counts: dict[str, int] = {"identity.users": 1}
-    for schema, table, column in columns:
-        # Names come from the catalog, never from input; quoted all the same.
-        found = await session.scalar(
-            text(f'SELECT count(*) FROM "{schema}"."{table}" WHERE "{column}" = :id'),
-            {"id": user_id},
-        )
+    if not tables:
+        return counts
+    # Names come from the catalog, never from input; quoted all the same. One round
+    # trip, so the purge's row locks are held for as short a time as possible.
+    union = " UNION ALL ".join(
+        f"SELECT '{schema}.{table}' AS name, count(*) AS n "
+        f'FROM "{schema}"."{table}" WHERE "{column}" = :id'
+        for schema, table, column in tables
+    )
+    for name, found in await session.execute(text(union), {"id": user_id}):
         if found:
-            counts[f"{schema}.{table}"] = int(found)
+            counts[name] = int(found)
     return counts
 
 

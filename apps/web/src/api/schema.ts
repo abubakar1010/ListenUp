@@ -1195,6 +1195,11 @@ export interface components {
     };
     /** Me */
     Me: {
+      /**
+       * Deletion Grace Days
+       * @description Days a deleted account can be restored before its data is removed.
+       */
+      deletion_grace_days: number;
       /** Display Name */
       display_name: string | null;
       /** Email */

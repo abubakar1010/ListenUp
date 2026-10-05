@@ -12,9 +12,6 @@ export function deleteAccount(password: string): Promise<DeletionScheduled> {
   return api<DeletionScheduled>('/me', { method: 'DELETE', body: { password, confirm: true } });
 }
 
-/** The grace period the product promises (D9); the server sends the exact date. */
-export const GRACE_DAYS = 7;
-
 /** "Sunday 11 October 2026 at 20:30", in the learner's own time zone and locale. */
 export function formatDeletionDate(iso: string): string {
   const date = new Date(iso);
