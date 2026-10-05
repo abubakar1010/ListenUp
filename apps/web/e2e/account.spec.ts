@@ -121,6 +121,8 @@ test('declining the restore keeps the learner signed out', async ({ page }) => {
   await page.getByLabel('Email').fill('learner@example.com');
   await page.getByLabel('Password').fill('correct horse');
   await page.getByLabel('Password').press('Enter');
+  const restore = page.getByRole('dialog', { name: 'Restore your account?' });
+  await expect(restore.getByRole('button', { name: 'Keep it deleted' })).toBeFocused();
   await page.keyboard.press('Escape');
 
   await expect(page.getByRole('dialog')).toBeHidden();
