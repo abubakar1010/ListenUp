@@ -5,6 +5,7 @@ const LEARNER = {
   email: 'learner@example.com',
   display_name: null,
   email_verified: false,
+  deletion_grace_days: 7,
 };
 const PASSAGE = { start_ms: 0, end_ms: 30_000 };
 

@@ -6,7 +6,8 @@ import { ApiError } from '../../api/client';
 import { buttonClass } from '../../components/button';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { ErrorPanel } from '../../components/ErrorPanel';
-import { deleteAccount, GRACE_DAYS } from './deletionApi';
+import { useMe } from '../../auth/useMe';
+import { deleteAccount } from './deletionApi';
 
 const inputClass =
   'min-h-11 rounded-md border border-line-strong bg-surface-raised px-3 py-2 focus:outline-2 focus:outline-offset-2 focus:outline-focus-ring aria-invalid:border-danger';
@@ -32,6 +33,10 @@ function fieldMessage(error: ApiError): string {
  */
 export function DeleteAccountSection() {
   const navigate = useNavigate();
+  // The server decides the grace period (LISTENUP_ACCOUNT_DELETION_GRACE_DAYS).
+  const graceDays = useMe().data?.deletion_grace_days;
+  const grace =
+    graceDays === undefined ? 'a few days' : `${graceDays} ${graceDays === 1 ? 'day' : 'days'}`;
   const ids = { password: useId(), error: useId(), heading: useId(), explain: useId() };
   const passwordRef = useRef<HTMLInputElement>(null);
   const [password, setPassword] = useState('');
@@ -97,9 +102,9 @@ export function DeleteAccountSection() {
           account after that.
         </p>
         <p>
-          Your library, practice sessions, cards and recordings are kept for {GRACE_DAYS} days. If
-          you change your mind, sign in within {GRACE_DAYS} days and restore the account. After
-          that, everything is deleted for good.
+          Your library, practice sessions, cards and recordings are kept for {grace}. If you change
+          your mind, sign in within that time and restore the account. After that, everything is
+          deleted for good.
         </p>
       </div>
       <form
@@ -153,8 +158,8 @@ export function DeleteAccountSection() {
           footer={dialogError ? <ErrorPanel error={dialogError} /> : undefined}
         >
           <p>
-            You will be signed out at once. Everything in your account is deleted after {GRACE_DAYS}{' '}
-            days, unless you sign in before then and restore it.
+            You will be signed out at once. Everything in your account is deleted after {grace},
+            unless you sign in before then and restore it.
           </p>
         </ConfirmDialog>
       )}

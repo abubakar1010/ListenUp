@@ -52,7 +52,20 @@ test('explains the grace period before anything happens', async () => {
   expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Delete your account', level: 2 })).toBeVisible();
   expect(screen.getByText(/kept for 7 days/)).toBeInTheDocument();
-  expect(screen.getByText(/sign in within 7 days and restore/)).toBeInTheDocument();
+  expect(screen.getByText(/sign in within that time and restore/)).toBeInTheDocument();
+});
+
+test('promises the grace period the server reports, not a fixed one', async () => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const path = String(input).replace(/^\/api\/v1/, '');
+    if (path === '/me') return jsonResponse(200, { ...LEARNER, deletion_grace_days: 14 });
+    if (path === '/me/exports/latest') return jsonResponse(200, { export: null });
+    return problem(404, 'not_found', path);
+  });
+  renderWithProviders(<App />, { route: '/settings' });
+
+  expect(await screen.findByText(/kept for 14 days/)).toBeInTheDocument();
+  expect(screen.queryByText(/7 days/)).not.toBeInTheDocument();
 });
 
 test('asks for the password before opening the confirmation', async () => {
