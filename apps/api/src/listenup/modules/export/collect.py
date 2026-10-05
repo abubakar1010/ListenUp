@@ -10,6 +10,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.modules.analytics import service as analytics
 from listenup.modules.blind import service as blind
 from listenup.modules.content import service as content
 from listenup.modules.dictation import service as dictation
@@ -45,6 +46,7 @@ CONTRIBUTORS: tuple[Contributor, ...] = (
     practice.export_data,
     blind.export_data,
     dictation.export_data,
+    analytics.export_data,
     _own_data,
 )
 

@@ -23,6 +23,7 @@ from enum import StrEnum
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.modules.analytics import service as analytics
 from listenup.modules.content import service as content
 from listenup.modules.practice import repository
 from listenup.modules.practice.domain import (
@@ -233,6 +234,9 @@ async def start_session(
     if not created:
         raise ProblemError(404, "content_not_found", "There is no such content item.")
     await repository.insert_steps(db, session_id, learner, list(plan.steps))
+    await analytics.record_plan_started(
+        db, learner, session_id, content_id, path=entry.value, steps=_statuses(plan)
+    )
     return await get_session(db, session_id)
 
 
@@ -298,6 +302,11 @@ def _check_version(practice: PracticeSession, expected_version: int | None) -> N
         raise _changed()
 
 
+def _statuses(plan: Plan) -> dict[str, str]:
+    """The plan as {step: status}, as the analytics events describe it (#101)."""
+    return {state.step.value: state.status.value for state in plan.steps}
+
+
 async def _transition(
     db: AsyncSession,
     practice: PracticeSession,
@@ -331,6 +340,14 @@ async def _transition(
         old = {s.step: s.status for s in practice.plan.steps}
         changed = [s for s in new.steps if old[s.step] is not s.status]
         await repository.update_steps(db, practice.id, changed)
+    await analytics.record_plan_progress(
+        db,
+        practice.user_id,
+        practice.id,
+        practice.content_id,
+        before=_statuses(practice.plan),
+        after=_statuses(new),
+    )
     return PracticeSession(
         id=practice.id,
         user_id=practice.user_id,
@@ -519,6 +536,9 @@ async def start_attempt(db: AsyncSession, session_id: uuid.UUID, mode: Step) -> 
             "This step already has an attempt in progress.",
             attempt_id=str(live.id) if live else None,
         ) from None
+    await analytics.record_listen_started(
+        db, practice.user_id, practice.id, practice.content_id, row.id, mode=mode.value
+    )
     return _attempt(row)
 
 

@@ -183,6 +183,9 @@ def test_export_holds_every_learner_table_and_only_the_learners_data(
         str(a.confirmed_upload_id),
         str(a.pending_upload_id),
     }
+    # The learner's analytics events go with their data (ADR 0033).
+    events = tables["ops.analytics_events"]
+    assert {"plan_started", "step_started", "listen_started"} <= {r["event_type"] for r in events}
     session = next(r for r in tables["practice.sessions"] if r["id"] == str(a.sessions["blind"]))
     assert session["passage"]["lower"] == 0
     for name, rows in tables.items():
