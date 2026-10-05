@@ -459,6 +459,19 @@ async def mark_deletion_failed(session: AsyncSession, request_id: uuid.UUID) -> 
     return failed is not None
 
 
+async def deletion_requested_at(session: AsyncSession, user_id: uuid.UUID) -> datetime | None:
+    """When the learner's open account deletion was asked for, if there is one."""
+    requested: datetime | None = await session.scalar(
+        text("""
+        SELECT requested_at FROM ops.deletion_requests
+         WHERE subject_user_id = :user_id AND scope = :scope
+           AND status IN ('pending', 'storage_deleted', 'failed')
+        """),
+        {"user_id": user_id, "scope": ACCOUNT_SCOPE},
+    )
+    return requested
+
+
 async def count_learner_rows(session: AsyncSession, user_id: uuid.UUID) -> dict[str, int]:
     """Rows of the learner in every application table, by table (for the purge report).
 

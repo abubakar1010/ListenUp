@@ -169,7 +169,7 @@ def test_the_email_job_is_queued_without_the_token(
 
     [queued] = reset_jobs(migrated_url)
     assert queued["status"] == "todo"
-    assert set(queued["args"]) <= {"user_id", "_request_id"}
+    assert set(queued["args"]) <= {"user_id", "requested_at", "_request_id"}
     assert outbox.sent == []  # nothing is sent while handling the request
 
 

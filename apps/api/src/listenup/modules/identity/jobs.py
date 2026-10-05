@@ -2,9 +2,10 @@
 
 import logging
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.content import service as content
@@ -57,22 +58,29 @@ async def queue_password_reset(session: AsyncSession, user_id: uuid.UUID) -> Non
     While one is waiting, asking again queues nothing more, so repeated clicks send
     one email.
     """
+    requested_at: datetime = await session.scalar(text("SELECT now()"))
     await enqueue(
         session,
         SEND_PASSWORD_RESET,
         unique_key=f"password_reset:{user_id}",
         user_id=str(user_id),
+        requested_at=requested_at.isoformat(),
     )
 
 
 @job(Lane.BACKGROUND, SEND_PASSWORD_RESET)
-async def send_password_reset(deps: JobDeps, user_id: str) -> None:
+async def send_password_reset(deps: JobDeps, user_id: str, requested_at: str | None = None) -> None:
     """Mint a reset token and email its link (FR-ACC-3).
 
     The token is created here, not in the request, so the raw token is never written
     anywhere, not even into the job queue: only the worker's memory and the email
     hold it. Each run retires older unused reset links before minting a new one, so
     a retried run leaves exactly one working link, the one in the email it sends.
+
+    A reset asked for before the learner deleted the account sends nothing: deleting
+    retires the links issued before it, and one minted afterwards would be a link
+    issued before the deletion all the same (#120). A reset asked for during the grace
+    period is sent; signing in afterwards still asks to restore the account.
     """
     settings = get_settings()
     learner = uuid.UUID(user_id)
@@ -81,6 +89,10 @@ async def send_password_reset(deps: JobDeps, user_id: str) -> None:
         account = await repository.get_account(session, learner)
         if account is None or account.gone:
             return  # the account went away after the request; nothing to send
+        if account.waiting_for_deletion and requested_at is not None:
+            deleted_at = await repository.deletion_requested_at(session, learner)
+            if deleted_at is not None and deleted_at >= datetime.fromisoformat(requested_at):
+                return
         await repository.retire_reset_tokens(session, learner)
         await repository.insert_reset_token(
             session,

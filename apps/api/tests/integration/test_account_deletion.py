@@ -363,6 +363,23 @@ def test_a_reset_link_issued_before_the_deletion_stops_working(
     assert (response.status_code, response.json()["code"]) == (400, "invalid_reset_link")
 
 
+def test_a_reset_asked_for_before_the_deletion_sends_no_link(
+    client: TestClient, migrated_url: str, outbox: Outbox
+) -> None:
+    """The email job had not run yet when the learner deleted the account."""
+    email = unique_email()
+    register(client, email)
+    assert client.post("/api/v1/auth/password-reset", json={"email": email}).status_code == 202
+
+    assert delete_me(client).status_code == 202
+    deliver(migrated_url)
+
+    assert outbox.tokens() == []
+    assert [
+        mail.subject.startswith("Your ListenUp account will be deleted") for mail in outbox.sent
+    ] == [True]
+
+
 def test_the_confirmation_email_says_how_to_restore(
     client: TestClient, migrated_url: str, outbox: Outbox
 ) -> None:
