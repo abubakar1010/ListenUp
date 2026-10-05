@@ -336,6 +336,69 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/me/exports': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Request Export
+     * @description Start a copy of all the learner's data: a ZIP with data.json and their uploaded
+     *     media. It is built in the background; `export.ready` tells the browser when it is
+     *     ready or has failed. YouTube media files are not included (D10).
+     */
+    post: operations['request_export_api_v1_me_exports_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/exports/latest': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Latest Export
+     * @description The learner's most recent export and its status; `export` is null if none.
+     */
+    get: operations['latest_export_api_v1_me_exports_latest_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/exports/{export_id}/download': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Download Export
+     * @description Download the archive. Needs the owner's session; the link it redirects to works
+     *     for a short time only.
+     */
+    get: operations['download_export_api_v1_me_exports__export_id__download_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/media/{media_object_id}': {
     parameters: {
       query?: never;
@@ -874,6 +937,43 @@ export interface components {
        */
       used_seconds: number;
     };
+    /** DataExport */
+    DataExport: {
+      /** Archive Bytes */
+      archive_bytes: number | null;
+      /**
+       * Download Url
+       * @description API path that redirects to a short-lived link of the archive; null unless the export is ready
+       */
+      download_url: string | null;
+      /**
+       * Expires At
+       * @description When the archive is deleted
+       */
+      expires_at: string | null;
+      /**
+       * File Count
+       * @description Media files in the archive besides data.json
+       */
+      file_count: number | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Ready At */
+      ready_at: string | null;
+      /**
+       * Requested At
+       * Format: date-time
+       */
+      requested_at: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'pending' | 'building' | 'ready' | 'failed' | 'expired';
+    };
     /**
      * DictationAttempt
      * @description The learner's Dictation attempt with its saved draft (FR-DI-1, FR-DI-4).
@@ -1002,6 +1102,10 @@ export interface components {
      * @enum {string}
      */
     Interruption: 'network' | 'device';
+    /** LatestExport */
+    LatestExport: {
+      export: components['schemas']['DataExport'] | null;
+    };
     /** LibraryItem */
     LibraryItem: {
       /**
@@ -1861,7 +1965,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description A Server-Sent Events stream of the learner's events: job.progress, content.ready, grade.ready, attempt.voided and resync. */
+      /** @description A Server-Sent Events stream of the learner's events: job.progress, content.ready, grade.ready, attempt.voided, export.ready and resync. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -1958,6 +2062,122 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['Me'];
+        };
+      };
+    };
+  };
+  request_export_api_v1_me_exports_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DataExport'];
+        };
+      };
+      /** @description An export is already being prepared (`export_in_progress`) */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+      /** @description Too many exports today (`rate_limited`, with `retry_after`) */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  latest_export_api_v1_me_exports_latest_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['LatestExport'];
+        };
+      };
+    };
+  };
+  download_export_api_v1_me_exports__export_id__download_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        export_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to a short-lived signed link of the archive */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not an export of yours (`export_not_found`) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not ready (`export_not_ready`) */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Expired and deleted (`export_expired`) */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

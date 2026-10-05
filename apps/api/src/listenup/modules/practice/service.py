@@ -43,6 +43,7 @@ from listenup.modules.practice.domain import (
 )
 from listenup.modules.practice.domain import cursor as cursors
 from listenup.platform.errors import ProblemError
+from listenup.platform.export import ExportPart, learner_rows
 from listenup.platform.ids import uuid7
 
 __all__ = [
@@ -59,6 +60,7 @@ __all__ = [
     "active_attempt",
     "change_entry",
     "complete_step",
+    "export_data",
     "finish_attempt",
     "get_attempt",
     "get_session",
@@ -557,3 +559,14 @@ async def finish_attempt(db: AsyncSession, attempt_id: uuid.UUID, status: Attemp
         await get_attempt(db, attempt_id)  # 404 when it is not the learner's
         raise ProblemError(409, "attempt_closed", "This attempt has already ended.")
     return _attempt(row)
+
+
+async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
+    """The learner's sessions, their steps and attempts for their data export (#92)."""
+    return ExportPart(
+        tables=(
+            await learner_rows(session, "practice.sessions", learner, order_by="created_at"),
+            await learner_rows(session, "practice.session_steps", learner, order_by="session_id"),
+            await learner_rows(session, "practice.attempts", learner, order_by="started_at"),
+        )
+    )

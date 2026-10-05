@@ -18,6 +18,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from listenup.ai.gateway import get_gateway
+from listenup.ai.ports import Role
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database
 from listenup.platform.jobs import (
@@ -40,6 +42,7 @@ READY_FILE = Path("/tmp/listenup-worker-ready")
 JOB_MODULES: list[str] = [
     "listenup.modules.identity.jobs",
     "listenup.modules.content.jobs",
+    "listenup.modules.export.jobs",
 ]
 
 
@@ -62,8 +65,24 @@ POOLS: dict[str, tuple[WorkerSpec, ...]] = {
 }
 
 
+# Roles whose models the media pool keeps in memory (System Design 5.2, ADR 0028).
+MEDIA_ROLES = (Role.TRANSCRIPTION, Role.ALIGNMENT)
+
+
 async def load_models(pool: str) -> None:
-    """Load speech models before taking work. The speech stories (#18 to #21) fill this in."""
+    """Load the speech models of providers marked `preload` in ai.yaml before taking work,
+    once per process. The default pool runs no local models."""
+    if pool != "media":
+        return
+    try:
+        loaded = await get_gateway().preload(MEDIA_ROLES)
+    except ImportError as exc:
+        raise SystemExit(
+            f"speech libraries missing ({exc}): install the speech extra "
+            "(uv sync --extra speech, plus torch and torchaudio) or set "
+            "LISTENUP_AI_CONFIG to listenup/ai/ai.fake.yaml"
+        ) from exc
+    logger.info("models loaded", extra={"pool": pool, "providers": loaded})
 
 
 async def run_pool(pool: str) -> None:

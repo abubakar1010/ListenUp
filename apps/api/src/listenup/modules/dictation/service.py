@@ -28,11 +28,13 @@ from listenup.modules.dictation import repository
 from listenup.modules.practice import service as practice
 from listenup.modules.practice.service import Attempt, AttemptStatus, Passage, Step
 from listenup.platform.errors import ProblemError
+from listenup.platform.export import ExportPart, learner_rows
 
 __all__ = [
     "MAX_DRAFT_CHARS",
     "DictationWork",
     "Draft",
+    "export_data",
     "open_attempt",
     "save_draft",
 ]
@@ -140,3 +142,11 @@ async def save_draft(
         draft_version=current.draft_version,
         updated_at=current.updated_at.isoformat(),
     )
+
+
+async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
+    """The learner's Dictation drafts, submissions and scores for their data export (#92)."""
+    table = await learner_rows(
+        session, "practice.dictation_attempts", learner, order_by="attempt_id"
+    )
+    return ExportPart(tables=(table,))

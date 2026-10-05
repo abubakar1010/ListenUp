@@ -68,9 +68,20 @@ class Settings(BaseSettings):
     # rest wait in the learner's own queue.
     intake_running_limit: int = 2
 
+    # Data exports (#92, NFR-SEC-5, ADR 0030): requests per learner per UTC day (one is
+    # built at a time), days a finished archive is kept, and seconds the signed link
+    # behind the download endpoint works.
+    export_daily_limit: int = 3
+    export_keep_days: int = 7
+    export_link_seconds: int = 120
+
     # Where media workers write source and converted files while a job runs; the
     # system's temporary directory when unset. Each job removes its own files.
     media_scratch_dir: str | None = None
+
+    # AI providers per role (ADR 0028): a path to an ai.yaml; the packaged
+    # listenup/ai/ai.yaml when unset. listenup/ai/ai.fake.yaml needs no models.
+    ai_config: str | None = None
 
     # First retry waits about this long; later ones four times longer each time.
     job_retry_base_seconds: float = 10.0

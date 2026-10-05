@@ -51,6 +51,8 @@ class SeededLearner:
     """The token of that attempt's media URL."""
     dictation_attempt_id: uuid.UUID | None = None
     """The live Dictation attempt, with a draft, of the session open at Dictation."""
+    export_id: uuid.UUID | None = None
+    """A finished data export, ready to download (#92)."""
 
     def ids(self) -> list[str]:
         """Every id this learner owns, as text: none may appear in another learner's view."""
@@ -65,6 +67,7 @@ class SeededLearner:
                 *self.sessions.values(),
                 *([self.blind_attempt_id] if self.blind_attempt_id else []),
                 *([self.dictation_attempt_id] if self.dictation_attempt_id else []),
+                *([self.export_id] if self.export_id else []),
             )
         ]
 
@@ -146,6 +149,19 @@ def add_pending_upload(
     return upload_id, key
 
 
+def add_ready_export(owner_url: str, user_id: uuid.UUID) -> uuid.UUID:
+    """A data export whose archive is ready for 7 days (#92); no file stands behind it."""
+    export_id = uuid.uuid4()
+    with psycopg.connect(owner_url, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO ops.data_exports (id, user_id, status, archive_key, archive_bytes, "
+            "file_count, ready_at, expires_at) "
+            "VALUES (%s, %s, 'ready', %s, 1000, 0, now(), now() + interval '7 days')",
+            [export_id, user_id, f"users/{user_id}/exports/{export_id}.zip"],
+        )
+    return export_id
+
+
 async def add_sessions(
     owner_url: str, user_id: uuid.UUID, content_id: uuid.UUID
 ) -> dict[str, uuid.UUID]:
@@ -203,6 +219,7 @@ def seed_learner_data(owner_url: str, user_id: uuid.UUID) -> SeededLearner:
     dictation_attempt_id = asyncio.run(
         add_dictation_draft(owner_url, user_id, sessions["dictation"])
     )
+    export_id = add_ready_export(owner_url, user_id)
     return SeededLearner(
         user_id=user_id,
         content_id=content_id,
@@ -215,4 +232,5 @@ def seed_learner_data(owner_url: str, user_id: uuid.UUID) -> SeededLearner:
         blind_attempt_id=attempt_id,
         blind_media_token=token,
         dictation_attempt_id=dictation_attempt_id,
+        export_id=export_id,
     )

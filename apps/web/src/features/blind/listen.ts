@@ -81,6 +81,8 @@ export class BlindListen {
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private countdownTimer: ReturnType<typeof setTimeout> | undefined;
   private inFlight = false;
+  /** The final beat waits for the one in flight; the server must learn the end. */
+  private finalPending = false;
   private disposed = false;
   private left = false;
   private deviceStopAt: number | null = null;
@@ -311,7 +313,11 @@ export class BlindListen {
   }
 
   private async beat(final = false): Promise<void> {
-    if (this.inFlight || (!this.inProgress && !final)) return;
+    if (this.inFlight) {
+      if (final) this.finalPending = true;
+      return;
+    }
+    if (!this.inProgress && !final) return;
     const phase = this.snapshot.phase;
     const body: HeartbeatIn = {
       position_ms: phase.kind === 'waiting' ? phase.stopMs : Math.min(this.position(), this.end),
@@ -337,6 +343,10 @@ export class BlindListen {
       this.beatFailed(error);
     } finally {
       this.inFlight = false;
+      if (this.finalPending && !this.disposed) {
+        this.finalPending = false;
+        void this.beat(true);
+      }
     }
   }
 
@@ -364,6 +374,10 @@ export class BlindListen {
     if (this.snapshot.phase.kind === 'waiting') {
       clearTimeout(this.retryTimer);
       this.retryTimer = setTimeout(() => void this.beat(), RETRY_MS);
+    } else if (this.snapshot.phase.kind === 'ended') {
+      // Without the final beat the server refuses the gist (listen_incomplete).
+      clearTimeout(this.retryTimer);
+      this.retryTimer = setTimeout(() => void this.beat(true), RETRY_MS);
     }
   }
 

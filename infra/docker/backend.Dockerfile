@@ -34,14 +34,25 @@ HEALTHCHECK --interval=10s --start-period=30s CMD test -f /tmp/listenup-worker-r
 CMD ["python", "-m", "listenup.worker", "default"]
 
 FROM base AS worker-media
-# Media tools for download, conversion and snippet cutting. Speech models are
-# added by the speech spikes (#18 to #21) and stay out of the other images.
+# Media tools for download, conversion and snippet cutting, and the self-hosted speech
+# libraries (ADR 0028), which stay out of the other images. `uv sync` adds the locked
+# `speech` extra first, because it removes packages the lock does not list; torch and
+# torchaudio then come from the PyTorch CPU index (the PyPI wheels bundle CUDA).
+# Models download on first start into /models; mount a volume there to keep them.
+ENV OMP_NUM_THREADS=2 \
+    HF_HOME=/models/huggingface \
+    TORCH_HOME=/models/torch
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
-    && uv pip install --python /opt/venv/bin/python yt-dlp
+    && uv sync --frozen --no-dev --extra speech \
+    && uv pip install --python /opt/venv/bin/python \
+        --index-url https://download.pytorch.org/whl/cpu "torch>=2.4,<2.9" "torchaudio>=2.4,<2.9" \
+    && uv pip install --python /opt/venv/bin/python yt-dlp \
+    && mkdir -p /models && chown app /models
 USER app
-HEALTHCHECK --interval=10s --start-period=120s CMD test -f /tmp/listenup-worker-ready
+# The first start downloads the speech models before the pool reports ready.
+HEALTHCHECK --interval=10s --start-period=600s CMD test -f /tmp/listenup-worker-ready
 CMD ["python", "-m", "listenup.worker", "media"]
 
 FROM base AS backup

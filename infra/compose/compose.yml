@@ -106,6 +106,10 @@ services:
       context: ../..
       dockerfile: infra/docker/backend.Dockerfile
       target: worker-media
+    volumes:
+      - ../../apps/api/src:/app/src:ro
+      # Speech models (ADR 0028), downloaded on the first start and kept here.
+      - ai-models:/models
 
   # Nightly pg_dump to object storage, kept 14 days (ADR 0032). Opt in locally with
   # `docker compose --profile backup up backup`; production always runs it.
@@ -153,3 +157,4 @@ volumes:
   postgres-data:
   storage-data:
   prometheus-data:
+  ai-models:

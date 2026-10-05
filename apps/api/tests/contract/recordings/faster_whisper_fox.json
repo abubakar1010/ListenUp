@@ -1,0 +1,115 @@
+{
+ "source": "synthetic: hand-made in the engine's raw output format because the models could not be downloaded where this adapter was written; replace with a real recording from scripts/record_ai_contract.py on the stage 0 server (#18, #19)",
+ "port": "transcription",
+ "provider": "faster-whisper",
+ "model": "base.en",
+ "version": "faster-whisper 1.1.1; ctranslate2 4.5.0; int8",
+ "input": {
+  "audio": "fox.wav",
+  "language": "en"
+ },
+ "raw": {
+  "language": "en",
+  "duration": 5.12,
+  "segments": [
+   {
+    "start": 0.0,
+    "end": 2.64,
+    "text": " The quick brown fox jumps over the lazy dog.",
+    "words": [
+     {
+      "start": 0.0,
+      "end": 0.18,
+      "word": " The",
+      "probability": 0.912
+     },
+     {
+      "start": 0.18,
+      "end": 0.46,
+      "word": " quick",
+      "probability": 0.981
+     },
+     {
+      "start": 0.46,
+      "end": 0.78,
+      "word": " brown",
+      "probability": 0.975
+     },
+     {
+      "start": 0.78,
+      "end": 1.08,
+      "word": " fox",
+      "probability": 0.993
+     },
+     {
+      "start": 1.08,
+      "end": 1.42,
+      "word": " jumps",
+      "probability": 0.958
+     },
+     {
+      "start": 1.42,
+      "end": 1.66,
+      "word": " over",
+      "probability": 0.987
+     },
+     {
+      "start": 1.66,
+      "end": 1.8,
+      "word": " the",
+      "probability": 0.996
+     },
+     {
+      "start": 1.8,
+      "end": 2.16,
+      "word": " lazy",
+      "probability": 0.941
+     },
+     {
+      "start": 2.16,
+      "end": 2.64,
+      "word": " dog.",
+      "probability": 0.902
+     }
+    ]
+   },
+   {
+    "start": 2.9,
+    "end": 5.12,
+    "text": " It was a sunny day.",
+    "words": [
+     {
+      "start": 2.9,
+      "end": 3.06,
+      "word": " It",
+      "probability": 0.874
+     },
+     {
+      "start": 3.06,
+      "end": 3.3,
+      "word": " was",
+      "probability": 0.966
+     },
+     {
+      "start": 3.32,
+      "end": 3.31,
+      "word": " a",
+      "probability": 0.611
+     },
+     {
+      "start": 3.31,
+      "end": 3.8,
+      "word": " sunny",
+      "probability": 1.0000001
+     },
+     {
+      "start": 3.8,
+      "end": 5.2,
+      "word": " day.",
+      "probability": 0.958
+     }
+    ]
+   }
+  ]
+ }
+}

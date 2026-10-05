@@ -4,6 +4,7 @@ import { Navigate, Outlet, useLocation, useSearchParams } from 'react-router';
 import { DEFAULT_SIGNED_IN_PATH, nextPath, signInPath } from '../auth/next';
 import { useMe } from '../auth/useMe';
 import { useLiveEvents, type LiveEvent } from '../events/useLiveEvents';
+import { EXPORTS_KEY } from '../features/account/exportApi';
 import { BLIND_KEY } from '../features/blind/api';
 import { ClipNotices } from '../features/content/ClipNotices';
 import { useClipNotices } from '../features/content/useClipNotices';
@@ -70,6 +71,9 @@ function queryKeysForEvent(event: LiveEvent): readonly QueryKey[] {
     case 'attempt.voided':
       // The event names the attempt only; refresh every Blind step shown (ADR 0024).
       return [BLIND_KEY];
+    case 'export.ready':
+      // A data export finished: ready to download, or failed (ADR 0030).
+      return [EXPORTS_KEY];
     default:
       return NO_KEYS;
   }
