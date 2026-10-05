@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from listenup.modules.export import repository
 from listenup.modules.export.collect import collect
 from listenup.modules.export.domain import archive
+from listenup.modules.identity import service as identity
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database, set_learner
 from listenup.platform.events import EventType, publish
@@ -85,7 +86,8 @@ async def _give_up_build(deps: JobDeps, export_id: str, user_id: str) -> None:
 async def build_archive(deps: JobDeps, export_id: str, user_id: str) -> None:
     """Build the learner's export archive and tell the browser it is ready.
 
-    1. Mark the request 'building' (a repeated run after a crash builds again).
+    1. Mark the request 'building' (a repeated run after a crash builds again), or
+       'failed' when the learner has deleted the account since asking.
     2. Read every module's rows in one read-only snapshot, so the tables agree.
     3. Copy the learner's files from storage into a ZIP in scratch space, then write
        data.json with every row and the list of files.
@@ -102,6 +104,12 @@ async def _build(
     database: Database, storage: Storage, export: uuid.UUID, learner: uuid.UUID
 ) -> None:
     async with database.transaction(learner) as session:
+        if not await identity.account_is_active(session, learner):
+            # Deleted after asking (ADR 0029): no copy of the data for a disabled
+            # account. A learner who restores it can ask again.
+            await repository.mark_failed(session, export, learner, "account_deleted")
+            logger.info("export build skipped: account deleted", extra={"export": str(export)})
+            return
         if not await repository.start_building(session, export, learner):
             logger.info("export build skipped: nothing to build", extra={"export": str(export)})
             return

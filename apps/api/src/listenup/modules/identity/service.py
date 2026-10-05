@@ -423,6 +423,16 @@ def build_accounts(
     return Accounts(settings or get_settings(), database, limiter)
 
 
+async def account_is_active(session: AsyncSession, learner: uuid.UUID) -> bool:
+    """False once the learner deleted the account, during the grace period too (D9).
+
+    For background work that must not run for a disabled account, such as building a
+    data export asked for just before the deletion (ADR 0029, ADR 0030).
+    """
+    account = await repository.get_account(session, learner)
+    return account is not None and account.status == "active"
+
+
 async def get_profile(session: AsyncSession, learner: uuid.UUID) -> dict[str, object]:
     profile = await repository.get_profile(session, learner)
     if profile is None:
@@ -457,6 +467,16 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
                 learner,
                 omit=("token_hash",),
                 order_by="created_at",
+            ),
+            # Earlier deletions the learner cancelled by restoring the account (#120).
+            # The storage prefix is an internal key, like the media keys.
+            await learner_rows(
+                session,
+                "ops.deletion_requests",
+                learner,
+                column="subject_user_id",
+                omit=("storage_prefixes",),
+                order_by="requested_at",
             ),
         )
     )

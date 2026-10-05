@@ -371,6 +371,32 @@ def test_a_last_build_that_times_out_frees_the_learner_to_ask_again(
     assert request_export(client)["status"] == "pending"
 
 
+def test_an_account_deleted_after_asking_gets_no_archive(
+    make_client: ClientFactory, storage: FakeStorage, migrated_url: str
+) -> None:
+    """Deleting the account (ADR 0029) stops an export the learner asked for just before."""
+    client = make_client()
+    user = learner_id(client)
+    seeded(migrated_url, client, storage)
+    started = request_export(client)
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE identity.users SET status = 'pending_deletion', "
+            "deletion_scheduled_at = now() + interval '7 days' WHERE id = %s",
+            [user],
+        )
+
+    run_build(migrated_url, started["id"], user)
+
+    with psycopg.connect(migrated_url) as conn:
+        row = conn.execute(
+            "SELECT status, error_code, archive_key FROM ops.data_exports WHERE id = %s",
+            [started["id"]],
+        ).fetchone()
+    assert row == ("failed", "account_deleted", None)
+    assert not [key for key in storage.objects if "/exports/" in key]
+
+
 def test_a_ready_export_is_announced(
     make_client: ClientFactory, storage: FakeStorage, migrated_url: str
 ) -> None:

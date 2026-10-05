@@ -343,6 +343,13 @@ def test_a_login_session_of_a_disabled_account_reaches_nothing(
     for path in ("/api/v1/me", "/api/v1/library/contents", "/api/v1/sessions", "/api/v1/events"):
         response = client.get(path)
         assert (response.status_code, response.json()["code"]) == (401, "not_signed_in"), path
+    # No new copy of the data either (ADR 0030).
+    export = client.post("/api/v1/me/exports")
+    assert (export.status_code, export.json()["code"]) == (401, "not_signed_in")
+    with psycopg.connect(migrated_url) as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM ops.data_exports WHERE user_id = %s", [user_id]
+        ).fetchone() == (0,)
 
 
 def test_a_reset_link_issued_before_the_deletion_stops_working(
@@ -567,6 +574,20 @@ def test_the_purge_removes_everything_after_the_grace_period(
         f"users/{user_id}/media/{world.media_id}/peaks.json",
         f"users/{user_id}/uploads/{world.confirmed_upload_id}.mp3",
     ]
+    only_mine = add_shared_youtube(migrated_url, user_id)
+    export_id = uuid.uuid4()
+    archive = f"users/{user_id}/exports/{export_id}.zip"
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO ops.data_exports (id, user_id, status, archive_key, ready_at, "
+            "expires_at) VALUES (%s, %s, 'ready', %s, now(), now() + interval '7 days')",
+            [export_id, user_id, archive],
+        )
+    mine.append(archive)
+    with psycopg.connect(migrated_url) as conn:
+        exports = conn.execute(
+            "SELECT count(*) FROM ops.data_exports WHERE user_id = %s", [user_id]
+        ).fetchone()
     theirs = f"users/{other}/uploads/kept.mp3"
     shared_files = f"media/youtube/{shared}/playback.mp4"
     for key in [*mine, theirs, shared_files]:
@@ -584,6 +605,8 @@ def test_the_purge_removes_everything_after_the_grace_period(
     assert not [key for key in storage.objects if key.startswith(f"users/{user_id}/")]
     assert theirs in storage.objects and shared_files in storage.objects
     assert ref_count(migrated_url, shared) == 1  # the other learner still uses it
+    # Unused shared media waits for the orphan clean-up (#89), not for this purge.
+    assert ref_count(migrated_url, only_mine) == 0
     assert ref_count(migrated_url, world.media_id) is None
     request = deletion_request(migrated_url, user_id)
     assert request["status"] == "completed"
@@ -594,7 +617,8 @@ def test_the_purge_removes_everything_after_the_grace_period(
     # account row itself (learner_rows counts only tables with a user_id).
     assert report["rows_total"] == rows - 1 + 1
     assert report["rows_removed"]["identity.users"] == 1
-    assert report["rows_removed"]["content.contents"] == 2
+    assert report["rows_removed"]["content.contents"] == 3
+    assert exports is not None and report["rows_removed"]["ops.data_exports"] == exports[0]
     assert report["media_objects"] == [str(world.media_id)]
     assert login(client, email).json()["code"] == "invalid_credentials"
     assert login(client, email, restore=True).json()["code"] == "invalid_credentials"
