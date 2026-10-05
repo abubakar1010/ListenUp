@@ -17,15 +17,21 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 from httpx import Response
+from starlette.requests import Request
+from starlette.responses import Response as StarletteResponse
 
 from listenup.main import create_app
 from listenup.modules.identity import jobs as identity_jobs
+from listenup.modules.identity import repository as identity_repository
 from listenup.modules.identity.domain.tokens import new_token, token_hash
+from listenup.modules.identity.service import build_accounts
 from listenup.modules.notifications import service as notifications
 from listenup.platform import jobs as platform_jobs
 from listenup.platform.config import Settings
 from listenup.platform.database import Database
+from listenup.platform.errors import ProblemError
 from listenup.platform.jobs import JobDeps, run_handler
+from listenup.platform.rate_limit import RateLimiter
 from listenup.platform.storage import StoredObject
 from tests.integration.conftest import conninfo_to_url, with_csrf
 from tests.integration.intake_helpers import FakeStorage
@@ -750,6 +756,50 @@ def test_a_purge_that_gives_up_is_marked_failed_and_retried_later(
     finished = deletion_request(migrated_url, user_id)
     assert finished["status"] == "completed"
     assert learner_rows(migrated_url, user_id) == 0
+
+
+def test_every_sign_in_method_asks_before_restoring(
+    client: TestClient, migrated_url: str, api_role_url: str
+) -> None:
+    """Google sign-in (#32) is not built. When it is, its callback must end in
+    `Accounts.complete_sign_in`, like the password sign-in; this checks that seam with
+    an account that has no password, as a Google account will."""
+    email = unique_email()
+    user_id = register(client, email)
+    delete_me(client)
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute("UPDATE identity.users SET password_hash = NULL WHERE id = %s", [user_id])
+    scope = {"type": "http", "headers": [], "client": ("203.0.113.7", 50000)}
+
+    async def sign_in(restore: bool) -> StarletteResponse:
+        database = Database(api_role_url, pool_size=1)
+        accounts = build_accounts(
+            database,
+            RateLimiter(database),
+            Settings(database_url=api_role_url, log_json=False),  # type: ignore[arg-type]
+        )
+        response = StarletteResponse()
+        try:
+            async with database.transaction() as session:
+                account = await identity_repository.find_account(session, email)
+                assert account is not None and account.password_hash is None
+                await accounts.complete_sign_in(
+                    session, Request(scope), response, account, restore=restore
+                )
+        finally:
+            await database.dispose()
+        return response
+
+    with pytest.raises(ProblemError) as declined:
+        asyncio.run(sign_in(restore=False))
+    assert (declined.value.status, declined.value.code) == (409, "account_pending_deletion")
+    assert deletion_request(migrated_url, user_id)["status"] == "pending"
+
+    response = asyncio.run(sign_in(restore=True))
+
+    assert "listenup_session=" in response.headers["set-cookie"]
+    assert user_row(migrated_url, user_id) == ("active", None)
+    assert deletion_request(migrated_url, user_id)["status"] == "cancelled"
 
 
 def test_the_purge_never_deletes_an_active_account(
