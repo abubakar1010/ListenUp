@@ -64,5 +64,6 @@ If the VM itself is lost (System Design 11.1, detected by the external uptime mo
 | Date | Backup | Where | Tables | Rows | Restore time | Result | By |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-10-04 | `20261004T040253Z` (112 KB dump, taken in 0.14 s) | First test, during #97: a throwaway database `wt_s_backup_drill` on the local PostgreSQL 16.14 server, migrated to `0011` and filled with `scripts/seed_dev.py`; dumps in a local directory (`--local-dir`), as no object storage was running. The throwaway database was dropped afterwards. | 19 | 46 | 0.28 s (0.8 s for the whole command) | Passed: every row count and the Alembic revision matched; scratch database dropped; well within the 4 h RTO | #97 implementation |
+| 2026-10-05 | `20261005T095713Z` (116 KB dump, taken in 0.19 s) | Re-run on the branch after merging `main`: a throwaway database migrated to `0012` and filled with `scripts/seed_dev.py`; dumps in a local directory (`--local-dir`), as no object storage ran in this environment. Dropped afterwards. | 20 | 47 | 0.30 s (0.8 s for the whole command) | Passed: every row count and the Alembic revision matched; scratch database dropped; exit code 0, within the 4 h RTO | #97 implementation |
 
 The first production restore test is due once the stage 0 deployment (#112) runs the `backup` service against the managed database and the bucket.
