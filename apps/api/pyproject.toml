@@ -67,7 +67,7 @@ packages = ["listenup"]
 # Speech libraries live in the `speech` extra and the worker-media image only; their
 # adapters import them lazily (ADR 0028).
 [[tool.mypy.overrides]]
-module = ["faster_whisper", "faster_whisper.*", "torch", "torch.*", "torchaudio", "torchaudio.*"]
+module = ["faster_whisper", "faster_whisper.*", "numpy", "numpy.*", "torch", "torch.*", "torchaudio", "torchaudio.*"]
 ignore_missing_imports = true
 
 # Module boundaries from Architecture section 4.3, checked by `uv run lint-imports`.

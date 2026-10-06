@@ -12,7 +12,6 @@ to the port's schema, so contract tests replay recordings without the model.
 
 import asyncio
 import re
-import subprocess
 import threading
 import unicodedata
 from collections.abc import Callable
@@ -25,6 +24,7 @@ from pydantic import BaseModel
 
 from listenup.ai.config import ProviderEntry
 from listenup.ai.ports import AlignedUnit, AlignedWord, Alignment, Provenance
+from listenup.ai.providers.audio import decode_pcm
 
 PROVIDER = "wav2vec2-ctc"
 
@@ -68,34 +68,6 @@ def alignable_words(text: str) -> list[AlignableWord]:
         if tokens:
             found.append(AlignableWord(index=index, text=word, tokens=tokens))
     return found
-
-
-def decode_pcm(audio: Path, sample_rate: int) -> bytes:
-    """Mono 32-bit float PCM at the model's rate, through ffmpeg (as in worker-media)."""
-    result = subprocess.run(
-        [
-            "ffmpeg",
-            "-nostdin",
-            "-v",
-            "error",
-            "-i",
-            str(audio),
-            "-f",
-            "f32le",
-            "-ac",
-            "1",
-            "-ar",
-            str(sample_rate),
-            "-",
-        ],
-        capture_output=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise ValueError(
-            f"cannot decode {audio.name}: {result.stderr.decode(errors='replace')[:200]}"
-        )
-    return result.stdout
 
 
 class TorchaudioCtcEngine:
