@@ -8,23 +8,25 @@ version: 1
 roles:
   transcription:
     - provider: faster-whisper
-      model: base.en  # spike #18 (B1) picks the size: tiny.en, base.en or small.en
-      timeout_seconds: 600  # a 15-minute clip on 2 CPU threads, with headroom
+      model: small.en  # spike #18 (B1, ADR 0033): 0.54 core-s per audio-s, 3.9% Dictation WER
+      timeout_seconds: 600  # a 15-minute passage at about 0.3x real time on 2 threads, with headroom
       retries: 0  # local CPU work: a timeout will not pass on retry
       preload: true
       options:
         compute_type: int8
         cpu_threads: 2  # matches OMP_NUM_THREADS in the worker-media image
-        beam_size: 5
+        beam_size: 5  # 1 saves 32% CPU for +0.1 points of WER (ADR 0033)
         vad_filter: true
   alignment:
     - provider: wav2vec2-ctc
-      model: MMS_FA  # spike #19 (B2) confirms the model
+      model: WAV2VEC2_ASR_BASE_960H  # spike #19 (B2, ADR 0033): 0.18 core-s per audio-s
       timeout_seconds: 300
       retries: 0
       preload: true
       options:
         threads: 2
+        window_seconds: 30  # half the CPU and a third of the memory of one pass
+        int8: true  # dynamic int8 linear layers: 23% less CPU, same boundaries
   # No adapter yet: Shadow grading (#20, #21) and the hosted Text AI (#23) add them.
   speech_assessment: []
   text_ai: []
