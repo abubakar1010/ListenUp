@@ -1,0 +1,224 @@
+{
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "cores": 4,
+    "memory_gb": 15.7,
+    "machine": "x86_64",
+    "python": "3.12.3",
+    "omp_num_threads": "2",
+    "date": "2026-10-05"
+  },
+  "summary": {
+    "model": "MMS_FA",
+    "emission": "whole passage",
+    "threads": 2,
+    "model load_s": 112.9,
+    "peak_rss_mb": 5944,
+    "passages aligned": 20,
+    "mean core-s/audio-s": 1.191,
+    "max core-s/audio-s": 1.245,
+    "meets 0.2 target": false
+  },
+  "rows": [
+    {
+      "passage": "ls-clean-121-127105",
+      "set": "test-clean",
+      "audio_s": 190.6,
+      "wall_s": 121.04,
+      "core_s_per_audio_s": 1.234,
+      "rtf": 0.635,
+      "words": 559,
+      "unaligned": -5
+    },
+    {
+      "passage": "ls-clean-1221-135767",
+      "set": "test-clean",
+      "audio_s": 180.6,
+      "wall_s": 111.83,
+      "core_s_per_audio_s": 1.204,
+      "rtf": 0.619,
+      "words": 486,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-clean-1284-1180",
+      "set": "test-clean",
+      "audio_s": 181.6,
+      "wall_s": 113.76,
+      "core_s_per_audio_s": 1.219,
+      "rtf": 0.627,
+      "words": 597,
+      "unaligned": -3
+    },
+    {
+      "passage": "ls-clean-237-134500",
+      "set": "test-clean",
+      "audio_s": 181.9,
+      "wall_s": 110.26,
+      "core_s_per_audio_s": 1.182,
+      "rtf": 0.606,
+      "words": 558,
+      "unaligned": -12
+    },
+    {
+      "passage": "ls-clean-260-123288",
+      "set": "test-clean",
+      "audio_s": 187.0,
+      "wall_s": 114.23,
+      "core_s_per_audio_s": 1.187,
+      "rtf": 0.611,
+      "words": 496,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-clean-61-70968",
+      "set": "test-clean",
+      "audio_s": 185.3,
+      "wall_s": 111.41,
+      "core_s_per_audio_s": 1.174,
+      "rtf": 0.601,
+      "words": 553,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-clean-672-122797",
+      "set": "test-clean",
+      "audio_s": 180.4,
+      "wall_s": 108.04,
+      "core_s_per_audio_s": 1.163,
+      "rtf": 0.599,
+      "words": 406,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-clean-908-157963",
+      "set": "test-clean",
+      "audio_s": 180.4,
+      "wall_s": 108.73,
+      "core_s_per_audio_s": 1.17,
+      "rtf": 0.603,
+      "words": 417,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-other-1688-142285",
+      "set": "test-other",
+      "audio_s": 185.7,
+      "wall_s": 114.26,
+      "core_s_per_audio_s": 1.192,
+      "rtf": 0.615,
+      "words": 467,
+      "unaligned": -4
+    },
+    {
+      "passage": "ls-other-1998-15444",
+      "set": "test-other",
+      "audio_s": 182.8,
+      "wall_s": 109.88,
+      "core_s_per_audio_s": 1.169,
+      "rtf": 0.601,
+      "words": 462,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-other-2033-164914",
+      "set": "test-other",
+      "audio_s": 180.3,
+      "wall_s": 108.19,
+      "core_s_per_audio_s": 1.168,
+      "rtf": 0.6,
+      "words": 416,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-other-2414-159411",
+      "set": "test-other",
+      "audio_s": 181.0,
+      "wall_s": 109.64,
+      "core_s_per_audio_s": 1.173,
+      "rtf": 0.606,
+      "words": 425,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-other-3080-5032",
+      "set": "test-other",
+      "audio_s": 197.5,
+      "wall_s": 126.61,
+      "core_s_per_audio_s": 1.245,
+      "rtf": 0.641,
+      "words": 521,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-other-367-130732",
+      "set": "test-other",
+      "audio_s": 182.9,
+      "wall_s": 111.93,
+      "core_s_per_audio_s": 1.187,
+      "rtf": 0.612,
+      "words": 580,
+      "unaligned": 0
+    },
+    {
+      "passage": "vp-accented-20090218-0900-plenary-13-en",
+      "set": "vp-accented",
+      "audio_s": 188.2,
+      "wall_s": 118.5,
+      "core_s_per_audio_s": 1.223,
+      "rtf": 0.63,
+      "words": 445,
+      "unaligned": 5
+    },
+    {
+      "passage": "vp-accented-20090309-0900-plenary-13-en",
+      "set": "vp-accented",
+      "audio_s": 181.2,
+      "wall_s": 110.63,
+      "core_s_per_audio_s": 1.18,
+      "rtf": 0.611,
+      "words": 446,
+      "unaligned": -5
+    },
+    {
+      "passage": "vp-accented-20090311-0900-plenary-16-en",
+      "set": "vp-accented",
+      "audio_s": 181.7,
+      "wall_s": 110.13,
+      "core_s_per_audio_s": 1.175,
+      "rtf": 0.606,
+      "words": 322,
+      "unaligned": 0
+    },
+    {
+      "passage": "vp-en-20131022-0900-plenary-19-en",
+      "set": "vp-en",
+      "audio_s": 186.2,
+      "wall_s": 114.72,
+      "core_s_per_audio_s": 1.199,
+      "rtf": 0.616,
+      "words": 507,
+      "unaligned": -2
+    },
+    {
+      "passage": "vp-en-20131023-0900-plenary-11-en",
+      "set": "vp-en",
+      "audio_s": 190.5,
+      "wall_s": 117.99,
+      "core_s_per_audio_s": 1.202,
+      "rtf": 0.62,
+      "words": 356,
+      "unaligned": 1
+    },
+    {
+      "passage": "vp-en-20180911-0900-plenary-en",
+      "set": "vp-en",
+      "audio_s": 183.7,
+      "wall_s": 110.46,
+      "core_s_per_audio_s": 1.165,
+      "rtf": 0.601,
+      "words": 453,
+      "unaligned": -3
+    }
+  ]
+}

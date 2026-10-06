@@ -1,0 +1,227 @@
+{
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "cores": 4,
+    "memory_gb": 15.7,
+    "machine": "x86_64",
+    "python": "3.12.3",
+    "omp_num_threads": null,
+    "date": "2026-10-06"
+  },
+  "summary": {
+    "passages": "ls-clean",
+    "hand-labelled windows": 0
+  },
+  "rows": [
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-w30s-int8 vs WAV2VEC2_ASR_BASE_960H-w30s (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 4.8,
+      "median_ms": 0.0,
+      "p90_ms": 20.0,
+      "within_50ms": 1.0,
+      "within_100ms": 1.0
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-w30s-int8 vs WAV2VEC2_ASR_BASE_960H-whole (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 5.1,
+      "median_ms": 0.0,
+      "p90_ms": 20.0,
+      "within_50ms": 1.0,
+      "within_100ms": 1.0
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-w30s-int8 vs WAV2VEC2_ASR_BASE_960H-w15s (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 5.3,
+      "median_ms": 0.0,
+      "p90_ms": 20.0,
+      "within_50ms": 1.0,
+      "within_100ms": 1.0
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-w30s-int8 vs MMS_FA-w30s (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 16.2,
+      "median_ms": 20.0,
+      "p90_ms": 40.0,
+      "within_50ms": 0.964,
+      "within_100ms": 0.993
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-w30s-int8 vs MMS_FA-whole (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 16.2,
+      "median_ms": 20.0,
+      "p90_ms": 40.0,
+      "within_50ms": 0.964,
+      "within_100ms": 0.993
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-w30s-int8 vs small.en-beam5 (agreement)",
+      "words_matched": 3893,
+      "words_compared": 4017,
+      "mean_ms": 78.0,
+      "median_ms": 52.1,
+      "p90_ms": 167.2,
+      "within_50ms": 0.491,
+      "within_100ms": 0.729
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-w30s vs WAV2VEC2_ASR_BASE_960H-whole (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 3.5,
+      "median_ms": 0.0,
+      "p90_ms": 20.0,
+      "within_50ms": 1.0,
+      "within_100ms": 1.0
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-w30s vs WAV2VEC2_ASR_BASE_960H-w15s (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 1.6,
+      "median_ms": 0.0,
+      "p90_ms": 0.0,
+      "within_50ms": 1.0,
+      "within_100ms": 1.0
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-w30s vs MMS_FA-w30s (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 18.1,
+      "median_ms": 20.0,
+      "p90_ms": 40.0,
+      "within_50ms": 0.954,
+      "within_100ms": 0.991
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-w30s vs MMS_FA-whole (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 18.1,
+      "median_ms": 20.0,
+      "p90_ms": 40.0,
+      "within_50ms": 0.954,
+      "within_100ms": 0.991
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-w30s vs small.en-beam5 (agreement)",
+      "words_matched": 3893,
+      "words_compared": 4017,
+      "mean_ms": 79.1,
+      "median_ms": 52.8,
+      "p90_ms": 169.4,
+      "within_50ms": 0.487,
+      "within_100ms": 0.724
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-whole vs WAV2VEC2_ASR_BASE_960H-w15s (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 4.2,
+      "median_ms": 0.0,
+      "p90_ms": 20.0,
+      "within_50ms": 1.0,
+      "within_100ms": 1.0
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-whole vs MMS_FA-w30s (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 17.4,
+      "median_ms": 20.0,
+      "p90_ms": 40.0,
+      "within_50ms": 0.958,
+      "within_100ms": 0.991
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-whole vs MMS_FA-whole (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 17.4,
+      "median_ms": 20.0,
+      "p90_ms": 40.0,
+      "within_50ms": 0.958,
+      "within_100ms": 0.991
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-whole vs small.en-beam5 (agreement)",
+      "words_matched": 3893,
+      "words_compared": 4017,
+      "mean_ms": 78.6,
+      "median_ms": 52.1,
+      "p90_ms": 168.7,
+      "within_50ms": 0.49,
+      "within_100ms": 0.728
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-w15s vs MMS_FA-w30s (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 18.3,
+      "median_ms": 20.0,
+      "p90_ms": 40.0,
+      "within_50ms": 0.951,
+      "within_100ms": 0.991
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-w15s vs MMS_FA-whole (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 18.4,
+      "median_ms": 20.0,
+      "p90_ms": 40.0,
+      "within_50ms": 0.951,
+      "within_100ms": 0.991
+    },
+    {
+      "comparison": "WAV2VEC2_ASR_BASE_960H-w15s vs small.en-beam5 (agreement)",
+      "words_matched": 3893,
+      "words_compared": 4017,
+      "mean_ms": 79.1,
+      "median_ms": 52.5,
+      "p90_ms": 169.7,
+      "within_50ms": 0.488,
+      "within_100ms": 0.724
+    },
+    {
+      "comparison": "MMS_FA-w30s vs MMS_FA-whole (agreement)",
+      "words_matched": 4072,
+      "words_compared": 4072,
+      "mean_ms": 1.8,
+      "median_ms": 0.0,
+      "p90_ms": 0.0,
+      "within_50ms": 0.999,
+      "within_100ms": 1.0
+    },
+    {
+      "comparison": "MMS_FA-w30s vs small.en-beam5 (agreement)",
+      "words_matched": 3893,
+      "words_compared": 4017,
+      "mean_ms": 77.1,
+      "median_ms": 52.9,
+      "p90_ms": 165.2,
+      "within_50ms": 0.485,
+      "within_100ms": 0.731
+    },
+    {
+      "comparison": "MMS_FA-whole vs small.en-beam5 (agreement)",
+      "words_matched": 3893,
+      "words_compared": 4017,
+      "mean_ms": 77.1,
+      "median_ms": 53.3,
+      "p90_ms": 165.3,
+      "within_50ms": 0.483,
+      "within_100ms": 0.731
+    }
+  ]
+}
