@@ -6,8 +6,9 @@ stage 0 server), then commit the file under tests/contract/recordings/:
     uv run python scripts/record_ai_contract.py transcription clip.flac
     uv run python scripts/record_ai_contract.py alignment clip.flac --text "The quick brown fox"
 
-The provider's model and options come from ai.yaml, so a recording shows what production
-runs; --model records another model with the same options.
+The provider's model and options come from the packaged ai.yaml (not LISTENUP_AI_CONFIG),
+so a recording shows what production runs; --model records another model with the same
+options. A provider that ai.yaml does not configure for the role is refused.
 
 CI replays the recording through the whole adapter without the model.
 """
@@ -16,7 +17,7 @@ import argparse
 import json
 from pathlib import Path
 
-from listenup.ai.config import ProviderEntry, load_config
+from listenup.ai.config import DEFAULT_CONFIG, ProviderEntry, load_config
 from listenup.ai.ports import Role
 from listenup.ai.providers import faster_whisper, wav2vec2_ctc
 
@@ -25,10 +26,10 @@ RECORDINGS = Path(__file__).resolve().parents[1] / "tests" / "contract" / "recor
 
 def configured_entry(role: Role, provider: str, model: str | None) -> ProviderEntry:
     """The role's entry for `provider` in ai.yaml, with `model` instead if given."""
-    for entry in load_config().roles.get(role, ()):
+    for entry in load_config(DEFAULT_CONFIG).providers(role):
         if entry.provider == provider:
             return entry if model is None else entry.model_copy(update={"model": model})
-    return ProviderEntry(provider=provider, model=model or "default")
+    raise SystemExit(f"{DEFAULT_CONFIG} configures no {provider} provider for {role.value}")
 
 
 def main() -> None:
