@@ -26,7 +26,7 @@ The unique key `analytics_events_once (event_type, subject_id, step)`, with `NUL
 - `plan_started {path}`: `practice.start_session`.
 - `step_started` and `step_completed {outcome: done | skipped}`: derived in `practice` from the plan's step statuses before and after every transition (`analytics.domain.step_changes`). A step starts when the plan moves onto it (the first step at plan start, then each step that opens). This works for all five steps today, and gives "reached Transcript" and "reached the final step" directly. "First action in the step" would need features that Transcript, Card and Shadow do not have yet.
 - `listen_started {mode}`: a Blind or Dictation attempt began (`practice.start_attempt`). It is not in PRD 8.2's list, but "time to first listen" needs a server-side signal for the start of playback. For Blind it is the learner pressing start; for Dictation it is the player opening.
-- `blind_abandoned {reason}`: a Blind attempt was voided (`blind._void`, both heartbeat and browser-reported voids).
+- `blind_abandoned {reason}`: a Blind attempt was voided (`blind._void`, both heartbeat and browser-reported voids). Only voids the server sees are recorded. An attempt whose browser vanished (a closed tab whose beacon was lost) stays active, and is not counted until the learner next acts on it, so the count is a lower bound. Catching those needs a job that voids attempts with no heartbeat; the platform has no scheduled jobs yet, so that is left as a follow-up.
 - `dictation_replays {replay_count}`, `mark_created {pattern}`, `card_created`, `shadow_round_completed {round}`: their recording functions exist and are tested, but nothing calls them yet. Replays are counted only in the browser, and Dictation submission (#53) will send the count; marks, cards and Shadow do not exist yet. They fire once those features call them; none are faked.
 
 ### Privacy
@@ -65,5 +65,7 @@ The script reads every event before `--as-of` and computes in Python. Beta volum
 - Marks, cards, Shadow rounds and Dictation submission must call their recording functions when they are built. Until then, mark reuse and the repeat-failure trend report "no data", and no replay counts exist.
 - The first plan seen for a learner counts as their first, so learners active before migration 0015 look new in the first return-rate reports.
 - A new event type needs a migration (the `event_type` CHECK) and a recording function in `analytics/service.py`.
-- Migration 0015 is chained to the current head of `main`. It is re-chained to 0014 once 0013 (account deletion) and 0014 (ops) are merged.
+- Migration 0015 is chained to the current head of `main` (0012). #131 adds 0013 on the same head, so whichever merges second re-chains onto the other; the single-head migration test fails until it does. #130 adds no migration.
+- Recording never fails the learner's action: each `record_*` runs in a savepoint, and a value analytics does not know, or a row the table refuses, is logged and dropped. The cost is a silently missing event, so a new step, entry or source type must be added to `analytics.domain` and the CHECKs in the same change.
+- Marks from sessions that started before migration 0015 have no `plan_started` event. The repeat-failure trend counts them in its totals but gives them no session number.
 - The Database Design does not list the table yet; its owner adds it.

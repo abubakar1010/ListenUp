@@ -21,7 +21,9 @@ leaves no event.
   reads them through the default grants.
 
 Revision ID: 0015
-Revises: 0012 (re-chain to 0014 once 0013 and 0014 are on main)
+Revises: 0012. #131 (0013, account deletion) also revises 0012: whichever pull request
+merges second must set its `down_revision` to the other's revision before merging;
+`tests/integration/test_migrations.py` fails on two heads until it does.
 Create Date: 2026-10-05
 """
 

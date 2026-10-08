@@ -17,7 +17,9 @@ Meanings:
 - `dictation_replays`: how often the learner replayed during one Dictation attempt.
   Fires once Dictation submission (#53) reports the count.
 - `blind_abandoned`: a Blind attempt was voided (left, reloaded, seeked, too many
-  interruptions ...), with the `reason`.
+  interruptions ...), with the `reason`. Only voids the server sees are recorded: the
+  browser's report or a late heartbeat. An attempt whose browser vanished without
+  either stays active and is not counted until the learner next acts on it.
 - `mark_created`, `card_created`, `shadow_round_completed`: fire once marks, cards and
   Shadow exist. A mark carries a hash of its normalised phrase, never the phrase.
 """
