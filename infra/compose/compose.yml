@@ -119,6 +119,7 @@ services:
       dockerfile: infra/docker/backend.Dockerfile
       target: backup
     profiles: [backup]
+    init: true  # forwards SIGTERM, so `docker stop` flushes telemetry and exits
     environment: *backend-env
     depends_on:
       postgres:

@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -43,7 +44,7 @@ from typing import Any
 import psycopg
 from psycopg import sql
 
-from listenup.ops.store import BackupStore, DirectoryBackupStore, S3BackupStore
+from listenup.ops.store import BackupStore, DirectoryBackupStore, S3BackupStore, StoredFile
 from listenup.platform.config import Settings, get_settings
 from listenup.platform.log import configure_logging
 from listenup.platform.telemetry import (
@@ -299,10 +300,13 @@ def dump(settings: Settings, store: BackupStore, now: datetime | None = None) ->
     return manifest
 
 
-def stamps(store: BackupStore, prefix: str) -> list[str]:
-    """Complete backups (those with a manifest), newest first."""
+def stamps(store: BackupStore, prefix: str, listing: list[StoredFile] | None = None) -> list[str]:
+    """Complete backups (those with a manifest), newest first.
+
+    Pass `listing` (from `store.list_files(prefix)`) to reuse a listing already made.
+    """
     found = set()
-    for item in store.list_files(prefix):
+    for item in listing if listing is not None else store.list_files(prefix):
         match = _STAMP.match(item.key[len(prefix) :])
         if match and item.key.endswith(f"/{MANIFEST_NAME}"):
             found.add(match.group(1))
@@ -320,10 +324,11 @@ def prune(
     """
     now = now or datetime.now(UTC)
     cutoff = now - timedelta(days=retention_days)
-    complete = stamps(store, prefix)
+    listing = store.list_files(prefix)
+    complete = stamps(store, prefix, listing)
     keep_newest = complete[0] if complete else None
     by_stamp: dict[str, list[str]] = {}
-    for item in store.list_files(prefix):
+    for item in listing:
         match = _STAMP.match(item.key[len(prefix) :])
         if match:
             by_stamp.setdefault(match.group(1), []).append(item.key)
@@ -472,12 +477,21 @@ def next_run(now: datetime, hour: int, minute: int) -> datetime:
     return run if run > now else run + timedelta(days=1)
 
 
-def _report_latest(store: BackupStore, prefix: str) -> None:
-    """Tell the BackupMissing alert when the newest backup in storage was taken."""
+def previous_run(now: datetime, hour: int, minute: int) -> datetime:
+    """The latest daily run time at hour:minute UTC at or before `now`."""
+    run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return run if run <= now else run - timedelta(days=1)
+
+
+def _report_latest(store: BackupStore, prefix: str) -> datetime | None:
+    """Tell the BackupMissing alert when the newest backup in storage was taken, and
+    return that time (None when there is no backup)."""
     available = stamps(store, prefix)
-    if available:
-        taken = datetime.strptime(available[0], STAMP_FORMAT).replace(tzinfo=UTC)
-        record_backup_success(taken.timestamp())
+    if not available:
+        return None
+    taken = datetime.strptime(available[0], STAMP_FORMAT).replace(tzinfo=UTC)
+    record_backup_success(taken.timestamp())
+    return taken
 
 
 def run_once(settings: Settings, store: BackupStore) -> Manifest:
@@ -498,13 +512,24 @@ def schedule(
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
     runs: int | None = None,
 ) -> None:
-    """Dump daily at the configured time; a failure is retried after 30 minutes."""
+    """Dump daily at the configured time; a failure is retried after 30 minutes.
+
+    A start after a missed run (a restart or crash around the daily time) dumps at
+    once, so a day is never skipped; the same when storage cannot be read at start.
+    """
+    newest: datetime | None = None
     try:
-        _report_latest(store, settings.backup_prefix)
+        newest = _report_latest(store, settings.backup_prefix)
     except Exception:
         # Storage may be briefly unreachable at start; the next dump reports itself.
         logger.exception("could not read the newest backup from storage")
-    due = next_run(now(), settings.backup_hour_utc, settings.backup_minute_utc)
+    started = now()
+    last_due = previous_run(started, settings.backup_hour_utc, settings.backup_minute_utc)
+    if newest is None or newest < last_due:
+        logger.info("the latest daily backup is missing; dumping now")
+        due = started
+    else:
+        due = next_run(started, settings.backup_hour_utc, settings.backup_minute_utc)
     done = 0
     while runs is None or done < runs:
         sleep(max(0.0, (due - now()).total_seconds()))
@@ -515,6 +540,16 @@ def schedule(
             logger.exception("database dump failed; retrying in 30 minutes")
             due = now() + RETRY_AFTER_FAILURE
         done += 1
+
+
+def _exit_on_sigterm() -> None:
+    """Turn SIGTERM into a normal exit, so `docker stop` ends a dump cleanly: the child
+    pg_dump is killed, telemetry is flushed, and a dump without a manifest is never used."""
+
+    def stop(signum: int, frame: object) -> None:
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, stop)
 
 
 def _store(settings: Settings, local_dir: str | None) -> BackupStore:
@@ -541,6 +576,7 @@ def main(argv: list[str] | None = None) -> int:
     store = _store(settings, args.local_dir)
     if args.command == "schedule":
         configure_telemetry(settings, "backup")
+        _exit_on_sigterm()
         try:
             schedule(settings, store)
         finally:

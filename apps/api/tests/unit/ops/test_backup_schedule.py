@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from listenup.ops import backup
-from listenup.ops.backup import next_run, prune, schedule, stamps
+from listenup.ops.backup import next_run, previous_run, prune, schedule, stamps
 from listenup.ops.store import DirectoryBackupStore
 from listenup.platform.config import Settings
 from tests.telemetry_helpers import capture
@@ -166,7 +166,8 @@ def test_the_schedule_survives_storage_being_down_at_start(
 
     schedule(Settings(), store, sleep=clock.sleep, now=lambda: clock.now, runs=1)
 
-    assert ran == [datetime(2026, 10, 4, 2, 30, tzinfo=UTC)]
+    # The newest backup is unknown, so it dumps at once instead of risking a skipped day.
+    assert ran == [datetime(2026, 10, 4, 1, 0, tzinfo=UTC)]
 
 
 def test_a_failed_prune_does_not_make_the_dump_look_failed(
@@ -192,3 +193,89 @@ def test_a_failed_prune_does_not_make_the_dump_look_failed(
     monkeypatch.setattr(backup, "prune", broken)
 
     assert backup.run_once(Settings(), store) is manifest
+
+
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [
+        (datetime(2026, 10, 4, 1, 0, tzinfo=UTC), datetime(2026, 10, 3, 2, 30, tzinfo=UTC)),
+        (datetime(2026, 10, 4, 2, 30, tzinfo=UTC), datetime(2026, 10, 4, 2, 30, tzinfo=UTC)),
+        (datetime(2026, 10, 4, 23, 0, tzinfo=UTC), datetime(2026, 10, 4, 2, 30, tzinfo=UTC)),
+    ],
+)
+def test_the_previous_run_is_the_latest_daily_time_not_after_now(
+    now: datetime, expected: datetime
+) -> None:
+    assert previous_run(now, 2, 30) == expected
+
+
+def run_schedule_from(
+    store: DirectoryBackupStore, start: datetime, monkeypatch: pytest.MonkeyPatch
+) -> list[datetime]:
+    clock = Clock(start)
+    ran: list[datetime] = []
+    monkeypatch.setattr(backup, "run_once", lambda *_: ran.append(clock.now))
+    schedule(Settings(), store, sleep=clock.sleep, now=lambda: clock.now, runs=1)
+    return ran
+
+
+def test_a_start_after_a_missed_daily_run_dumps_at_once(
+    store: DirectoryBackupStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    put(store, datetime(2026, 10, 3, 2, 30, 5, tzinfo=UTC))
+    start = datetime(2026, 10, 4, 2, 40, tzinfo=UTC)  # restarted after today's 02:30
+
+    assert run_schedule_from(store, start, monkeypatch) == [start]
+
+
+def test_a_start_before_the_next_daily_run_waits_for_it(
+    store: DirectoryBackupStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    put(store, datetime(2026, 10, 4, 2, 30, 5, tzinfo=UTC))
+    start = datetime(2026, 10, 4, 2, 40, tzinfo=UTC)  # today's dump is already stored
+
+    assert run_schedule_from(store, start, monkeypatch) == [
+        datetime(2026, 10, 5, 2, 30, tzinfo=UTC)
+    ]
+
+
+def test_a_first_start_with_no_backup_dumps_at_once(
+    store: DirectoryBackupStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    start = datetime(2026, 10, 4, 1, 0, tzinfo=UTC)
+
+    assert run_schedule_from(store, start, monkeypatch) == [start]
+
+
+class CountingStore(DirectoryBackupStore):
+    listings = 0
+
+    def list_files(self, prefix: str) -> list:  # type: ignore[type-arg]
+        self.listings += 1
+        return super().list_files(prefix)
+
+
+def test_prune_lists_the_prefix_once(tmp_path: Path) -> None:
+    store = CountingStore(tmp_path / "bucket")
+    put(store, NOW - timedelta(days=15))
+    put(store, NOW - timedelta(hours=1))
+    store.listings = 0
+
+    prune(store, PREFIX, 14, now=NOW)
+
+    assert store.listings == 1
+
+
+def test_sigterm_ends_the_scheduler_with_a_normal_exit() -> None:
+    import signal
+
+    previous = signal.getsignal(signal.SIGTERM)
+    try:
+        backup._exit_on_sigterm()
+        handler = signal.getsignal(signal.SIGTERM)
+        assert callable(handler)
+        with pytest.raises(SystemExit) as stop:
+            handler(signal.SIGTERM, None)
+        assert stop.value.code == 0
+    finally:
+        signal.signal(signal.SIGTERM, previous)
