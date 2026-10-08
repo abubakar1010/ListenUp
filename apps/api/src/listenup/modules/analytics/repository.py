@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from listenup.modules.analytics.domain import Event, EventType
+from listenup.modules.analytics.domain import REPORT_EVENT_TYPES, REPORT_STEPS, Event, EventType
 from listenup.platform.ids import uuid7
 
 _INSERT = text("""
@@ -57,11 +57,13 @@ async def insert(
 
 
 async def events_before(session: AsyncSession, as_of: datetime) -> list[Event]:
-    """Every event that happened before `as_of`, oldest first, for the report.
+    """The events the report reads that happened before `as_of`, oldest first.
 
     The report follows each cohort to `as_of` and needs every learner's earlier plans
-    and marks, so it reads all events rather than the range alone. Beta volumes are
-    small; aggregating in SQL is the step to take when they are not.
+    and marks, so it reads history rather than the range alone. It reads only the event
+    types and steps the metrics use; the high-volume step events of the other steps stay
+    in the table. Beta volumes are small; aggregating in SQL is the step to take when
+    they are not.
     """
     result = await session.execute(
         text("""
@@ -69,9 +71,15 @@ async def events_before(session: AsyncSession, as_of: datetime) -> list[Event]:
                properties
           FROM ops.analytics_events
          WHERE occurred_at < :as_of
+           AND event_type = ANY(:types)
+           AND (step IS NULL OR step = ANY(:steps))
          ORDER BY occurred_at, id
         """),
-        {"as_of": as_of},
+        {
+            "as_of": as_of,
+            "types": [kind.value for kind in REPORT_EVENT_TYPES],
+            "steps": list(REPORT_STEPS),
+        },
     )
     return [
         Event(

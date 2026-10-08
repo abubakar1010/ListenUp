@@ -159,6 +159,20 @@ def test_mark_reuse_has_no_data_until_cards_or_shadow_exist() -> None:
     assert mark_reuse(events, START, END) is None
 
 
+def test_mark_reuse_has_no_data_for_a_range_before_cards_existed() -> None:
+    session = uuid.uuid4()
+    events = [
+        step(EventType.STEP_STARTED, session, "transcript", at(2)),
+        step(EventType.STEP_STARTED, uuid.uuid4(), "transcript", END + timedelta(days=2)),
+        Event(EventType.CARD_CREATED, uuid.uuid4(), uuid.uuid4(), END + timedelta(days=3)),
+    ]
+
+    assert mark_reuse(events, START, END) is None
+    after = mark_reuse(events, END, END + timedelta(days=30))
+    assert after is not None
+    assert after.rate == 0  # cards exist by then: no reuse is a real zero
+
+
 def test_mark_reuse_counts_cards_and_shadow_segments_per_session_at_transcript() -> None:
     learner = uuid.uuid4()
     a, b, outside = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
@@ -218,6 +232,39 @@ def test_a_mark_repeats_when_an_earlier_session_marked_the_same_pattern() -> Non
     assert by_number[3] == (1, 1)
     assert len(result.by_session) == 8
     assert result.by_session[7].share is None
+
+
+def test_earlier_means_when_the_mark_was_made_not_which_plan_started_first() -> None:
+    learner = uuid.uuid4()
+    a, b = uuid.uuid4(), uuid.uuid4()
+    events = [
+        plan(learner, at(2), a),  # session A starts first ...
+        plan(learner, at(3), b),
+        mark(learner, b, "gonna", at(4)),  # ... but B's mark is the earlier one
+        mark(learner, a, "gonna", at(5)),  # so A's mark is the repeat
+    ]
+
+    result = repeat_failures(events, START, END)
+
+    assert result is not None
+    by_number = {s.session_number: (s.marks, s.repeats) for s in result.by_session}
+    assert by_number[1] == (1, 1)
+    assert by_number[2] == (1, 0)
+
+
+def test_marks_from_sessions_without_a_start_event_still_count() -> None:
+    learner, known, old = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    events = [
+        plan(learner, at(2), known),
+        mark(learner, old, "gonna", at(2)),  # a session from before events were recorded
+        mark(learner, known, "gonna", at(3)),
+    ]
+
+    result = repeat_failures(events, START, END)
+
+    assert result is not None
+    assert (result.marks, result.repeats, result.unnumbered) == (2, 1, 1)
+    assert result.by_session[0].marks == 1
 
 
 # The whole report

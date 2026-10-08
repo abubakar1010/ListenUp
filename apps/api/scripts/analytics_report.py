@@ -26,6 +26,9 @@ from listenup.platform.config import get_settings
 from listenup.platform.database import Database
 
 READONLY_ROLE = "listenup_readonly"
+# SET LOCAL ROLE does not pick up the role's own statement_timeout (ALTER ROLE ... SET
+# applies at login only), so the report sets one itself.
+STATEMENT_TIMEOUT = "30s"
 
 
 def _day(value: str) -> datetime:
@@ -44,6 +47,7 @@ async def build(
     try:
         async with database.transaction() as db:
             await db.execute(text("SET TRANSACTION READ ONLY"))
+            await db.execute(text(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'"))
             if role == READONLY_ROLE:
                 await db.execute(text(f"SET LOCAL ROLE {READONLY_ROLE}"))
             return await analytics.build_report(db, start, end, as_of)
@@ -93,6 +97,11 @@ def as_text(report: analytics.Report) -> str:
         lines.append(
             f"Repeat-failure trend   {_percent(trend.share)} of {trend.marks} marks repeat "
             "an earlier session's"
+            + (
+                f" ({trend.unnumbered} from sessions without a start event)"
+                if trend.unnumbered
+                else ""
+            )
         )
         lines.extend(
             f"  session {s.session_number}: {_percent(s.share)} of {s.marks} marks"
@@ -101,26 +110,29 @@ def as_text(report: analytics.Report) -> str:
     return "\n".join(lines)
 
 
-def as_json(report: analytics.Report) -> str:
-    def plain(value: Any) -> Any:
-        if isinstance(value, datetime):
-            return value.isoformat()
-        if isinstance(value, dict):
-            return {key: plain(item) for key, item in value.items()}
-        if isinstance(value, list):
-            return [plain(item) for item in value]
-        return value
+def _plain(value: Any) -> Any:
+    """JSON-ready form of a report: dataclass fields plus their computed properties.
 
-    body = plain(dataclasses.asdict(report))
-    body["plan_completion"]["reach_rate"] = report.plan_completion.reach_rate
-    body["plan_completion"]["completion_rate"] = report.plan_completion.completion_rate
-    body["first_listen"]["under_target_rate"] = report.first_listen.under_target_rate
-    body["return_rate"]["rate"] = report.return_rate.rate
-    if report.mark_reuse is not None:
-        body["mark_reuse"]["rate"] = report.mark_reuse.rate
-    if report.repeat_failures is not None:
-        body["repeat_failures"]["share"] = report.repeat_failures.share
-    return json.dumps(body, indent=2)
+    The rates are properties, which `dataclasses.asdict` leaves out; reading them from
+    the class keeps a rate added later in the JSON without touching this script.
+    """
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        body = {f.name: _plain(getattr(value, f.name)) for f in dataclasses.fields(value)}
+        for name, attr in vars(type(value)).items():
+            if isinstance(attr, property):
+                body[name] = _plain(getattr(value, name))
+        return body
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_plain(item) for item in value]
+    return value
+
+
+def as_json(report: analytics.Report) -> str:
+    return json.dumps(_plain(report), indent=2)
 
 
 def main(argv: list[str] | None = None) -> str:

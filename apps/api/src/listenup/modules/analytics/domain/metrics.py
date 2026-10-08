@@ -15,10 +15,14 @@ to it afterwards counts up to `as_of` (when the report runs), even after `end`.
   3 or more plans within 14 days of it. Learners still inside their 14 days who have
   not yet returned are reported apart and left out of the rate.
 - Mark reuse: cards created plus Shadow segments (a session with a Shadow round), per
-  session that reached Transcript in the range. No data until cards or Shadow exist.
+  session that reached Transcript in the range. No data for a range that ends before
+  the first card or Shadow round was recorded.
 - Repeat-failure trend: the share of marks made in the range whose pattern the learner
-  marked in an earlier session, by session number 1 to 8 (the learner's nth plan).
-  No data until marks exist.
+  had already marked, earlier in time, in another session; by session number 1 to 8
+  (the learner's nth plan). Several sessions can be open at once, so "earlier" is when
+  the mark was made, not which plan started first. A mark whose session has no
+  `plan_started` event (a session from before event recording began) counts in the
+  totals but has no session number. No data until marks exist.
 """
 
 import math
@@ -36,6 +40,20 @@ RETURN_WINDOW = timedelta(days=14)
 RETURN_SESSIONS = 3
 FIRST_LISTEN_TARGET_S = 60.0
 TREND_SESSIONS = 8
+
+# What the report reads, so the repository can leave the rest in the table: every
+# metric ignores the other event types, and the only steps it looks at are these.
+REPORT_EVENT_TYPES = (
+    EventType.CONTENT_ADDED,
+    EventType.PLAN_STARTED,
+    EventType.STEP_STARTED,
+    EventType.STEP_COMPLETED,
+    EventType.LISTEN_STARTED,
+    EventType.MARK_CREATED,
+    EventType.CARD_CREATED,
+    EventType.SHADOW_ROUND_COMPLETED,
+)
+REPORT_STEPS = ("transcript", "shadow")
 
 
 @dataclass(frozen=True)
@@ -120,6 +138,7 @@ class RepeatFailureTrend:
     marks: int
     repeats: int
     by_session: tuple[SessionShare, ...]
+    unnumbered: int = 0  # marks (in `marks`) whose session has no plan_started event
 
     @property
     def share(self) -> float | None:
@@ -134,7 +153,7 @@ class Report:
     plan_completion: PlanCompletion
     first_listen: FirstListen
     return_rate: ReturnRate
-    mark_reuse: MarkReuse | None  # None: no data yet (no cards or Shadow rounds exist)
+    mark_reuse: MarkReuse | None  # None: no card or Shadow round recorded before `end`
     repeat_failures: RepeatFailureTrend | None  # None: no marks in the range
 
 
@@ -211,7 +230,7 @@ def return_rate(events: list[Event], start: datetime, end: datetime, as_of: date
 def mark_reuse(events: list[Event], start: datetime, end: datetime) -> MarkReuse | None:
     cards = _of(events, EventType.CARD_CREATED)
     rounds = _of(events, EventType.SHADOW_ROUND_COMPLETED)
-    if not cards and not rounds:
+    if not any(e.occurred_at < end for e in cards + rounds):
         return None
     reached = {
         e.subject_id
@@ -228,35 +247,37 @@ def mark_reuse(events: list[Event], start: datetime, end: datetime) -> MarkReuse
 def repeat_failures(
     events: list[Event], start: datetime, end: datetime
 ) -> RepeatFailureTrend | None:
-    marks = _of(events, EventType.MARK_CREATED)
+    marks = sorted(_of(events, EventType.MARK_CREATED), key=lambda e: (e.occurred_at, e.subject_id))
     if not any(_in(e, start, end) for e in marks):
         return None
-    marks_by_session: dict[uuid.UUID, list[Event]] = defaultdict(list)
-    for e in marks:
-        if e.session_id is not None:
-            marks_by_session[e.session_id].append(e)
+    numbers = {
+        plan.subject_id: number
+        for started in _plans_by_learner(events).values()
+        for number, plan in enumerate(started, start=1)
+    }
+    sessions_by_pattern: dict[tuple[uuid.UUID, str], set[uuid.UUID | None]] = defaultdict(set)
     counted: dict[int, list[int]] = defaultdict(lambda: [0, 0])  # number -> [marks, repeats]
-    total = repeats = 0
-    for started in _plans_by_learner(events).values():
-        earlier: set[str] = set()
-        for number, plan in enumerate(started, start=1):
-            session_marks = marks_by_session.get(plan.subject_id, [])
-            for e in session_marks:
-                if not _in(e, start, end):
-                    continue
-                repeat = e.properties.get("pattern") in earlier
-                total += 1
-                repeats += repeat
-                if number <= TREND_SESSIONS:
-                    counted[number][0] += 1
-                    counted[number][1] += repeat
-            earlier |= {
-                str(e.properties["pattern"]) for e in session_marks if "pattern" in e.properties
-            }
+    total = repeats = unnumbered = 0
+    for e in marks:
+        pattern = e.properties.get("pattern")
+        seen_in = sessions_by_pattern[(e.user_id, str(pattern))] if pattern else set()
+        repeat = bool(seen_in - {e.session_id})
+        if pattern:
+            seen_in.add(e.session_id)
+        if not _in(e, start, end):
+            continue
+        total += 1
+        repeats += repeat
+        number = numbers.get(e.session_id) if e.session_id else None
+        if number is None:
+            unnumbered += 1
+        elif number <= TREND_SESSIONS:
+            counted[number][0] += 1
+            counted[number][1] += repeat
     by_session = tuple(
         SessionShare(n, counted[n][0], counted[n][1]) for n in range(1, TREND_SESSIONS + 1)
     )
-    return RepeatFailureTrend(total, repeats, by_session)
+    return RepeatFailureTrend(total, repeats, by_session, unnumbered)
 
 
 def compute_report(events: list[Event], start: datetime, end: datetime, as_of: datetime) -> Report:
