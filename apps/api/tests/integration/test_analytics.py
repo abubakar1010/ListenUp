@@ -303,6 +303,27 @@ def test_features_still_to_come_record_each_occurrence_once(
     assert "could" not in json.dumps(props["mark_created"]).lower()
 
 
+def test_an_event_that_cannot_be_recorded_does_not_fail_the_action(
+    client: TestClient, migrated_url: str, api_role_url: str
+) -> None:
+    """A value analytics does not know is dropped; the caller's work still commits."""
+    learner = uuid.UUID(learner_id(client))
+    content, session = uuid.uuid4(), uuid.uuid4()
+
+    async def record(db: AsyncSession) -> None:
+        await analytics.record_content_added(db, learner, content, source_type="podcast")
+        await analytics.record_plan_started(
+            db, learner, session, content, path="blind", steps={"blind": "open", "karaoke": "open"}
+        )
+        await analytics.record_card_created(db, learner, session, uuid.uuid4())
+
+    in_transaction(api_role_url, learner, record)
+
+    assert kinds(events_of(migrated_url, learner)) == Counter(
+        {("plan_started", None): 1, ("card_created", None): 1}
+    )
+
+
 def test_the_api_role_may_insert_its_own_events_only(
     make_client: ClientFactory, migrated_url: str, api_role_url: str
 ) -> None:
@@ -439,6 +460,7 @@ def test_the_report_computes_the_five_metrics_for_a_date_range(
     assert report["mark_reuse"]["rate"] == 1.0
     assert report["repeat_failures"]["marks"] == 1  # the second mark is on 3 March
     assert report["repeat_failures"]["repeats"] == 0
+    assert all("share" in row for row in report["repeat_failures"]["by_session"])
 
 
 def test_the_report_follows_repeats_into_later_days(

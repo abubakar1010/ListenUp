@@ -17,11 +17,21 @@ Each occurrence is recorded once: a repeat of the same (event, subject, step) is
 ignored by the table's unique key. The functions take plain values, and this module
 imports no other module (an import-linter contract), so any module may call it.
 Events hold the learner's id and nothing else personal.
+
+Recording never fails the caller's action. Each `record_*` runs in a savepoint, and a
+value it does not recognise (a new step, entry or source type this module has not
+learnt) or a row the table refuses is logged and dropped; the step completion, plan
+start or upload that called it still commits. The ADR 0033 tests catch the drift.
 """
 
+import functools
+import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime
+from typing import Concatenate
 
+from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.analytics import repository
@@ -37,6 +47,23 @@ from listenup.modules.analytics.domain import (
     step_changes,
 )
 from listenup.platform.export import ExportPart, learner_rows
+
+logger = logging.getLogger(__name__)
+
+
+def _never_fails[**P](
+    record: Callable[Concatenate[AsyncSession, P], Awaitable[None]],
+) -> Callable[Concatenate[AsyncSession, P], Awaitable[None]]:
+    @functools.wraps(record)
+    async def guarded(db: AsyncSession, /, *args: P.args, **kwargs: P.kwargs) -> None:
+        try:
+            async with db.begin_nested():
+                await record(db, *args, **kwargs)
+        except (ValueError, IntegrityError, DataError):
+            logger.warning("analytics event not recorded by %s", record.__name__, exc_info=True)
+
+    return guarded
+
 
 __all__ = [
     "EventType",
@@ -55,6 +82,7 @@ __all__ = [
 ]
 
 
+@_never_fails
 async def record_content_added(
     db: AsyncSession, learner: uuid.UUID, content_id: uuid.UUID, *, source_type: str
 ) -> None:
@@ -69,6 +97,7 @@ async def record_content_added(
     )
 
 
+@_never_fails
 async def record_plan_started(
     db: AsyncSession,
     learner: uuid.UUID,
@@ -94,6 +123,7 @@ async def record_plan_started(
     await record_plan_progress(db, learner, session_id, content_id, before={}, after=steps)
 
 
+@_never_fails
 async def record_plan_progress(
     db: AsyncSession,
     learner: uuid.UUID,
@@ -117,6 +147,7 @@ async def record_plan_progress(
         )
 
 
+@_never_fails
 async def record_listen_started(
     db: AsyncSession,
     learner: uuid.UUID,
@@ -138,6 +169,7 @@ async def record_listen_started(
     )
 
 
+@_never_fails
 async def record_blind_abandoned(
     db: AsyncSession,
     learner: uuid.UUID,
@@ -157,6 +189,7 @@ async def record_blind_abandoned(
     )
 
 
+@_never_fails
 async def record_dictation_replays(
     db: AsyncSession,
     learner: uuid.UUID,
@@ -178,6 +211,7 @@ async def record_dictation_replays(
     )
 
 
+@_never_fails
 async def record_mark_created(
     db: AsyncSession,
     learner: uuid.UUID,
@@ -197,6 +231,7 @@ async def record_mark_created(
     )
 
 
+@_never_fails
 async def record_card_created(
     db: AsyncSession, learner: uuid.UUID, session_id: uuid.UUID, card_id: uuid.UUID
 ) -> None:
@@ -210,6 +245,7 @@ async def record_card_created(
     )
 
 
+@_never_fails
 async def record_shadow_round_completed(
     db: AsyncSession,
     learner: uuid.UUID,
