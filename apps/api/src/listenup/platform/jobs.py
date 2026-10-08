@@ -42,6 +42,7 @@ from listenup.platform.telemetry import (
     job_trace_args,
     observe_job,
     record_queue_sample,
+    record_queue_sampled,
 )
 
 logger = logging.getLogger(__name__)
@@ -431,6 +432,7 @@ async def sample_queue(database: Database) -> None:
     for lane in Lane:
         waiting, oldest = found.get(lane.value, (0, 0.0))
         record_queue_sample(lane.value, waiting, max(0.0, oldest))
+    record_queue_sampled()
 
 
 async def sample_queue_forever(database: Database, every: float = QUEUE_SAMPLE_SECONDS) -> None:

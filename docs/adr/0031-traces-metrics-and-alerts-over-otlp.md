@@ -22,14 +22,15 @@ Architecture 12.3 asks for OpenTelemetry traces across the API, the queue and th
 
 ### Metrics, named for the alert rules
 
-Instrument names are Prometheus-style (`listenup.job.wait_seconds`), so Prometheus' OTLP receiver keeps them and only adds `_total` to counters and `_bucket`/`_sum`/`_count` to histograms. This was checked against Prometheus 3.5's receiver.
+Instrument names are Prometheus-style (`listenup.job.wait_seconds`), so Prometheus' OTLP receiver keeps them and only adds `_total` to counters and `_bucket`/`_sum`/`_count` to histograms. This was checked against Prometheus 3.5's receiver. The job name is the `job_name` label, because `job` is the label Prometheus fills from the resource's service name; each process also has a `service.instance.id`, so replicas never write the same series.
 
 | Metric | Kind | Labels | Recorded by |
 | --- | --- | --- | --- |
 | `listenup_http_server_requests_total`, `listenup_http_server_duration_seconds` | counter, histogram | method, route, status_class | API middleware |
-| `listenup_job_wait_seconds` | histogram | job, lane | job runner: from when the job was due (queued, or scheduled for a retry or postponement) until a worker took it |
-| `listenup_job_duration_seconds`, `listenup_job_runs_total` | histogram, counter | job, lane, outcome | job runner; outcome is `succeeded`, `retried`, `failed` (attempts used up or `PermanentError`), `postponed` or `cancelled` (the worker was shutting down; no alert counts it) |
+| `listenup_job_wait_seconds` | histogram | job_name, lane | job runner: from when the job was due (queued, or scheduled for a retry or postponement) until a worker took it |
+| `listenup_job_duration_seconds`, `listenup_job_runs_total` | histogram, counter | job_name, lane, outcome | job runner; outcome is `succeeded`, `retried`, `failed` (attempts used up or `PermanentError`), `postponed` or `cancelled` (the worker was shutting down; no alert counts it) |
 | `listenup_job_backlog`, `listenup_job_oldest_wait_seconds` | gauge | lane | `sample_queue`, every 30 s in the default worker pool |
+| `listenup_job_queue_sampled_timestamp_seconds` | gauge | | the same sampler's heartbeat; JobQueueSamplerStopped fires when it is over 5 minutes old or missing |
 | `listenup_grading_results_total` | counter | kind, outcome | `record_grading`, a seam for the grading jobs |
 | `listenup_ai_latency_seconds` | histogram | provider, task, outcome | `record_ai_call`, a seam for the AI gateway (#64) |
 | `listenup_ai_quota_remaining_ratio` | gauge | provider | `record_ai_quota`, a seam for the AI gateway (#64) |

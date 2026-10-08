@@ -184,7 +184,7 @@ def test_job_metrics_record_wait_duration_and_outcome() -> None:
             raise ConnectionError("provider said: learner@example.com")
 
     waits = captured.points("listenup.job.wait_seconds")
-    assert waits == [({"job": "test.job", "lane": "ai"}, 2)]
+    assert waits == [({"job_name": "test.job", "lane": "ai"}, 2)]
     runs = {labels["outcome"]: value for labels, value in captured.points("listenup.job.runs")}
     assert runs == {"succeeded": 1, "failed": 1}
     durations = captured.points("listenup.job.duration_seconds")
@@ -280,7 +280,7 @@ def test_a_job_cancelled_by_shutdown_is_not_counted_as_failed() -> None:
         asyncio.run(interrupted())
 
     assert captured.points("listenup.job.runs") == [
-        ({"job": "test.job", "lane": "ai", "outcome": "cancelled"}, 1)
+        ({"job_name": "test.job", "lane": "ai", "outcome": "cancelled"}, 1)
     ]
     assert captured.span("job test.job").status.status_code != StatusCode.ERROR
 
@@ -299,3 +299,25 @@ def test_each_process_has_its_own_instance_id() -> None:
         telemetry.use_providers()  # without shutdown, so nothing is sent
 
     assert ids[0] != ids[1]
+
+
+def test_an_unknown_http_method_is_one_label_value() -> None:
+    client = make_client()
+    with capture() as captured:
+        client.request("FOO", "/api/v1/blind/attempts/a1/media/t")
+        client.request("XYZ123", "/api/v1/blind/attempts/a1/media/t")
+        client.get("/api/v1/blind/attempts/a1/media/t")
+
+    methods = sorted(
+        {labels["method"] for labels, _ in captured.points("listenup.http.server.requests")}
+    )
+    assert methods == ["GET", "OTHER"]
+    assert "FOO" not in captured.everything()
+
+
+def test_the_queue_heartbeat_is_the_current_time() -> None:
+    with capture() as captured:
+        telemetry.record_queue_sampled()
+
+    [(_, value)] = captured.points("listenup.job.queue_sampled_timestamp_seconds")
+    assert abs(value - time.time()) < 5

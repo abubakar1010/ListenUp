@@ -37,6 +37,21 @@ groups:
           summary: "Oldest job on lane {{ $labels.lane }} has waited {{ $value | humanizeDuration }}"
           runbook_url: "docs/runbooks/alerts.md#jobwaittoolong"
 
+      - alert: JobQueueSamplerStopped
+        # The default worker pool samples the queue every 30 s. If it stops (the pool is
+        # down or its sampler keeps failing), the backlog and wait alerts see old values
+        # or none, whatever the lanes are doing.
+        expr: |
+          time() - max(listenup_job_queue_sampled_timestamp_seconds) > 300
+          or
+          absent(listenup_job_queue_sampled_timestamp_seconds)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The job queue has not been sampled for over 5 minutes"
+          runbook_url: "docs/runbooks/alerts.md#jobqueuesamplerstopped"
+
       - alert: JobFailureRateHigh
         # More than 5% of a lane's job runs in 30 minutes failed for good (attempts used
         # up or a PermanentError), with at least 3 such failures (NFR-REL-2).

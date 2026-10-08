@@ -38,11 +38,19 @@ Locally, Alertmanager emails every alert to Mailpit. On the stage 0 server (#112
 
 **Act.** As for JobBacklogGrowing. A single old job on an otherwise empty lane usually means its lock (`lock` column) is held by a stuck job of the same resource: find the `doing` job with that lock and check its worker. A job a worker crashed on is retried once its lock expires (System Design 11.1).
 
+## JobQueueSamplerStopped
+
+**Meaning.** Nothing has sampled the job queue for 5 minutes. The default worker pool does it every 30 s; without it JobBacklogGrowing and JobWaitTooLong see old values or none, so a stuck lane would go unnoticed.
+
+**Confirm.** `time() - max(listenup_job_queue_sampled_timestamp_seconds)` in Prometheus; `docker compose ps worker` and `docker compose logs worker` (`queue sample failed` with the cause).
+
+**Act.** Pool down: `docker compose up -d worker`. Sampler failing: the log line names the database error; fix the connection or the grants on the `procrastinate` schema. Until it is back, check the queue by hand with the query under JobWaitTooLong.
+
 ## JobFailureRateHigh
 
 **Meaning.** More than 5% of a lane's job runs in 30 minutes failed for good (attempts used up, or a `PermanentError`), and at least 3 did. Learners see a failed clip, a missing email or "feedback unavailable" with a retry action (NFR-REL-2).
 
-**Confirm.** `sum by (job) (increase(listenup_job_runs_total{outcome="failed"}[30m]))` names the job type. List the failed jobs (query above) and open a failed run's trace in Jaeger: the job span's `error.type` names the exception, and the worker's log lines with the same `trace_id` hold the details.
+**Confirm.** `sum by (job_name) (increase(listenup_job_runs_total{outcome="failed"}[30m]))` names the job type. List the failed jobs (query above) and open a failed run's trace in Jaeger: the job span's `error.type` names the exception, and the worker's log lines with the same `trace_id` hold the details.
 
 **Act.**
 1. One job type, one exception: fix the cause, then retry the failed jobs: `UPDATE procrastinate.procrastinate_jobs SET status = 'todo', attempts = 0, scheduled_at = now() WHERE status = 'failed' AND task_name = '<job>';`.

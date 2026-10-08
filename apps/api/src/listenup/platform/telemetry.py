@@ -37,6 +37,10 @@ from listenup.platform.config import Settings
 from listenup.platform.log import current_request_id
 
 INSTRUMENTATION = "listenup"
+# Methods recorded as they are; any other token a client sends becomes "OTHER", so a
+# scanner cannot create metric series or span names.
+HTTP_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
+
 # The job argument that carries the trace context and the time the job was queued.
 TRACE_ARG = "_trace"
 
@@ -61,6 +65,7 @@ class Instruments:
     job_runs: Counter
     job_backlog: Gauge
     job_oldest_wait: Gauge
+    job_queue_sampled: Gauge
     grading_results: Counter
     ai_latency: Histogram
     ai_quota_remaining: Gauge
@@ -100,6 +105,11 @@ class Instruments:
             ),
             job_oldest_wait=meter.create_gauge(
                 "listenup.job.oldest_wait_seconds", "s", "How long the oldest due job has waited"
+            ),
+            job_queue_sampled=meter.create_gauge(
+                "listenup.job.queue_sampled_timestamp_seconds",
+                "s",
+                "Unix time the queue backlog was last sampled; the sampler's heartbeat",
             ),
             grading_results=meter.create_counter(
                 "listenup.grading.results",
@@ -304,7 +314,8 @@ def observe_job(
     enqueued_at = carrier.pop("enqueued_at", None)
     started = time.time()
     tools = instruments()
-    labels = {"job": name, "lane": lane}
+    # `job_name`, not `job`: Prometheus fills its own `job` label from the resource.
+    labels = {"job_name": name, "lane": lane}
     # A job is due when it was queued or, if later, when it was scheduled to run (a
     # retry's backoff or a postponement is not waiting).
     known = [t for t in (enqueued_at, scheduled_at) if t is not None]
@@ -349,6 +360,11 @@ def record_queue_sample(lane: str, waiting: int, oldest_wait_seconds: float) -> 
     tools = instruments()
     tools.job_backlog.set(waiting, {"lane": lane})
     tools.job_oldest_wait.set(oldest_wait_seconds, {"lane": lane})
+
+
+def record_queue_sampled() -> None:
+    """The queue was sampled for every lane just now (JobQueueSamplerStopped reads it)."""
+    instruments().job_queue_sampled.set(time.time())
 
 
 # --- Seams for stories that are not built yet --------------------------------------
@@ -427,7 +443,7 @@ class TelemetryMiddleware:
             await self.app(scope, receive, send)
             return
 
-        method = scope["method"]
+        method = scope["method"] if scope["method"] in HTTP_METHODS else "OTHER"
         status = 500
         started = time.perf_counter()
 

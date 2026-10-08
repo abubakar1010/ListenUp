@@ -6,6 +6,7 @@ as in test_password_reset. Spans and metrics go to in-memory providers.
 
 import json
 import logging
+import time
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -91,9 +92,9 @@ def test_a_request_that_queues_a_job_is_one_trace_with_the_job(
     assert job.attributes and job.attributes["listenup.request_id"] == request_id
     assert job.attributes["listenup.job.outcome"] == "succeeded"
     runs = captured.points("listenup.job.runs")
-    assert ({"job": JOB, "lane": "background", "outcome": "succeeded"}, 1) in runs
+    assert ({"job_name": JOB, "lane": "background", "outcome": "succeeded"}, 1) in runs
     assert [labels for labels, _ in captured.points("listenup.job.wait_seconds")] == [
-        {"job": JOB, "lane": "background"}
+        {"job_name": JOB, "lane": "background"}
     ]
 
 
@@ -171,3 +172,5 @@ async def test_the_queue_sample_counts_due_jobs_per_lane(migrated_url: str, outb
         for labels, value in captured.points("listenup.job.oldest_wait_seconds")
     )
     assert 0 <= oldest["background"] < 60
+    [(_, sampled_at)] = captured.points("listenup.job.queue_sampled_timestamp_seconds")
+    assert abs(sampled_at - time.time()) < 60  # the sampler's heartbeat
