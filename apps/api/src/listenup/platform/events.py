@@ -63,6 +63,10 @@ class EventType(StrEnum):
     ACCOUNT_DISABLED = "account.disabled"
 
 
+STREAM_ENDING_EVENTS = frozenset({EventType.ACCOUNT_DISABLED})
+"""Events after which the stream ends, whether sent live or replayed on reconnect."""
+
+
 RESYNC = "resync"
 """Sent instead of events the stream cannot replay: refetch everything still pending."""
 
@@ -190,7 +194,7 @@ class EventHub:
         self._prune(replay, now)
         for subscription in self._streams.get(user_id, ()):
             self._put(subscription, event)
-            if event_type == EventType.ACCOUNT_DISABLED:
+            if event_type in STREAM_ENDING_EVENTS:
                 self._end(subscription)
         if now >= self._next_sweep:
             self._sweep(now)
@@ -237,6 +241,11 @@ class EventHub:
             else:
                 for event in missed:
                     self._put(subscription, event)
+                    if event.type in STREAM_ENDING_EVENTS:
+                        # As if live. Later events follow on the next reconnect, which
+                        # names this event as the last one seen.
+                        self._end(subscription)
+                        return subscription
         self._streams.setdefault(user_id, set()).add(subscription)
         return subscription
 
