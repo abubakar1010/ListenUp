@@ -9,10 +9,20 @@ dependencies = ["numpy>=1.26"]
 # #17 YouTube intake
 youtube = ["yt-dlp"]
 # B1, B4: transcription
-transcribe = ["faster-whisper>=1.1"]
+# faster-whisper 1.2.1 calls PyAV with an argument PyAV 19 removed (ADR 0033).
+transcribe = ["faster-whisper>=1.1", "av<19"]
 # B2, #20, B3: alignment, phoneme scoring, pitch. torchaudio's MMS_FA aligner is in
 # maintenance mode upstream, so keep it below 2.9 until the spike settles the model.
-speech = ["torch>=2.4,<2.9", "torchaudio>=2.4,<2.9", "praat-parselmouth>=0.4", "soundfile>=0.12"]
+# Alignment runs the product's adapter (PYTHONPATH=../apps/api/src), which needs pydantic
+# and PyYAML.
+speech = [
+    "torch>=2.4,<2.9",
+    "torchaudio>=2.4,<2.9",
+    "praat-parselmouth>=0.4",
+    "soundfile>=0.12",
+    "pydantic>=2.8",
+    "pyyaml>=6",
+]
 # B1, B2: building test passages from LibriSpeech (FLAC) and VoxPopuli (parquet)
 datasets = ["soundfile>=0.12", "pyarrow>=15"]
 

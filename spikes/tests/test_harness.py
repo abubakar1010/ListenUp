@@ -1,4 +1,4 @@
-"""Pure helpers of the B1/B2 harness: passage building, trimming, windows, label files."""
+"""Pure helpers of the B1/B2 harness: passage building, trimming, label files."""
 
 import json
 from pathlib import Path
@@ -7,10 +7,10 @@ import numpy as np
 import pytest
 
 from listenup_spikes import product
-from listenup_spikes.align import CONTEXT_S, FRAME_SAMPLES, SAMPLE_RATE, window_bounds
 from listenup_spikes.b1_transcribe import trim_to_window
 from listenup_spikes.compare import load_labels
 from listenup_spikes.datasets import (
+    SAMPLE_RATE,
     Utterance,
     alternate_by_sex,
     assemble,
@@ -68,18 +68,6 @@ def test_voxpopuli_debates_order_speeches_then_segments() -> None:
 def test_trim_to_window_keeps_words_whose_midpoint_is_inside() -> None:
     words = [("pad", 4.0, 4.9), ("edge", 4.8, 5.4), ("in", 6.0, 6.2), ("out", 9.8, 10.4)]
     assert [w[0] for w in trim_to_window(words, 5.0, 10.0)] == ["edge", "in"]
-
-
-def test_window_bounds_cover_the_audio_with_context_in_whole_frames() -> None:
-    n = 75 * SAMPLE_RATE + 123
-    bounds = window_bounds(n, 30)
-    assert [(s, e) for s, e, _, _ in bounds][0] == (0, 30 * SAMPLE_RATE)
-    assert bounds[-1][1] == n
-    assert all(b[0] == a[1] for a, b in zip(bounds, bounds[1:], strict=False))
-    context = round(CONTEXT_S * SAMPLE_RATE)
-    for start, end, in_start, in_end in bounds:
-        assert (start - in_start) % FRAME_SAMPLES == 0
-        assert in_start == max(0, start - context) and in_end == min(n, end + context)
 
 
 def test_boundary_errors_match_by_text_and_time() -> None:

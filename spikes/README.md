@@ -23,8 +23,9 @@ export OMP_NUM_THREADS=2                # 2 threads per worker process (System D
 
 Run the scripts with `.venv/bin/python -m listenup_spikes.<module>` (or the `spike-*` names
 with `uv run --no-sync`), so `uv run` does not remove the CPU torch wheels. B1 and the
-NFR-PERF-2 check use the product's own Dictation rules and conversion command, so they run
-with `PYTHONPATH=../apps/api/src`.
+NFR-PERF-2 check use the product's own Dictation rules and conversion command, and B2 and
+the Shadow prototype align through the product's wav2vec2 adapter, so they run with
+`PYTHONPATH=../apps/api/src`.
 
 Models download from Hugging Face on first use (MMS_FA from dl.fbaipublicfiles.com, the
 English wav2vec2 model from download.pytorch.org). Results are written as `.md` and `.json`;

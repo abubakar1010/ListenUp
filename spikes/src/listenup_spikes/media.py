@@ -94,16 +94,18 @@ def is_faststart(path: Path) -> bool:
 
 
 def decode(path: Path, sample_rate: int = 16000) -> np.ndarray:
-    """Decode any input to mono float32 PCM in memory (the 'analysis audio')."""
+    """Decode any input to mono float32 PCM in memory (the 'analysis audio'), with the
+    same ffmpeg output as the product's speech adapters (`listenup.ai.providers.audio`)."""
     raw = subprocess.run(
         [
             "ffmpeg",
+            "-nostdin",
             "-v",
             "error",
             "-i",
             str(path),
             "-f",
-            "s16le",
+            "f32le",
             "-ac",
             "1",
             "-ar",
@@ -113,7 +115,7 @@ def decode(path: Path, sample_rate: int = 16000) -> np.ndarray:
         check=True,
         capture_output=True,
     ).stdout
-    return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    return np.frombuffer(raw, dtype=np.float32)
 
 
 def peaks(path: Path, per_second: int = 20) -> list[int]:
