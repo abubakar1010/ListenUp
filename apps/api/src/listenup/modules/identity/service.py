@@ -13,7 +13,6 @@ from typing import Annotated
 from fastapi import Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from listenup.modules.content import service as content
 from listenup.modules.identity import jobs, passwords, repository
 from listenup.modules.identity.domain.credentials import (
     email_problem,
@@ -228,11 +227,7 @@ class Accounts:
         if until is None:
             raise _not_signed_in()  # deleted by a parallel request
         await repository.insert_deletion_request(
-            session,
-            request_id=uuid7(),
-            user_id=learner,
-            due_at=until,
-            media_object_ids=await content.upload_media_ids(session, learner),
+            session, request_id=uuid7(), user_id=learner, due_at=until
         )
         await repository.retire_reset_tokens(session, learner)
         await repository.delete_user_sessions(session, learner)

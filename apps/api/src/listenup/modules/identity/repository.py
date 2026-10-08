@@ -330,20 +330,18 @@ async def insert_deletion_request(
     request_id: uuid.UUID,
     user_id: uuid.UUID,
     due_at: datetime,
-    media_object_ids: list[uuid.UUID],
 ) -> None:
+    """Record the deletion; the purge fills in `media_object_ids` when it runs."""
     await session.execute(
         text("""
-        INSERT INTO ops.deletion_requests
-          (id, subject_user_id, scope, storage_prefixes, media_object_ids, due_at)
-        VALUES (:id, :user_id, :scope, ARRAY[:prefix], CAST(:media AS uuid[]), :due_at)
+        INSERT INTO ops.deletion_requests (id, subject_user_id, scope, storage_prefixes, due_at)
+        VALUES (:id, :user_id, :scope, ARRAY[:prefix], :due_at)
         """),
         {
             "id": request_id,
             "user_id": user_id,
             "scope": ACCOUNT_SCOPE,
             "prefix": storage_prefix(user_id),
-            "media": [str(media) for media in media_object_ids],
             "due_at": due_at,
         },
     )

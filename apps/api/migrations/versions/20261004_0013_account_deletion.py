@@ -7,8 +7,8 @@
     `identity.users.deletion_scheduled_at` while the account waits).
   - `cancelled_at` and status 'cancelled': the learner restored the account by
     signing in before `due_at`. A cancelled request is kept as an audit record.
-  - `media_object_ids`: the learner's upload media objects when the request was made,
-    for the report (their files live under the storage prefix).
+  - `media_object_ids`: the learner's upload media objects, recorded by the purge for
+    the report (their files live under the storage prefix).
   - `failed_at` and status 'failed': the purge gave up after its last attempt (a
     timeout included). The request stays open: the sweep queues it again an hour later,
     resuming where it stopped, because a deletion must finish.

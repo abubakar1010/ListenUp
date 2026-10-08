@@ -12,6 +12,7 @@ from listenup.modules.content import service as content
 from listenup.modules.identity import repository
 from listenup.modules.identity.domain.tokens import new_token, reset_link, token_hash
 from listenup.modules.notifications import service as notifications
+from listenup.platform import rate_limit
 from listenup.platform.config import get_settings
 from listenup.platform.jobs import JobDeps, Lane, enqueue, job
 from listenup.platform.storage import get_storage
@@ -131,9 +132,11 @@ async def send_deletion_notice(deps: JobDeps, user_id: str) -> None:
 async def purge_due_accounts(deps: JobDeps, timestamp: int | None = None) -> int:
     """Queue a purge for every account whose grace period has ended (DR-1, D9).
 
-    Runs on a schedule. Each request gets its own job, keyed by the request, so a
-    request is never purged by two jobs at once and a failed purge is queued again
-    by a later sweep. Returns how many purges it queued.
+    Runs on a schedule. Each request gets its own job, keyed by the request: while one
+    is waiting or running nothing more is queued, so a request is never purged by two
+    jobs at once and a slow purge is not queued again behind itself. A failed purge is
+    queued again by a later sweep, and one whose worker died is put back in the queue
+    by `recover_stalled_jobs`. Returns how many purges it queued.
     """
     queued = 0
     async with deps.database.transaction() as session:
@@ -178,16 +181,16 @@ async def purge_account(deps: JobDeps, request_id: str) -> dict[str, Any] | None
        leaves files that no row points to. The request becomes 'storage_deleted'.
     3. `DELETE FROM identity.users`: cascades remove every learner row, and the
        reference-count trigger releases shared media, which stays for other learners.
-       The request becomes 'completed' with a report of rows and objects removed, in
-       the same transaction.
+       The learner's rate counters go too. The request becomes 'completed' with a
+       report of rows and objects removed, in the same transaction.
     4. A last sweep of the prefix removes any file a job still running for the
        learner wrote after step 2.
 
     Idempotent: each step checks the request's state, deleting what is already gone
     is not an error, and a request that is not due, cancelled or completed is left
-    alone. When the last attempt fails, the request becomes 'failed' and a later sweep
-    runs it again from the storage step. Returns the report, or None when there was
-    nothing to do.
+    alone. When the last attempt fails (or its worker died during it), the request
+    becomes 'failed' and a later sweep runs it again from the storage step. Returns
+    the report, or None when there was nothing to do.
     """
     request_uuid = uuid.UUID(request_id)
     storage = get_storage()
@@ -208,17 +211,16 @@ async def purge_account(deps: JobDeps, request_id: str) -> dict[str, Any] | None
             await repository.mark_account_deleting(session, learner)
         if status is not None:
             await repository.delete_user_sessions(session, learner)
-            current = await content.upload_media_ids(session, learner)
+            # For the report: their files go with the prefix, their rows with the user.
+            media = await content.upload_media_ids(session, learner)
         else:
-            current = []
-        media = sorted(set(request.media_object_ids) | set(current), key=str)
+            media = request.media_object_ids  # rows already gone: keep what was recorded
         report: dict[str, Any] = dict(request.report or {})
 
     removed = 0
     for prefix in request.storage_prefixes:
         removed += await storage.delete_prefix(prefix)
     report["objects_removed"] = int(report.get("objects_removed", 0)) + removed
-    report["media_objects"] = [str(m) for m in media]
     async with deps.database.transaction() as session:
         await repository.update_deletion_request(
             session, request_uuid, status="storage_deleted", report=report, media_object_ids=media
@@ -232,9 +234,10 @@ async def purge_account(deps: JobDeps, request_id: str) -> dict[str, Any] | None
         if await repository.lock_user_status(session, learner) is not None:
             rows = await repository.count_learner_rows(session, learner)
             await repository.delete_user(session, learner)
-            # Sign-in counters are keyed by the id with no foreign key, so the cascade
-            # misses them (DR-1).
-            await repository.clear_failures(session, learner)
+            # Rate counters (sign-in lockout, uploads, daily audio, exports) are keyed
+            # by the id with no foreign key, so the cascade misses them (DR-1).
+            if counters := await rate_limit.forget_learner(session, learner):
+                rows["ops.rate_counters"] = counters
         report["rows_removed"] = rows
         report["rows_total"] = sum(rows.values())
         await repository.update_deletion_request(

@@ -239,7 +239,7 @@ def test_deleting_disables_the_account_at_once_and_keeps_the_data(
     make_client: ClientFactory, migrated_url: str
 ) -> None:
     phone, laptop = make_client(), make_client()
-    email, user_id, world = signed_in_learner_with_data(phone, migrated_url)
+    email, user_id, _ = signed_in_learner_with_data(phone, migrated_url)
     assert login(laptop, email).status_code == 200
     rows_before = learner_rows(migrated_url, user_id)
 
@@ -257,7 +257,7 @@ def test_deleting_disables_the_account_at_once_and_keeps_the_data(
     request = deletion_request(migrated_url, user_id)
     assert request["status"] == "pending"
     assert request["storage_prefixes"] == [f"users/{user_id}/"]
-    assert request["media_object_ids"] == [world.media_id]
+    assert request["media_object_ids"] == []  # the purge records them when it runs
     assert request["due_at"] == until
     # Within the grace period nothing is gone yet (only the login sessions).
     with psycopg.connect(migrated_url) as conn:
@@ -589,29 +589,37 @@ def test_an_email_past_its_grace_period_can_register_again_before_the_purge(
     assert user_row(migrated_url, pending_id) is not None
 
 
-def test_the_purge_removes_the_sign_in_counters_of_the_learner(
+def test_the_purge_removes_every_rate_counter_of_the_learner(
     client: TestClient, migrated_url: str
 ) -> None:
+    """Counters have no foreign key to the learner, so the cascade misses them (DR-1)."""
     email = unique_email()
     user_id = register(client, email)
     wrong = client.post("/api/v1/auth/login", json={"email": email, "password": "not the one"})
     assert wrong.status_code == 401
     delete_me(client)
     make_due(migrated_url, user_id)
-    with psycopg.connect(migrated_url) as conn:
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        # As uploading and adding audio leave them (user_key, daily_audio_key).
+        for key in (f"upload:user:{user_id}", f"intake:user:{user_id}"):
+            conn.execute(
+                "INSERT INTO ops.rate_counters (key, window_start, count) VALUES (%s, now(), 1)",
+                [key],
+            )
         before = conn.execute(
             "SELECT count(*) FROM ops.rate_counters WHERE key LIKE %s", [f"%:user:{user_id}"]
         ).fetchone()
-    assert before is not None and before[0] > 0
+    assert before is not None and before[0] >= 3
 
     request_id = str(deletion_request(migrated_url, user_id)["id"])
-    run_job(migrated_url, identity_jobs.purge_account, request_id=request_id)
+    report = run_job(migrated_url, identity_jobs.purge_account, request_id=request_id)
 
     with psycopg.connect(migrated_url) as conn:
         after = conn.execute(
             "SELECT count(*) FROM ops.rate_counters WHERE key LIKE %s", [f"%{user_id}%"]
         ).fetchone()
     assert after == (0,)
+    assert report["rows_removed"]["ops.rate_counters"] == before[0]
 
 
 # -- the purge job (#91) -----------------------------------------------------------------
@@ -692,7 +700,7 @@ def test_the_purge_removes_everything_after_the_grace_period(
     assert report["rows_removed"]["identity.users"] == 1
     assert report["rows_removed"]["content.contents"] == 3
     assert exports is not None and report["rows_removed"]["ops.data_exports"] == exports[0]
-    assert report["media_objects"] == [str(world.media_id)]
+    assert request["media_object_ids"] == [world.media_id]
     assert login(client, email).json()["code"] == "invalid_credentials"
     assert login(client, email, restore=True).json()["code"] == "invalid_credentials"
     assert other_client.get("/api/v1/library/contents").status_code == 200
@@ -740,6 +748,32 @@ def test_the_purge_finishes_after_stopping_between_storage_and_rows(
     report = run_job(migrated_url, identity_jobs.purge_account, request_id=request_id)
 
     assert report is not None and report["objects_removed"] == 4
+    assert user_row(migrated_url, user_id) is None
+    assert deletion_request(migrated_url, user_id)["status"] == "completed"
+
+
+def test_a_purge_still_running_is_not_queued_again_and_a_dead_one_resumes(
+    client: TestClient, migrated_url: str
+) -> None:
+    """A purge outlasting the sweep interval is not queued behind itself, whose retry
+    could then not go back to the queue; one whose worker died runs again."""
+    _, user_id, _ = signed_in_learner_with_data(client, migrated_url)
+    delete_me(client)
+    make_due(migrated_url, user_id)
+    assert sweep_queues_purge(migrated_url, user_id)
+    request_id = str(deletion_request(migrated_url, user_id)["id"])
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        # Taken by a worker that has since died (no worker row, no heartbeat).
+        conn.execute(
+            "UPDATE procrastinate.procrastinate_jobs SET status = 'doing', worker_id = NULL "
+            "WHERE task_name = %s AND args->>'request_id' = %s",
+            [identity_jobs.PURGE_ACCOUNT, request_id],
+        )
+
+    assert not sweep_queues_purge(migrated_url, user_id)
+    assert run_job(migrated_url, platform_jobs.recover_stalled_jobs) >= 1
+    deliver(migrated_url)
+
     assert user_row(migrated_url, user_id) is None
     assert deletion_request(migrated_url, user_id)["status"] == "completed"
 
