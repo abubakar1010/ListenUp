@@ -42,6 +42,7 @@ from listenup.platform.database import Database
 from listenup.platform.events import Event, EventHub, EventType, publish
 from tests.integration.access_registry import (
     REGISTRY,
+    Admin,
     Owned,
     Public,
     Scoped,
@@ -81,7 +82,7 @@ def registry_problems(app: FastAPI) -> list[str]:
     routes = app_routes(app)
     problems = [
         f"{method} {path} is not in the access registry. Add it to REGISTRY in "
-        f"{REGISTRY_FILE} with what learner B must get (Owned, Scoped, Stream or Public); "
+        f"{REGISTRY_FILE} with what learner B must get (Owned, Scoped, Stream, Admin or Public); "
         "the docstring there shows how."
         for method, path in sorted(routes - REGISTRY.keys())
     ]
@@ -191,7 +192,7 @@ def check_access(
         if isinstance(entry, Public):
             continue
         route = f"{method} {template}"
-        params = entry.params(world) if isinstance(entry, Owned) else {}
+        params = entry.params(world) if isinstance(entry, Owned | Admin) else {}
         path = template.format(**{name: str(value) for name, value in params.items()})
         body = entry.body(world) if isinstance(entry, Owned | Scoped) and entry.body else None
 
@@ -213,7 +214,7 @@ def check_access(
             violations.append(f"{route}: B's request changed A's rows in {', '.join(changed)}")
         if any(key.startswith(a_prefix) for key in storage.deleted[deleted_before:]):
             violations.append(f"{route}: B's request deleted A's stored files")
-        if isinstance(entry, Owned):
+        if isinstance(entry, Owned | Admin):
             if answer.status_code != entry.status or problem_code(answer) != entry.code:
                 violations.append(
                     f"{route}: B got {describe(answer)}, not {entry.status} {entry.code}"
@@ -228,7 +229,13 @@ def check_access(
             if problem:
                 violations.append(f"{route}: {problem}")
 
-        if method in SAFE_METHODS:
+        if isinstance(entry, Admin):
+            own = request(a, method, path, body)
+            if own.status_code != entry.status or problem_code(own) != entry.code:
+                violations.append(
+                    f"{route}: A got {describe(own)}, not {entry.status} {entry.code}"
+                )
+        elif method in SAFE_METHODS:
             own = request(a, method, path, body)
             assert own.is_success or own.is_redirect, (
                 f"{route}: A's own request failed: {own.status_code}"

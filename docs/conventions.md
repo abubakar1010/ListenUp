@@ -27,6 +27,11 @@ Read the section for the area you are changing before you change it. The rules e
 
 - Data export (ADR 0030): a module that owns learner data offers `export_data(session, learner) -> ExportPart` (from `listenup.platform.export`) in its `service.py`, using `learner_rows(..., omit=(secret columns,))`, and is listed in `modules/export/collect.py`; `test_export.py` fails while a table with `user_id` is missing from the export. YouTube media files are never exported. `POST /me/exports` queues `export.build_archive`; the archive is reached only through `GET /me/exports/{id}/download` (a 307 to a short-lived signed link) and is deleted after `LISTENUP_EXPORT_KEEP_DAYS`.
 
+## Admin (ADR 0034)
+
+- Admin routes live in `modules/admin/api.py` under `/admin` and take `CurrentAdmin` from `modules/admin/service.py`: a learner who is not an admin gets 404 `not_found`, the answer of a path that does not exist. Admins are the verified accounts whose email is in `LISTENUP_ADMIN_EMAILS`. Register admin routes as `Admin(...)` in `tests/integration/access_registry.py`.
+- Admin answers carry counts, ids, names and times only: never job arguments, learner media or text (SRS 2.2). Failed jobs are retried as new jobs with `platform.jobs.retry_failed_job`. The web page is `/admin/jobs` (`src/features/admin/JobsPage.tsx`); on 404 it shows the ordinary "Page not found".
+
 ## Web client (ADR 0018, 0025, 0026)
 
 - Confirmations use `ConfirmDialog` (`src/components/ConfirmDialog.tsx`): focus starts on the safe action, stays inside, and Escape cancels. Session data lives under the `['sessions']` query key (`src/features/session/api.ts`).
