@@ -9,7 +9,8 @@ session at each step), and then calls every route in this registry three ways:
 - as learner B, with B's own CSRF token: the answer is the one registered below, no
   id or email of A's appears in it, and none of A's rows or stored files change;
 - as learner A, for GET routes: a success, and every id in `a_sees` is in the answer,
-  so a check that B sees nothing is never passing only because A had nothing.
+  so a check that B sees nothing is never passing only because A had nothing;
+- for `Admin` routes, A gets the same 404 as B: no learner is an administrator.
 
 The test lists the app's routes from `app.routes` and the OpenAPI schema, so a new
 route is picked up on its own; a route that is missing here fails the test with a
@@ -25,6 +26,8 @@ Registering a route takes one entry. Pick the kind that says what B must get:
     ("GET", "/api/v1/sessions"): Scoped(a_sees=lambda w: w.a.sessions.values()),
     # No sign-in needed: say why.
     ("GET", "/api/v1/health"): Public("liveness probe; returns no learner data"),
+    # Administrators only (ADR 0034): A and B, both learners, get 404 `not_found`.
+    ("GET", "/api/v1/admin/jobs"): Admin(),
 
 `w` is the `World`: `w.a` is learner A's `SeededLearner` and `w.owner_url` reaches
 the database as its owner, for a fixture that needs to make more of A's data with
@@ -107,7 +110,18 @@ class Stream:
     covered_by: str
 
 
-Entry = Public | Owned | Scoped | Stream
+@dataclass(frozen=True)
+class Admin:
+    """For administrators only (ADR 0034). Every learner, A as well as B, gets 404
+    `not_found`, the answer of a path that does not exist; what an admin gets is
+    tested in test_admin.py."""
+
+    params: Params = no_params
+    status: int = 404
+    code: str = "not_found"
+
+
+Entry = Public | Owned | Scoped | Stream | Admin
 
 
 def _usage_counts_only_b(world: World, response: httpx.Response) -> str | None:
@@ -228,4 +242,7 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ),
     # -- library -----------------------------------------------------------------------
     ("GET", "/api/v1/library/contents"): Scoped(a_sees=lambda w: [w.a.content_id]),
+    # -- admin -------------------------------------------------------------------------
+    ("GET", "/api/v1/admin/jobs"): Admin(),
+    ("POST", "/api/v1/admin/jobs/{job_id}/retry"): Admin(params=lambda w: {"job_id": 1}),
 }

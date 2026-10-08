@@ -4,6 +4,47 @@
  */
 
 export interface paths {
+  '/api/v1/admin/jobs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Jobs Overview
+     * @description Backlog per lane and the failed jobs. Shows no job arguments, so no learner data.
+     */
+    get: operations['jobs_overview_api_v1_admin_jobs_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/jobs/{job_id}/retry': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Retry Job
+     * @description Queue a failed job again, with fresh attempts. A job is retried once; a second
+     *     retry of the same job answers 404 `job_not_found`.
+     */
+    post: operations['retry_job_api_v1_admin_jobs__job_id__retry_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/auth/login': {
     parameters: {
       query?: never;
@@ -1034,6 +1075,22 @@ export interface components {
      * @enum {string}
      */
     Entry: 'blind' | 'dictation' | 'both';
+    /** FailedJob */
+    FailedJob: {
+      /** Attempts */
+      attempts: number;
+      /** Failed At */
+      failed_at: string | null;
+      /** Id */
+      id: number;
+      /** Lane */
+      lane: string;
+      /**
+       * Name
+       * @description The job's task name, such as content.convert_upload
+       */
+      name: string;
+    };
     /** GistIn */
     GistIn: {
       /**
@@ -1102,6 +1159,44 @@ export interface components {
      * @enum {string}
      */
     Interruption: 'network' | 'device';
+    /** JobsOverview */
+    JobsOverview: {
+      /**
+       * Failed
+       * @description Failed jobs not retried yet, newest first (at most 50)
+       */
+      failed: components['schemas']['FailedJob'][];
+      /**
+       * Lanes
+       * @description Every lane, highest priority first
+       */
+      lanes: components['schemas']['LaneBacklog'][];
+    };
+    /** LaneBacklog */
+    LaneBacklog: {
+      /**
+       * Lane
+       * @enum {string}
+       */
+      lane: 'speech-interactive' | 'intake' | 'ai' | 'background';
+      /**
+       * Oldest Wait Seconds
+       * @description How long the longest-waiting due job has waited; null if none waits
+       */
+      oldest_wait_seconds: number | null;
+      /** Running */
+      running: number;
+      /**
+       * Scheduled
+       * @description Jobs set to start later, such as a retry's backoff
+       */
+      scheduled: number;
+      /**
+       * Waiting
+       * @description Jobs due now and not started yet
+       */
+      waiting: number;
+    };
     /** LatestExport */
     LatestExport: {
       export: components['schemas']['DataExport'] | null;
@@ -1206,6 +1301,14 @@ export interface components {
      * @enum {string}
      */
     PlayerState: 'playing' | 'buffering' | 'interrupted' | 'resuming' | 'ended';
+    /** RetriedJob */
+    RetriedJob: {
+      /**
+       * Job Id
+       * @description The id of the new job
+       */
+      job_id: number;
+    };
     /** SaveDraft */
     SaveDraft: {
       /**
@@ -1452,6 +1555,78 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  jobs_overview_api_v1_admin_jobs_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['JobsOverview'];
+        };
+      };
+      /** @description Not an administrator (`not_found`) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  retry_job_api_v1_admin_jobs__job_id__retry_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        job_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RetriedJob'];
+        };
+      };
+      /** @description Not an administrator (`not_found`), or no failed job with this id waits for a retry (`job_not_found`) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The same work is already queued (`job_already_queued`) */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   login_api_v1_auth_login_post: {
     parameters: {
       query?: never;

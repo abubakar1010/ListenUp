@@ -1,10 +1,10 @@
 """Application settings, read from environment variables prefixed with LISTENUP_."""
 
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import SecretStr, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -92,6 +92,17 @@ class Settings(BaseSettings):
 
     # YouTube intake stays off until the legal review (OQ-6) clears it.
     youtube_intake_enabled: bool = False
+
+    # Administrators (#100, ADR 0034): accounts with one of these emails and a verified
+    # address. A comma-separated list in LISTENUP_ADMIN_EMAILS; empty means no admins.
+    admin_emails: Annotated[tuple[str, ...], NoDecode] = ()
+
+    @field_validator("admin_emails", mode="before")
+    @classmethod
+    def _split_emails(cls, value: object) -> object:
+        if isinstance(value, str):
+            return tuple(email.strip() for email in value.split(",") if email.strip())
+        return value
 
     @property
     def cookies_secure(self) -> bool:

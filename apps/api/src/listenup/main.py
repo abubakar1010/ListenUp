@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, FastAPI
 
 from listenup import __version__
+from listenup.modules.admin import api as admin_api
 from listenup.modules.blind import api as blind_api
 from listenup.modules.content import api as content_api
 from listenup.modules.content.service import build_uploads
@@ -64,6 +65,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(blind_api.router)
     api.include_router(dictation_api.router)
     api.include_router(export_api.router)
+    api.include_router(admin_api.router)
     api.include_router(events_router(current_learner))
     app.include_router(api)
     return app

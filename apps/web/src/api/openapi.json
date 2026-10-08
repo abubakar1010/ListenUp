@@ -677,6 +677,42 @@
         "title": "Entry",
         "type": "string"
       },
+      "FailedJob": {
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "failed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          },
+          "name": {
+            "description": "The job's task name, such as content.convert_upload",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": ["id", "lane", "name", "attempts", "failed_at"],
+        "title": "FailedJob",
+        "type": "object"
+      },
       "GistIn": {
         "properties": {
           "text": {
@@ -811,6 +847,67 @@
         "enum": ["network", "device"],
         "title": "Interruption",
         "type": "string"
+      },
+      "JobsOverview": {
+        "properties": {
+          "failed": {
+            "description": "Failed jobs not retried yet, newest first (at most 50)",
+            "items": {
+              "$ref": "#/components/schemas/FailedJob"
+            },
+            "title": "Failed",
+            "type": "array"
+          },
+          "lanes": {
+            "description": "Every lane, highest priority first",
+            "items": {
+              "$ref": "#/components/schemas/LaneBacklog"
+            },
+            "title": "Lanes",
+            "type": "array"
+          }
+        },
+        "required": ["lanes", "failed"],
+        "title": "JobsOverview",
+        "type": "object"
+      },
+      "LaneBacklog": {
+        "properties": {
+          "lane": {
+            "enum": ["speech-interactive", "intake", "ai", "background"],
+            "title": "Lane",
+            "type": "string"
+          },
+          "oldest_wait_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long the longest-waiting due job has waited; null if none waits",
+            "title": "Oldest Wait Seconds"
+          },
+          "running": {
+            "title": "Running",
+            "type": "integer"
+          },
+          "scheduled": {
+            "description": "Jobs set to start later, such as a retry's backoff",
+            "title": "Scheduled",
+            "type": "integer"
+          },
+          "waiting": {
+            "description": "Jobs due now and not started yet",
+            "title": "Waiting",
+            "type": "integer"
+          }
+        },
+        "required": ["lane", "waiting", "scheduled", "running", "oldest_wait_seconds"],
+        "title": "LaneBacklog",
+        "type": "object"
       },
       "LatestExport": {
         "properties": {
@@ -1038,6 +1135,18 @@
         "enum": ["playing", "buffering", "interrupted", "resuming", "ended"],
         "title": "PlayerState",
         "type": "string"
+      },
+      "RetriedJob": {
+        "properties": {
+          "job_id": {
+            "description": "The id of the new job",
+            "title": "Job Id",
+            "type": "integer"
+          }
+        },
+        "required": ["job_id"],
+        "title": "RetriedJob",
+        "type": "object"
       },
       "SaveDraft": {
         "properties": {
@@ -1465,6 +1574,76 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/jobs": {
+      "get": {
+        "description": "Backlog per lane and the failed jobs. Shows no job arguments, so no learner data.",
+        "operationId": "jobs_overview_api_v1_admin_jobs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobsOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Not an administrator (`not_found`)"
+          }
+        },
+        "summary": "Jobs Overview",
+        "tags": ["admin"]
+      }
+    },
+    "/api/v1/admin/jobs/{job_id}/retry": {
+      "post": {
+        "description": "Queue a failed job again, with fresh attempts. A job is retried once; a second\nretry of the same job answers 404 `job_not_found`.",
+        "operationId": "retry_job_api_v1_admin_jobs__job_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetriedJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Not an administrator (`not_found`), or no failed job with this id waits for a retry (`job_not_found`)"
+          },
+          "409": {
+            "description": "The same work is already queued (`job_already_queued`)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Job",
+        "tags": ["admin"]
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "operationId": "login_api_v1_auth_login_post",

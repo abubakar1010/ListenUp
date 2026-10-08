@@ -5,7 +5,7 @@ Each test runs workers with wait=False: they take every job that is ready, then 
 
 import importlib.metadata
 from collections.abc import AsyncIterator
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,7 @@ from listenup.platform.jobs import (
     enqueue,
     failed_jobs,
     job,
+    retry_failed_job,
     set_gate,
 )
 from listenup.platform.log import current_request_id, request_id_bound
@@ -195,6 +196,46 @@ async def test_a_job_that_uses_up_its_attempts_is_failed_and_listed(queue: Datab
         (job_id, "test.always_fails", 3)
     ]
     assert listed[0]["failed_at"] is not None
+
+
+@pytest.mark.anyio
+async def test_a_retried_failed_job_runs_again_with_fresh_attempts(queue: Database) -> None:
+    async with queue.transaction() as session:
+        failed_id = await enqueue(session, "test.always_fails")
+    for _ in range(4):
+        await work(Lane.BACKGROUND)
+        await make_due(queue)
+    calls.clear()
+
+    async with queue.transaction() as session:
+        await session.execute(text("SET LOCAL ROLE listenup_api"))  # as the admin view
+        retried_id = await retry_failed_job(session, failed_id)
+    async with queue.transaction() as session:
+        assert await failed_jobs(session) == []
+    for _ in range(4):
+        await work(Lane.BACKGROUND)
+        await make_due(queue)
+
+    assert [c["attempt"] for c in calls] == [1, 2, 3]
+    async with queue.transaction() as session:
+        # Failed again: the new job is listed, the one retried before is not.
+        assert [row["id"] for row in await failed_jobs(session)] == [retried_id]
+
+
+@pytest.mark.anyio
+async def test_procrastinates_own_retry_also_takes_a_job_off_the_failed_list(
+    queue: Database,
+) -> None:
+    async with queue.transaction() as session:
+        job_id = await enqueue(session, "test.always_fails")
+    for _ in range(4):
+        await work(Lane.BACKGROUND)
+        await make_due(queue)
+
+    await app.job_manager.retry_job_by_id_async(job_id, retry_at=datetime.now(UTC))
+
+    async with queue.transaction() as session:
+        assert await failed_jobs(session) == []
 
 
 @pytest.mark.anyio
