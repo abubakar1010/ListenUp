@@ -331,12 +331,22 @@ async def enqueue(
         payload[REQUEST_ID_ARG] = request_id
     with enqueue_span(name, job_type.lane.value) as span:
         payload.update(job_trace_args(span))
-        return await _defer(session, job_type, name, payload, unique_key, lock, run_at)
+        return await _defer(
+            session,
+            job_type.lane.value,
+            job_type.spec.priority,
+            name,
+            payload,
+            unique_key,
+            lock,
+            run_at,
+        )
 
 
 async def _defer(
     session: AsyncSession,
-    job_type: "JobType",
+    queue: str,
+    priority: int,
     name: str,
     payload: dict[str, Any],
     unique_key: str | None,
@@ -369,9 +379,9 @@ async def _defer(
                 )::procrastinate.procrastinate_job_to_defer_v1]))
                 """),
                 {
-                    "queue": job_type.lane.value,
+                    "queue": queue,
                     "task": name,
-                    "priority": job_type.spec.priority,
+                    "priority": priority,
                     "lock": lock,
                     "unique_key": unique_key,
                     "args": json.dumps(payload),
@@ -431,21 +441,30 @@ async def _postpone(
     logger.info("job postponed by backpressure", extra={"job": current.task_name})
 
 
+# Failed jobs not yet retried: a retry (retry_failed_job) records a 'retried' event on
+# the failed job, Procrastinate's own event type for a manual retry, after its last
+# 'failed' event.
+_FAILED_JOBS = """
+SELECT j.id, j.queue_name AS lane, j.task_name AS name, j.attempts,
+       j.args - CAST(:internal_args AS text[]) AS args,
+       max(e.at) FILTER (WHERE e.type = 'failed') AS failed_at
+  FROM procrastinate.procrastinate_jobs j
+  LEFT JOIN procrastinate.procrastinate_events e
+    ON e.job_id = j.id AND e.type IN ('failed', 'retried')
+ WHERE j.status = 'failed'
+ GROUP BY j.id
+HAVING coalesce(max(e.at) FILTER (WHERE e.type = 'retried')
+                < max(e.at) FILTER (WHERE e.type = 'failed'), true)
+"""
+_INTERNAL_ARGS = [REQUEST_ID_ARG, TRACE_ARG]
+
+
 async def failed_jobs(session: AsyncSession, limit: int = 50) -> list[dict[str, Any]]:
-    """Jobs that used up their attempts, newest first, for the admin view (11.1)."""
+    """Jobs that used up their attempts and were not retried, newest first, for the
+    admin view (11.1)."""
     rows = await session.execute(
-        text("""
-        SELECT j.id, j.queue_name AS lane, j.task_name AS name, j.attempts,
-               j.args - CAST(:internal_args AS text[]) AS args, max(e.at) AS failed_at
-          FROM procrastinate.procrastinate_jobs j
-          LEFT JOIN procrastinate.procrastinate_events e
-            ON e.job_id = j.id AND e.type = 'failed'
-         WHERE j.status = 'failed'
-         GROUP BY j.id
-         ORDER BY failed_at DESC NULLS LAST, j.id DESC
-         LIMIT :limit
-        """),
-        {"limit": limit, "internal_args": [REQUEST_ID_ARG, TRACE_ARG]},
+        text(_FAILED_JOBS + " ORDER BY failed_at DESC NULLS LAST, j.id DESC LIMIT :limit"),
+        {"limit": limit, "internal_args": _INTERNAL_ARGS},
     )
     return [dict(row) for row in rows.mappings()]
 
@@ -531,6 +550,65 @@ async def _settle_stalled_job(database: Database, job_id: int) -> bool:
         )
         logger.error("stalled job failed", extra={"job": task_name})
         return True
+
+
+class JobNotRetryable(Exception):
+    """No failed job with this id, or it was already retried."""
+
+
+async def retry_failed_job(session: AsyncSession, job_id: int) -> int | None:
+    """Queue failed job `job_id` again, in the caller's transaction; returns the new
+    job's id, or None when a job with its unique key is already waiting or running.
+
+    The new job has the same task, lane, priority, lock, unique key and arguments, and
+    a fresh set of attempts. The failed job stays as it is, with a 'retried' event, so
+    it leaves the failed list and cannot be retried twice. (Procrastinate's own retry
+    would move the failed job back to 'todo', which needs UPDATE on its table; the API
+    role may only insert there, ADR 0042.) Raises `JobNotRetryable`.
+    """
+    # Two retries of one job at once: the second waits here, then finds it retried.
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended('jobs.retry:' || :id, 0))"),
+        {"id": job_id},
+    )
+    failed = (
+        await session.execute(
+            text(f"""
+            SELECT f.lane, f.name, f.args, j.priority, j.lock, j.queueing_lock
+              FROM ({_FAILED_JOBS}) f
+              JOIN procrastinate.procrastinate_jobs j ON j.id = f.id
+             WHERE f.id = :id
+            """),
+            {"id": job_id, "internal_args": _INTERNAL_ARGS},
+        )
+    ).one_or_none()
+    if failed is None:
+        raise JobNotRetryable(job_id)
+    payload = dict(failed.args)
+    if (request_id := current_request_id()) is not None:
+        payload[REQUEST_ID_ARG] = request_id
+    with enqueue_span(failed.name, failed.lane) as span:
+        payload.update(job_trace_args(span))
+        new_id = await _defer(
+            session,
+            failed.lane,
+            failed.priority,
+            failed.name,
+            payload,
+            failed.queueing_lock,
+            failed.lock,
+            None,
+        )
+    if new_id is not None:
+        await session.execute(
+            text(
+                "INSERT INTO procrastinate.procrastinate_events (job_id, type) "
+                "VALUES (:id, 'retried')"
+            ),
+            {"id": job_id},
+        )
+        logger.info("failed job retried", extra={"job": failed.name, "job_id": job_id})
+    return new_id
 
 
 class SpeechBacklogGate:
