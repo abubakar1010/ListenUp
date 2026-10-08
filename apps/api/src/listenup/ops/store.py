@@ -48,18 +48,32 @@ def backup_bucket_name(settings: Settings) -> str:
     return bucket
 
 
+def backup_credentials(settings: Settings) -> tuple[str, str]:
+    """The (access key, secret key) for the backup bucket: the backup pair when both
+    halves are set, the API's pair when neither is. One half alone is refused, because
+    a key mixed with the other identity's secret never signs a request."""
+    access, secret = settings.backup_s3_access_key, settings.backup_s3_secret_key
+    if (access is None) != (secret is None):
+        raise ValueError(
+            "LISTENUP_BACKUP_S3_ACCESS_KEY and LISTENUP_BACKUP_S3_SECRET_KEY must be set together"
+        )
+    if access is not None and secret is not None:
+        return access, secret.get_secret_value()
+    return settings.s3_access_key, settings.s3_secret_key.get_secret_value()
+
+
 class S3BackupStore:
     """The backup bucket, with its own storage credentials when they are set."""
 
     def __init__(self, settings: Settings) -> None:
         self.bucket = backup_bucket_name(settings)
-        secret = settings.backup_s3_secret_key or settings.s3_secret_key
+        access_key, secret_key = backup_credentials(settings)
         self._client: S3Client = boto3.client(
             "s3",
             endpoint_url=settings.backup_s3_endpoint_url or settings.s3_endpoint_url,
             region_name=settings.backup_s3_region or settings.s3_region,
-            aws_access_key_id=settings.backup_s3_access_key or settings.s3_access_key,
-            aws_secret_access_key=secret.get_secret_value(),
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
             config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
         )
 

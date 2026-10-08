@@ -76,3 +76,12 @@ def test_without_backup_credentials_the_apis_are_used() -> None:
 
     credentials = store._client._request_signer._credentials  # type: ignore[attr-defined]
     assert credentials.access_key == "api-key"
+
+
+@pytest.mark.parametrize(
+    "half",
+    [{"backup_s3_access_key": "backup-key"}, {"backup_s3_secret_key": SecretStr("backup-secret")}],
+)
+def test_one_half_of_the_backup_credentials_is_refused(half: dict[str, object]) -> None:
+    with pytest.raises(ValueError, match="must be set together"):
+        S3BackupStore(Settings(**half))  # type: ignore[arg-type]
