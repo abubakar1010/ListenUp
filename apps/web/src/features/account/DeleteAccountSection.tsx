@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 
@@ -6,8 +6,8 @@ import { ApiError } from '../../api/client';
 import { buttonClass } from '../../components/button';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { ErrorPanel } from '../../components/ErrorPanel';
-import { useMe } from '../../auth/useMe';
-import { deleteAccount } from './deletionApi';
+import { ME_KEY, useMe } from '../../auth/useMe';
+import { DELETE_ACCOUNT_KEY, deleteAccount } from './deletionApi';
 
 const inputClass =
   'min-h-11 rounded-md border border-line-strong bg-surface-raised px-3 py-2 focus:outline-2 focus:outline-offset-2 focus:outline-focus-ring aria-invalid:border-danger';
@@ -33,6 +33,7 @@ function fieldMessage(error: ApiError): string {
  */
 export function DeleteAccountSection() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   // The server decides the grace period (LISTENUP_ACCOUNT_DELETION_GRACE_DAYS).
   const graceDays = useMe().data?.deletion_grace_days;
   const grace =
@@ -54,6 +55,7 @@ export function DeleteAccountSection() {
   }, [focusRequest]);
 
   const remove = useMutation({
+    mutationKey: DELETE_ACCOUNT_KEY,
     mutationFn: () => deleteAccount(password),
     onSuccess: (result) => {
       // The next page forgets the learner; doing it here would make the signed-in
@@ -67,6 +69,10 @@ export function DeleteAccountSection() {
         setConfirming(false);
         setFieldError(fieldMessage(error));
         setFocusRequest((count) => count + 1);
+      } else {
+        // The deletion may have gone through (the response was lost) while this tab
+        // ignored its account.disabled event: ask the server who is signed in.
+        void queryClient.invalidateQueries({ queryKey: ME_KEY });
       }
     },
   });

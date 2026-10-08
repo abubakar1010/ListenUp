@@ -149,3 +149,74 @@ test('another failure stays in the dialog with what to do next', async () => {
   expect(await screen.findByText('The service is busy.')).toBeInTheDocument();
   expect(dialog).toBeInTheDocument();
 });
+
+/** Just enough of EventSource to send the page one event. */
+class FakeEventSource {
+  static latest: FakeEventSource | null = null;
+  private listeners = new Map<string, ((event: MessageEvent<string>) => void)[]>();
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+
+  constructor() {
+    FakeEventSource.latest = this;
+  }
+
+  addEventListener(type: string, listener: (event: MessageEvent<string>) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+
+  close() {}
+
+  emit(type: string, resourceId: string) {
+    const event = new MessageEvent<string>(type, {
+      data: JSON.stringify({ resource_id: resourceId }),
+    });
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
+  }
+}
+
+test('its own account.disabled event does not send the deleting tab to sign in', async () => {
+  vi.stubGlobal('EventSource', FakeEventSource);
+  let answer: (response: Response) => void = () => {};
+  let meCalls = 0;
+  let deleted = false;
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const path = String(input).replace(/^\/api\/v1/, '');
+    if (path === '/me' && init?.method === 'DELETE') {
+      deleted = true; // committed; the response is still on its way
+      return new Promise<Response>((resolve) => (answer = resolve));
+    }
+    if (path === '/me/exports/latest') return jsonResponse(200, { export: null });
+    if (path === '/me') {
+      meCalls += 1;
+      return deleted
+        ? problem(401, 'not_signed_in', 'Sign in to continue.')
+        : jsonResponse(200, LEARNER);
+    }
+    return problem(404, 'not_found', path);
+  });
+  try {
+    renderWithProviders(<App />, { route: '/settings' });
+    await enterPasswordAndOpenDialog();
+    fireEvent.click(
+      screen
+        .getAllByRole('button', { name: 'Delete my account' })
+        .find((button) => button.closest('[role="dialog"]'))!,
+    );
+    await waitFor(() => expect(deleted).toBe(true));
+    const before = meCalls;
+
+    // The event, published in the delete transaction, arrives before the response.
+    FakeEventSource.latest!.emit('account.disabled', LEARNER.id);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(meCalls).toBe(before);
+    expect(screen.getByRole('heading', { name: 'Settings', level: 1 })).toBeInTheDocument();
+    answer(jsonResponse(202, { deletion_scheduled_at: UNTIL, detail: 'Deleted.' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Your account is deleted', level: 1 }),
+    ).toBeInTheDocument();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

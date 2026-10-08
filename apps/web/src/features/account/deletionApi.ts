@@ -4,6 +4,12 @@ import type { components } from '../../api/schema';
 export type DeletionScheduled = components['schemas']['DeletionScheduled'];
 
 /**
+ * The delete mutation. While it is in flight, this tab ignores its own `account.disabled`
+ * event: the mutation goes to the "account deleted" page itself (see `guards.tsx`).
+ */
+export const DELETE_ACCOUNT_KEY = ['account', 'delete'] as const;
+
+/**
  * Delete the signed-in learner's account (FR-ACC-4, ADR 0029). The server asks for the
  * password again and disables the account at once; it is deleted for good after the
  * grace period unless the learner signs in and restores it.
