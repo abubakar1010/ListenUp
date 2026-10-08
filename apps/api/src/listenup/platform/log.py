@@ -69,9 +69,10 @@ def request_id_bound(request_id: str | None) -> Iterator[None]:
         _request_id.reset(token)
 
 
+# Letters are Unicode (`\w`), so an address such as `jean-é@example.fr` is caught whole.
 # The lookbehind makes a match start only where a run of address characters starts, so a
 # long token with no "@" is scanned once, not once per character.
-_EMAIL = re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+_EMAIL = re.compile(r"(?<![\w.%+-])[\w.%+-]+@[\w-]+(?:\.[\w-]+)+")
 REDACTED_EMAIL = "[email]"
 
 

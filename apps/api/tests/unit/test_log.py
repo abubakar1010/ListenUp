@@ -109,6 +109,9 @@ def test_redaction_is_linear_on_a_long_token_without_an_at_sign() -> None:
         ("x" * 5000 + "@example.com", "[email]"),
         ("(a@b.com),c@d.org;", "([email]),[email];"),
         ("no address here: 12@", "no address here: 12@"),
+        ("jean-é@ex.com", "[email]"),
+        ("é.t@ex.com wrote", "[email] wrote"),
+        ("Ünal@ex.com", "[email]"),
     ],
 )
 def test_addresses_are_still_redacted(text: str, expected: str) -> None:
