@@ -1,11 +1,15 @@
 """Pure helpers of the B1/B2 harness: passage building, trimming, windows, label files."""
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from listenup_spikes import product
 from listenup_spikes.align import CONTEXT_S, FRAME_SAMPLES, SAMPLE_RATE, window_bounds
 from listenup_spikes.b1_transcribe import trim_to_window
+from listenup_spikes.compare import load_labels
 from listenup_spikes.datasets import (
     Utterance,
     alternate_by_sex,
@@ -13,7 +17,7 @@ from listenup_spikes.datasets import (
     choose_span,
     voxpopuli_debates,
 )
-from listenup_spikes.labelkit import read_tier, textgrid, window_hint
+from listenup_spikes.labelkit import import_labels, read_tier, textgrid, window_hint
 from listenup_spikes.metrics import boundary_errors_ms, spread
 
 
@@ -135,3 +139,33 @@ def test_false_marks_blame_the_learner_for_transcript_errors() -> None:
     machine = [("the", 0.0, 0.2), ("hat", 0.2, 0.5), ("sat", 0.5, 0.8)]
     result = product.false_marks(machine, "the cat sat")
     assert result.marks == 1 and result.reference_words == 3
+
+
+def test_two_labelled_windows_in_one_passage_are_both_kept(tmp_path: Path) -> None:
+    grid = textgrid(2.0, "")
+
+    def labelled(word: str) -> str:
+        return grid.replace(
+            'name = "words"\n        xmin = 0\n        xmax = 2.0\n        intervals: size = 1\n'
+            "        intervals [1]:\n            xmin = 0\n            xmax = 2.0\n"
+            '            text = ""',
+            'name = "words"\n        xmin = 0\n        xmax = 2.0\n        intervals: size = 1\n'
+            "        intervals [1]:\n            xmin = 0.5\n            xmax = 1.0\n"
+            f'            text = "{word}"',
+        )
+
+    (tmp_path / "early.TextGrid").write_text(labelled("first"))
+    (tmp_path / "late.TextGrid").write_text(labelled("second"))
+    windows = tmp_path / "windows.json"
+    windows.write_text(
+        json.dumps(
+            {
+                "windows": {
+                    "early": {"passage": "p1", "start_s": 10.0, "seconds": 2.0},
+                    "late": {"passage": "p1", "start_s": 70.0, "seconds": 2.0},
+                }
+            }
+        )
+    )
+    import_labels(windows, tmp_path)
+    assert load_labels(tmp_path) == {"p1": [("first", 10.5, 11.0), ("second", 70.5, 71.0)]}

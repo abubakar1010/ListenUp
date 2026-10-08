@@ -102,10 +102,12 @@ def import_labels(windows: Path, out: Path) -> None:
             print(f"{grid.name}: no words labelled yet")
             continue
         start = float(window["start_s"])
-        path = out / f"{window['passage']}.labels.csv"
+        # One file per window, so two windows in one passage do not overwrite each other.
+        path = out / f"{name}.labels.csv"
         with path.open("w", newline="") as f:
             csv.writer(f).writerows(
-                (w, round(s + start, 3), round(e + start, 3)) for w, s, e in labelled
+                (window["passage"], w, round(s + start, 3), round(e + start, 3))
+                for w, s, e in labelled
             )
         print(f"wrote {path} ({len(labelled)} words)")
 

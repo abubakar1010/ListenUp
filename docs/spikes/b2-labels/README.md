@@ -42,4 +42,4 @@ uv run spike-labelkit import ../docs/spikes/b2-labels/windows.json ../docs/spike
 uv run spike-compare data/results/words --labels ../docs/spikes/b2-labels --out data/results/b2
 ```
 
-The import writes `PASSAGE.labels.csv` here (word, start, end, in the passage file's time). Commit the labelled TextGrids and the CSV files, then add the "vs hand labels" rows to `docs/spikes/19-b2-alignment.md` and the ADR.
+The import writes `NAME.labels.csv` here, one per window (passage, word, start, end, in the passage file's time), so several windows can share a passage. Commit the labelled TextGrids and the CSV files, then add the "vs hand labels" rows to `docs/spikes/19-b2-alignment.md` and the ADR.

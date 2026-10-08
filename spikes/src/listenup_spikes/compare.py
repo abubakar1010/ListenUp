@@ -3,8 +3,8 @@
 Usage:
     spike-compare results/words --labels ../docs/spikes/b2-labels --out results/
 results/words/<source>/<passage>.json are written by spike-b1 and spike-b2 (`window`
-and `words` in the passage file's time). Hand labels are NAME.labels.csv
-(word,start_s,end_s, in the same time), from `spike-labelkit import`.
+and `words` in the passage file's time). Hand labels are WINDOW.labels.csv
+(passage,word,start_s,end_s, in the same time), from `spike-labelkit import`.
 
 Two tables:
 - against hand labels (only for the labelled windows): the boundary error of each source;
@@ -39,13 +39,13 @@ def load_source(folder: Path) -> dict[str, Words]:
 
 
 def load_labels(folder: Path) -> dict[str, Words]:
-    out = {}
+    """Passage name to its hand-labelled words, from every labelled window in it."""
+    out: dict[str, Words] = {}
     for path in sorted(folder.glob("*.labels.csv")):
         with path.open() as f:
-            out[path.name.removesuffix(".labels.csv")] = [
-                (w, float(s), float(e)) for w, s, e in csv.reader(f)
-            ]
-    return out
+            for passage, w, s, e in csv.reader(f):
+                out.setdefault(passage, []).append((w, float(s), float(e)))
+    return {passage: sorted(words, key=lambda w: w[1]) for passage, words in out.items()}
 
 
 def _row(name: str, errors: list[float], words: int) -> dict[str, object]:
@@ -95,7 +95,8 @@ def main() -> None:
     report.summary["passages"] = args.only or "all"
 
     labels = load_labels(args.labels) if args.labels else {}
-    report.summary["hand-labelled windows"] = len(labels)
+    windows = len(list(args.labels.glob("*.labels.csv"))) if args.labels else 0
+    report.summary["hand-labelled windows"] = windows
     for name, words_of in sources.items():
         errors, compared = [], 0
         for passage, labelled in labels.items():
