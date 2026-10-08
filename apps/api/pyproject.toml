@@ -22,7 +22,8 @@ dependencies = [
 # worker and CI do without them. torch and torchaudio (wav2vec2 alignment) are installed
 # in the worker-media image from the PyTorch CPU index instead, because the PyPI wheels
 # bundle CUDA libraries the CPU server never uses.
-speech = ["faster-whisper>=1.1"]
+# faster-whisper 1.2.1 calls PyAV with an argument PyAV 19 removed (ADR 0033).
+speech = ["faster-whisper>=1.1", "av<19"]
 
 [dependency-groups]
 dev = [
