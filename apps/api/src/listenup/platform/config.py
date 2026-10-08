@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -98,8 +98,8 @@ class Settings(BaseSettings):
     otel_traces_endpoint: str | None = None  # e.g. http://jaeger:4318/v1/traces
     otel_metrics_endpoint: str | None = None  # e.g. http://prometheus:9090/api/v1/otlp/v1/metrics
     otel_headers: SecretStr | None = None  # "key=value,..." for a hosted free tier
-    otel_metrics_interval_seconds: int = 30
-    otel_trace_sample_ratio: float = 1.0
+    otel_metrics_interval_seconds: int = Field(default=30, ge=1)
+    otel_trace_sample_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
 
     # Nightly database dump to object storage (NFR-REL-4, ADR 0032). The dump runs as
     # the database owner. Outside local and test runs the bucket must be set and differ
@@ -115,9 +115,9 @@ class Settings(BaseSettings):
     backup_s3_access_key: str | None = None
     backup_s3_secret_key: SecretStr | None = None
     backup_prefix: str = "backups/postgres/"
-    backup_retention_days: int = 14
-    backup_hour_utc: int = 2
-    backup_minute_utc: int = 30
+    backup_retention_days: int = Field(default=14, ge=1)
+    backup_hour_utc: int = Field(default=2, ge=0, le=23)
+    backup_minute_utc: int = Field(default=30, ge=0, le=59)
 
     # YouTube intake stays off until the legal review (OQ-6) clears it.
     youtube_intake_enabled: bool = False

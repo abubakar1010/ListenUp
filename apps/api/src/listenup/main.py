@@ -51,11 +51,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.events = EventHub()
         app.state.event_listener = EventListener(settings.database_url, app.state.events)
         app.state.event_listener.start()
-        yield
-        app.state.events.close()
-        await app.state.event_listener.stop()
-        await app.state.database.dispose()
-        shutdown_telemetry()
+        try:
+            yield
+        finally:
+            # Flush telemetry even when a step of the shutdown fails.
+            try:
+                app.state.events.close()
+                await app.state.event_listener.stop()
+                await app.state.database.dispose()
+            finally:
+                shutdown_telemetry()
 
     app = FastAPI(title="ListenUp API", version=__version__, lifespan=lifespan)
     app.state.settings = settings

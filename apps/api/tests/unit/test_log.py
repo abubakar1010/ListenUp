@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 
 import pytest
 from fastapi import FastAPI
@@ -11,6 +12,7 @@ from listenup.platform.log import (
     JsonFormatter,
     RequestIdMiddleware,
     current_request_id,
+    redact,
     request_id_bound,
 )
 
@@ -92,3 +94,22 @@ def test_emails_in_extra_fields_and_nested_values_are_redacted() -> None:
 
     assert entry["who"] == {"to": ["[email]"], "n": 3}
     assert entry["error"] == "bad address [email]"
+
+
+def test_redaction_is_linear_on_a_long_token_without_an_at_sign() -> None:
+    started = time.perf_counter()
+    redact("a" * 100_000)
+    assert time.perf_counter() - started < 1.0
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("mail ab.cd+tag@sub.example.co.uk now", "mail [email] now"),
+        ("x" * 5000 + "@example.com", "[email]"),
+        ("(a@b.com),c@d.org;", "([email]),[email];"),
+        ("no address here: 12@", "no address here: 12@"),
+    ],
+)
+def test_addresses_are_still_redacted(text: str, expected: str) -> None:
+    assert redact(text) == expected
