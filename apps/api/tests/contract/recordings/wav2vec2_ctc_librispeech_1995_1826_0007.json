@@ -8,7 +8,7 @@
   "int8": true
  },
  "provider": "wav2vec2-ctc",
- "version": "torchaudio 2.8.0+cpu; torch 2.8.0+cpu",
+ "version": "torchaudio 2.8.0+cpu; torch 2.8.0+cpu; window 30s; int8",
  "input": {
   "audio": "1995-1826-0007.flac",
   "text": "Find some Cresswells there, big plantations rated at $250,000."

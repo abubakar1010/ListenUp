@@ -4,9 +4,10 @@ Uses a torchaudio pipeline bundle named by `model` in `ai.yaml`: the multilingua
 `MMS_FA` aligner or an English ASR bundle such as `WAV2VEC2_ASR_BASE_960H` (spike #19,
 ADR 0033), with `forced_align` over the words' letters. With the `window_seconds` option
 the model runs over the audio in windows rather than in one pass, and `int8: true`
-quantises its linear layers. Units are characters,
-so results say `unit_kind: character`. torch and torchaudio are imported only when the
-model loads, once per process, in the media worker (install the CPU wheels there).
+quantises its linear layers; both change the posteriors, so both are part of the
+provenance version. Units are characters, so results say `unit_kind: character`. torch
+and torchaudio are imported only when the model loads, once per process, in the media
+worker (install the CPU wheels there).
 
 As in the faster-whisper adapter, `TorchaudioCtcEngine` is the only code touching the
 library; it returns `RawAlignment` data (frame spans per word) that `to_alignment` maps
@@ -17,17 +18,21 @@ import asyncio
 import re
 import threading
 import unicodedata
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from importlib import metadata
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from pydantic import BaseModel
 
 from listenup.ai.config import ProviderEntry
+from listenup.ai.errors import AIConfigError
 from listenup.ai.ports import AlignedUnit, AlignedWord, Alignment, Provenance
 from listenup.ai.providers.audio import decode_pcm
+
+if TYPE_CHECKING:
+    import torch
 
 PROVIDER = "wav2vec2-ctc"
 
@@ -74,7 +79,17 @@ def alignable_words(text: str) -> list[AlignableWord]:
 
 
 FRAME_SAMPLES = 320  # wav2vec2: one emission frame per 20 ms at 16 kHz
+RECEPTIVE_FIELD_SAMPLES = 400  # what the conv front end reads for one frame
 WINDOW_CONTEXT_SAMPLES = 16000  # 1 s of audio each side of a window, then dropped
+MIN_WINDOW_SECONDS = 1.0
+
+
+def model_frames(input_samples: int) -> int:
+    """Frames the wav2vec2 conv front end gives for this many samples: one per 320, less
+    one when fewer than 80 samples are left over for the last frame's 400-sample field."""
+    if input_samples < RECEPTIVE_FIELD_SAMPLES:
+        return 0
+    return (input_samples - RECEPTIVE_FIELD_SAMPLES) // FRAME_SAMPLES + 1
 
 
 @dataclass(frozen=True)
@@ -83,6 +98,7 @@ class Window:
     end: int
     input_start: int  # samples the model sees
     input_end: int
+    pad_end: int = 0  # silent samples appended to the input so its last frame exists
 
     @property
     def first_frame(self) -> int:
@@ -94,48 +110,81 @@ class Window:
         return (self.end - self.start) // FRAME_SAMPLES
 
 
-def emission_windows(num_samples: int, window_seconds: float, sample_rate: int) -> list[Window]:
-    """Windows for running the model in pieces (`window_seconds` > 0).
+def _window(start: int, end: int, input_start: int, input_end: int) -> Window:
+    """A window whose input yields every frame it keeps: at the end of the audio there is
+    no context after it, so up to 80 silent samples complete the last frame's field."""
+    needed = (start - input_start) // FRAME_SAMPLES + (end - start) // FRAME_SAMPLES
+    short = model_frames(input_end - input_start) < needed
+    pad = RECEPTIVE_FIELD_SAMPLES - FRAME_SAMPLES if short else 0
+    return Window(start, end, input_start, input_end, pad)
 
-    Self-attention over a whole passage grows with its length squared, so a 3-minute
-    passage in one pass is slow and memory-hungry (spike #19). Each window is a whole
-    number of frames; the model also sees up to 1 s on each side, and only the window's
-    own frames are kept, so every kept frame was computed with context around it."""
+
+def emission_windows(num_samples: int, window_seconds: float, sample_rate: int) -> list[Window]:
+    """Windows for running the model over the audio, one frame per 20 ms.
+
+    With `window_seconds` > 0 the model runs in pieces: self-attention over a whole
+    passage grows with its length squared, so a 3-minute passage in one pass is slow and
+    memory-hungry (spike #19). Each window is a whole number of frames; the model also
+    sees up to 1 s on each side, and only the window's own frames are kept, so every
+    kept frame was computed with context around it. Either way the frames joined up
+    number num_samples // 320, frame i starting at sample 320 * i."""
+    if num_samples < FRAME_SAMPLES:
+        raise ValueError(f"{num_samples} samples is too short to align")
     if window_seconds <= 0:
-        return [Window(0, num_samples, 0, num_samples)]
+        return [_window(0, num_samples, 0, num_samples)]
     step = round(window_seconds * sample_rate) // FRAME_SAMPLES * FRAME_SAMPLES
-    windows = []
-    for start in range(0, num_samples, step):
-        end = min(start + step, num_samples)
-        windows.append(
-            Window(
-                start,
-                end,
-                max(0, start - WINDOW_CONTEXT_SAMPLES),
-                min(num_samples, end + WINDOW_CONTEXT_SAMPLES),
-            )
+    if step <= 0:
+        raise ValueError(f"window_seconds {window_seconds} is shorter than one frame")
+    return [
+        _window(
+            start,
+            min(start + step, num_samples),
+            max(0, start - WINDOW_CONTEXT_SAMPLES),
+            min(num_samples, start + step + WINDOW_CONTEXT_SAMPLES),
         )
-    return windows
+        for start in range(0, num_samples, step)
+    ]
+
+
+BLANK = "-"  # the CTC blank in every torchaudio wav2vec2 bundle
+SEPARATOR = "|"  # between words, in the bundles that have one
+ALPHABET = "abcdefghijklmnopqrstuvwxyz'"  # what alignable_words produces
 
 
 @dataclass(frozen=True)
 class Vocabulary:
     """A bundle's labels: MMS_FA uses lower-case letters and no word separator; the
-    English ASR bundles (WAV2VEC2_ASR_*) use upper-case letters and `|` between words."""
+    English ASR bundles (WAV2VEC2_ASR_*) use upper-case letters and `|` between words.
+    Read from the labels themselves, so a bundle that cannot align our words fails when
+    the model loads, not inside a job."""
 
     labels: tuple[str, ...]
     upper_case: bool
-    separator: str | None
-    blank: int = 0  # "-" in every torchaudio wav2vec2 bundle
+    separator: int | None  # label id of the word separator
+    blank: int
+    index: Mapping[str, int] = field(compare=False, repr=False)
+
+    @classmethod
+    def from_labels(cls, labels: Sequence[str]) -> "Vocabulary":
+        labels = tuple(labels)
+        index = {label: i for i, label in enumerate(labels)}
+        upper_case = "A" in index and "a" not in index
+        letters = ALPHABET.upper() if upper_case else ALPHABET
+        missing = [c for c in BLANK + letters if c not in index]
+        if missing:
+            raise AIConfigError(
+                f"the alignment model's labels lack {''.join(missing)!r}: "
+                "it needs a CTC blank '-', the letters a-z in one case and an apostrophe"
+            )
+        return cls(labels, upper_case, index.get(SEPARATOR), index[BLANK], index)
 
     def targets(self, words: list[str]) -> list[int]:
         """Label ids of the words' letters, with the separator between words if any."""
-        index = {label: i for i, label in enumerate(self.labels)}
         ids: list[int] = []
         for i, word in enumerate(words):
             if i and self.separator is not None:
-                ids.append(index[self.separator])
-            ids.extend(index[c] for c in (word.upper() if self.upper_case else word))
+                ids.append(self.separator)
+            ids.extend(self.index[c] for c in (word.upper() if self.upper_case else word))
         return ids
 
 
@@ -146,10 +195,9 @@ def spans_per_word(
     word, dropping the separators' spans."""
     if len(spans) != len(tokens):
         raise ValueError(f"aligner returned {len(spans)} spans for {len(tokens)} tokens")
-    separator = (
-        vocabulary.labels.index(vocabulary.separator) if vocabulary.separator is not None else None
-    )
-    letters = [span for span, token in zip(spans, tokens, strict=True) if token != separator]
+    letters = [
+        span for span, token in zip(spans, tokens, strict=True) if token != vocabulary.separator
+    ]
     out, cursor = [], 0
     for word in words:
         out.append(letters[cursor : cursor + len(word)])
@@ -157,8 +205,29 @@ def spans_per_word(
     return out
 
 
+def window_seconds_option(entry: ProviderEntry) -> float:
+    """The `window_seconds` option: 0 (one pass) or at least a second, checked at load."""
+    value = float(entry.options.get("window_seconds", 0))
+    if value < 0 or 0 < value < MIN_WINDOW_SECONDS:
+        raise AIConfigError(
+            f"window_seconds must be 0 (one pass) or at least {MIN_WINDOW_SECONDS:g}, not {value:g}"
+        )
+    return value
+
+
+def settings_label(window_seconds: float, int8: bool) -> str:
+    """The settings that change the emissions, for provenance: windows and int8 move the
+    posteriors (and so Shadow's scores), so results from each must stay distinguishable."""
+    label = f"window {window_seconds:g}s" if window_seconds > 0 else "one pass"
+    return f"{label}; {'int8' if int8 else 'float32'}"
+
+
 class TorchaudioCtcEngine:
     def __init__(self, entry: ProviderEntry) -> None:
+        self._window_seconds = window_seconds_option(entry)
+        self._int8 = bool(entry.options.get("int8", False))
+        self._decode_timeout = entry.timeout_seconds
+
         import torch  # lazy: only the media worker installs it
         import torchaudio
 
@@ -167,12 +236,16 @@ class TorchaudioCtcEngine:
         if isinstance(bundle, torchaudio.pipelines.Wav2Vec2FABundle):  # MMS_FA
             self._model = bundle.get_model(with_star=False)
             labels = bundle.get_labels(star=None)
-            self._vocabulary = Vocabulary(tuple(labels), upper_case=False, separator=None)
-        else:  # an ASR bundle such as WAV2VEC2_ASR_BASE_960H
+        elif isinstance(bundle, torchaudio.pipelines.Wav2Vec2ASRBundle):  # WAV2VEC2_ASR_*
             self._model = bundle.get_model()
             labels = bundle.get_labels()
-            self._vocabulary = Vocabulary(tuple(labels), upper_case=True, separator="|")
-        if entry.options.get("int8", False):
+        else:
+            raise AIConfigError(
+                f"{entry.model} is not a torchaudio wav2vec2 CTC bundle "
+                "(use MMS_FA or a WAV2VEC2_ASR_* bundle)"
+            )
+        self._vocabulary = Vocabulary.from_labels(labels)
+        if self._int8:
             # Dynamic int8 linear layers: 23% less CPU, same boundaries (spike #19).
             self._model = torch.ao.quantization.quantize_dynamic(
                 self._model, {torch.nn.Linear}, dtype=torch.qint8
@@ -180,24 +253,38 @@ class TorchaudioCtcEngine:
         self._torch = torch
         self._functional = torchaudio.functional
         self._sample_rate = int(bundle.sample_rate)
-        self._window_seconds = float(entry.options.get("window_seconds", 0))
 
     @property
     def version(self) -> str:
-        return f"torchaudio {metadata.version('torchaudio')}; torch {metadata.version('torch')}"
+        return (
+            f"torchaudio {metadata.version('torchaudio')}; torch {metadata.version('torch')}"
+            f"; {settings_label(self._window_seconds, self._int8)}"
+        )
 
     def run(self, audio: Path, words: list[str]) -> RawAlignment:
+        pcm = decode_pcm(audio, self._sample_rate, timeout_seconds=self._decode_timeout)
+        samples = self._torch.frombuffer(bytearray(pcm), dtype=self._torch.float32)
+        return self.run_samples(samples, words)
+
+    def run_samples(self, samples: "torch.Tensor", words: list[str]) -> RawAlignment:
+        """Align `words` to mono float samples at the bundle's rate (1-D tensor)."""
         torch = self._torch
-        pcm = decode_pcm(audio, self._sample_rate)
-        waveform = torch.frombuffer(bytearray(pcm), dtype=torch.float32).unsqueeze(0)
+        waveform = samples.unsqueeze(0)
         num_samples = int(waveform.size(1))
         with torch.inference_mode():
             parts = []
             for w in emission_windows(num_samples, self._window_seconds, self._sample_rate):
-                emission, _ = self._model(waveform[:, w.input_start : w.input_end])
-                if self._window_seconds > 0:
-                    emission = emission[:, w.first_frame : w.first_frame + w.frame_count]
-                parts.append(emission[0])
+                piece = waveform[:, w.input_start : w.input_end]
+                if w.pad_end:
+                    piece = torch.nn.functional.pad(piece, (0, w.pad_end))
+                emission, _ = self._model(piece)
+                kept = emission[0, w.first_frame : w.first_frame + w.frame_count]
+                if kept.size(0) != w.frame_count:
+                    raise RuntimeError(
+                        f"the model gave {emission.size(1)} frames for {piece.size(1)} "
+                        f"samples; expected at least {w.first_frame + w.frame_count}"
+                    )
+                parts.append(kept)
             log_probs = torch.log_softmax(torch.cat(parts), dim=-1)
             tokens = self._vocabulary.targets(words)
             labels, scores = self._functional.forced_align(
@@ -226,9 +313,7 @@ def to_alignment(
 ) -> Alignment:
     if len(raw.spans) != len(words):
         raise ValueError(f"aligner returned {len(raw.spans)} words for {len(words)}")
-    seconds_per_frame = (
-        raw.num_samples / raw.num_frames / raw.sample_rate if raw.num_frames else 0.0
-    )
+    seconds_per_frame = FRAME_SAMPLES / raw.sample_rate  # frame i starts at sample 320 * i
     out = []
     for word, spans in zip(words, raw.spans, strict=True):
         if not spans:

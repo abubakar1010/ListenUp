@@ -64,6 +64,7 @@ class FasterWhisperEngine:
         self._compute_type = str(options.get("compute_type", "int8"))
         self._beam_size = int(options.get("beam_size", 5))
         self._vad_filter = bool(options.get("vad_filter", True))
+        self._decode_timeout = entry.timeout_seconds
         download_root = options.get("download_root")
         self._model = faster_whisper.WhisperModel(
             entry.model,
@@ -83,8 +84,9 @@ class FasterWhisperEngine:
     def run(self, audio: Path, language: str) -> RawTranscription:
         import numpy as np  # installed with faster-whisper
 
-        # Decoded by ffmpeg, not faster-whisper's PyAV path, which fails with PyAV 19.
-        samples = np.frombuffer(decode_pcm(audio, SAMPLE_RATE), dtype=np.float32)
+        # Decoded by ffmpeg, like the aligner's input, not by faster-whisper's PyAV path.
+        pcm = decode_pcm(audio, SAMPLE_RATE, timeout_seconds=self._decode_timeout)
+        samples = np.frombuffer(pcm, dtype=np.float32)
         segments, info = self._model.transcribe(
             samples,
             language=language,

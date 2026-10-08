@@ -27,7 +27,11 @@ from listenup.ai.ports import (
 )
 from listenup.ai.providers import fake
 from listenup.ai.providers.faster_whisper import FasterWhisperTranscription, RawTranscription
-from listenup.ai.providers.wav2vec2_ctc import RawAlignment, Wav2Vec2CtcAlignment
+from listenup.ai.providers.wav2vec2_ctc import (
+    RawAlignment,
+    Wav2Vec2CtcAlignment,
+    settings_label,
+)
 
 RECORDINGS = Path(__file__).parent / "recordings"
 
@@ -113,6 +117,9 @@ async def test_wav2vec2_returns_the_alignment_schema(record: dict[str, Any]) -> 
 
     assert_schema(result, Alignment)
     assert result.provenance.version == record["version"]
+    options = record["options"]
+    settings = settings_label(float(options.get("window_seconds", 0)), bool(options.get("int8")))
+    assert record["version"].endswith(f"; {settings}")  # the settings are in the provenance
     assert len(result.words) == len(record["raw"]["spans"])
     reference = text.split()
     for word in result.words:
