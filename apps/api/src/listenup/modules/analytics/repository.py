@@ -7,6 +7,8 @@ reads it as `listenup_readonly` (or the owner), which sees every learner.
 
 import json
 import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -26,34 +28,46 @@ ON CONFLICT DO NOTHING
 """)
 
 
-async def insert(
-    session: AsyncSession,
-    *,
-    user_id: uuid.UUID,
-    event_type: EventType,
-    subject_id: uuid.UUID,
-    step: str | None = None,
-    content_id: uuid.UUID | None = None,
-    session_id: uuid.UUID | None = None,
-    properties: dict[str, Any] | None = None,
+@dataclass(frozen=True)
+class NewEvent:
+    event_type: EventType
+    subject_id: uuid.UUID
+    step: str | None = None
+    content_id: uuid.UUID | None = None
+    session_id: uuid.UUID | None = None
+    properties: dict[str, Any] | None = None
+
+
+async def insert_many(
+    session: AsyncSession, user_id: uuid.UUID, events: Sequence[NewEvent]
 ) -> None:
-    """Record one event; nothing happens when the same occurrence is already recorded.
+    """Record events in one statement round; one already recorded is skipped.
 
     `ON CONFLICT DO NOTHING` needs no read access, so the API role keeps INSERT only.
     """
+    if not events:
+        return
     await session.execute(
         _INSERT,
-        {
-            "id": uuid7(),
-            "user_id": user_id,
-            "event_type": event_type.value,
-            "subject_id": subject_id,
-            "step": step,
-            "content_id": content_id,
-            "session_id": session_id,
-            "properties": json.dumps(properties or {}),
-        },
+        [
+            {
+                "id": uuid7(),
+                "user_id": user_id,
+                "event_type": event.event_type.value,
+                "subject_id": event.subject_id,
+                "step": event.step,
+                "content_id": event.content_id,
+                "session_id": event.session_id,
+                "properties": json.dumps(event.properties or {}),
+            }
+            for event in events
+        ],
     )
+
+
+async def insert(session: AsyncSession, user_id: uuid.UUID, event: NewEvent) -> None:
+    """Record one event; nothing happens when the same occurrence is already recorded."""
+    await insert_many(session, user_id, [event])
 
 
 async def events_before(session: AsyncSession, as_of: datetime) -> list[Event]:

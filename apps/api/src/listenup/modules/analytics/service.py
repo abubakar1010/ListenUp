@@ -46,6 +46,7 @@ from listenup.modules.analytics.domain import (
     require_one_of,
     step_changes,
 )
+from listenup.modules.analytics.repository import NewEvent
 from listenup.platform.export import ExportPart, learner_rows
 
 logger = logging.getLogger(__name__)
@@ -89,11 +90,13 @@ async def record_content_added(
     """A new content item, with where it came from ('upload' or 'youtube')."""
     await repository.insert(
         db,
-        user_id=learner,
-        event_type=EventType.CONTENT_ADDED,
-        subject_id=content_id,
-        content_id=content_id,
-        properties={"source_type": require_one_of("source_type", source_type, SOURCE_TYPES)},
+        learner,
+        NewEvent(
+            EventType.CONTENT_ADDED,
+            content_id,
+            content_id=content_id,
+            properties={"source_type": require_one_of("source_type", source_type, SOURCE_TYPES)},
+        ),
     )
 
 
@@ -113,12 +116,14 @@ async def record_plan_started(
     """
     await repository.insert(
         db,
-        user_id=learner,
-        event_type=EventType.PLAN_STARTED,
-        subject_id=session_id,
-        content_id=content_id,
-        session_id=session_id,
-        properties={"path": require_one_of("path", path, PATHS)},
+        learner,
+        NewEvent(
+            EventType.PLAN_STARTED,
+            session_id,
+            content_id=content_id,
+            session_id=session_id,
+            properties={"path": require_one_of("path", path, PATHS)},
+        ),
     )
     await record_plan_progress(db, learner, session_id, content_id, before={}, after=steps)
 
@@ -133,18 +138,26 @@ async def record_plan_progress(
     before: dict[str, str],
     after: dict[str, str],
 ) -> None:
-    """`step_completed` and `step_started` for a transition of the plan, as {step: status}."""
-    for change in step_changes(before, after):
-        await repository.insert(
-            db,
-            user_id=learner,
-            event_type=change.event,
-            subject_id=session_id,
-            step=change.step,
-            content_id=content_id,
-            session_id=session_id,
-            properties={"outcome": change.outcome} if change.outcome else None,
-        )
+    """`step_completed` and `step_started` for a transition of the plan, as {step: status}.
+
+    Pass only the steps the transition changed (their statuses before and after); a step
+    that did not change adds nothing, and all the events go in one round trip.
+    """
+    await repository.insert_many(
+        db,
+        learner,
+        [
+            NewEvent(
+                change.event,
+                session_id,
+                step=change.step,
+                content_id=content_id,
+                session_id=session_id,
+                properties={"outcome": change.outcome} if change.outcome else None,
+            )
+            for change in step_changes(before, after)
+        ],
+    )
 
 
 @_never_fails
@@ -160,12 +173,14 @@ async def record_listen_started(
     """An attempt at Blind or Dictation began: the learner is about to listen."""
     await repository.insert(
         db,
-        user_id=learner,
-        event_type=EventType.LISTEN_STARTED,
-        subject_id=attempt_id,
-        content_id=content_id,
-        session_id=session_id,
-        properties={"mode": require_one_of("mode", mode, LISTEN_MODES)},
+        learner,
+        NewEvent(
+            EventType.LISTEN_STARTED,
+            attempt_id,
+            content_id=content_id,
+            session_id=session_id,
+            properties={"mode": require_one_of("mode", mode, LISTEN_MODES)},
+        ),
     )
 
 
@@ -181,11 +196,13 @@ async def record_blind_abandoned(
     """A Blind attempt was voided, with the reason (left_page, seek, interrupted ...)."""
     await repository.insert(
         db,
-        user_id=learner,
-        event_type=EventType.BLIND_ABANDONED,
-        subject_id=attempt_id,
-        session_id=session_id,
-        properties={"reason": reason[:50]},
+        learner,
+        NewEvent(
+            EventType.BLIND_ABANDONED,
+            attempt_id,
+            session_id=session_id,
+            properties={"reason": reason[:50]},
+        ),
     )
 
 
@@ -203,11 +220,13 @@ async def record_dictation_replays(
         raise ValueError("a replay count cannot be negative")
     await repository.insert(
         db,
-        user_id=learner,
-        event_type=EventType.DICTATION_REPLAYS,
-        subject_id=attempt_id,
-        session_id=session_id,
-        properties={"replay_count": replay_count},
+        learner,
+        NewEvent(
+            EventType.DICTATION_REPLAYS,
+            attempt_id,
+            session_id=session_id,
+            properties={"replay_count": replay_count},
+        ),
     )
 
 
@@ -223,11 +242,13 @@ async def record_mark_created(
     """A mark was made; only a hash of its normalised phrase is kept (repeat failures)."""
     await repository.insert(
         db,
-        user_id=learner,
-        event_type=EventType.MARK_CREATED,
-        subject_id=mark_id,
-        session_id=session_id,
-        properties={"pattern": mark_pattern(phrase)},
+        learner,
+        NewEvent(
+            EventType.MARK_CREATED,
+            mark_id,
+            session_id=session_id,
+            properties={"pattern": mark_pattern(phrase)},
+        ),
     )
 
 
@@ -237,11 +258,7 @@ async def record_card_created(
 ) -> None:
     """A card was made (always from a mark, FR-CA-2)."""
     await repository.insert(
-        db,
-        user_id=learner,
-        event_type=EventType.CARD_CREATED,
-        subject_id=card_id,
-        session_id=session_id,
+        db, learner, NewEvent(EventType.CARD_CREATED, card_id, session_id=session_id)
     )
 
 
@@ -259,11 +276,13 @@ async def record_shadow_round_completed(
         raise ValueError("a Shadow round is numbered 1 to 3")
     await repository.insert(
         db,
-        user_id=learner,
-        event_type=EventType.SHADOW_ROUND_COMPLETED,
-        subject_id=round_id,
-        session_id=session_id,
-        properties={"round": round_number},
+        learner,
+        NewEvent(
+            EventType.SHADOW_ROUND_COMPLETED,
+            round_id,
+            session_id=session_id,
+            properties={"round": round_number},
+        ),
     )
 
 

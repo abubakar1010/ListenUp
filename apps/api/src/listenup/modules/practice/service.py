@@ -336,17 +336,21 @@ async def _transition(
         await repository.delete_unfinished_steps(db, practice.id)
         unfinished = [s for s in new.steps if s.status not in repository.FINISHED]
         await repository.insert_steps(db, practice.id, practice.user_id, unfinished)
+        before: dict[str, str] = {}
+        touched = unfinished
     else:
         old = {s.step: s.status for s in practice.plan.steps}
-        changed = [s for s in new.steps if old[s.step] is not s.status]
-        await repository.update_steps(db, practice.id, changed)
+        touched = [s for s in new.steps if old[s.step] is not s.status]
+        await repository.update_steps(db, practice.id, touched)
+        before = {s.step.value: old[s.step].value for s in touched}
+    # The events come from the steps written above, so the two never disagree (#101).
     await analytics.record_plan_progress(
         db,
         practice.user_id,
         practice.id,
         practice.content_id,
-        before=_statuses(practice.plan),
-        after=_statuses(new),
+        before=before,
+        after={s.step.value: s.status.value for s in touched},
     )
     return PracticeSession(
         id=practice.id,
