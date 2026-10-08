@@ -7,7 +7,6 @@ from typing import Literal
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
 
-from listenup.modules.identity import service
 from listenup.modules.identity.service import AccountsDep, CurrentLearner
 from listenup.platform.database import DbSession
 
@@ -48,7 +47,7 @@ async def register(
     accounts: AccountsDep,
 ) -> Me:
     learner = await accounts.register(session, request, response, body.email, body.password)
-    return Me.model_validate(await service.get_profile(session, learner))
+    return Me.model_validate(await accounts.profile(session, learner))
 
 
 @router.post("/auth/login")
@@ -65,7 +64,7 @@ async def login(
     learner = await accounts.sign_in(
         session, request, response, body.email, body.password, restore=body.restore
     )
-    return Me.model_validate(await service.get_profile(session, learner))
+    return Me.model_validate(await accounts.profile(session, learner))
 
 
 @router.post("/auth/logout", status_code=204)
@@ -76,8 +75,8 @@ async def logout(
 
 
 @router.get("/me")
-async def me(learner: CurrentLearner, session: DbSession) -> Me:
-    return Me.model_validate(await service.get_profile(session, learner))
+async def me(learner: CurrentLearner, session: DbSession, accounts: AccountsDep) -> Me:
+    return Me.model_validate(await accounts.profile(session, learner))
 
 
 class DeleteAccount(BaseModel):

@@ -141,11 +141,14 @@ class Accounts:
 
         async with self.database.transaction() as own:
             await repository.clear_failures(own, account.id)
+        await self.complete_sign_in(session, request, response, account, restore=restore)
+        # After the restore step: it locks the deletion request before the users row,
+        # as the purge does, and an account still waiting for deletion is refused
+        # before any time is spent on a new hash.
         if account.password_hash and passwords.needs_rehash(account.password_hash):
             await repository.update_password_hash(
                 session, account.id, await passwords.hash_password(password)
             )
-        await self.complete_sign_in(session, request, response, account, restore=restore)
         return account.id
 
     async def _check_password(self, account: Account | None, password: str) -> bool:
@@ -385,6 +388,13 @@ class Accounts:
             samesite="lax",
         )
 
+    async def profile(self, session: AsyncSession, learner: uuid.UUID) -> dict[str, object]:
+        """The signed-in learner, with the grace period `delete_account` applies."""
+        profile = await repository.get_profile(session, learner)
+        if profile is None:
+            raise _not_signed_in()
+        return {**profile, "deletion_grace_days": self.settings.account_deletion_grace_days}
+
     def _locked(self, until: datetime) -> ProblemError:
         seconds = max(1, int((until - _now(until)).total_seconds()) + 1)
         return ProblemError(
@@ -442,13 +452,6 @@ async def hold_active_account(session: AsyncSession, learner: uuid.UUID) -> bool
     as a finished data export (ADR 0029, ADR 0030).
     """
     return await repository.hold_active_account(session, learner)
-
-
-async def get_profile(session: AsyncSession, learner: uuid.UUID) -> dict[str, object]:
-    profile = await repository.get_profile(session, learner)
-    if profile is None:
-        raise ProblemError(401, "not_signed_in", "Sign in to continue.")
-    return {**profile, "deletion_grace_days": get_settings().account_deletion_grace_days}
 
 
 AccountsDep = Annotated[Accounts, Depends(get_accounts)]

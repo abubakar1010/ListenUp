@@ -15,6 +15,7 @@ from typing import Any
 
 import psycopg
 import pytest
+from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 from httpx import Response
 from starlette.requests import Request
@@ -450,6 +451,44 @@ def test_signing_in_asks_before_restoring(client: TestClient, migrated_url: str)
     assert client.get("/api/v1/me").status_code == 401
     assert user_row(migrated_url, user_id)[0] == "pending_deletion"  # type: ignore[index]
     assert deletion_request(migrated_url, user_id)["status"] == "pending"
+
+
+def test_the_grace_period_shown_is_the_one_applied(make_client: ClientFactory) -> None:
+    client = make_client(account_deletion_grace_days=3)
+    register(client, unique_email())
+
+    assert client.get("/api/v1/me").json()["deletion_grace_days"] == 3
+    until = datetime.fromisoformat(delete_me(client).json()["deletion_scheduled_at"])
+    assert timedelta(days=3) - timedelta(minutes=1) < until - datetime.now(UTC) <= timedelta(days=3)
+
+
+def test_an_outdated_password_hash_is_renewed_only_once_signed_in(
+    client: TestClient, migrated_url: str
+) -> None:
+    """The renewal comes after the restore step, which locks the deletion request
+    before the users row as the purge does; a refused sign-in renews nothing."""
+    email = unique_email()
+    user_id = register(client, email)
+    delete_me(client)
+    outdated = PasswordHasher(time_cost=1).hash(PASSWORD)
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE identity.users SET password_hash = %s WHERE id = %s", [outdated, user_id]
+        )
+
+    def stored_hash() -> str:
+        with psycopg.connect(migrated_url) as conn:
+            row = conn.execute(
+                "SELECT password_hash FROM identity.users WHERE id = %s", [user_id]
+            ).fetchone()
+        assert row is not None
+        return str(row[0])
+
+    assert login(client, email).status_code == 409
+    assert stored_hash() == outdated
+    assert login(client, email, restore=True).status_code == 200
+    assert stored_hash() != outdated
+    assert login(client, email).status_code == 200  # the new hash works
 
 
 def test_a_wrong_password_never_reveals_the_deletion(client: TestClient) -> None:
