@@ -2,6 +2,10 @@
 
 Read the section for the area you are changing before you change it. The rules every change needs are in `CLAUDE.md`; these add what a single area needs. When you add a convention, put it here under its area, not in `CLAUDE.md`.
 
+## Jobs (ADR 0015, 0029, 0031)
+
+- A `unique_key` holds while a job with that key waits or runs: `enqueue` returns None meanwhile. A job that also runs on a schedule passes `schedule="<cron>"` to `@job`. A job whose worker died is settled by `platform.recover_stalled_jobs` (back to the queue, or `on_give_up` after its last attempt), so a handler must be safe to run again after doing part of its work.
+
 ## Email (ADR 0017)
 
 - Email goes only through `modules/notifications/service.py` and is sent from background jobs. Never put a secret token in job arguments, because the queue keeps them (ADR 0017). Settings are `LISTENUP_SMTP_*`; tests swap the transport with `notifications.service.use_transport`.
