@@ -27,10 +27,13 @@ class Account:
         return self.status == "pending_deletion" and not self.gone
 
 
-_ACCOUNT_COLUMNS = """
-    id, email::text, password_hash, status, deletion_scheduled_at,
-    status = 'deleting' OR (status = 'pending_deletion' AND deletion_scheduled_at <= now())
+# The one definition of a 'gone' account (ADR 0029): deleted for good, or its grace
+# period is over even if the purge has not taken it yet. Every check uses this.
+_GONE = """
+    (status = 'deleting' OR (status = 'pending_deletion' AND deletion_scheduled_at <= now()))
 """
+
+_ACCOUNT_COLUMNS = f"id, email::text, password_hash, status, deletion_scheduled_at, {_GONE}"
 
 
 async def insert_user(
@@ -54,11 +57,9 @@ async def release_email_of_gone_account(session: AsyncSession, email: str) -> No
     to register again. The row keeps its id and is deleted by the purge as usual.
     """
     await session.execute(
-        text("""
+        text(f"""
         UPDATE identity.users SET email = 'deleted-' || id || '@listenup.invalid'
-         WHERE email = :email
-           AND (status = 'deleting'
-                OR (status = 'pending_deletion' AND deletion_scheduled_at <= now()))
+         WHERE email = :email AND {_GONE}
         """),
         {"email": email},
     )

@@ -134,25 +134,9 @@ class Accounts:
             await self.limiter.enforce(self.login_by_ip, ip_key(self.login_by_ip, ip))
 
         account = await repository.find_account(session, normalize_email(email))
-        if account is not None and not account.gone:
-            async with self.database.transaction() as own:
-                until = await repository.locked_until(own, account.id, self.lock)
-            if until is not None:
-                raise self._locked(until)
-
-        valid = await passwords.verify_password(
-            account.password_hash if account else None, password
-        )
+        valid = await self._check_password(account, password)
         # A deleted account past its grace period answers exactly like an unknown one.
         if account is None or not valid or account.gone:
-            if account is not None and not account.gone:
-                # Committed on its own: this request is about to be refused and rolled back.
-                async with self.database.transaction() as own:
-                    until = await repository.record_failure(
-                        own, account.id, self.lock, self.settings.login_lock_threshold
-                    )
-                if until is not None:
-                    raise self._locked(until)
             raise _invalid_credentials()
 
         async with self.database.transaction() as own:
@@ -163,6 +147,33 @@ class Accounts:
             )
         await self.complete_sign_in(session, request, response, account, restore=restore)
         return account.id
+
+    async def _check_password(self, account: Account | None, password: str) -> bool:
+        """Verify a password under the sign-in lockout (D17); True when it is right.
+
+        A locked account answers 429 `account_locked` before the password is checked,
+        and a wrong password counts as a failure, answering 429 when it locks the
+        account. Both are committed on their own, since the caller is about to refuse
+        the request and roll it back. A missing or gone account still costs a hash
+        check, so the answer takes as long, and nothing is counted for it.
+        """
+        counted = account if account is not None and not account.gone else None
+        if counted is not None:
+            async with self.database.transaction() as own:
+                until = await repository.locked_until(own, counted.id, self.lock)
+            if until is not None:
+                raise self._locked(until)
+        valid = await passwords.verify_password(
+            account.password_hash if account else None, password
+        )
+        if counted is not None and not valid:
+            async with self.database.transaction() as own:
+                until = await repository.record_failure(
+                    own, counted.id, self.lock, self.settings.login_lock_threshold
+                )
+            if until is not None:
+                raise self._locked(until)
+        return valid
 
     async def complete_sign_in(
         self,
@@ -250,17 +261,7 @@ class Accounts:
                 "This account signs in with Google, and confirming with Google is not "
                 "available yet. Contact support to delete the account.",
             )
-        async with self.database.transaction() as own:
-            until = await repository.locked_until(own, account.id, self.lock)
-        if until is not None:
-            raise self._locked(until)
-        if not await passwords.verify_password(account.password_hash, password):
-            async with self.database.transaction() as own:
-                until = await repository.record_failure(
-                    own, account.id, self.lock, self.settings.login_lock_threshold
-                )
-            if until is not None:
-                raise self._locked(until)
+        if not await self._check_password(account, password):
             raise ProblemError(
                 403,
                 "wrong_password",
