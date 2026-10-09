@@ -8,12 +8,13 @@ ListenUp is a web app for practicing English listening. The learner adds a clip 
 
 The stack is chosen in the Software Architecture: a React + TypeScript web client built with Vite (`apps/web`); a Python 3.12 FastAPI API and Procrastinate workers in one Python package (`apps/api`, package `listenup`); PostgreSQL 16; S3-compatible object storage; Docker Compose for local and production runs. Architecture decision records live in `docs/adr/`; add one for every significant decision.
 
-The design lives in documents outside the repo:
-- PRD: https://claude.ai/code/artifact/5d73e467-e587-4d4f-946d-a9fd2c0ab5f6 (what the product does and why)
-- SRS: https://claude.ai/code/artifact/fd47a9cb-6515-4fde-a232-3ab8cc14f0dd (requirements with stable IDs)
-- Software Architecture: https://claude.ai/code/artifact/6a30920f-b6a0-4131-a486-f2044c71bb13 (stack, modules, key flows, API, repository layout, deployment)
-- System Design: https://claude.ai/code/artifact/98274889-96ba-4424-afad-c2cd056206e2 (capacity, job queue lanes, speech and storage efficiency, scaling)
-- Database Design: https://claude.ai/code/artifact/ba05f7b3-f881-41e5-86d6-dcb94a509644 (the full schema: tables, DDL, constraints, access rules)
+The design lives in `docs/design/`, which is the source of truth. Change those files by pull request, never in the Claude Docs. Each file's first line names the Claude Docs original it was exported from; `docs/design/README.md` lists the visual documents (Final UI, design system v2) that stay as published artifacts.
+- PRD: `docs/design/prd.md` (what the product does and why)
+- SRS: `docs/design/srs.md` (requirements with stable IDs)
+- Software Architecture: `docs/design/architecture.md` (stack, modules, key flows, API, repository layout, deployment)
+- System Design: `docs/design/system-design.md` (capacity, job queue lanes, speech and storage efficiency, scaling)
+- Database Design: `docs/design/database-design.md` (the full schema: tables, DDL, constraints, access rules)
+- UX decisions: `docs/design/ux-decisions.md` (the UI and UX decisions behind the final interface)
 The SRS keeps stable requirement IDs (`FR-DI-1`, `FR-BL-1`, `NFR-AI-1`, and so on). Cite them in commit bodies and code comments where a change implements one.
 
 ## How work is done here
