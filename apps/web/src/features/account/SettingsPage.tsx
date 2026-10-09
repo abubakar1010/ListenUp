@@ -11,7 +11,9 @@ export default function SettingsPage() {
   return (
     <main className={PAGE_CLASS}>
       <h1 className="font-display text-title-compact md:text-title">Settings</h1>
-      <DataExportSection />
+      <div id="data-export" className="scroll-mt-4">
+        <DataExportSection />
+      </div>
       <DeleteAccountSection />
     </main>
   );

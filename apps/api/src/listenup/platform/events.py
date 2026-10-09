@@ -112,6 +112,13 @@ class Event:
         return f"id: {self.id}\nevent: {self.type}\ndata: {data}\n\n"
 
 
+@dataclass(frozen=True)
+class _EndingEvent:
+    """A final event that is delivered before its stream closes."""
+
+    event: Event
+
+
 class _Signal(Enum):
     RESYNC = "resync"
     CLOSE = "close"
@@ -120,7 +127,7 @@ class _Signal(Enum):
 RESYNC_MESSAGE = f'event: {RESYNC}\ndata: {{"type": "{RESYNC}"}}\n\n'
 KEEP_ALIVE = ": keep-alive\n\n"
 
-_Item = Event | _Signal
+_Item = Event | _EndingEvent | _Signal
 
 
 @dataclass(eq=False)
@@ -193,9 +200,10 @@ class EventHub:
         replay.events.append((now, sequence, event))
         self._prune(replay, now)
         for subscription in self._streams.get(user_id, ()):
-            self._put(subscription, event)
             if event_type in STREAM_ENDING_EVENTS:
-                self._end(subscription)
+                self._end(subscription, event)
+            else:
+                self._put(subscription, event)
         if now >= self._next_sweep:
             self._sweep(now)
         return event
@@ -240,12 +248,12 @@ class EventHub:
                 self._put(subscription, _Signal.RESYNC)
             else:
                 for event in missed:
-                    self._put(subscription, event)
                     if event.type in STREAM_ENDING_EVENTS:
                         # As if live. Later events follow on the next reconnect, which
                         # names this event as the last one seen.
-                        self._end(subscription)
+                        self._end(subscription, event)
                         return subscription
+                    self._put(subscription, event)
         self._streams.setdefault(user_id, set()).add(subscription)
         return subscription
 
@@ -314,13 +322,13 @@ class EventHub:
             subscription.queue.put_nowait(_Signal.RESYNC)
             logger.warning("event stream fell behind; sent resync")
 
-    def _end(self, subscription: Subscription) -> None:
-        """End one stream after what is queued; a full queue ends it at once."""
+    def _end(self, subscription: Subscription, event: Event) -> None:
+        """Deliver `event` and end; a full queue drops only the older backlog."""
         try:
-            subscription.queue.put_nowait(_Signal.CLOSE)
+            subscription.queue.put_nowait(_EndingEvent(event))
         except asyncio.QueueFull:
             _drain(subscription.queue)
-            subscription.queue.put_nowait(_Signal.CLOSE)
+            subscription.queue.put_nowait(_EndingEvent(event))
 
 
 def _drain(queue: asyncio.Queue[_Item]) -> None:
@@ -348,6 +356,9 @@ async def event_stream(
                 return
             elif item is _Signal.RESYNC:
                 yield RESYNC_MESSAGE
+            elif isinstance(item, _EndingEvent):
+                yield item.event.encode()
+                return
             else:
                 assert isinstance(item, Event)
                 yield item.encode()

@@ -79,6 +79,21 @@ async def me(learner: CurrentLearner, session: DbSession, accounts: AccountsDep)
     return Me.model_validate(await accounts.profile(session, learner))
 
 
+class DeletionSummary(BaseModel):
+    clips: int = Field(ge=0)
+    practice_sessions: int = Field(ge=0)
+    cards: int = Field(ge=0)
+    recordings: int = Field(ge=0)
+
+
+@router.get("/me/deletion-summary")
+async def deletion_summary(
+    learner: CurrentLearner, session: DbSession, accounts: AccountsDep
+) -> DeletionSummary:
+    """Counts for the review step before account deletion (UX-06)."""
+    return DeletionSummary.model_validate(await accounts.deletion_summary(session, learner))
+
+
 class DeleteAccount(BaseModel):
     password: str = Field(max_length=1000, description="The current password, asked again.")
     confirm: Literal[True] = Field(description="Must be true: the learner confirmed.")

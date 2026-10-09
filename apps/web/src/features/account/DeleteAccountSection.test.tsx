@@ -4,13 +4,14 @@ import { App } from '../../App';
 import { jsonResponse, LEARNER, problem, renderWithProviders } from '../../test-utils';
 
 const UNTIL = '2026-10-11T20:30:00Z';
+const SUMMARY = { clips: 3, practice_sessions: 8, cards: 2, recordings: 1 };
 
 beforeEach(() => {
   document.cookie = 'listenup_csrf=token-123';
 });
 afterEach(() => vi.restoreAllMocks());
 
-/** Mocks the API by method and path; DELETE /me answers with `onDelete`. */
+/** Mocks the account endpoints; DELETE /me answers with `onDelete`. */
 function mockAccount(onDelete: (body: unknown) => Response) {
   let deleted = false;
   const deletes: unknown[] = [];
@@ -24,9 +25,8 @@ function mockAccount(onDelete: (body: unknown) => Response) {
       deleted = response.ok;
       return response;
     }
-    if (path === '/me/exports/latest') {
-      return jsonResponse(200, { export: null });
-    }
+    if (path === '/me/deletion-summary') return jsonResponse(200, SUMMARY);
+    if (path === '/me/exports/latest') return jsonResponse(200, { export: null });
     if (path === '/me') {
       return deleted
         ? problem(401, 'not_signed_in', 'Sign in to continue.')
@@ -37,74 +37,69 @@ function mockAccount(onDelete: (body: unknown) => Response) {
   return deletes;
 }
 
-async function enterPasswordAndOpenDialog(password = 'correct horse') {
-  fireEvent.change(await screen.findByLabelText('Your password'), {
-    target: { value: password },
-  });
-  fireEvent.click(screen.getByRole('button', { name: 'Delete my account' }));
-  return screen.findByRole('dialog', { name: 'Delete your account?' });
+async function openConfirmation(password = 'correct horse') {
+  fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
+  const field = await screen.findByLabelText('Your password');
+  fireEvent.change(field, { target: { value: password } });
+  return field;
 }
 
-test('explains the grace period before anything happens', async () => {
+function acknowledgeAndDelete() {
+  fireEvent.click(screen.getByRole('checkbox', { name: /I understand this can't be undone/i }));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete my account' }));
+}
+
+test('settings links to a separate deletion page', async () => {
   mockAccount(() => jsonResponse(500, {}));
   renderWithProviders(<App />, { route: '/settings' });
 
   expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Delete your account', level: 2 })).toBeVisible();
-  expect(screen.getByText(/kept for 7 days/)).toBeInTheDocument();
-  expect(screen.getByText(/sign in within that time and restore/)).toBeInTheDocument();
+  expect(screen.getByText(/restore it by signing in during the 7 days/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('link', { name: 'Review account deletion' }));
+
+  expect(await screen.findByText('Step 1 of 2 · Check what will be deleted')).toBeInTheDocument();
 });
 
-test('promises the grace period the server reports, not a fixed one', async () => {
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-    const path = String(input).replace(/^\/api\/v1/, '');
-    if (path === '/me') return jsonResponse(200, { ...LEARNER, deletion_grace_days: 14 });
-    if (path === '/me/exports/latest') return jsonResponse(200, { export: null });
-    return problem(404, 'not_found', path);
-  });
-  renderWithProviders(<App />, { route: '/settings' });
-
-  expect(await screen.findByText(/kept for 14 days/)).toBeInTheDocument();
-  expect(screen.queryByText(/7 days/)).not.toBeInTheDocument();
-});
-
-test('asks for the password before opening the confirmation', async () => {
+test('step one shows counts, the permanent date and an export offer', async () => {
   mockAccount(() => jsonResponse(500, {}));
-  renderWithProviders(<App />, { route: '/settings' });
+  renderWithProviders(<App />, { route: '/settings/delete-account' });
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Delete my account' }));
-
-  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  expect(screen.getByRole('alert')).toHaveTextContent('Enter your password');
-  expect(screen.getByLabelText('Your password')).toHaveAttribute('aria-invalid', 'true');
-  expect(screen.getByLabelText('Your password')).toHaveFocus();
+  expect(await screen.findByText('3 clips in your library')).toBeInTheDocument();
+  expect(screen.getByText('8 practice sessions')).toBeInTheDocument();
+  expect(screen.getByText('2 saved cards')).toBeInTheDocument();
+  expect(screen.getByText('1 recording')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'download your data' })).toHaveAttribute(
+    'href',
+    '/settings#data-export',
+  );
+  expect(screen.getByText(/deleted for good on/)).toBeInTheDocument();
 });
 
-test('the confirmation starts on the safe action and can be cancelled', async () => {
-  const deletes = mockAccount(() => jsonResponse(500, {}));
-  renderWithProviders(<App />, { route: '/settings' });
+test('step two repeats the date and requires both confirmations', async () => {
+  mockAccount(() => jsonResponse(500, {}));
+  renderWithProviders(<App />, { route: '/settings/delete-account' });
+  const field = await openConfirmation('');
 
-  const dialog = await enterPasswordAndOpenDialog();
+  fireEvent.click(screen.getByRole('button', { name: 'Delete my account' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('Enter your password');
+  expect(field).toHaveFocus();
 
-  expect(dialog).toHaveTextContent('signed out at once');
-  expect(screen.getByRole('button', { name: 'Keep my account' })).toHaveFocus();
-  fireEvent.keyDown(dialog, { key: 'Escape' });
-  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  expect(deletes).toEqual([]);
+  fireEvent.change(field, { target: { value: 'correct horse' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Delete my account' }));
+  expect(screen.getByRole('checkbox')).toHaveFocus();
+  expect(
+    screen.getByText(/My account will be switched off now and deleted for good on/),
+  ).toBeVisible();
 });
 
 test('deleting signs out and shows until when the account can be restored', async () => {
   const deletes = mockAccount(() =>
     jsonResponse(202, { deletion_scheduled_at: UNTIL, detail: 'Deleted.' }),
   );
-  renderWithProviders(<App />, { route: '/settings' });
+  renderWithProviders(<App />, { route: '/settings/delete-account' });
 
-  await enterPasswordAndOpenDialog();
-  fireEvent.click(
-    screen
-      .getAllByRole('button', { name: 'Delete my account' })
-      .find((button) => button.closest('[role="dialog"]'))!,
-  );
+  await openConfirmation();
+  acknowledgeAndDelete();
 
   expect(
     await screen.findByRole('heading', { name: 'Your account is deleted', level: 1 }),
@@ -118,36 +113,28 @@ test('deleting signs out and shows until when the account can be restored', asyn
   expect(deletes).toEqual([{ password: 'correct horse', confirm: true }]);
 });
 
-test('a wrong password closes the dialog and marks the field', async () => {
+test('a wrong password stays on confirmation and marks the field', async () => {
   mockAccount(() => problem(403, 'wrong_password', 'The password is wrong.'));
-  renderWithProviders(<App />, { route: '/settings' });
+  renderWithProviders(<App />, { route: '/settings/delete-account' });
 
-  await enterPasswordAndOpenDialog('not it');
-  fireEvent.click(
-    screen
-      .getAllByRole('button', { name: 'Delete my account' })
-      .find((button) => button.closest('[role="dialog"]'))!,
-  );
+  await openConfirmation('not it');
+  acknowledgeAndDelete();
 
-  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-  expect(screen.getByRole('alert')).toHaveTextContent('The password is wrong.');
+  expect(await screen.findByRole('alert')).toHaveTextContent('The password is wrong.');
   expect(screen.getByLabelText('Your password')).toHaveAttribute('aria-invalid', 'true');
-  await waitFor(() => expect(screen.getByLabelText('Your password')).toHaveFocus());
+  expect(screen.getByLabelText('Your password')).toHaveFocus();
+  expect(screen.getByText('Step 2 of 2 · Confirm deletion')).toBeInTheDocument();
 });
 
-test('another failure stays in the dialog with what to do next', async () => {
+test('another failure stays on confirmation with what to do next', async () => {
   mockAccount(() => problem(503, 'database_unavailable', 'The service is busy.'));
-  renderWithProviders(<App />, { route: '/settings' });
+  renderWithProviders(<App />, { route: '/settings/delete-account' });
 
-  const dialog = await enterPasswordAndOpenDialog();
-  fireEvent.click(
-    screen
-      .getAllByRole('button', { name: 'Delete my account' })
-      .find((button) => button.closest('[role="dialog"]'))!,
-  );
+  await openConfirmation();
+  acknowledgeAndDelete();
 
   expect(await screen.findByText('The service is busy.')).toBeInTheDocument();
-  expect(dialog).toBeInTheDocument();
+  expect(screen.getByText('Step 2 of 2 · Confirm deletion')).toBeInTheDocument();
 });
 
 /** Just enough of EventSource to send the page one event. */
@@ -183,10 +170,10 @@ test('its own account.disabled event does not send the deleting tab to sign in',
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const path = String(input).replace(/^\/api\/v1/, '');
     if (path === '/me' && init?.method === 'DELETE') {
-      deleted = true; // committed; the response is still on its way
+      deleted = true;
       return new Promise<Response>((resolve) => (answer = resolve));
     }
-    if (path === '/me/exports/latest') return jsonResponse(200, { export: null });
+    if (path === '/me/deletion-summary') return jsonResponse(200, SUMMARY);
     if (path === '/me') {
       meCalls += 1;
       return deleted
@@ -196,22 +183,17 @@ test('its own account.disabled event does not send the deleting tab to sign in',
     return problem(404, 'not_found', path);
   });
   try {
-    renderWithProviders(<App />, { route: '/settings' });
-    await enterPasswordAndOpenDialog();
-    fireEvent.click(
-      screen
-        .getAllByRole('button', { name: 'Delete my account' })
-        .find((button) => button.closest('[role="dialog"]'))!,
-    );
+    renderWithProviders(<App />, { route: '/settings/delete-account' });
+    await openConfirmation();
+    acknowledgeAndDelete();
     await waitFor(() => expect(deleted).toBe(true));
     const before = meCalls;
 
-    // The event, published in the delete transaction, arrives before the response.
     FakeEventSource.latest!.emit('account.disabled', LEARNER.id);
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(meCalls).toBe(before);
-    expect(screen.getByRole('heading', { name: 'Settings', level: 1 })).toBeInTheDocument();
+    expect(screen.getByText('Step 2 of 2 · Confirm deletion')).toBeInTheDocument();
     answer(jsonResponse(202, { deletion_scheduled_at: UNTIL, detail: 'Deleted.' }));
     expect(
       await screen.findByRole('heading', { name: 'Your account is deleted', level: 1 }),

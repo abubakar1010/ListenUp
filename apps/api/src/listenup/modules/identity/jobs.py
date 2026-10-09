@@ -181,10 +181,10 @@ async def purge_account(deps: JobDeps, request_id: str) -> dict[str, Any] | None
        leaves files that no row points to. The request becomes 'storage_deleted'.
     3. `DELETE FROM identity.users`: cascades remove every learner row, and the
        reference-count trigger releases shared media, which stays for other learners.
-       The learner's rate counters go too. The request becomes 'completed' with a
-       report of rows and objects removed, in the same transaction.
+       The learner's rate counters go too; the request remains 'storage_deleted'.
     4. A last sweep of the prefix removes any file a job still running for the
-       learner wrote after step 2.
+       learner wrote after step 2. Only after it succeeds does the request become
+       'completed' with its report of rows and objects removed.
 
     Idempotent: each step checks the request's state, deleting what is already gone
     is not an error, and a request that is not due, cancelled or completed is left
@@ -230,7 +230,10 @@ async def purge_account(deps: JobDeps, request_id: str) -> dict[str, Any] | None
         locked = await repository.lock_deletion_request(session, request_uuid)
         if locked is None or locked.status != "storage_deleted":
             return None  # another run finished it meanwhile
-        rows: dict[str, int] = {}
+        # A retry after the final storage sweep failed reaches here after the user row
+        # is already gone. Keep the row counts recorded by the earlier attempt instead
+        # of replacing the audit report with zeroes.
+        rows = dict(report.get("rows_removed", {}))
         if await repository.lock_user_status(session, learner) is not None:
             rows = await repository.count_learner_rows(session, learner)
             await repository.delete_user(session, learner)
@@ -241,18 +244,22 @@ async def purge_account(deps: JobDeps, request_id: str) -> dict[str, Any] | None
         report["rows_removed"] = rows
         report["rows_total"] = sum(rows.values())
         await repository.update_deletion_request(
-            session, request_uuid, status="completed", report=report
+            session, request_uuid, status="storage_deleted", report=report
         )
 
     late = 0
     for prefix in request.storage_prefixes:
         late += await storage.delete_prefix(prefix)
-    if late:
-        report["objects_removed"] += late
-        async with deps.database.transaction() as session:
-            await repository.update_deletion_request(
-                session, request_uuid, status="completed", report=report
-            )
+    report["objects_removed"] += late
+    # Completion is the durable promise that no known object remains. If this final
+    # sweep fails, leave the request at storage_deleted so the job retry repeats it.
+    async with deps.database.transaction() as session:
+        locked = await repository.lock_deletion_request(session, request_uuid)
+        if locked is None or locked.status != "storage_deleted":
+            return None
+        await repository.update_deletion_request(
+            session, request_uuid, status="completed", report=report
+        )
     logger.info(
         "account purged",
         extra={

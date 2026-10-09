@@ -237,8 +237,11 @@ async def test_a_full_stream_of_a_disabled_account_still_ends() -> None:
     for number in range(5):
         hub.dispatch(A, "job.progress", f"clip-{number}")
 
-    hub.dispatch(A, EventType.ACCOUNT_DISABLED.value, str(A))
+    disabled = hub.dispatch(A, EventType.ACCOUNT_DISABLED.value, str(A))
 
+    chunks = await drain(stream, 2)
+    assert parse(chunks[-1])["id"] == disabled.id
+    assert parse(chunks[-1])["event"] == "account.disabled"
     with pytest.raises(StopAsyncIteration):
         await asyncio.wait_for(anext(stream), 1.0)
 

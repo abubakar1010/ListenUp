@@ -60,6 +60,11 @@ async function fakeAccountApi(page: Page) {
     }
     if (!state.signedIn) return problem(route, 401, 'not_signed_in', 'Sign in to continue.');
     if (path === '/me') return route.fulfill({ json: LEARNER });
+    if (path === '/me/deletion-summary') {
+      return route.fulfill({
+        json: { clips: 2, practice_sessions: 4, cards: 1, recordings: 0 },
+      });
+    }
     if (path === '/library/contents' || path === '/sessions') {
       return route.fulfill({ json: { items: [], next_cursor: null } });
     }
@@ -76,20 +81,21 @@ test('a learner deletes their account and restores it by signing in', async ({ p
   await page.getByRole('link', { name: 'Settings' }).click();
   await expect(page).toHaveTitle('Settings · ListenUp');
 
-  // A wrong password closes the dialog and marks the field.
+  await page.getByRole('link', { name: 'Review account deletion' }).click();
+  await expect(page).toHaveURL('/settings/delete-account');
+  await expect(page.getByText('2 clips in your library')).toBeVisible();
+  await page.getByRole('button', { name: 'Continue' }).click();
+
+  // A wrong password stays on step 2 and marks the field.
   await page.getByLabel('Your password').fill('not it');
+  await page.getByRole('checkbox', { name: /I understand this can't be undone/i }).check();
   await page.getByRole('button', { name: 'Delete my account' }).click();
-  let dialog = page.getByRole('dialog', { name: 'Delete your account?' });
-  await expect(dialog.getByRole('button', { name: 'Keep my account' })).toBeFocused();
-  await dialog.getByRole('button', { name: 'Delete my account' }).click();
-  await expect(dialog).toBeHidden();
   await expect(page.getByLabel('Your password')).toHaveAttribute('aria-invalid', 'true');
   await expect(page.getByLabel('Your password')).toBeFocused();
+  await expect(page.getByText('Step 2 of 2 · Confirm deletion')).toBeVisible();
 
   await page.getByLabel('Your password').fill('correct horse');
   await page.getByRole('button', { name: 'Delete my account' }).click();
-  dialog = page.getByRole('dialog', { name: 'Delete your account?' });
-  await dialog.getByRole('button', { name: 'Delete my account' }).click();
 
   await expect(page).toHaveURL(/\/account-deleted\?until=/);
   await expect(page.getByRole('heading', { name: 'Your account is deleted' })).toBeVisible();
@@ -135,9 +141,13 @@ test('the settings page fits a 360 px screen without sideways scrolling', async 
   const state = await fakeAccountApi(page);
   await page.setViewportSize({ width: 360, height: 740 });
 
-  for (const path of ['/settings', '/account-deleted?until=2026-10-11T20%3A30%3A00Z']) {
+  for (const path of [
+    '/settings',
+    '/settings/delete-account',
+    '/account-deleted?until=2026-10-11T20%3A30%3A00Z',
+  ]) {
     // The deleted page only shows to someone who is signed out.
-    state.signedIn = path === '/settings';
+    state.signedIn = path.startsWith('/settings');
     await page.goto(path);
     await expect(page.getByRole('main')).toBeVisible();
     const overflow = await page.evaluate(

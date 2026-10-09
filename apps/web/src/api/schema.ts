@@ -349,6 +349,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/me/deletion-summary': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Deletion Summary
+     * @description Counts for the review step before account deletion (UX-06).
+     */
+    get: operations['deletion_summary_api_v1_me_deletion_summary_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/me/exports': {
     parameters: {
       query?: never;
@@ -1010,6 +1030,17 @@ export interface components {
       deletion_scheduled_at: string;
       /** Detail */
       detail: string;
+    };
+    /** DeletionSummary */
+    DeletionSummary: {
+      /** Cards */
+      cards: number;
+      /** Clips */
+      clips: number;
+      /** Practice Sessions */
+      practice_sessions: number;
+      /** Recordings */
+      recordings: number;
     };
     /**
      * DictationAttempt
@@ -2150,6 +2181,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  deletion_summary_api_v1_me_deletion_summary_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeletionSummary'];
         };
       };
     };

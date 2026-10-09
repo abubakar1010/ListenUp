@@ -627,6 +627,33 @@
         "title": "DeletionScheduled",
         "type": "object"
       },
+      "DeletionSummary": {
+        "properties": {
+          "cards": {
+            "minimum": 0.0,
+            "title": "Cards",
+            "type": "integer"
+          },
+          "clips": {
+            "minimum": 0.0,
+            "title": "Clips",
+            "type": "integer"
+          },
+          "practice_sessions": {
+            "minimum": 0.0,
+            "title": "Practice Sessions",
+            "type": "integer"
+          },
+          "recordings": {
+            "minimum": 0.0,
+            "title": "Recordings",
+            "type": "integer"
+          }
+        },
+        "required": ["clips", "practice_sessions", "cards", "recordings"],
+        "title": "DeletionSummary",
+        "type": "object"
+      },
       "DictationAttempt": {
         "description": "The learner's Dictation attempt with its saved draft (FR-DI-1, FR-DI-4).",
         "properties": {
@@ -2342,6 +2369,26 @@
           }
         },
         "summary": "Me",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/me/deletion-summary": {
+      "get": {
+        "description": "Counts for the review step before account deletion (UX-06).",
+        "operationId": "deletion_summary_api_v1_me_deletion_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Deletion Summary",
         "tags": ["identity"]
       }
     },

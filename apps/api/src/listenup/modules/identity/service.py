@@ -237,13 +237,15 @@ class Accounts:
         await self._reauthenticate(account, password)
 
         grace = timedelta(days=self.settings.account_deletion_grace_days)
+        # Password reset takes the token row before the users row. Use the same order
+        # here so a reset and a deletion cannot deadlock each other.
+        await repository.retire_reset_tokens(session, learner)
         until = await repository.schedule_deletion(session, learner, grace)
         if until is None:
             raise _not_signed_in()  # deleted by a parallel request
         await repository.insert_deletion_request(
             session, request_id=uuid7(), user_id=learner, due_at=until
         )
-        await repository.retire_reset_tokens(session, learner)
         await repository.delete_user_sessions(session, learner)
         await publish(session, learner, EventType.ACCOUNT_DISABLED, learner)
         await jobs.queue_deletion_notice(session, learner)
@@ -394,6 +396,10 @@ class Accounts:
         if profile is None:
             raise _not_signed_in()
         return {**profile, "deletion_grace_days": self.settings.account_deletion_grace_days}
+
+    async def deletion_summary(self, session: AsyncSession, learner: uuid.UUID) -> dict[str, int]:
+        """Counts shown before the learner begins the irreversible deletion flow."""
+        return await repository.deletion_summary(session, learner)
 
     def _locked(self, until: datetime) -> ProblemError:
         seconds = max(1, int((until - _now(until)).total_seconds()) + 1)

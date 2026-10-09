@@ -7,7 +7,9 @@ by calling its handler directly, where a test needs its return value.
 """
 
 import asyncio
+import concurrent.futures
 import dataclasses
+import threading
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
@@ -37,7 +39,14 @@ from listenup.platform.storage import StoredObject, use_storage
 from tests.integration.conftest import conninfo_to_url, with_csrf
 from tests.integration.intake_helpers import FakeStorage
 from tests.integration.seed import SeededLearner, seed_learner_data
-from tests.integration.test_password_reset import Outbox, deliver
+from tests.integration.test_password_reset import (
+    Outbox,
+    deliver,
+    emailed_token,
+)
+from tests.integration.test_password_reset import (
+    confirm as confirm_reset,
+)
 
 PASSWORD = "correct horse battery"
 GRACE = timedelta(days=7)
@@ -236,6 +245,20 @@ def ref_count(migrated_url: str, media_id: uuid.UUID) -> int | None:
 # -- deleting (#91) ----------------------------------------------------------------------
 
 
+def test_the_deletion_review_counts_what_will_go(client: TestClient, migrated_url: str) -> None:
+    _, _, world = signed_in_learner_with_data(client, migrated_url)
+
+    response = client.get("/api/v1/me/deletion-summary")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "clips": 1,
+        "practice_sessions": len(world.sessions),
+        "cards": 0,
+        "recordings": 0,
+    }
+
+
 def test_deleting_disables_the_account_at_once_and_keeps_the_data(
     make_client: ClientFactory, migrated_url: str
 ) -> None:
@@ -375,6 +398,74 @@ def test_a_reset_link_issued_before_the_deletion_stops_working(
     )
 
     assert (response.status_code, response.json()["code"]) == (400, "invalid_reset_link")
+
+
+def test_deletion_and_password_reset_use_one_lock_order(
+    make_client: ClientFactory,
+    migrated_url: str,
+    outbox: Outbox,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reset racing deletion cannot deadlock by taking the same rows in reverse."""
+    deletion_client = make_client()
+    reset_client = make_client()
+    email = unique_email()
+    register(deletion_client, email)
+    token = emailed_token(reset_client, migrated_url, outbox, email)
+
+    reset_ready = threading.Event()
+    allow_reset = threading.Event()
+    token_locked = threading.Event()
+    user_locked = threading.Event()
+    allow_deletion = threading.Event()
+    real_consume = identity_repository.consume_reset_token
+    real_schedule = identity_repository.schedule_deletion
+
+    async def consume_after_deletion_holds_its_first_lock(
+        session: Any, reset_token_hash: bytes
+    ) -> uuid.UUID | None:
+        reset_ready.set()
+        assert allow_reset.wait(5)
+        learner = await real_consume(session, reset_token_hash)
+        if learner is not None:
+            token_locked.set()
+        return learner
+
+    async def pause_after_locking_the_user(
+        session: Any, user_id: uuid.UUID, grace: timedelta
+    ) -> datetime | None:
+        until = await real_schedule(session, user_id, grace)
+        user_locked.set()
+        assert allow_deletion.wait(5)
+        return until
+
+    monkeypatch.setattr(
+        identity_repository, "consume_reset_token", consume_after_deletion_holds_its_first_lock
+    )
+    monkeypatch.setattr(identity_repository, "schedule_deletion", pause_after_locking_the_user)
+
+    reset_took_token = False
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        reset_future = executor.submit(confirm_reset, reset_client, token)
+        try:
+            assert reset_ready.wait(5)
+            deletion_future = executor.submit(delete_me, deletion_client)
+            assert user_locked.wait(5)
+            allow_reset.set()
+            # With the shared token-then-user order, reset waits on deletion's token
+            # update. The former user-then-token order let it take the token here and
+            # made the requests wait on each other.
+            reset_took_token = token_locked.wait(0.5)
+        finally:
+            allow_reset.set()
+            allow_deletion.set()
+
+        deletion = deletion_future.result(timeout=10)
+        reset = reset_future.result(timeout=10)
+
+    assert not reset_took_token
+    assert deletion.status_code == 202
+    assert (reset.status_code, reset.json()["code"]) == (400, "invalid_reset_link")
 
 
 def test_a_reset_asked_for_before_the_deletion_sends_no_link(
@@ -791,6 +882,50 @@ def test_the_purge_finishes_after_stopping_between_storage_and_rows(
     assert deletion_request(migrated_url, user_id)["status"] == "completed"
 
 
+def test_the_purge_retries_when_the_final_storage_sweep_fails(
+    client: TestClient, migrated_url: str, storage: FakeStorage
+) -> None:
+    """Completion is recorded only after the sweep for files written during deletion."""
+    _, user_id, _ = signed_in_learner_with_data(client, migrated_url)
+    prefix = f"users/{user_id}/"
+    storage.objects[f"{prefix}before.bin"] = STORED
+    delete_me(client)
+    make_due(migrated_url, user_id)
+    request_id = str(deletion_request(migrated_url, user_id)["id"])
+
+    class FinalSweepFailsOnce(FakeStorage):
+        calls = 0
+
+        async def delete_prefix(self, found_prefix: str) -> int:
+            self.calls += 1
+            if self.calls == 2:
+                raise RuntimeError("storage failed during the final sweep")
+            removed = await super().delete_prefix(found_prefix)
+            if self.calls == 1:
+                self.objects[f"{found_prefix}written-during-purge.bin"] = STORED
+            return removed
+
+    flaky = FinalSweepFailsOnce()
+    flaky.objects.update(storage.objects)
+    use_storage(flaky)
+
+    with pytest.raises(RuntimeError, match="final sweep"):
+        run_job(migrated_url, identity_jobs.purge_account, request_id=request_id)
+
+    interrupted = deletion_request(migrated_url, user_id)
+    assert interrupted["status"] == "storage_deleted"
+    assert interrupted["completed_at"] is None
+    assert f"{prefix}written-during-purge.bin" in flaky.objects
+
+    report = run_job(migrated_url, identity_jobs.purge_account, request_id=request_id)
+
+    assert report is not None and report["objects_removed"] == 2
+    assert report["rows_total"] == interrupted["report"]["rows_total"]
+    assert not [key for key in flaky.objects if key.startswith(prefix)]
+    assert deletion_request(migrated_url, user_id)["status"] == "completed"
+    use_storage(storage)
+
+
 def test_a_purge_still_running_is_not_queued_again_and_a_dead_one_resumes(
     client: TestClient, migrated_url: str
 ) -> None:
@@ -845,7 +980,9 @@ def test_a_purge_that_gives_up_is_marked_failed_and_retried_later(
     make_due(migrated_url, user_id)
     request_id = str(deletion_request(migrated_url, user_id)["id"])
     entry = platform_jobs._registry[identity_jobs.PURGE_ACCOUNT]
-    short = dataclasses.replace(entry.spec, timeout=timedelta(seconds=0.2))
+    # Keep enough headroom for a busy CI database to acquire its first row lock;
+    # the deliberately stalled storage call still makes the timeout deterministic.
+    short = dataclasses.replace(entry.spec, timeout=timedelta(seconds=1))
     monkeypatch.setitem(
         platform_jobs._registry,
         identity_jobs.PURGE_ACCOUNT,

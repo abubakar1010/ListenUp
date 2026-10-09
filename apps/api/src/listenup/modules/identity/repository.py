@@ -540,6 +540,19 @@ async def count_learner_rows(session: AsyncSession, user_id: uuid.UUID) -> dict[
     return counts
 
 
+async def deletion_summary(session: AsyncSession, user_id: uuid.UUID) -> dict[str, int]:
+    """Learner-facing counts for the account-deletion review page (UX-06)."""
+    rows = await count_learner_rows(session, user_id)
+    return {
+        "clips": rows.get("content.contents", 0),
+        "practice_sessions": rows.get("practice.sessions", 0),
+        # These modules do not have persistence yet. Matching their conventional
+        # table names keeps the summary correct when they are added.
+        "cards": sum(found for name, found in rows.items() if name.endswith(".cards")),
+        "recordings": sum(found for name, found in rows.items() if name.endswith(".recordings")),
+    }
+
+
 async def delete_user(session: AsyncSession, user_id: uuid.UUID) -> bool:
     """Delete the account; cascades remove every learner row (Database Design 10.1)."""
     deleted = await session.scalar(
