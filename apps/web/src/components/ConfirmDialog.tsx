@@ -14,6 +14,8 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
   busy?: boolean;
+  /** The confirm button's label while `busy`, for example "Deleting…". */
+  busyLabel?: string;
   /** Shown inside the dialog, for example an ErrorPanel after a refused request. */
   footer?: ReactNode;
 }
@@ -35,6 +37,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   busy = false,
+  busyLabel = 'Saving…',
   footer,
 }: ConfirmDialogProps) {
   const titleId = useId();
@@ -111,7 +114,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={busy}
           >
-            {busy ? 'Saving…' : confirmLabel}
+            {busy ? busyLabel : confirmLabel}
           </button>
           <button
             ref={safe}

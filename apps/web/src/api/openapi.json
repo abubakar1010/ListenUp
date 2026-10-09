@@ -592,6 +592,68 @@
         "title": "DataExport",
         "type": "object"
       },
+      "DeleteAccount": {
+        "properties": {
+          "confirm": {
+            "const": true,
+            "description": "Must be true: the learner confirmed.",
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "password": {
+            "description": "The current password, asked again.",
+            "maxLength": 1000,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": ["password", "confirm"],
+        "title": "DeleteAccount",
+        "type": "object"
+      },
+      "DeletionScheduled": {
+        "properties": {
+          "deletion_scheduled_at": {
+            "format": "date-time",
+            "title": "Deletion Scheduled At",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": ["deletion_scheduled_at", "detail"],
+        "title": "DeletionScheduled",
+        "type": "object"
+      },
+      "DeletionSummary": {
+        "properties": {
+          "cards": {
+            "minimum": 0.0,
+            "title": "Cards",
+            "type": "integer"
+          },
+          "clips": {
+            "minimum": 0.0,
+            "title": "Clips",
+            "type": "integer"
+          },
+          "practice_sessions": {
+            "minimum": 0.0,
+            "title": "Practice Sessions",
+            "type": "integer"
+          },
+          "recordings": {
+            "minimum": 0.0,
+            "title": "Recordings",
+            "type": "integer"
+          }
+        },
+        "required": ["clips", "practice_sessions", "cards", "recordings"],
+        "title": "DeletionSummary",
+        "type": "object"
+      },
       "DictationAttempt": {
         "description": "The learner's Dictation attempt with its saved draft (FR-DI-1, FR-DI-4).",
         "properties": {
@@ -944,6 +1006,11 @@
       },
       "Me": {
         "properties": {
+          "deletion_grace_days": {
+            "description": "Days a deleted account can be restored before its data is removed.",
+            "title": "Deletion Grace Days",
+            "type": "integer"
+          },
           "display_name": {
             "anyOf": [
               {
@@ -969,7 +1036,7 @@
             "type": "string"
           }
         },
-        "required": ["id", "email", "display_name", "email_verified"],
+        "required": ["id", "email", "display_name", "email_verified", "deletion_grace_days"],
         "title": "Me",
         "type": "object"
       },
@@ -1250,6 +1317,29 @@
         "title": "SessionStep",
         "type": "object"
       },
+      "SignIn": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 1000,
+            "title": "Password",
+            "type": "string"
+          },
+          "restore": {
+            "default": false,
+            "description": "Restore an account waiting for deletion (#120). Without it, signing in to such an account answers 409 account_pending_deletion with the date.",
+            "title": "Restore",
+            "type": "boolean"
+          }
+        },
+        "required": ["email", "password"],
+        "title": "SignIn",
+        "type": "object"
+      },
       "SkipStep": {
         "properties": {
           "confirmed": {
@@ -1467,12 +1557,13 @@
   "paths": {
     "/api/v1/auth/login": {
       "post": {
+        "description": "Sign in. An account deleted less than the grace period ago answers 409\n`account_pending_deletion` (with `deletion_scheduled_at`) until the learner sends\n`restore: true`, which cancels the deletion (#120).",
         "operationId": "login_api_v1_auth_login_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Credentials"
+                "$ref": "#/components/schemas/SignIn"
               }
             }
           },
@@ -2121,7 +2212,7 @@
                 }
               }
             },
-            "description": "A Server-Sent Events stream of the learner's events: job.progress, content.ready, grade.ready, attempt.voided, export.ready and resync."
+            "description": "A Server-Sent Events stream of the learner's events: job.progress, content.ready, grade.ready, attempt.voided, export.ready, account.disabled (the stream then ends) and resync."
           },
           "422": {
             "content": {
@@ -2225,6 +2316,44 @@
       }
     },
     "/api/v1/me": {
+      "delete": {
+        "description": "Delete the account (FR-ACC-4, DR-1, D9; ADR 0029).\n\nThe account is disabled at once and every login session ends. Everything is\ndeleted when the grace period ends, unless the learner signs in and restores the\naccount before then.",
+        "operationId": "delete_me_api_v1_me_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAccount"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionScheduled"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Me",
+        "tags": ["identity"]
+      },
       "get": {
         "operationId": "me_api_v1_me_get",
         "responses": {
@@ -2240,6 +2369,26 @@
           }
         },
         "summary": "Me",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/me/deletion-summary": {
+      "get": {
+        "description": "Counts for the review step before account deletion (UX-06).",
+        "operationId": "deletion_summary_api_v1_me_deletion_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Deletion Summary",
         "tags": ["identity"]
       }
     },

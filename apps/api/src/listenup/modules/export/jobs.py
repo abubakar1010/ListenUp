@@ -20,12 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from listenup.modules.export import repository
 from listenup.modules.export.collect import collect
 from listenup.modules.export.domain import archive
+from listenup.modules.identity import service as identity
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database, set_learner
 from listenup.platform.events import EventType, publish
 from listenup.platform.export import ExportPart
 from listenup.platform.jobs import JobDeps, Lane, enqueue, job
-from listenup.platform.storage import S3Storage, Storage
+from listenup.platform.storage import Storage, get_storage
 
 logger = logging.getLogger(__name__)
 
@@ -34,23 +35,6 @@ EXPIRE_ARCHIVE = "export.expire_archive"
 BUILD_ATTEMPTS = 3
 # Copying up to the 2 GB upload cap (D5) out of storage and back takes minutes.
 BUILD_TIMEOUT = timedelta(minutes=45)
-
-
-class _Storage:
-    """The storage the export jobs use: S3 from the settings, or a fake in tests."""
-
-    instance: Storage | None = None
-
-
-def use_storage(storage: Storage | None) -> None:
-    """Swap the storage the jobs use (tests); None goes back to S3 from the settings."""
-    _Storage.instance = storage
-
-
-def _storage() -> Storage:
-    if _Storage.instance is None:
-        _Storage.instance = S3Storage(get_settings())
-    return _Storage.instance
 
 
 async def queue_build(session: AsyncSession, export_id: uuid.UUID, learner: uuid.UUID) -> None:
@@ -85,7 +69,8 @@ async def _give_up_build(deps: JobDeps, export_id: str, user_id: str) -> None:
 async def build_archive(deps: JobDeps, export_id: str, user_id: str) -> None:
     """Build the learner's export archive and tell the browser it is ready.
 
-    1. Mark the request 'building' (a repeated run after a crash builds again).
+    1. Mark the request 'building' (a repeated run after a crash builds again), or
+       'failed' when the learner has deleted the account since asking.
     2. Read every module's rows in one read-only snapshot, so the tables agree.
     3. Copy the learner's files from storage into a ZIP in scratch space, then write
        data.json with every row and the list of files.
@@ -95,13 +80,19 @@ async def build_archive(deps: JobDeps, export_id: str, user_id: str) -> None:
     When the last attempt fails, the request is marked 'failed' and announced the same
     way, so the learner can ask again.
     """
-    await _build(deps.database, _storage(), uuid.UUID(export_id), uuid.UUID(user_id))
+    await _build(deps.database, get_storage(), uuid.UUID(export_id), uuid.UUID(user_id))
 
 
 async def _build(
     database: Database, storage: Storage, export: uuid.UUID, learner: uuid.UUID
 ) -> None:
     async with database.transaction(learner) as session:
+        if not await identity.account_is_active(session, learner):
+            # Deleted after asking (ADR 0029): no copy of the data for a disabled
+            # account. A learner who restores it can ask again.
+            await repository.mark_failed(session, export, learner, "account_deleted")
+            logger.info("export build skipped: account deleted", extra={"export": str(export)})
+            return
         if not await repository.start_building(session, export, learner):
             logger.info("export build skipped: nothing to build", extra={"export": str(export)})
             return
@@ -122,21 +113,27 @@ async def _build(
     ready_at = datetime.now(UTC)
     expires_at = archive.expires_at(ready_at, settings.export_keep_days)
     async with database.transaction(learner) as session:
-        stored = await repository.mark_ready(
-            session,
-            export,
-            learner,
-            archive_key=key,
-            archive_bytes=size,
-            file_count=file_count,
-            ready_at=ready_at,
-            expires_at=expires_at,
-        )
+        # The account may have been deleted while the archive was built; the check holds
+        # the row, so a deletion cannot slip in before this transaction commits.
+        if await identity.hold_active_account(session, learner):
+            stored = await repository.mark_ready(
+                session,
+                export,
+                learner,
+                archive_key=key,
+                archive_bytes=size,
+                file_count=file_count,
+                ready_at=ready_at,
+                expires_at=expires_at,
+            )
+        else:
+            stored = False
+            await repository.mark_failed(session, export, learner, "account_deleted")
         if stored:
             await publish(session, learner, EventType.EXPORT_READY, export)
             await queue_expiry(session, export, learner, expires_at)
     if not stored:
-        # The account went away while the archive was built.
+        # The account was deleted while the archive was built: keep no copy of its data.
         await storage.delete(key)
         return
     logger.info("export ready", extra={"export": str(export), "bytes": size, "files": file_count})
@@ -231,7 +228,7 @@ async def expire_archive(deps: JobDeps, export_id: str, user_id: str) -> None:
         async with deps.database.transaction(learner) as session:
             await queue_expiry(session, export, learner, row.expires_at)
         return
-    await _storage().delete(row.archive_key)
+    await get_storage().delete(row.archive_key)
     async with deps.database.transaction(learner) as session:
         await repository.mark_expired(session, export, learner)
     logger.info("export archive expired", extra={"export": str(export)})

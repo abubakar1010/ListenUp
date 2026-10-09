@@ -241,28 +241,6 @@ def test_one_ip_is_limited_across_accounts(make_client: ClientFactory) -> None:
     assert "Try again later" in limited.json()["detail"]  # type: ignore[attr-defined]
 
 
-def test_signing_in_restores_an_account_waiting_for_deletion(
-    client: TestClient, migrated_url: str
-) -> None:
-    email = unique_email()
-    register(client, email)
-    client.post("/api/v1/auth/logout")
-    with psycopg.connect(migrated_url, autocommit=True) as conn:
-        conn.execute(
-            "UPDATE identity.users SET status = 'pending_deletion', "
-            "deletion_scheduled_at = now() + interval '7 days' WHERE email = %s",
-            [email],
-        )
-
-    assert login(client, email).status_code == 200  # type: ignore[attr-defined]
-
-    with psycopg.connect(migrated_url) as conn:
-        status = conn.execute(
-            "SELECT status FROM identity.users WHERE email = %s", [email]
-        ).fetchone()
-    assert status == ("active",)
-
-
 def test_me_needs_a_signed_in_learner(client: TestClient) -> None:
     response = client.get("/api/v1/me")
 
