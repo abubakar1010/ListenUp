@@ -852,7 +852,7 @@ Deletion removes storage objects first and database rows second, so a crash midw
 
 ### 10.1 Account deletion
 
-1. The API sets `users.status = 'pending_deletion'` and `deletion_scheduled_at` to 7 days ahead, and ends all login sessions. The account is disabled at once; signing in before `deletion_scheduled_at` restores it (`status = 'active'`, `deletion_scheduled_at = NULL`).
+1. The API sets `users.status = 'pending_deletion'` and `deletion_scheduled_at` to 7 days ahead, and ends all login sessions. The account is disabled at once; signing in before `deletion_scheduled_at` offers explicit restoration without unlocking practice or changing the schedule. A CSRF-protected Restore action rechecks the deadline and status under a row lock, then sets `status = 'active'`, `deletion_scheduled_at = NULL`; Keep it deleted signs out without changing either field ([ADR 0033](../adr/0033-design-review-policy-resolutions.md)).
 2. When `deletion_scheduled_at` passes, a scheduled job (using `users_deletion_due_idx`) sets `users.status = 'deleting'` and writes an `ops.deletion_requests` row listing the storage prefix `users/<id>/` and the learner's upload media objects. The account can no longer sign in or be restored.
 3. A background job deletes those storage prefixes and marks the request `storage_deleted`.
 4. The job runs `DELETE FROM identity.users WHERE id = $1`. Cascades remove every learner row; the reference-count trigger decrements shared media.
@@ -922,7 +922,7 @@ Every frequent query is served by an index. The Blind heartbeat locks the attemp
 The earlier single-UPDATE sketch is superseded by [ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md): the service locks the active attempt row, calls the pure `judge(listen, beat, now)` and saves its continue, resume or stop decision in the same transaction. The transaction includes the row lock and save; the anchor clock prevents small per-beat advances from accumulating.
 
 - Check the position against `anchor_position_ms` and `anchor_at`, within 1.5 s ahead and 6 s behind; buffering moves the anchor later, up to 20 s per listen.
-- Hidden pages, backwards/out-of-passage seeks and more than 15 s without a heartbeat always void. A network stop is reported after 10 s without an answered beat; a device pause of 5 s or more or a second interruption records `interrupted`.
+- During an unfinished listen, hidden pages and backwards/out-of-passage seeks void; more than 15 s without a heartbeat voids only when no eligible interruption is reported. A network stop is reported after 10 s without an answered beat; a device pause of 5 s or more or a second interruption records `interrupted`.
 - The one eligible resume sets `resume_count = 1`, records `resume_stop_ms`, moves the anchor to `max(passage_start_ms, stop − 3000)` at the grant time, and resets buffering to zero. The rewind is an anchor change, not a forbidden backwards seek.
 - Voiding updates the attempt status and reason together; a report after the passage is complete does not undo the completed listen.
 

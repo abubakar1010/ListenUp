@@ -129,7 +129,7 @@ Each mode has one purpose, enforced rules and a defined output. The five modes a
 
 *Purpose: listen to the whole piece once, resisting the urge to pause.*
 
-- BL-1: Playback controls are limited to start and volume. Pause, seek, rewind and speed change are disabled. Leaving the screen, reloading or seeking ends the attempt, with a warning before leaving. One resume is allowed after an interruption the learner did not cause (a network stall, or a device or OS pause under 5 seconds); a second interruption ends the attempt.
+- BL-1: Playback controls are limited to start and volume. Pause, seek, rewind and speed change are disabled. During an unfinished listen, leaving the screen, reloading or seeking ends the attempt, with a warning before in-app navigation including Browser Back. Leaving or reloading the gist form after the listen is complete preserves the listen. Whole-clip playback is unavailable while an unfinished Blind listen is active ([ADR 0033](../adr/0033-design-review-policy-resolutions.md)). One resume is allowed after an interruption the learner did not cause (a network stall, or a device or OS pause under 5 seconds); a second interruption ends the attempt.
 - BL-2: The transcript is hidden throughout.
 - BL-3: When playback ends, show a gist prompt asking for three sentences. Require at least three sentences. Grade the gist with AI against the key points of the passage and give the learner a score and written feedback (details in the SRS, section 5.2.1). Grading is about understanding, not spelling or grammar, and never blocks progress.
 - BL-4: Show the learner's gist, score, feedback and the captured and missed key points next to the transcript in the Transcript step. Right after Blind, the Blind-then-Dictation path shows only the score, level, rubric scores and the count of key points captured (for example "2 of 4"); the Blind-only path shows everything at once.
@@ -199,7 +199,7 @@ v1 ships the full plan for web, with accurate transcripts as the main technical 
 - Performance: playback starts within 2 seconds of a step opening. Transcript generation for a 10-minute clip finishes in a time to be set after benchmarking.
 - Accuracy: Blind controls must be truly locked; replay and speed controls in Dictation must be frame-accurate to the segment.
 - Reliability: drafts and marks are never lost on refresh, tab close or lost connection.
-- Privacy: uploads and recordings are private to the account and deletable by the learner. Shadow recordings are kept 90 days, then deleted; grades and word labels stay. A deleted account is disabled at once and can be restored by signing in within 7 days.
+- Privacy: uploads and recordings are private to the account and deletable by the learner. Shadow recordings are kept 90 days, then deleted; grades and word labels stay. A deleted account is disabled at once; signing in within 7 days offers Restore or Keep it deleted. Only explicit Restore reactivates it ([ADR 0033](../adr/0033-design-review-policy-resolutions.md)).
 - Accessibility: keyboard-operable controls, captions on the UI itself, readable at mobile widths.
 - Platforms: responsive web first. Native mobile apps are a later phase.
 
