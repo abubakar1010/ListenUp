@@ -12,8 +12,15 @@ than duplicating them here.
 - Use the existing checkout in an isolated cloud task. Do not create a Git
   worktree unless the owner requests one. Start from current `main` for a new
   story; use its existing branch when addressing an open PR.
-- If the owner names a branch, use it. Otherwise create one unused branch for
-  the story and report its name. Do not reuse a branch from an unrelated PR.
+- At the start of every session, check the current branch before editing. Branch
+  names must follow the mandatory naming policy in `CLAUDE.md`: a change-type
+  prefix and a readable, auditable kebab-case purpose. Never use a tool name,
+  random identifier, or generated adjective as the branch's identity. Rename an
+  invalid local-only branch before work; stop and report an invalid pushed or PR
+  branch rather than continuing under it.
+- If the owner names a compliant branch, use it. Otherwise create one unused,
+  compliant branch for the story and report its name. Do not reuse a branch from
+  an unrelated PR.
 - For complex stories, present the short plan and wait for owner approval before
   editing code. A story prompt that explicitly says "Plan first: no" controls
   that task. Do not treat silence as approval.

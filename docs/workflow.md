@@ -19,8 +19,11 @@ Run two or three sessions at once on stories that touch different areas. Each ha
 
 Each cloud task already has an isolated checkout; use it without creating a
 worktree unless the owner asks. Start a new story from current `main` on one
-unused branch, or use the owner's named branch. Continue PR fixes on that PR's
-branch. Report the branch at the start; never carry unrelated changes into a PR.
+unused branch, or use the owner's named branch. At the start of every session,
+validate the current branch with `.github/scripts/check-branch-name.sh` and apply
+the mandatory `<type>/<readable-kebab-purpose>` policy in `CLAUDE.md`; rename an
+invalid local-only branch before editing. Continue PR fixes on that PR's branch.
+Report the branch at the start; never carry unrelated changes into a PR.
 
 Verify setup in the actual environment. Claude Code may run its session-start
 hook; Codex follows saved environment installation/startup instructions. Neither
@@ -53,7 +56,7 @@ Keep sessions focused; delegate only when the owner requests it.
 
 ```
 Story: #<number> <title>. Read the issue first.
-Tool: <Claude Code or Codex>. Branch: <named branch, or create one from main>.
+Tool: <Claude Code or Codex>. Branch: <compliant named branch, or create one from main>.
 Area: <module and directories>. Do not change: <areas owned by other open work>.
 Plan first: <yes or no>. If yes, stop after the plan and wait for approval.
 Read CLAUDE.md and docs/workflow.md; in Codex also follow AGENTS.md.
