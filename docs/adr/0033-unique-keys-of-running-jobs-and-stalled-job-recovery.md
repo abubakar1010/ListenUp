@@ -1,4 +1,4 @@
-# ADR 0031: Unique keys cover running jobs, and stalled jobs are recovered
+# ADR 0033: Unique keys cover running jobs, and stalled jobs are recovered
 
 - Status: Accepted
 - Date: 2026-10-08
