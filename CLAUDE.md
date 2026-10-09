@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides shared project guidance for Claude Code and Codex. Codex enters through `AGENTS.md`; both tools follow the rules here and in `docs/workflow.md`.
 
 ## Project
 
@@ -21,7 +21,7 @@ The SRS keeps stable requirement IDs (`FR-DI-1`, `FR-BL-1`, `NFR-AI-1`, and so o
 
 - One story per session and per pull request; follow `docs/workflow.md` (plan for complex stories, tests with the code, targeted tests while working, full checks once before the PR, then an independent review).
 - Before changing an area, read its section in `docs/conventions.md`. Read the design documents only when the story's acceptance criteria need them.
-- Cloud sessions run `.claude/hooks/session-start.sh` at start: PostgreSQL is running and dependencies are installed. S3 is not running locally, so S3 tests run in CI only.
+- Claude Code cloud sessions use `.claude/hooks/session-start.sh` through `.claude/settings.json`; verify its results before assuming dependencies or PostgreSQL are ready. Codex cloud tasks use the environment's saved installation/startup instructions; Claude hooks do not run automatically in Codex. Check required services in either tool. Run S3 integration tests locally when storage is available; report skipped checks when it is unavailable, and use CI for required service checks.
 
 ## Commands
 
@@ -111,8 +111,10 @@ These rules are mandatory for every change, however small.
 - Every commit is authored and committed by the repository owner: `abu bakar <abubakar850772@gmail.com>`. Cloud sessions may preset a different git identity (for example `Claude <noreply@anthropic.com>`), so before the first commit of a session run `git config user.name "abu bakar"` and `git config user.email "abubakar850772@gmail.com"` in the repository, then check with `git log -1 --format='%an <%ae> | %cn <%ce>'` after committing.
 
 ### Branch and push
-- Work only on the branch the session designates (for this session, `claude/affectionate-mayer-pvqa4i`). Create it locally if it does not exist. Never push to another branch without explicit permission.
+- **Branch naming is mandatory in every session.** Before editing, run `git branch --show-current` and validate the result with `.github/scripts/check-branch-name.sh`. Working branches use `<type>/<purpose>`, where `type` is `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`, `hotfix`, or `release`, and `purpose` is a lowercase kebab-case description with at least two meaningful terms. Start the purpose with the issue or ticket ID when one exists (for example, `fix/142-login-timeout`, `feat/lu-87-shadow-feedback`, or `docs/branch-naming-policy`). Tool-based names (`codex/...`, `claude/...`), bare session names (`work`), UUIDs, hashes, and generated adjective/random slugs are forbidden. CI enforces the machine-checkable part; authors and reviewers enforce that the words accurately describe the story.
+- If a cloud tool creates an invalid local-only branch, rename it with `git branch -m <compliant-name>` before making changes. If an invalid branch is already pushed or attached to a pull request, stop and report it so the owner can coordinate a rename without losing review history.
+- Work only on the story's branch. Use an owner-designated branch only when it complies with this policy; otherwise create an unused compliant branch from current `main` and report its name. For fixes to an existing PR, use that PR's compliant branch. Never push to `main` or an unrelated story's branch without explicit permission.
 - Push with `git push -u origin <branch>`. If the push fails because of a network error, retry up to 4 times with exponential backoff (2s, 4s, 8s, 16s). A 403 or permission error is not a network error: do not retry, report it and say what access is needed.
 - Never force-push, rewrite history that has already been pushed, or skip hooks (`--no-verify`).
-- Do not open a pull request unless explicitly asked.
+- Open a pull request when explicitly asked, including a story prompt whose done criterion is one pull request. Review-only tasks do not authorize edits, a new PR or merging. The owner merges.
 - After pushing, confirm that `git status` is clean and the branch is up to date with its remote.

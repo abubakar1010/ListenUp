@@ -12,6 +12,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  branch-name:
+    name: Branch name is readable and auditable
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.user.login != 'dependabot[bot]') ||
+      (github.event_name == 'push' && github.ref_type == 'branch' &&
+       github.actor != 'dependabot[bot]' &&
+       !startsWith(github.ref_name, 'dependabot/'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate branch name
+        env:
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        run: .github/scripts/check-branch-name.sh "$BRANCH_NAME"
+
   backend:
     name: Backend (lint, types, boundaries, tests)
     runs-on: ubuntu-latest
