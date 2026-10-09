@@ -27,6 +27,10 @@ Read the section for the area you are changing before you change it. The rules e
 
 - Data export (ADR 0030): a module that owns learner data offers `export_data(session, learner) -> ExportPart` (from `listenup.platform.export`) in its `service.py`, using `learner_rows(..., omit=(secret columns,))`, and is listed in `modules/export/collect.py`; `test_export.py` fails while a table with `user_id` is missing from the export. YouTube media files are never exported. `POST /me/exports` queues `export.build_archive`; the archive is reached only through `GET /me/exports/{id}/download` (a 307 to a short-lived signed link) and is deleted after `LISTENUP_EXPORT_KEEP_DAYS`.
 
+## Analytics (ADR 0033)
+
+- Product events (PRD 8.2) are recorded on the server through `modules/analytics/service.py`, one call per place where the event happens, inside the request transaction that makes the change. Never insert into `ops.analytics_events` directly, and never put personal data or learner text in an event (a mark keeps only a hash of its phrase). A repeat of the same (event, subject, step) is ignored, so callers need no checks of their own. Marks, cards, Shadow rounds and Dictation submission call `record_mark_created`, `record_card_created`, `record_shadow_round_completed` and `record_dictation_replays` when they are built. The analytics module imports no other module. The success-metrics report is `scripts/analytics_report.py`, run as `listenup_readonly`.
+
 ## Operations: telemetry and backups (ADR 0031, 0032)
 
 - Spans and instruments live only in `listenup.platform.telemetry`, written by hand on an attribute allowlist (no contrib auto-instrumentation: our paths carry signed media tokens). Off unless `LISTENUP_OTEL_ENABLED`; tests use `tests/telemetry_helpers.capture()`. Never put an email, free text, a URL with a token or an exception message on a span, a metric label or a log line; the log formatters replace email-shaped text with `[email]`.

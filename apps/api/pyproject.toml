@@ -93,6 +93,17 @@ type = "forbidden"
 source_modules = ["listenup.modules.practice"]
 forbidden_modules = ["listenup.modules.blind", "listenup.modules.dictation", "listenup.modules.review", "listenup.modules.cards", "listenup.modules.shadow"]
 
+# Every module records its events through analytics.service, so analytics must not
+# import any other module back (ADR 0033). The whole package is forbidden, so a module
+# added later is covered; the ignore line lets analytics use its own files.
+[[tool.importlinter.contracts]]
+name = "analytics imports no other module"
+type = "forbidden"
+source_modules = ["listenup.modules.analytics"]
+forbidden_modules = ["listenup.modules.*"]
+ignore_imports = ["listenup.modules.analytics.** -> listenup.modules.analytics.**"]
+unmatched_ignore_imports_alerting = "none"
+
 # Every module, present or future, is a source; the ignore lines carve out grading and
 # transcript. Indirect imports are allowed so a module may call grading.service (ADR 0028).
 [[tool.importlinter.contracts]]

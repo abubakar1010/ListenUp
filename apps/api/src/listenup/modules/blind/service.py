@@ -29,6 +29,7 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.modules.analytics import service as analytics
 from listenup.modules.blind import repository
 from listenup.modules.blind.domain import (
     MAX_CHARS,
@@ -185,6 +186,9 @@ async def _void(
     row = await repository.save(db, attempt.id, listen, void_reason=reason.value)
     ended = await practice.finish_attempt(db, attempt.id, AttemptStatus.VOIDED)
     await publish(db, attempt.user_id, EventType.ATTEMPT_VOIDED, attempt.id)
+    await analytics.record_blind_abandoned(
+        db, attempt.user_id, attempt.session_id, attempt.id, reason=reason.value
+    )
     # Only voids are logged (Database Design 11.1): beats are too many to keep.
     logger.info(
         "blind attempt voided",
