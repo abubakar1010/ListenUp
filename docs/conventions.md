@@ -31,6 +31,13 @@ Read the section for the area you are changing before you change it. The rules e
 
 - Product events (PRD 8.2) are recorded on the server through `modules/analytics/service.py`, one call per place where the event happens, inside the request transaction that makes the change. Never insert into `ops.analytics_events` directly, and never put personal data or learner text in an event (a mark keeps only a hash of its phrase). A repeat of the same (event, subject, step) is ignored, so callers need no checks of their own. Marks, cards, Shadow rounds and Dictation submission call `record_mark_created`, `record_card_created`, `record_shadow_round_completed` and `record_dictation_replays` when they are built. The analytics module imports no other module. The success-metrics report is `scripts/analytics_report.py`, run as `listenup_readonly`.
 
+## Operations: telemetry and backups (ADR 0031, 0032)
+
+- Spans and instruments live only in `listenup.platform.telemetry`, written by hand on an attribute allowlist (no contrib auto-instrumentation: our paths carry signed media tokens). Off unless `LISTENUP_OTEL_ENABLED`; tests use `tests/telemetry_helpers.capture()`. Never put an email, free text, a URL with a token or an exception message on a span, a metric label or a log line; the log formatters replace email-shaped text with `[email]`.
+- `enqueue` stores the request id and the W3C trace context in the job's arguments (`_request_id`, `_trace`); the `@job` wrapper pops both before the handler runs, so handlers never see them. A new job needs nothing for tracing or job metrics.
+- The AI gateway (#64) calls `record_ai_call` and `record_ai_quota`, and grading jobs call `record_grading`; the alert rules already read those metrics. A new alert goes in `infra/observability/alerts.yml` with a case in `alerts.test.yml` (it fires, and stays quiet just below the threshold), a `runbook` entry in `docs/runbooks/alerts.md`, and a row in ADR 0031.
+- Backups are `python -m listenup.ops.backup` (the `backup` image target). A backup is complete only with its `manifest.json`; the restore test is a monthly run recorded in the log at the end of `docs/runbooks/backups.md`. A migration that adds a schema or role must keep a restore into a database with the roles in place working (`tests/integration/test_backup.py`).
+
 ## Web client (ADR 0018, 0025, 0026)
 
 - Confirmations use `ConfirmDialog` (`src/components/ConfirmDialog.tsx`): focus starts on the safe action, stays inside, and Escape cancels. Session data lives under the `['sessions']` query key (`src/features/session/api.ts`).

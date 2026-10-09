@@ -52,8 +52,10 @@ jobs:
           uv run alembic downgrade -1
           uv run alembic upgrade head
           uv run alembic check
-      - name: Install ffmpeg (upload conversion tests, as in the worker-media image)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Install ffmpeg (conversion tests) and the PostgreSQL 16 client (backup tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg postgresql-client-16
       - name: Start S3 storage (SeaweedFS, as in Docker Compose)
         working-directory: .
         run: |
@@ -151,12 +153,33 @@ jobs:
           git diff --exit-code -- apps/web/src/api \
             || { echo "::error::Run scripts/export_openapi.py and pnpm api:generate, then commit the result."; exit 1; }
 
+  alerts:
+    name: Alert rules and observability config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prometheus config and alert rules are valid
+        run: |
+          docker run --rm -v "$PWD/infra/observability:/etc/prometheus:ro" \
+            --entrypoint promtool prom/prometheus:v3.5.0 \
+            check config /etc/prometheus/prometheus.yml
+      - name: Each alert fires on simulated data (and only then)
+        run: |
+          docker run --rm -v "$PWD/infra/observability:/rules:ro" -w /rules \
+            --entrypoint promtool prom/prometheus:v3.5.0 \
+            test rules alerts.test.yml
+      - name: Alertmanager config is valid
+        run: |
+          docker run --rm -v "$PWD/infra/observability:/cfg:ro" \
+            --entrypoint amtool prom/alertmanager:v0.28.1 \
+            check-config /cfg/alertmanager.yml
+
   images:
     name: Docker image (${{ matrix.target }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [api, worker, worker-media]
+        target: [api, worker, worker-media, backup]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
