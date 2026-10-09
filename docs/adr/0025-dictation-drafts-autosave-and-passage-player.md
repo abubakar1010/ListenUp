@@ -1,6 +1,6 @@
 # ADR 0025: Dictation drafts, the shared autosave helper and the passage player
 
-- Status: Accepted
+- Status: Accepted; the local durability target is clarified by [ADR 0033](0033-design-review-policy-resolutions.md)
 - Date: 2026-10-03
 - Source: issues #50, #51 and #52; [SRS FR-DI-1 to FR-DI-4, FR-PL-6, FR-TX-5, NFR-REL-1, NFR-PERF-3, NFR-PERF-4](https://claude.ai/code/artifact/fd47a9cb-6515-4fde-a232-3ab8cc14f0dd); [Database Design 5](https://claude.ai/code/artifact/ba05f7b3-f881-41e5-86d6-dcb94a509644); [Software Architecture 9.2 (Dictation)](https://claude.ai/code/artifact/6a30920f-b6a0-4131-a486-f2044c71bb13); [System Design 9.3, 11.1](https://claude.ai/code/artifact/98274889-96ba-4424-afad-c2cd056206e2); final UI screen E01
 

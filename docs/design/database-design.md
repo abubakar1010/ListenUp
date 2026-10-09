@@ -159,6 +159,7 @@ CREATE TABLE content.media_objects (
   status         text NOT NULL DEFAULT 'pending'
                  CHECK (status IN ('pending', 'downloading', 'playable', 'failed', 'expired')),
   error_code     text,
+  stage          text CHECK (stage IN ('checking', 'converting', 'saving')), -- ADR 0027
   playback_key   text,                     -- object storage keys
   video_key      text,
   peaks_key      text,
@@ -186,10 +187,46 @@ CREATE TABLE content.contents (
   keep_video      boolean NOT NULL DEFAULT false,
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (user_id, media_object_id)        -- the same clip appears once per library
+  UNIQUE (user_id, media_object_id),       -- the same clip appears once per library
+  UNIQUE (id, user_id)                    -- same-learner duplicate reference (ADR 0027)
 );
 CREATE INDEX contents_library_idx ON content.contents (user_id, created_at DESC, id);
 CREATE INDEX contents_media_idx ON content.contents (media_object_id);
+
+-- ADR 0020, migration 0006; queued_at and waiting index from ADR 0027, migration 0011.
+CREATE TABLE content.uploads (
+  id              uuid PRIMARY KEY,
+  user_id         uuid NOT NULL REFERENCES identity.users ON DELETE CASCADE,
+  storage_key     text NOT NULL UNIQUE,     -- users/<user id>/uploads/<upload id>.<ext>
+  filename        text NOT NULL CHECK (char_length(filename) BETWEEN 1 AND 255),
+  content_type    text NOT NULL CHECK (char_length(content_type) BETWEEN 1 AND 100),
+  size_bytes      int8 NOT NULL CHECK (size_bytes > 0),
+  content_id      uuid UNIQUE REFERENCES content.contents ON DELETE CASCADE,
+  media_object_id uuid REFERENCES content.media_objects ON DELETE CASCADE,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  confirmed_at    timestamptz,
+  queued_at       timestamptz,            -- NULL while waiting in the learner's queue (ADR 0027)
+  CHECK ((confirmed_at IS NULL) = (content_id IS NULL)),
+  CHECK ((content_id IS NULL) = (media_object_id IS NULL)),
+  CHECK (queued_at IS NULL OR confirmed_at IS NOT NULL)
+);
+CREATE INDEX uploads_user_idx ON content.uploads (user_id, created_at);
+CREATE INDEX uploads_unconfirmed_idx ON content.uploads (created_at)
+  WHERE confirmed_at IS NULL;
+CREATE INDEX uploads_waiting_idx ON content.uploads (user_id, confirmed_at, id)
+  WHERE confirmed_at IS NOT NULL AND queued_at IS NULL;
+
+-- ADR 0027, migration 0011: remember the removed duplicate and its retained item.
+CREATE TABLE content.duplicate_uploads (
+  content_id          uuid PRIMARY KEY,   -- the removed item; no row refers to it any more
+  user_id             uuid NOT NULL REFERENCES identity.users ON DELETE CASCADE,
+  existing_content_id uuid NOT NULL,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (existing_content_id, user_id)
+    REFERENCES content.contents (id, user_id) ON DELETE CASCADE
+);
+CREATE INDEX duplicate_uploads_existing_idx
+  ON content.duplicate_uploads (existing_content_id, user_id);
 CREATE TRIGGER contents_touch BEFORE UPDATE ON content.contents
   FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
 
@@ -237,7 +274,8 @@ CREATE TABLE content.transcript_corrections (
 
 - **Why corrections are per learner.** Transcripts of a YouTube video are shared, so one learner's dispute (FR-TX-4) must not change what another learner is scored against. Corrections are an overlay applied when that learner's Dictation is scored. An admin can promote a correction to the shared transcript when several learners agree.
 - **Reading a passage.** A session's passage may be covered by more than one cached span. The transcript service selects the rows whose `span && passage` (one GiST index lookup) and concatenates their words in time order.
-- **Upload privacy.** An upload's fingerprint includes the uploader's id, so identical files from two learners never share a row.
+- **Upload privacy.** An upload's fingerprint includes the uploader's id, so identical files from two learners never share a row. Confirmation stores a provisional `upload:<user id>:pending:<upload id>` fingerprint; conversion streams SHA-256 and removes a duplicate in favour of the older item. Conversion deletes the original after storing playback and peaks; both are under `users/<user id>/media/<media id>/` ([ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md), [ADR 0022](../adr/0022-upload-conversion-dedup-and-media-delivery.md)).
+- **Upload accounting and progress.** The cap counts playback bytes for playable clips, the original while preparing or while an upload can still be confirmed (24 h), and zero for failed clips. `queued_at` marks placement on the shared lane; `media_objects.stage` records checking/converting/saving, while the API derives queued/waiting and queue position. A removed duplicate resolves to 410 `duplicate_upload` with its retained item; another learner gets 404 ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)).
 - **Why NO ACTION, not RESTRICT.** Both refuse to delete media that a content item still uses, but RESTRICT checks at once, so deleting an account failed when the cascade removed the learner's uploaded media before their content rows. NO ACTION checks at the end of the statement, after the cascade (migration 0005).
 
 ## 5. practice schema
@@ -292,31 +330,53 @@ CREATE TABLE practice.attempts (
   FOREIGN KEY (session_id, mode) REFERENCES practice.session_steps (session_id, step) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX attempts_one_active ON practice.attempts (session_id, mode) WHERE status = 'active';
+-- Same-learner foreign keys for Blind and Dictation (ADRs 0024, 0025).
+ALTER TABLE practice.attempts ADD CONSTRAINT attempts_id_user_uq UNIQUE (id, user_id);
 
+-- ADR 0024, migration 0009: anchor timing, attempt-bound media and the one resume.
 CREATE TABLE practice.blind_attempts (
-  attempt_id        uuid PRIMARY KEY REFERENCES practice.attempts ON DELETE CASCADE,
-  user_id           uuid NOT NULL,
-  media_token_hash  bytea NOT NULL,      -- binds the signed media URL to this attempt
-  last_position_ms  int4 NOT NULL DEFAULT 0,
-  last_heartbeat_at timestamptz NOT NULL DEFAULT now(),
-  buffering_ms      int4 NOT NULL DEFAULT 0 CHECK (buffering_ms BETWEEN 0 AND 20000),
-  resume_count      int2 NOT NULL DEFAULT 0 CHECK (resume_count BETWEEN 0 AND 1),  -- FR-BL-3
-  void_reason       text CHECK (void_reason IN ('left_page', 'reload', 'seek', 'missed_heartbeat', 'too_fast')),
-  gist_text         text CHECK (char_length(gist_text) <= 2000)
-) WITH (fillfactor = 70);                 -- heartbeats become in-page (HOT) updates
+  attempt_id         uuid PRIMARY KEY,
+  user_id            uuid NOT NULL,
+  media_token_hash   bytea NOT NULL CHECK (octet_length(media_token_hash) = 32),
+  media_expires_at   timestamptz NOT NULL,
+  passage_start_ms   integer NOT NULL CHECK (passage_start_ms >= 0),
+  passage_end_ms     integer NOT NULL,
+  last_position_ms   integer NOT NULL,
+  last_heartbeat_at  timestamptz NOT NULL,
+  anchor_position_ms integer NOT NULL,
+  anchor_at          timestamptz NOT NULL,
+  buffering_ms       integer NOT NULL DEFAULT 0 CHECK (buffering_ms BETWEEN 0 AND 20000),
+  resume_count       smallint NOT NULL DEFAULT 0 CHECK (resume_count BETWEEN 0 AND 1),
+  resume_stop_ms     integer,
+  void_reason        text CHECK (void_reason IN
+                       ('left_page', 'reload', 'seek', 'missed_heartbeat', 'too_fast',
+                        'interrupted')),
+  gist_text          text CHECK (char_length(gist_text) <= 2000),
+  CONSTRAINT blind_attempts_passage CHECK (passage_end_ms > passage_start_ms),
+  CONSTRAINT blind_attempts_resume_stop CHECK ((resume_count = 1) = (resume_stop_ms IS NOT NULL)),
+  -- The attempt's own learner, always (composite key, Database Design 5).
+  CONSTRAINT blind_attempts_attempt_user_fk FOREIGN KEY (attempt_id, user_id)
+    REFERENCES practice.attempts (id, user_id) ON DELETE CASCADE
+) WITH (fillfactor = 70);
 
+-- ADR 0025, migration 0010: versioned draft and same-learner attempt reference.
 CREATE TABLE practice.dictation_attempts (
-  attempt_id     uuid PRIMARY KEY REFERENCES practice.attempts ON DELETE CASCADE,
+  attempt_id     uuid PRIMARY KEY,
   user_id        uuid NOT NULL,
   draft_text     text NOT NULL DEFAULT '' CHECK (char_length(draft_text) <= 20000),
-  draft_version  int4 NOT NULL DEFAULT 0,
+  draft_version  int4 NOT NULL DEFAULT 0 CHECK (draft_version >= 0),
   submitted_text text CHECK (char_length(submitted_text) <= 20000),
   scoring_status text CHECK (scoring_status IN ('waiting_transcript', 'scored')),
   diff           jsonb,                  -- per reference word: status and what was typed
   accuracy       numeric(5,2) CHECK (accuracy BETWEEN 0 AND 100),
   scored_at      timestamptz,
-  updated_at     timestamptz NOT NULL DEFAULT now()
+  updated_at     timestamptz NOT NULL DEFAULT now(),
+  -- The attempt and its learner together: never another learner's attempt.
+  CONSTRAINT dictation_attempts_attempt_user_fk FOREIGN KEY (attempt_id, user_id)
+    REFERENCES practice.attempts (id, user_id) ON DELETE CASCADE
 );
+CREATE TRIGGER dictation_attempts_touch BEFORE UPDATE ON practice.dictation_attempts
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
 
 CREATE TABLE practice.marks (
   id         uuid PRIMARY KEY,
@@ -393,6 +453,8 @@ CREATE INDEX shadow_rounds_expiry_idx ON practice.shadow_rounds (recorded_at)
 - **Two cards without locks.** A card takes slot 1 or 2, and `UNIQUE (session_id, slot)` makes a third card impossible even when two requests race. Deleting a card frees its slot.
 - **Round 1 shows the transcript, rounds 2 and 3 do not.** This is a generated column, so it can never disagree with the round number.
 - **Shadow rounds hang off the segment,** so a round cannot exist before a valid segment does: 60 to 90 s, or the whole passage when the passage is 30 to 60 s.
+
+Blind and Dictation attempt rows use `own_rows`; the API has `SELECT, INSERT, UPDATE`, with no independent draft deletion. `interrupted` records a second interruption, a device pause of 5 s or more, or an unreported pause beyond the anchor tolerance. The one resume (FR-BL-3) resets the 20 s buffering allowance and records `resume_stop_ms`; draft saves use `draft_version` to reject stale differing text with 409 `draft_conflict`, while an identical resend succeeds ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md), [ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)).
 
 ## 6. grading schema
 
@@ -537,7 +599,10 @@ CREATE SCHEMA ops;
 -- sign-in for that account is refused while that row is under 15 minutes old (both values
 -- configurable). A successful sign-in, or a completed password reset, deletes both keys.
 -- Daily intake: 'intake:user:<id>' with a day window counts seconds of new audio
--- (limit 120 minutes, configurable).
+-- (limit 120 minutes, configurable; midnight UTC, ADR 0027).
+-- The conversion transaction counts a playable clip at most 900 seconds once;
+-- pending clips reserve 900 seconds each during admission checks.
+-- Export requests: 'export:user:<id>', at most 3 per UTC day (ADR 0030).
 CREATE UNLOGGED TABLE ops.rate_counters (
   key          text NOT NULL,       -- 'login:ip:<ip>', 'login_fail:user:<id>', 'login_lock:user:<id>', 'intake:user:<id>'
   window_start timestamptz NOT NULL,
@@ -555,6 +620,27 @@ CREATE TABLE ops.idempotency_keys (
   PRIMARY KEY (user_id, key)
 );
 CREATE INDEX idempotency_keys_age_idx ON ops.idempotency_keys (created_at);
+
+-- ADR 0030, migration 0012: export requests and retained archive metadata.
+CREATE TABLE ops.data_exports (
+  id            uuid PRIMARY KEY,
+  user_id       uuid NOT NULL REFERENCES identity.users ON DELETE CASCADE,
+  status        text NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'building', 'ready', 'failed', 'expired')),
+  archive_key   text CHECK (char_length(archive_key) <= 300),  -- users/<id>/exports/<id>.zip
+  archive_bytes int8 CHECK (archive_bytes >= 0),
+  file_count    int4 CHECK (file_count >= 0),
+  error_code    text CHECK (char_length(error_code) <= 100),
+  requested_at  timestamptz NOT NULL DEFAULT now(),
+  ready_at      timestamptz,
+  expires_at    timestamptz,
+  CONSTRAINT data_exports_ready_has_archive
+    CHECK (status <> 'ready' OR (archive_key IS NOT NULL AND ready_at IS NOT NULL
+                                 AND expires_at IS NOT NULL))
+);
+CREATE INDEX data_exports_user_idx ON ops.data_exports (user_id, requested_at DESC, id);
+CREATE UNIQUE INDEX data_exports_one_live ON ops.data_exports (user_id)
+  WHERE status IN ('pending', 'building');
 
 -- Audit of deletions. No foreign key: it must outlive the deleted account.
 CREATE TABLE ops.deletion_requests (
@@ -705,6 +791,8 @@ Four database roles separate who can change the schema, who serves learners and 
 
 No role has superuser rights, and credentials for each come from the environment, not the repository. The baseline migration creates listenup\_api, listenup\_worker (BYPASSRLS) and listenup\_readonly as NOLOGIN roles when they are missing, with their timeouts (section 12.3), and never drops them; each environment enables login with a password from its secrets. The role that runs migrations takes listenup\_owner's place; on a managed database whose migration role is not a superuser, an administrator creates the roles once beforehand. Workers get rights on every application table through default privileges, while the API and read-only roles get explicit grants per table, so a new table stays closed to them until its migration opens it.
 
+Explicit grants for the newly recorded tables: `content.uploads` permits `SELECT, INSERT, UPDATE, DELETE` ([ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md)); `content.duplicate_uploads` permits only `SELECT` ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)); Blind and Dictation attempt rows permit `SELECT, INSERT, UPDATE` ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md), [ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)); `ops.data_exports` permits `SELECT, INSERT`, while workers update status and archive metadata ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)). All use the `own_rows` policy below.
+
 ### 9.2 Row-level security
 
 The API sets the current learner at the start of every transaction, and each learner table has one policy:
@@ -724,7 +812,8 @@ CREATE POLICY own_rows ON practice.sessions
 -- identity.auth_sessions, identity.oauth_accounts, identity.one_time_tokens, identity.consents,
 -- content.contents, content.transcript_corrections, all practice tables, grading.gist_grades,
 -- grading.round_grades, grading.shadow_comparisons, grading.learner_trends,
--- grading.pattern_history, ops.idempotency_keys.
+-- grading.pattern_history, ops.idempotency_keys, content.uploads,
+-- content.duplicate_uploads, ops.data_exports (ADRs 0020, 0027, 0030).
 
 -- Before the learner is known, SECURITY DEFINER functions executable only by listenup_api
 -- are the one way through: this one returns the learner of a live login session and nothing
@@ -763,7 +852,7 @@ Deletion removes storage objects first and database rows second, so a crash midw
 
 ### 10.1 Account deletion
 
-1. The API sets `users.status = 'pending_deletion'` and `deletion_scheduled_at` to 7 days ahead, and ends all login sessions. The account is disabled at once; signing in before `deletion_scheduled_at` restores it (`status = 'active'`, `deletion_scheduled_at = NULL`).
+1. The API sets `users.status = 'pending_deletion'` and `deletion_scheduled_at` to 7 days ahead, and ends all login sessions. The account is disabled at once; signing in before `deletion_scheduled_at` offers explicit restoration without unlocking practice or changing the schedule. A CSRF-protected Restore action rechecks the deadline and status under a row lock, then sets `status = 'active'`, `deletion_scheduled_at = NULL`; Keep it deleted signs out without changing either field ([ADR 0033](../adr/0033-design-review-policy-resolutions.md)).
 2. When `deletion_scheduled_at` passes, a scheduled job (using `users_deletion_due_idx`) sets `users.status = 'deleting'` and writes an `ops.deletion_requests` row listing the storage prefix `users/<id>/` and the learner's upload media objects. The account can no longer sign in or be restored.
 3. A background job deletes those storage prefixes and marks the request `storage_deleted`.
 4. The job runs `DELETE FROM identity.users WHERE id = $1`. Cascades remove every learner row; the reference-count trigger decrements shared media.
@@ -787,6 +876,7 @@ Content, session and recording deletions follow the same order at a smaller scop
 | One-time tokens | Used or expired for 7 days | `one_time_tokens` |
 | Idempotency keys | 24 hours | `idempotency_keys_age_idx` |
 | Rate counters | Windows older than 1 day | primary key range |
+| Export archives | Seven days after ready; delete object and mark request expired, retaining the row ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)) | `export.expire_archive`, queued transactionally when the archive becomes ready |
 | AI call log | 90 days | Drop the monthly partition |
 
 Sweeps delete in batches of 1,000 rows with `FOR UPDATE SKIP LOCKED`, so they never hold long locks:
@@ -811,7 +901,7 @@ When an expired YouTube media object is used again, intake downloads it afresh a
 
 ## 11. Query patterns and indexes
 
-Every frequent query is served by an index, and the most frequent one, the Blind heartbeat, is a single statement that checks and records in one round trip.
+Every frequent query is served by an index. The Blind heartbeat locks the attempt row, applies the pure judge and records its decision in one transaction ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)).
 
 | Query | Frequency | Served by |
 | --- | --- | --- |
@@ -829,31 +919,12 @@ Every frequent query is served by an index, and the most frequent one, the Blind
 
 ### 11.1 The heartbeat statement
 
-```sql
--- $1 attempt id, $2 reported position (ms), $3 buffering since last beat (ms)
-UPDATE practice.blind_attempts b
-   SET last_position_ms  = $2,
-       buffering_ms      = b.buffering_ms + $3,
-       last_heartbeat_at = now()
-  FROM practice.attempts a
- WHERE b.attempt_id = $1
-   AND a.id = b.attempt_id
-   AND a.status = 'active'
-   AND $2 >= b.last_position_ms                                  -- no backward jump
-   AND now() - b.last_heartbeat_at < interval '15 seconds'       -- no missed beats
-   AND $2 - b.last_position_ms <=                                -- no skipping ahead
-       extract(epoch FROM now() - b.last_heartbeat_at) * 1000 + 1500
-   AND b.buffering_ms + $3 <= 20000
-RETURNING b.last_position_ms;
--- No row returned: the beat failed a check. A missed beat caused by an interruption
--- the learner did not cause (network stall, or a device or OS pause under 5 s) gets
--- one automatic resume per attempt (FR-BL-3), from 3 s before last_position_ms:
---   UPDATE practice.blind_attempts SET resume_count = 1,
---          last_position_ms = GREATEST(last_position_ms - 3000, 0), last_heartbeat_at = now()
---    WHERE attempt_id = $1 AND resume_count = 0 RETURNING last_position_ms;
--- Any other failed check, or a second interruption, makes the service void the
--- attempt and record void_reason in a second statement.
-```
+The earlier single-UPDATE sketch is superseded by [ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md): the service locks the active attempt row, calls the pure `judge(listen, beat, now)` and saves its continue, resume or stop decision in the same transaction. The transaction includes the row lock and save; the anchor clock prevents small per-beat advances from accumulating.
+
+- Check the position against `anchor_position_ms` and `anchor_at`, within 1.5 s ahead and 6 s behind; buffering moves the anchor later, up to 20 s per listen.
+- During an unfinished listen, hidden pages and backwards/out-of-passage seeks void; more than 15 s without a heartbeat voids only when no eligible interruption is reported. A network stop is reported after 10 s without an answered beat; a device pause of 5 s or more or a second interruption records `interrupted`.
+- The one eligible resume sets `resume_count = 1`, records `resume_stop_ms`, moves the anchor to `max(passage_start_ms, stop − 3000)` at the grant time, and resets buffering to zero. The rewind is an anchor change, not a forbidden backwards seek.
+- Voiding updates the attempt status and reason together; a report after the passage is complete does not undo the completed listen.
 
 ### 11.2 Keyset pagination
 

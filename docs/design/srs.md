@@ -99,9 +99,9 @@ These requirements cover everything around the practice modes: accounts, content
 | --- | --- | --- |
 | FR-CI-1 | Accept audio and video uploads (MP3, M4A, WAV, MP4, MOV, WEBM), show progress and allow cancel. | M |
 | FR-CI-2 | Accept a YouTube URL, validate it, show title and duration, and download the media to server storage. Until the legal review clears it (OQ-6), this stays behind a feature flag. | M |
-| FR-CI-3 | Reject unsupported formats, private or age-restricted videos, files over 500 MB, and uploads that would take the account over 2 GB of stored uploads, and intake beyond 120 minutes of new audio per learner per day (configurable), with a clear message. | M |
+| FR-CI-3 | Reject unsupported formats, private or age-restricted videos, files over 500 MiB (500 × 1024² bytes), and uploads that would take the account over 2 GiB (2 × 1024³ bytes) of stored uploads ([ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md)), and new intake when counted audio plus pending reservations has already reached the 120-minute UTC-day allowance (configurable), with a clear message and reset time ([ADR 0033](../adr/0033-design-review-policy-resolutions.md)). Check the daily cap before upload and again on confirmation; playable clips count at most 15 minutes each, clips still being prepared reserve 15 minutes each, and the clip that crosses the cap is admitted whole. The separate two-intake shared-lane limit queues further clips in the learner's own queue ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)). | M |
 | FR-CI-4 | Let the learner choose the passage: the whole clip, or a start and end time, from 30 seconds to 15 minutes long (C2). | M |
-| FR-CI-5 | Show processing status (downloading, transcribing, ready) and notify the learner when ready. | M |
+| FR-CI-5 | Show processing status (downloading, transcribing, ready) and notify the learner when ready. Upload preparation also reports queued, waiting, checking, converting and saving; notices never take focus and wait while a practice session is open ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)). | M |
 | FR-CI-6 | Store content privately per learner, never shared with other users. | M |
 | FR-CI-7 | Let the learner delete a piece of content and its derived data. | M |
 
@@ -124,7 +124,7 @@ These requirements cover everything around the practice modes: accounts, content
 | FR-PL-3 | Show a progress bar with the current step (for example "Step 3 of 5") and completed steps. | M |
 | FR-PL-4 | Unlock a step only when the previous step is complete. | M |
 | FR-PL-5 | Allow the entry choice to change until the Transcript step starts, then lock it. | M |
-| FR-PL-6 | Save progress, drafts and marks automatically and let the learner resume. | M |
+| FR-PL-6 | Save progress, drafts and marks automatically and let the learner resume. Starting Dictation again returns the live attempt and its draft; leaving or reloading never voids it. Versioned saves refuse stale text with 409 `draft_conflict`, except an identical resend, and preserve a local copy immediately ([ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)). | M |
 | FR-PL-7 | Not allow Transcript to be skipped; allow Card and Shadow to be skipped only after confirmation. | M |
 
 ### 4.5 Library
@@ -132,7 +132,7 @@ These requirements cover everything around the practice modes: accounts, content
 | ID | The system shall | Pri |
 | --- | --- | --- |
 | FR-LB-1 | List the learner's content with title, duration, source and last session status. | S |
-| FR-LB-2 | Let the learner start a new plan on content already in the library. | S |
+| FR-LB-2 | Let the learner start a new plan on content already in the library only when it is playable; otherwise return 409 `content_not_ready` ([ADR 0023](../adr/0023-session-endpoints-readiness-and-versions.md)). | S |
 | FR-LB-3 | List a learner's saved cards and marks across sessions. | S |
 
 ## 5. Functional requirements: practice modes
@@ -156,8 +156,8 @@ Each mode enforces its own rules in the system itself, not only in the interface
 | --- | --- | --- | --- |
 | FR-BL-1 | Play the whole passage with only start and volume controls; disable pause, seek, rewind and speed change. | M | BL-1 |
 | FR-BL-2 | Keep the transcript hidden throughout. | M | BL-2 |
-| FR-BL-3 | Warn before the learner leaves the screen, and treat leaving, reloading or seeking as a voided attempt. Allow one resume per attempt after an interruption the learner did not cause (a network stall, or a device or OS pause under 5 seconds). The resume is automatic, 3 seconds after the audio is ready, from 3 seconds before the stop, with no option to stay paused; a second interruption voids the attempt. | M | BL-1 |
-| FR-BL-4 | After playback ends, prompt for a gist of three sentences and require at least three sentences before continuing. The gist is then graded by AI and the learner gets feedback (see 5.2.1). | M | BL-3 |
+| FR-BL-3 | Warn before in-app navigation, including Browser Back, during an unfinished Blind listen; treat leaving, reloading or seeking during that listen as a voided attempt. After the listen is complete, leaving or reloading the gist form preserves it. Refuse whole-clip playback for the same learner and media while an unfinished Blind listen is active ([ADR 0033](../adr/0033-design-review-policy-resolutions.md)). Allow one resume per attempt after an interruption the learner did not cause (a network stall, or a device or OS pause under 5 seconds). The resume is automatic, 3 seconds after the audio is ready, from 3 seconds before the stop, with no option to stay paused; a second interruption voids the attempt. The server records `interrupted` for a second interruption, a device pause of 5 seconds or more, or an unreported pause more than 6 seconds behind its anchor clock. Buffering is allowed for 20 seconds per listen and resets with the one resume, at most 40 seconds per attempt ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)). | M | BL-1 |
+| FR-BL-4 | After playback ends, prompt for a gist of three sentences and require at least three sentences before continuing. Each sentence ends with `.`, `!` or `?` followed by a space or the end and has at least three words; the gist is at most 2000 characters and is accepted only when the last accepted position is within 1 second of the passage end and the anchor clock has reached it ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)). The gist is then graded by AI and the learner gets feedback (see 5.2.1). | M | BL-3 |
 | FR-BL-5 | Store the attempt with a completion flag, and show the gist beside the transcript in the Transcript step. | S | BL-4, BL-5 |
 
 ### 5.2.1 Blind: AI gist grading
@@ -295,7 +295,7 @@ A session passes through at most seven states in a fixed order, and the entry ch
 - SR-2: A state unlocks only when the previous state is complete (FR-PL-4).
 - SR-3: Until Transcript starts, the learner can add or remove an entry exercise; after that the choice is locked (FR-PL-5).
 - SR-4: Transcript cannot be skipped; Card and Shadow can be skipped after confirmation (FR-PL-7).
-- SR-5: A Blind attempt is voided and restarted when the learner leaves, reloads or seeks, or on a second interruption; after one interruption the learner did not cause, it resumes once, automatically, from 3 seconds before the stop (FR-BL-3).
+- SR-5: During an unfinished listen, a Blind attempt is voided and restarted when the learner leaves, reloads or seeks, or on a second interruption; leaving or reloading the gist form after the listen is complete preserves it; after one interruption the learner did not cause, it resumes once, automatically, from 3 seconds before the stop (FR-BL-3).
 - SR-6: A session is Completed when Shadow is done (its three rounds are recorded) or skipped, whether Card was done or skipped.
 
 ## 7. External interface requirements
@@ -344,7 +344,7 @@ The system stores seven kinds of data, all owned by one learner, and must meet t
 | Card | session id, mark id, written form, heard form, snippet range | Until the learner deletes it |
 | ShadowRound | session id, segment start and end, round number (1 to 3), transcript shown, recording, speaking measures, grade, feedback | With its session; the recording itself is deleted 90 days after recording |
 
-- DR-1: Deleting an account disables it at once, and signing in within 7 days restores it. After that grace period, deletion removes all of the learner's data, media and recordings.
+- DR-1: Deleting an account disables it at once. Signing in within 7 days opens an explicit restore confirmation; only choosing Restore reactivates it, while Keep it deleted signs out and preserves the deletion schedule ([ADR 0033](../adr/0033-design-review-policy-resolutions.md)). After that grace period, deletion removes all of the learner's data, media and recordings.
 - DR-2: Deleting content removes the learner's sessions, marks, recordings and transcript corrections. A shared transcript is deleted only when no learner's content uses that media any more; an upload's transcript is deleted with it.
 
 ### 8.2 Performance
@@ -353,7 +353,7 @@ The system stores seven kinds of data, all owned by one learner, and must meet t
 | --- | --- | --- |
 | NFR-PERF-1 | Playback starts after a step opens | Within 2 seconds |
 | NFR-PERF-2 | Content added to playback ready, for a clip of 10 minutes | To confirm after benchmarking |
-| NFR-PERF-3 | A mark or text edit is saved | Within 1 second |
+| NFR-PERF-3 | A mark or text edit is durable locally; server synchronization is debounced after the last edit and retries on reconnect ([ADR 0033](../adr/0033-design-review-policy-resolutions.md)) | Local copy within 1 second; server save starts after a 2-second debounce when connected |
 | NFR-PERF-4 | Seeking or looping within a passage | Frame-accurate to the segment; under 300 ms to resume |
 
 ### 8.3 Security and privacy
@@ -362,13 +362,13 @@ The system stores seven kinds of data, all owned by one learner, and must meet t
 - NFR-SEC-2: A learner can read only their own content, sessions and recordings; media links are access-controlled and expire.
 - NFR-SEC-3: Uploaded files are scanned and checked for type and size before processing.
 - NFR-SEC-4: Media and recordings are never shared, sold or used for any purpose other than the learner's own practice.
-- NFR-SEC-5: The learner can export or delete their data on request. YouTube media is not included in an export.
+- NFR-SEC-5: The learner can export or delete their data on request. YouTube media is not included in an export. Exports are background-built ZIP archives containing `data.json` and the learner's upload media, excluding service secrets and shared internal details. At most one export is pending or building per learner and three requests are allowed per UTC day; archives are kept seven days and download links last 120 seconds ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)).
 
 ### 8.4 Reliability and integrity
 
 - NFR-REL-1: Drafts, marks and progress survive a refresh, a closed tab and a lost connection.
 - NFR-REL-2: Failed downloads or transcription jobs are retried and then reported clearly to the learner.
-- NFR-REL-3: Blind's controls stay locked even if the learner reloads the page; a reload during Blind voids that attempt.
+- NFR-REL-3: Blind's controls stay locked even if the learner reloads the page; a reload during an unfinished Blind listen voids that attempt, while a reload of the completed listen's gist form preserves it (ADR 0033).
 - NFR-REL-4: Data is backed up daily and can be restored.
 
 ### 8.5 Usability and accessibility
@@ -426,7 +426,7 @@ The MVP is accepted when every Must requirement passes its test below and the op
 | ID | Test | Passes when | Covers |
 | --- | --- | --- | --- |
 | AT-1 | Add a clip by upload, and by YouTube link with the YouTube flag on | Both reach "ready" with a transcript; bad files and private videos show a clear error | FR-CI-1 to FR-CI-5, FR-TX-1, FR-TX-2 |
-| AT-2 | Start Blind and try to pause, seek, rewind, change speed, reload and leave | None of these controls work; leaving or reloading voids the attempt; the gist prompt appears only after full playback | FR-BL-1 to FR-BL-4, NFR-REL-3 |
+| AT-2 | Start Blind and try to pause, seek, rewind, change speed, reload and leave | None of these controls work; in-app leaving including Back warns, and leaving or reloading during playback voids the attempt; whole-clip playback is refused during that listen; the gist prompt appears only after full playback and leaving it preserves the listen | FR-BL-1 to FR-BL-4, NFR-REL-3 |
 | AT-3 | Complete Dictation with replays | Replays are unlimited, the transcript is never shown, and the diff and accuracy match a known reference | FR-DI-1 to FR-DI-5 |
 | AT-4 | Make marks in Transcript after Dictation | Dictation marks are pre-filled; each mark stores range and audio time; selecting a mark jumps to the audio | FR-TR-1 to FR-TR-5, FR-DI-6 |
 | AT-5 | Create three cards in one session | Two succeed; the third is blocked; no definition field exists | FR-CA-1 to FR-CA-3 |
