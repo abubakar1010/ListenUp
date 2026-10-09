@@ -41,6 +41,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database
 from listenup.platform.log import current_request_id, request_id_bound
+from listenup.platform.telemetry import (
+    TRACE_ARG,
+    enqueue_span,
+    job_trace_args,
+    observe_job,
+    record_queue_sample,
+    record_queue_sampled,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -193,15 +201,35 @@ def job(
 
         async def run(context: JobContext, /, **args: Any) -> Any:
             request_id = args.pop(REQUEST_ID_ARG, None)
+            trace_carrier = args.pop(TRACE_ARG, None)
             database = _runtime.database
             if database is None:
                 raise RuntimeError("configure_runtime() was not called in this worker")
-            with request_id_bound(request_id):
+            current = context.job
+            attempt = current.attempts + 1
+
+            def outcome_of(error: BaseException) -> str:
+                final = isinstance(error, PermanentError) or attempt >= spec.max_attempts
+                return "failed" if final else "retried"
+
+            with (
+                request_id_bound(request_id),
+                observe_job(
+                    name,
+                    lane.value,
+                    job_id=current.id,
+                    attempt=attempt,
+                    scheduled_at=current.scheduled_at.timestamp() if current.scheduled_at else None,
+                    trace_carrier=trace_carrier,
+                    classify_error=outcome_of,
+                ) as observed,
+            ):
                 gate = _gates.get(lane)
                 if gate is not None and await gate.should_wait(database):
-                    await _postpone(database, context.job, args, request_id)
+                    await _postpone(database, current, args, request_id, trace_carrier)
+                    observed.outcome = "postponed"
                     return None
-                deps = JobDeps(database, context.job.id, context.job.attempts + 1)
+                deps = JobDeps(database, current.id, attempt)
                 return await run_handler(name, deps, **args)
 
         app.task(
@@ -281,6 +309,20 @@ async def enqueue(
     payload = dict(args)
     if (request_id := current_request_id()) is not None:
         payload[REQUEST_ID_ARG] = request_id
+    with enqueue_span(name, job_type.lane.value) as span:
+        payload.update(job_trace_args(span))
+        return await _defer(session, job_type, name, payload, unique_key, lock, run_at)
+
+
+async def _defer(
+    session: AsyncSession,
+    job_type: "JobType",
+    name: str,
+    payload: dict[str, Any],
+    unique_key: str | None,
+    lock: str | None,
+    run_at: datetime | None,
+) -> int | None:
     if unique_key is not None and await session.scalar(
         text("""
         SELECT EXISTS (
@@ -317,7 +359,11 @@ async def enqueue(
 
 
 async def _postpone(
-    database: Database, current: Job, args: dict[str, Any], request_id: str | None
+    database: Database,
+    current: Job,
+    args: dict[str, Any],
+    request_id: str | None,
+    trace_carrier: dict[str, Any] | None,
 ) -> None:
     """Re-queue this job a little later instead of running it now.
 
@@ -326,6 +372,8 @@ async def _postpone(
     payload = dict(args)
     if request_id is not None:
         payload[REQUEST_ID_ARG] = request_id
+    if trace_carrier is not None:
+        payload[TRACE_ARG] = trace_carrier
     async with database.transaction() as session:
         await session.execute(
             text("""
@@ -352,7 +400,7 @@ async def failed_jobs(session: AsyncSession, limit: int = 50) -> list[dict[str, 
     rows = await session.execute(
         text("""
         SELECT j.id, j.queue_name AS lane, j.task_name AS name, j.attempts,
-               j.args - :request_id_arg AS args, max(e.at) AS failed_at
+               j.args - CAST(:internal_args AS text[]) AS args, max(e.at) AS failed_at
           FROM procrastinate.procrastinate_jobs j
           LEFT JOIN procrastinate.procrastinate_events e
             ON e.job_id = j.id AND e.type = 'failed'
@@ -361,7 +409,7 @@ async def failed_jobs(session: AsyncSession, limit: int = 50) -> list[dict[str, 
          ORDER BY failed_at DESC NULLS LAST, j.id DESC
          LIMIT :limit
         """),
-        {"limit": limit, "request_id_arg": REQUEST_ID_ARG},
+        {"limit": limit, "internal_args": [REQUEST_ID_ARG, TRACE_ARG]},
     )
     return [dict(row) for row in rows.mappings()]
 
@@ -438,6 +486,7 @@ async def _settle_stalled_job(database: Database, job_id: int) -> bool:
         elif entry.on_give_up is not None:
             payload = dict(args)
             request_id = payload.pop(REQUEST_ID_ARG, None)
+            payload.pop(TRACE_ARG, None)
             with request_id_bound(request_id):
                 await entry.on_give_up(JobDeps(database, job_id, attempts + 1), **payload)
         await session.execute(
@@ -485,3 +534,41 @@ class SpeechBacklogGate:
                 logger.info("intake resumed: speech-interactive lane drained")
             self.paused = False
         return self.paused
+
+
+QUEUE_SAMPLE_SECONDS = 30
+
+
+async def sample_queue(database: Database) -> None:
+    """Record how many jobs are due and how long the oldest has waited, per lane.
+
+    Feeds the JobBacklogGrowing and JobWaitTooLong alerts (Architecture 12.3).
+    """
+    async with database.transaction() as session:
+        rows = await session.execute(
+            text("""
+            SELECT j.queue_name AS lane, count(*) AS waiting,
+                   extract(epoch FROM now() - min(coalesce(j.scheduled_at, e.at))) AS oldest
+              FROM procrastinate.procrastinate_jobs j
+              JOIN procrastinate.procrastinate_events e
+                ON e.job_id = j.id AND e.type = 'deferred'
+             WHERE j.status = 'todo'
+               AND (j.scheduled_at IS NULL OR j.scheduled_at <= now())
+             GROUP BY j.queue_name
+            """)
+        )
+        found = {row.lane: (int(row.waiting), float(row.oldest or 0)) for row in rows}
+    for lane in Lane:
+        waiting, oldest = found.get(lane.value, (0, 0.0))
+        record_queue_sample(lane.value, waiting, max(0.0, oldest))
+    record_queue_sampled()
+
+
+async def sample_queue_forever(database: Database, every: float = QUEUE_SAMPLE_SECONDS) -> None:
+    """Run `sample_queue` until cancelled; one worker pool runs it."""
+    while True:
+        try:
+            await sample_queue(database)
+        except Exception:
+            logger.warning("queue sample failed", exc_info=True)
+        await asyncio.sleep(every)
