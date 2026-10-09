@@ -209,3 +209,57 @@ def test_a_payload_carries_ids_only() -> None:
         notification_payload(A, EventType.CONTENT_READY, "x" * 2000)
     with pytest.raises(ValueError):
         notification_payload(A, "transcript.text", "1")  # type: ignore[arg-type]
+
+
+async def test_a_disabled_account_gets_the_event_and_its_streams_end() -> None:
+    """Deleting an account (ADR 0029) ends its open streams; others keep theirs."""
+    hub = EventHub()
+    a1, a2, b = await opened(hub, A), await opened(hub, A), await opened(hub, B)
+    hub.dispatch(A, "content.ready", "clip-1")
+
+    hub.dispatch(A, EventType.ACCOUNT_DISABLED.value, str(A))
+
+    for stream in (a1, a2):
+        first, second = await drain(stream, 2)
+        assert parse(first)["event"] == "content.ready"
+        assert parse(second)["event"] == "account.disabled"
+        with pytest.raises(StopAsyncIteration):
+            await asyncio.wait_for(anext(stream), 1.0)
+    assert hub.stream_count(A) == 0
+    assert hub.stream_count(B) == 1
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(anext(b), 0.05)
+
+
+async def test_a_full_stream_of_a_disabled_account_still_ends() -> None:
+    hub = EventHub(queue_size=2)
+    stream = await opened(hub, A)
+    for number in range(5):
+        hub.dispatch(A, "job.progress", f"clip-{number}")
+
+    hub.dispatch(A, EventType.ACCOUNT_DISABLED.value, str(A))
+
+    with pytest.raises(StopAsyncIteration):
+        await asyncio.wait_for(anext(stream), 1.0)
+
+
+async def test_a_replayed_stream_ending_event_ends_the_stream_too() -> None:
+    """A reconnect that replays `account.disabled` ends like a live one (ADR 0029);
+    the events after it come on the next reconnect, which names it as last seen."""
+    hub = EventHub()
+    seen = hub.dispatch(A, "content.ready", "clip-1")
+    disabled = hub.dispatch(A, EventType.ACCOUNT_DISABLED.value, str(A))
+    later = hub.dispatch(A, "content.ready", "clip-2")  # restored, then a clip finished
+
+    stream = await opened(hub, A, last_event_id=seen.id)
+
+    (chunk,) = await drain(stream, 1)
+    assert parse(chunk)["id"] == disabled.id
+    with pytest.raises(StopAsyncIteration):
+        await asyncio.wait_for(anext(stream), 1.0)
+    assert hub.stream_count(A) == 0
+
+    again = await opened(hub, A, last_event_id=disabled.id)
+    (chunk,) = await drain(again, 1)
+    assert parse(chunk)["id"] == later.id
+    assert hub.stream_count(A) == 1

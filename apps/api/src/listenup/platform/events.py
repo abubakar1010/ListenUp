@@ -58,6 +58,13 @@ class EventType(StrEnum):
     GRADE_READY = "grade.ready"
     ATTEMPT_VOIDED = "attempt.voided"
     EXPORT_READY = "export.ready"  # a data export finished: ready or failed (#92)
+    # The learner's account was disabled (deleted, ADR 0029). Their open streams get
+    # this event and then end; reconnecting needs a login session, which is gone.
+    ACCOUNT_DISABLED = "account.disabled"
+
+
+STREAM_ENDING_EVENTS = frozenset({EventType.ACCOUNT_DISABLED})
+"""Events after which the stream ends, whether sent live or replayed on reconnect."""
 
 
 RESYNC = "resync"
@@ -187,6 +194,8 @@ class EventHub:
         self._prune(replay, now)
         for subscription in self._streams.get(user_id, ()):
             self._put(subscription, event)
+            if event_type in STREAM_ENDING_EVENTS:
+                self._end(subscription)
         if now >= self._next_sweep:
             self._sweep(now)
         return event
@@ -232,6 +241,11 @@ class EventHub:
             else:
                 for event in missed:
                     self._put(subscription, event)
+                    if event.type in STREAM_ENDING_EVENTS:
+                        # As if live. Later events follow on the next reconnect, which
+                        # names this event as the last one seen.
+                        self._end(subscription)
+                        return subscription
         self._streams.setdefault(user_id, set()).add(subscription)
         return subscription
 
@@ -299,6 +313,14 @@ class EventHub:
             _drain(subscription.queue)
             subscription.queue.put_nowait(_Signal.RESYNC)
             logger.warning("event stream fell behind; sent resync")
+
+    def _end(self, subscription: Subscription) -> None:
+        """End one stream after what is queued; a full queue ends it at once."""
+        try:
+            subscription.queue.put_nowait(_Signal.CLOSE)
+        except asyncio.QueueFull:
+            _drain(subscription.queue)
+            subscription.queue.put_nowait(_Signal.CLOSE)
 
 
 def _drain(queue: asyncio.Queue[_Item]) -> None:
@@ -420,8 +442,8 @@ def events_router(learner: Callable[..., Any]) -> APIRouter:
             200: {
                 "description": (
                     "A Server-Sent Events stream of the learner's events: "
-                    "job.progress, content.ready, grade.ready, attempt.voided, export.ready "
-                    "and resync."
+                    "job.progress, content.ready, grade.ready, attempt.voided, export.ready, "
+                    "account.disabled (the stream then ends) and resync."
                 ),
                 "content": {"text/event-stream": {"schema": {"type": "string"}}},
             }

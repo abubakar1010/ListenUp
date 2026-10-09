@@ -99,3 +99,16 @@ async def window_count(session: AsyncSession, key: str, window: timedelta) -> in
     """The current window's count of `key`; 0 when nothing was counted."""
     count = await session.scalar(_COUNT, {"key": key, "window": window})
     return int(count or 0)
+
+
+async def forget_learner(session: AsyncSession, user_id: object) -> int:
+    """Delete every counter keyed by the learner (`<name>:user:<id>`, `user_key`).
+
+    Counters have no foreign key to the learner, so deleting an account does not
+    remove them (DR-1). Returns how many rows were deleted.
+    """
+    result = await session.execute(
+        text("DELETE FROM ops.rate_counters WHERE key LIKE :pattern"),
+        {"pattern": f"%:user:{user_id}"},
+    )
+    return int(getattr(result, "rowcount", 0) or 0)

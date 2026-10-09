@@ -14,6 +14,7 @@ import uuid
 import zipfile
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -24,6 +25,7 @@ from listenup.modules.export import jobs
 from listenup.platform import jobs as platform_jobs
 from listenup.platform.database import Database
 from listenup.platform.jobs import JobDeps, run_handler
+from listenup.platform.storage import use_storage
 from tests.integration.conftest import conninfo_to_url
 from tests.integration.intake_helpers import ClientFactory, FakeStorage, client_factory, learner_id
 from tests.integration.seed import SeededLearner, seed_learner_data
@@ -35,9 +37,9 @@ YOUTUBE = b"youtube playback bytes"
 @pytest.fixture
 def storage() -> Iterator[FakeStorage]:
     fake = FakeStorage()
-    jobs.use_storage(fake)
+    use_storage(fake)
     yield fake
-    jobs.use_storage(None)
+    use_storage(None)
 
 
 @pytest.fixture
@@ -328,7 +330,7 @@ def test_a_failed_build_is_marked_and_announced(
         async def put_file(self, key: str, path: object, content_type: str) -> None:
             raise RuntimeError("storage is down")
 
-    jobs.use_storage(Broken())
+    use_storage(Broken())
     with psycopg.connect(migrated_url, autocommit=True) as listener:
         listener.execute("LISTEN user_events")
         with pytest.raises(RuntimeError):
@@ -363,12 +365,79 @@ def test_a_last_build_that_times_out_frees_the_learner_to_ask_again(
         async def put_file(self, key: str, path: object, content_type: str) -> None:
             await asyncio.sleep(60)
 
-    jobs.use_storage(Stalled())
+    use_storage(Stalled())
     with pytest.raises(TimeoutError):
         run_build(migrated_url, started["id"], user, attempt=jobs.BUILD_ATTEMPTS)
     shown = latest(client)
     assert shown is not None and shown["status"] == "failed"
     assert request_export(client)["status"] == "pending"
+
+
+def test_an_account_deleted_after_asking_gets_no_archive(
+    make_client: ClientFactory, storage: FakeStorage, migrated_url: str
+) -> None:
+    """Deleting the account (ADR 0029) stops an export the learner asked for just before."""
+    client = make_client()
+    user = learner_id(client)
+    seeded(migrated_url, client, storage)
+    started = request_export(client)
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE identity.users SET status = 'pending_deletion', "
+            "deletion_scheduled_at = now() + interval '7 days' WHERE id = %s",
+            [user],
+        )
+
+    run_build(migrated_url, started["id"], user)
+
+    with psycopg.connect(migrated_url) as conn:
+        row = conn.execute(
+            "SELECT status, error_code, archive_key FROM ops.data_exports WHERE id = %s",
+            [started["id"]],
+        ).fetchone()
+    assert row == ("failed", "account_deleted", None)
+    assert not [key for key in storage.objects if "/exports/" in key]
+
+
+def test_an_account_deleted_while_the_archive_is_built_keeps_no_archive(
+    make_client: ClientFactory, storage: FakeStorage, migrated_url: str
+) -> None:
+    """The check at the start passed; the learner deletes the account before it ends."""
+    client = make_client()
+    user = learner_id(client)
+    seeded(migrated_url, client, storage)
+    started = request_export(client)
+
+    class DeletesWhileStoring(FakeStorage):
+        async def put_file(self, key: str, path: Path, content_type: str) -> None:
+            await super().put_file(key, path, content_type)
+            with psycopg.connect(migrated_url, autocommit=True) as conn:
+                conn.execute(
+                    "UPDATE identity.users SET status = 'pending_deletion', "
+                    "deletion_scheduled_at = now() + interval '7 days' WHERE id = %s",
+                    [user],
+                )
+
+    racing = DeletesWhileStoring()
+    racing.objects.update(storage.objects)
+    racing.data.update(storage.data)
+    use_storage(racing)
+
+    run_build(migrated_url, started["id"], user)
+
+    with psycopg.connect(migrated_url) as conn:
+        row = conn.execute(
+            "SELECT status, error_code, archive_key FROM ops.data_exports WHERE id = %s",
+            [started["id"]],
+        ).fetchone()
+        queued = conn.execute(
+            "SELECT count(*) FROM procrastinate.procrastinate_jobs "
+            "WHERE task_name = %s AND args->>'export_id' = %s",
+            [jobs.EXPIRE_ARCHIVE, started["id"]],
+        ).fetchone()
+    assert row == ("failed", "account_deleted", None)
+    assert queued == (0,)
+    assert not [key for key in racing.objects if "/exports/" in key]
 
 
 def test_a_ready_export_is_announced(

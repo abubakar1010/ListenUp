@@ -15,28 +15,11 @@ from listenup.platform.database import Database
 from listenup.platform.events import EventType, publish
 from listenup.platform.jobs import JobDeps, Lane, PermanentError, enqueue, job
 from listenup.platform.rate_limit import add_to_window
-from listenup.platform.storage import S3Storage, Storage
+from listenup.platform.storage import Storage, get_storage
 
 logger = logging.getLogger(__name__)
 
 CONVERT_UPLOAD = "content.convert_upload"
-
-
-class _Storage:
-    """The storage the content jobs use: S3 from the settings, or a fake in tests."""
-
-    instance: Storage | None = None
-
-
-def use_storage(storage: Storage | None) -> None:
-    """Swap the storage the jobs use (tests); None goes back to S3 from the settings."""
-    _Storage.instance = storage
-
-
-def _storage() -> Storage:
-    if _Storage.instance is None:
-        _Storage.instance = S3Storage(get_settings())
-    return _Storage.instance
 
 
 def daily_audio_key(learner: uuid.UUID) -> str:
@@ -128,7 +111,7 @@ async def convert_upload(
     media_id = uuid.UUID(media_object_id)
     # Jobs queued before #41 have no user_id; they end without starting the next one.
     learner = uuid.UUID(user_id) if user_id else None
-    await _convert(deps.database, _storage(), media_id, uuid.UUID(upload_id), learner)
+    await _convert(deps.database, get_storage(), media_id, uuid.UUID(upload_id), learner)
 
 
 async def _convert(

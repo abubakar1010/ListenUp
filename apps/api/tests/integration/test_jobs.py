@@ -17,6 +17,7 @@ from sqlalchemy import text
 
 from listenup.platform.database import Database
 from listenup.platform.jobs import (
+    RECOVER_STALLED_JOBS,
     JobDeps,
     Lane,
     PermanentError,
@@ -26,6 +27,7 @@ from listenup.platform.jobs import (
     enqueue,
     failed_jobs,
     job,
+    run_handler,
     set_gate,
 )
 from listenup.platform.log import current_request_id, request_id_bound
@@ -71,6 +73,15 @@ async def too_slow(deps: JobDeps) -> None:
 
     calls.append({"job": "too_slow"})
     await asyncio.sleep(5)
+
+
+async def gave_up(deps: JobDeps, item: str) -> None:
+    calls.append({"job": "gave_up", "item": item, "attempt": deps.attempt})
+
+
+@job(Lane.BACKGROUND, "test.two_attempts", max_attempts=2, on_give_up=gave_up)
+async def two_attempts(deps: JobDeps, item: str) -> None:
+    calls.append({"job": "two_attempts", "item": item})
 
 
 @job(Lane.SPEECH_INTERACTIVE, "test.speech")
@@ -166,6 +177,27 @@ async def test_two_enqueues_with_the_same_unique_key_run_once(queue: Database) -
 
 
 @pytest.mark.anyio
+async def test_a_running_job_with_the_same_unique_key_is_not_queued_again(
+    queue: Database,
+) -> None:
+    """Otherwise, if the running job failed, its retry could not go back to the queue
+    beside the waiting copy and would stay 'doing' for ever."""
+    async with queue.transaction() as session:
+        first = await enqueue(session, "test.record", unique_key="purge:1", n=1)
+    await stall(queue, first)
+
+    async with queue.transaction() as session:
+        second = await enqueue(session, "test.record", unique_key="purge:1", n=2)
+        await session.execute(
+            text("SELECT procrastinate.procrastinate_retry_job_v2(:id, now(), NULL, NULL, NULL)"),
+            {"id": first},
+        )
+
+    assert second is None
+    assert [(row["id"], row["status"]) for row in await jobs(queue)] == [(first, "todo")]
+
+
+@pytest.mark.anyio
 async def test_a_job_chains_the_next_step(queue: Database) -> None:
     async with queue.transaction() as session:
         await enqueue(session, "test.first_step", item="clip-1")
@@ -238,6 +270,88 @@ async def test_a_job_over_its_timeout_is_stopped_and_retried(queue: Database) ->
 
     [state] = await jobs(queue)
     assert (state["status"], state["attempts"]) == ("todo", 1)
+
+
+async def stall(
+    database: Database, job_id: int | None, *, attempts: int = 0, worker_alive: bool = False
+) -> None:
+    """Make the job look taken by a worker: one that died, unless `worker_alive`."""
+    async with database.transaction() as session:
+        worker = None
+        if worker_alive:
+            worker = await session.scalar(
+                text("INSERT INTO procrastinate.procrastinate_workers DEFAULT VALUES RETURNING id")
+            )
+        await session.execute(
+            text(
+                "UPDATE procrastinate.procrastinate_jobs "
+                "SET status = 'doing', worker_id = :worker, attempts = :attempts WHERE id = :id"
+            ),
+            {"id": job_id, "worker": worker, "attempts": attempts},
+        )
+
+
+async def recover(database: Database) -> int:
+    settled: int = await run_handler(RECOVER_STALLED_JOBS, JobDeps(database, None, 1))
+    return settled
+
+
+@pytest.mark.anyio
+async def test_a_job_whose_worker_died_runs_again(queue: Database) -> None:
+    """A dead worker's job holds its lock, so every job sharing it waits until then."""
+    async with queue.transaction() as session:
+        job_id = await enqueue(session, "test.record", lock="resource:1", n=1)
+    await stall(queue, job_id)
+
+    assert await recover(queue) == 1
+    [state] = await jobs(queue)
+    assert (state["status"], state["attempts"]) == ("todo", 1)
+    await make_due(queue)
+    await work(Lane.BACKGROUND)
+    assert [c["args"] for c in calls] == [{"n": 1}]
+
+
+@pytest.mark.anyio
+async def test_a_job_of_a_live_worker_is_left_alone(queue: Database) -> None:
+    async with queue.transaction() as session:
+        job_id = await enqueue(session, "test.record", n=1)
+    await stall(queue, job_id, worker_alive=True)
+
+    assert await recover(queue) == 0
+    assert (await jobs(queue))[0]["status"] == "doing"
+
+
+@pytest.mark.anyio
+async def test_a_stalled_last_attempt_gives_up(queue: Database) -> None:
+    async with queue.transaction() as session:
+        job_id = await enqueue(session, "test.two_attempts", item="clip-1")
+    await stall(queue, job_id, attempts=1)
+
+    assert await recover(queue) == 1
+    [state] = await jobs(queue)
+    assert (state["status"], state["attempts"]) == ("failed", 2)
+    assert calls == [{"job": "gave_up", "item": "clip-1", "attempt": 2}]
+
+
+@pytest.mark.anyio
+async def test_a_stalled_job_with_a_copy_waiting_leaves_the_work_to_the_copy(
+    queue: Database,
+) -> None:
+    async with queue.transaction() as session:
+        first = await enqueue(session, "test.record", unique_key="k:1", n=1)
+    await stall(queue, first)
+    async with queue.transaction() as session:
+        # Queued beside the running one, as backpressure does when it postpones a job.
+        await session.execute(
+            text("""
+            SELECT procrastinate.procrastinate_defer_jobs_v1(ARRAY[ROW(
+              'background', 'test.record', 0, NULL, 'k:1', '{"n": 2}'::jsonb, NULL
+            )::procrastinate.procrastinate_job_to_defer_v1])
+            """)
+        )
+
+    assert await recover(queue) == 1
+    assert [row["status"] for row in await jobs(queue)] == ["failed", "todo"]
 
 
 async def backdate_speech_jobs(database: Database, seconds: int) -> None:

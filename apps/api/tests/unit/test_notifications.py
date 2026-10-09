@@ -1,6 +1,7 @@
 """Email templates and the SMTP adapter (#31: FR-ACC-3), without a mail server."""
 
 import smtplib
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from typing import Any, ClassVar
 
@@ -124,3 +125,19 @@ async def test_a_refused_recipient_is_not_retried(fake_smtp: type[FakeSmtp]) -> 
 
     with pytest.raises(PermanentError):
         await SmtpTransport(Settings()).send(CONTENT)
+
+
+def test_the_deletion_email_states_the_date_in_utc_and_how_to_restore() -> None:
+    dhaka = timezone(timedelta(hours=6))
+    # 02:30 on 12 October in Dhaka is 20:30 on 11 October in UTC.
+    mail = emails.account_deletion(
+        "learner@example.com",
+        datetime(2026, 10, 12, 2, 30, tzinfo=dhaka),
+        "https://listenup.example/sign-in",
+    )
+
+    assert mail.subject == "Your ListenUp account will be deleted on 11 October 2026"
+    for part in (mail.text, mail.html):
+        assert "11 October 2026, 20:30 UTC" in part
+        assert "https://listenup.example/sign-in" in part
+        assert "restore" in part

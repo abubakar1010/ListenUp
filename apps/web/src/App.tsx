@@ -19,6 +19,7 @@ const SessionPage = lazy(() => import('./features/session/SessionPage'));
 const StartPlanPage = lazy(() => import('./features/session/StartPlanPage'));
 const SettingsPage = lazy(() => import('./features/account/SettingsPage'));
 const NotFoundPage = lazy(() => import('./app/NotFoundPage'));
+const AccountDeletedPage = lazy(() => import('./features/account/AccountDeletedPage'));
 const PasswordResetRequestPage = lazy(() =>
   import('./auth/PasswordResetPages').then((m) => ({ default: m.PasswordResetRequestPage })),
 );
@@ -71,6 +72,15 @@ export function App() {
               <>
                 <PageTitle title="Choose a new password" />
                 <PasswordResetConfirmPage />
+              </>
+            }
+          />
+          <Route
+            path="/account-deleted"
+            element={
+              <>
+                <PageTitle title="Account deleted" />
+                <AccountDeletedPage />
               </>
             }
           />

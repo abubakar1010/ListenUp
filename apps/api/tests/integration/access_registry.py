@@ -139,6 +139,10 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         "authorised by the one-time token from the email, not by a login session"
     ),
     ("GET", "/api/v1/me"): Scoped(a_sees=lambda w: [w.a.user_id]),
+    # B can only ever delete B's own account; with a wrong password nothing happens.
+    ("DELETE", "/api/v1/me"): Scoped(
+        status=403, body=lambda w: {"password": "not B's password", "confirm": True}
+    ),
     # -- content: uploads and intake ---------------------------------------------------
     ("GET", "/api/v1/uploads/usage"): Scoped(check=_usage_counts_only_b),
     ("POST", "/api/v1/uploads"): Scoped(status=201, body=_new_upload),
