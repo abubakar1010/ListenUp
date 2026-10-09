@@ -21,8 +21,10 @@ from pydantic import BaseModel
 
 from listenup.ai.config import ProviderEntry
 from listenup.ai.ports import Provenance, TimedWord, Transcript, TranscriptSegment
+from listenup.ai.providers.audio import decode_pcm
 
 PROVIDER = "faster-whisper"
+SAMPLE_RATE = 16000  # what Whisper models take
 
 
 class RawWord(BaseModel):
@@ -79,8 +81,12 @@ class FasterWhisperEngine:
         )
 
     def run(self, audio: Path, language: str) -> RawTranscription:
+        import numpy as np  # installed with faster-whisper
+
+        # Decoded by ffmpeg, not faster-whisper's PyAV path, which fails with PyAV 19.
+        samples = np.frombuffer(decode_pcm(audio, SAMPLE_RATE), dtype=np.float32)
         segments, info = self._model.transcribe(
-            str(audio),
+            samples,
             language=language,
             beam_size=self._beam_size,
             vad_filter=self._vad_filter,

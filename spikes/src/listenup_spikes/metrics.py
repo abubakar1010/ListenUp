@@ -117,3 +117,62 @@ def mean_boundary_error_ms(
     if not errors:
         raise ValueError("no matching words")
     return sum(errors) / len(errors)
+
+
+def boundary_errors_ms(
+    predicted: Sequence[tuple[str, float, float]],
+    labelled: Sequence[tuple[str, float, float]],
+    max_shift_s: float = 1.0,
+) -> list[float]:
+    """Absolute start and end errors (ms) for each labelled word that a predicted word
+    matches: the same normalised text, starting within max_shift_s, nearest first, and
+    in order. Labels may cover only part of the predicted span (a hand-labelled window),
+    so matching is by time as well as text; unmatched labelled words are skipped."""
+    errors: list[float] = []
+    j = 0
+    for word, start, end in labelled:
+        key = normalize_words(word)
+        best = None
+        k = j
+        while k < len(predicted) and predicted[k][1] <= start + max_shift_s:
+            shift = abs(predicted[k][1] - start)
+            if (
+                shift <= max_shift_s
+                and normalize_words(predicted[k][0]) == key
+                and (best is None or shift < abs(predicted[best][1] - start))
+            ):
+                best = k
+            k += 1
+        if best is None:
+            continue
+        errors.extend(
+            [abs(predicted[best][1] - start) * 1000, abs(predicted[best][2] - end) * 1000]
+        )
+        j = best + 1
+    return errors
+
+
+@dataclass(frozen=True)
+class Spread:
+    count: int
+    mean: float
+    median: float
+    p90: float
+    share_within_50ms: float  # 0..1
+    share_within_100ms: float
+
+
+def spread(values: Sequence[float]) -> Spread:
+    if not values:
+        raise ValueError("no values")
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    median = ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+    return Spread(
+        count=len(ordered),
+        mean=sum(ordered) / len(ordered),
+        median=median,
+        p90=percentile(ordered, 90),
+        share_within_50ms=sum(v <= 50 for v in ordered) / len(ordered),
+        share_within_100ms=sum(v <= 100 for v in ordered) / len(ordered),
+    )

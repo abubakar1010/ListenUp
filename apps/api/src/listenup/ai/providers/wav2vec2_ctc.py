@@ -1,7 +1,10 @@
 """wav2vec2 CTC forced-alignment AlignmentPort adapter: self-hosted, CPU (Architecture 7.5).
 
-Uses a torchaudio pipeline bundle named by `model` in `ai.yaml` (default `MMS_FA`, the
-multilingual wav2vec2 aligner the spike #19 harness measures). Its units are characters,
+Uses a torchaudio pipeline bundle named by `model` in `ai.yaml`: the multilingual
+`MMS_FA` aligner or an English ASR bundle such as `WAV2VEC2_ASR_BASE_960H` (spike #19,
+ADR 0033), with `forced_align` over the words' letters. With the `window_seconds` option
+the model runs over the audio in windows rather than in one pass, and `int8: true`
+quantises its linear layers. Units are characters,
 so results say `unit_kind: character`. torch and torchaudio are imported only when the
 model loads, once per process, in the media worker (install the CPU wheels there).
 
@@ -12,7 +15,6 @@ to the port's schema, so contract tests replay recordings without the model.
 
 import asyncio
 import re
-import subprocess
 import threading
 import unicodedata
 from collections.abc import Callable
@@ -25,6 +27,7 @@ from pydantic import BaseModel
 
 from listenup.ai.config import ProviderEntry
 from listenup.ai.ports import AlignedUnit, AlignedWord, Alignment, Provenance
+from listenup.ai.providers.audio import decode_pcm
 
 PROVIDER = "wav2vec2-ctc"
 
@@ -70,32 +73,88 @@ def alignable_words(text: str) -> list[AlignableWord]:
     return found
 
 
-def decode_pcm(audio: Path, sample_rate: int) -> bytes:
-    """Mono 32-bit float PCM at the model's rate, through ffmpeg (as in worker-media)."""
-    result = subprocess.run(
-        [
-            "ffmpeg",
-            "-nostdin",
-            "-v",
-            "error",
-            "-i",
-            str(audio),
-            "-f",
-            "f32le",
-            "-ac",
-            "1",
-            "-ar",
-            str(sample_rate),
-            "-",
-        ],
-        capture_output=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise ValueError(
-            f"cannot decode {audio.name}: {result.stderr.decode(errors='replace')[:200]}"
+FRAME_SAMPLES = 320  # wav2vec2: one emission frame per 20 ms at 16 kHz
+WINDOW_CONTEXT_SAMPLES = 16000  # 1 s of audio each side of a window, then dropped
+
+
+@dataclass(frozen=True)
+class Window:
+    start: int  # samples whose frames are kept
+    end: int
+    input_start: int  # samples the model sees
+    input_end: int
+
+    @property
+    def first_frame(self) -> int:
+        """Index, in the model's output for this window, of the first kept frame."""
+        return (self.start - self.input_start) // FRAME_SAMPLES
+
+    @property
+    def frame_count(self) -> int:
+        return (self.end - self.start) // FRAME_SAMPLES
+
+
+def emission_windows(num_samples: int, window_seconds: float, sample_rate: int) -> list[Window]:
+    """Windows for running the model in pieces (`window_seconds` > 0).
+
+    Self-attention over a whole passage grows with its length squared, so a 3-minute
+    passage in one pass is slow and memory-hungry (spike #19). Each window is a whole
+    number of frames; the model also sees up to 1 s on each side, and only the window's
+    own frames are kept, so every kept frame was computed with context around it."""
+    if window_seconds <= 0:
+        return [Window(0, num_samples, 0, num_samples)]
+    step = round(window_seconds * sample_rate) // FRAME_SAMPLES * FRAME_SAMPLES
+    windows = []
+    for start in range(0, num_samples, step):
+        end = min(start + step, num_samples)
+        windows.append(
+            Window(
+                start,
+                end,
+                max(0, start - WINDOW_CONTEXT_SAMPLES),
+                min(num_samples, end + WINDOW_CONTEXT_SAMPLES),
+            )
         )
-    return result.stdout
+    return windows
+
+
+@dataclass(frozen=True)
+class Vocabulary:
+    """A bundle's labels: MMS_FA uses lower-case letters and no word separator; the
+    English ASR bundles (WAV2VEC2_ASR_*) use upper-case letters and `|` between words."""
+
+    labels: tuple[str, ...]
+    upper_case: bool
+    separator: str | None
+    blank: int = 0  # "-" in every torchaudio wav2vec2 bundle
+
+    def targets(self, words: list[str]) -> list[int]:
+        """Label ids of the words' letters, with the separator between words if any."""
+        index = {label: i for i, label in enumerate(self.labels)}
+        ids: list[int] = []
+        for i, word in enumerate(words):
+            if i and self.separator is not None:
+                ids.append(index[self.separator])
+            ids.extend(index[c] for c in (word.upper() if self.upper_case else word))
+        return ids
+
+
+def spans_per_word(
+    spans: list[RawSpan], tokens: list[int], words: list[str], vocabulary: Vocabulary
+) -> list[list[RawSpan]]:
+    """Split the merged token spans (one per target id, in order) into one list per
+    word, dropping the separators' spans."""
+    if len(spans) != len(tokens):
+        raise ValueError(f"aligner returned {len(spans)} spans for {len(tokens)} tokens")
+    separator = (
+        vocabulary.labels.index(vocabulary.separator) if vocabulary.separator is not None else None
+    )
+    letters = [span for span, token in zip(spans, tokens, strict=True) if token != separator]
+    out, cursor = [], 0
+    for word in words:
+        out.append(letters[cursor : cursor + len(word)])
+        cursor += len(word)
+    return out
 
 
 class TorchaudioCtcEngine:
@@ -105,11 +164,23 @@ class TorchaudioCtcEngine:
 
         torch.set_num_threads(int(entry.options.get("threads", 2)))
         bundle = getattr(torchaudio.pipelines, entry.model)
+        if isinstance(bundle, torchaudio.pipelines.Wav2Vec2FABundle):  # MMS_FA
+            self._model = bundle.get_model(with_star=False)
+            labels = bundle.get_labels(star=None)
+            self._vocabulary = Vocabulary(tuple(labels), upper_case=False, separator=None)
+        else:  # an ASR bundle such as WAV2VEC2_ASR_BASE_960H
+            self._model = bundle.get_model()
+            labels = bundle.get_labels()
+            self._vocabulary = Vocabulary(tuple(labels), upper_case=True, separator="|")
+        if entry.options.get("int8", False):
+            # Dynamic int8 linear layers: 23% less CPU, same boundaries (spike #19).
+            self._model = torch.ao.quantization.quantize_dynamic(
+                self._model, {torch.nn.Linear}, dtype=torch.qint8
+            )
         self._torch = torch
-        self._model = bundle.get_model(with_star=False)
-        self._tokenizer = bundle.get_tokenizer()
-        self._aligner = bundle.get_aligner()
+        self._functional = torchaudio.functional
         self._sample_rate = int(bundle.sample_rate)
+        self._window_seconds = float(entry.options.get("window_seconds", 0))
 
     @property
     def version(self) -> str:
@@ -119,17 +190,30 @@ class TorchaudioCtcEngine:
         torch = self._torch
         pcm = decode_pcm(audio, self._sample_rate)
         waveform = torch.frombuffer(bytearray(pcm), dtype=torch.float32).unsqueeze(0)
+        num_samples = int(waveform.size(1))
         with torch.inference_mode():
-            emission, _ = self._model(waveform)
-        spans = self._aligner(emission[0], self._tokenizer(words))
+            parts = []
+            for w in emission_windows(num_samples, self._window_seconds, self._sample_rate):
+                emission, _ = self._model(waveform[:, w.input_start : w.input_end])
+                if self._window_seconds > 0:
+                    emission = emission[:, w.first_frame : w.first_frame + w.frame_count]
+                parts.append(emission[0])
+            log_probs = torch.log_softmax(torch.cat(parts), dim=-1)
+            tokens = self._vocabulary.targets(words)
+            labels, scores = self._functional.forced_align(
+                log_probs.unsqueeze(0),
+                torch.tensor([tokens], dtype=torch.int32),
+                blank=self._vocabulary.blank,
+            )
+            merged = self._functional.merge_tokens(
+                labels[0], scores[0].exp(), blank=self._vocabulary.blank
+            )
+        spans = [RawSpan(start=int(s.start), end=int(s.end), score=float(s.score)) for s in merged]
         return RawAlignment(
             sample_rate=self._sample_rate,
-            num_samples=int(waveform.size(1)),
-            num_frames=int(emission.size(1)),
-            spans=[
-                [RawSpan(start=int(s.start), end=int(s.end), score=float(s.score)) for s in word]
-                for word in spans
-            ],
+            num_samples=num_samples,
+            num_frames=int(log_probs.size(0)),
+            spans=spans_per_word(spans, tokens, words, self._vocabulary),
         )
 
 

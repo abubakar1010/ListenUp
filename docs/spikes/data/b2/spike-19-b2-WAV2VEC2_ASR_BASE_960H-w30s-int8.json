@@ -1,0 +1,224 @@
+{
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "cores": 4,
+    "memory_gb": 15.7,
+    "machine": "x86_64",
+    "python": "3.12.3",
+    "omp_num_threads": "2",
+    "date": "2026-10-05"
+  },
+  "summary": {
+    "model": "WAV2VEC2_ASR_BASE_960H",
+    "emission": "30 s windows, int8",
+    "threads": 2,
+    "model load_s": 2.2,
+    "peak_rss_mb": 1474,
+    "passages aligned": 20,
+    "mean core-s/audio-s": 0.177,
+    "max core-s/audio-s": 0.182,
+    "meets 0.2 target": true
+  },
+  "rows": [
+    {
+      "passage": "ls-clean-121-127105",
+      "set": "test-clean",
+      "audio_s": 190.6,
+      "wall_s": 17.88,
+      "core_s_per_audio_s": 0.179,
+      "rtf": 0.094,
+      "words": 559,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-clean-1221-135767",
+      "set": "test-clean",
+      "audio_s": 180.6,
+      "wall_s": 17.5,
+      "core_s_per_audio_s": 0.182,
+      "rtf": 0.097,
+      "words": 486,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-clean-1284-1180",
+      "set": "test-clean",
+      "audio_s": 181.6,
+      "wall_s": 16.45,
+      "core_s_per_audio_s": 0.174,
+      "rtf": 0.091,
+      "words": 597,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-clean-237-134500",
+      "set": "test-clean",
+      "audio_s": 181.9,
+      "wall_s": 16.78,
+      "core_s_per_audio_s": 0.176,
+      "rtf": 0.092,
+      "words": 558,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-clean-260-123288",
+      "set": "test-clean",
+      "audio_s": 187.0,
+      "wall_s": 16.75,
+      "core_s_per_audio_s": 0.171,
+      "rtf": 0.09,
+      "words": 496,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-clean-61-70968",
+      "set": "test-clean",
+      "audio_s": 185.3,
+      "wall_s": 17.3,
+      "core_s_per_audio_s": 0.177,
+      "rtf": 0.093,
+      "words": 553,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-clean-672-122797",
+      "set": "test-clean",
+      "audio_s": 180.4,
+      "wall_s": 16.57,
+      "core_s_per_audio_s": 0.175,
+      "rtf": 0.092,
+      "words": 406,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-clean-908-157963",
+      "set": "test-clean",
+      "audio_s": 180.4,
+      "wall_s": 16.63,
+      "core_s_per_audio_s": 0.175,
+      "rtf": 0.092,
+      "words": 417,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-other-1688-142285",
+      "set": "test-other",
+      "audio_s": 185.7,
+      "wall_s": 17.37,
+      "core_s_per_audio_s": 0.178,
+      "rtf": 0.094,
+      "words": 467,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-other-1998-15444",
+      "set": "test-other",
+      "audio_s": 182.8,
+      "wall_s": 16.95,
+      "core_s_per_audio_s": 0.176,
+      "rtf": 0.093,
+      "words": 462,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-other-2033-164914",
+      "set": "test-other",
+      "audio_s": 180.3,
+      "wall_s": 17.16,
+      "core_s_per_audio_s": 0.181,
+      "rtf": 0.095,
+      "words": 416,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-other-2414-159411",
+      "set": "test-other",
+      "audio_s": 181.0,
+      "wall_s": 17.24,
+      "core_s_per_audio_s": 0.18,
+      "rtf": 0.095,
+      "words": 425,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-other-3080-5032",
+      "set": "test-other",
+      "audio_s": 197.5,
+      "wall_s": 18.91,
+      "core_s_per_audio_s": 0.18,
+      "rtf": 0.096,
+      "words": 521,
+      "unaligned": 0
+    },
+    {
+      "passage": "ls-other-367-130732",
+      "set": "test-other",
+      "audio_s": 182.9,
+      "wall_s": 16.91,
+      "core_s_per_audio_s": 0.177,
+      "rtf": 0.092,
+      "words": 580,
+      "unaligned": 0
+    },
+    {
+      "passage": "vp-accented-20090218-0900-plenary-13-en",
+      "set": "vp-accented",
+      "audio_s": 188.2,
+      "wall_s": 17.48,
+      "core_s_per_audio_s": 0.176,
+      "rtf": 0.093,
+      "words": 445,
+      "unaligned": 6
+    },
+    {
+      "passage": "vp-accented-20090309-0900-plenary-13-en",
+      "set": "vp-accented",
+      "audio_s": 181.2,
+      "wall_s": 16.8,
+      "core_s_per_audio_s": 0.176,
+      "rtf": 0.093,
+      "words": 446,
+      "unaligned": 3
+    },
+    {
+      "passage": "vp-accented-20090311-0900-plenary-16-en",
+      "set": "vp-accented",
+      "audio_s": 181.7,
+      "wall_s": 16.8,
+      "core_s_per_audio_s": 0.177,
+      "rtf": 0.092,
+      "words": 322,
+      "unaligned": 2
+    },
+    {
+      "passage": "vp-en-20131022-0900-plenary-19-en",
+      "set": "vp-en",
+      "audio_s": 186.2,
+      "wall_s": 17.03,
+      "core_s_per_audio_s": 0.175,
+      "rtf": 0.091,
+      "words": 507,
+      "unaligned": 0
+    },
+    {
+      "passage": "vp-en-20131023-0900-plenary-11-en",
+      "set": "vp-en",
+      "audio_s": 190.5,
+      "wall_s": 17.2,
+      "core_s_per_audio_s": 0.173,
+      "rtf": 0.09,
+      "words": 356,
+      "unaligned": 1
+    },
+    {
+      "passage": "vp-en-20180911-0900-plenary-en",
+      "set": "vp-en",
+      "audio_s": 183.7,
+      "wall_s": 16.55,
+      "core_s_per_audio_s": 0.173,
+      "rtf": 0.09,
+      "words": 453,
+      "unaligned": 0
+    }
+  ]
+}

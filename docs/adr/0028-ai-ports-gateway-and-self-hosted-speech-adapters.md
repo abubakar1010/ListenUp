@@ -1,6 +1,6 @@
 # ADR 0028: AI ports, a minimal gateway and the self-hosted speech adapters
 
-- Status: Accepted
+- Status: Accepted; model choices, audio decoding and the contract recordings amended by ADR 0033
 - Date: 2026-10-04
 - Implements: ADR 0009 (first part); issue #43; NFR-AI-1, NFR-AI-2, NFR-AI-3, NFR-AI-5, NFR-MNT-1
 - Sources: [Software Architecture 7.1, 7.2, 7.5](https://claude.ai/code/artifact/6a30920f-b6a0-4131-a486-f2044c71bb13), [System Design 5.2](https://claude.ai/code/artifact/98274889-96ba-4424-afad-c2cd056206e2)
