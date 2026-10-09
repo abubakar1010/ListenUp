@@ -43,7 +43,7 @@ The stack is Python on the server, TypeScript in the browser, and only open stan
 | Client data and routing | TanStack Query, React Router | Caching, retries and background refresh of server state | Redux: more code for the same result |
 | Styling | Tailwind CSS with design tokens as theme variables and a small component library | Fast, consistent, no runtime cost | CSS modules |
 | Media playback | Native HTML audio and video elements with our own controls | Only our own controls can enforce Blind (no pause, no seek) | YouTube embedded player: cannot be locked reliably |
-| Waveform and segment picking | wavesurfer.js | Passage and Shadow segment selection on a waveform | Custom canvas drawing |
+| Waveform and segment picking | SVG server peaks with accessible slider handles for the passage picker; wavesurfer.js for later playing waveforms in Transcript and Shadow | The passage picker does not decode audio and supports keyboard and typed-time alternatives ([ADR 0026](../adr/0026-passage-picker-drawn-from-server-peaks.md)) | wavesurfer.js regions for the picker: pointer-only handles require our own accessible controls anyway |
 | Recording | Browser MediaRecorder API (Opus in WebM or MP4) | Built in, no plugin | Recorder libraries add little |
 | API | Python 3.12, FastAPI, Pydantic v2 | Typed, fast, generates OpenAPI; same language as speech tooling | Node.js (NestJS): would need a second backend language for workers |
 | Database access | SQLAlchemy 2 and Alembic migrations written as SQL, with models mirrored for alembic check | Mature, typed, portable across PostgreSQL hosts | Raw SQL |
@@ -141,9 +141,11 @@ Four flows carry most of the product's risk; each is designed so the server deci
 
 **File upload**
 
-1. The client asks the API for a signed upload URL and uploads straight to object storage, so large files never pass through the API. The API refuses files over 500 MB and uploads that would take the account over 2 GB of stored uploads.
-2. The client confirms the upload. A worker checks the real file type, streams and duration with ffprobe (the file name and browser-reported type are not trusted).
-3. The upload becomes its own media object, fingerprinted per learner (upload:\<user id>:\<sha256>) and never shared with other learners. Steps 4, 5, 6 and 7 above follow, without the caption import.
+1. The client asks the API for a signed upload URL and uploads straight to object storage, so large files never pass through the API. The API refuses files over 500 MiB and uploads that would take the account over 2 GiB of stored uploads (binary units, [ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md)).
+2. The client confirms the `content.uploads` row. The signed PUT is bound to the exact type and size; confirmation checks the stored object with HEAD ([ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md)). A worker checks the real file type, streams and duration with ffprobe (the file name and browser-reported type are not trusted), computes the learner-scoped SHA-256, removes a duplicate in favour of the older clip, and deletes the original after conversion ([ADR 0022](../adr/0022-upload-conversion-dedup-and-media-delivery.md)).
+3. The upload becomes its own media object, fingerprinted per learner (upload:\<user id>:\<sha256>) and never shared with other learners. Its playback and peaks live under `users/<user id>/media/<media id>/`; optional video is inside `playback.mp4`, not a separate `video_key` file ([ADR 0022](../adr/0022-upload-conversion-dedup-and-media-delivery.md)). Steps 4, 5, 6 and 7 above follow, without the caption import. The storage cap counts playback bytes for playable clips, originals while preparation or confirmation is pending, and nothing for failed clips ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)).
+
+The passage picker uses the whole clip by default when it is 30 s to 15 min; a suggested part starts with 2:30 from the first speech. First speech comes from peaks at or above 10% for half a second, with a half-second lead-in. SVG slider handles support arrows (1 s), Shift+arrows/Page Up/Page Down (5 s), Home/End and typed times; dragging snaps to the smallest 1/5/10/15/30/60 s step at least one pixel wide. Typed bounds clamp with an explanation and block submission until the learner sees the adjustment. “Hear start/end” plays only 1.5 s either side of the cut ([ADR 0026](../adr/0026-passage-picker-drawn-from-server-peaks.md)).
 
 ### 5.2 Practice session and Blind integrity
 
@@ -151,11 +153,11 @@ The session state machine in `practice/domain` decides which step is open. A cli
 
 Blind is enforced on the server, not only by hiding buttons:
 
-1. Starting Blind creates an attempt with a server start time and returns a **media URL valid only for that attempt** and only for slightly longer than the passage.
+1. Starting Blind creates an attempt and returns `/api/v1/blind/attempts/{id}/media/{token}`, a **media URL valid only for that attempt**. Only the token's SHA-256 is stored. The active-attempt window is the remaining passage plus unused buffering plus 60 s; the route redirects to a storage URL signed afresh for the remaining window ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)).
 2. The player has no pause, seek or speed controls. Every 5 seconds it sends a heartbeat: playback position, playing state and page visibility.
-3. The server checks that position moves forward in step with server time (within a tolerance), that heartbeats keep arriving, and that the page stays visible.
+3. The service locks the attempt row and applies the pure `judge(listen, beat, now)` function in one transaction. Position is checked cumulatively against `anchor_position_ms` and `anchor_at`: at most 1.5 s ahead or 6 s behind. Hidden pages, seeks and more than 15 s without a beat void the attempt. Reported buffering moves the anchor clock later, up to 20 s per listen; the one resume resets that allowance ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)).
 4. Leaving the page (`visibilitychange`, `pagehide`), a reload or a backward jump voids the attempt. Missing heartbeats from an interruption the learner did not cause (a network stall, or a device or OS pause under 5 seconds) allow one resume per attempt, started automatically 3 seconds after the audio is ready, from 3 seconds before the last recorded position, with no option to stay paused; a second interruption voids the attempt.
-5. The gist is accepted only if enough server time has passed to hear the whole passage and the last position is near the end.
+5. The gist is accepted only if the anchor clock has reached the passage end and the last accepted position is within 1 s of it; it must contain at least three sentences of at least three words each and at most 2000 characters. Submission finishes the attempt and completes the Blind step ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)).
 
 This stops honest learners from slipping and makes cheating visible. It cannot stop someone recording the audio with another device, and it does not try to.
 
@@ -165,8 +167,10 @@ Scoring is a pure, deterministic function in `dictation/domain`, with no AI:
 
 1. **Normalize** both texts: lower case, strip punctuation, unify apostrophes, expand contractions ("could've" and "could have"; "'d" and "'s" after a pronoun match either full form), reduce numbers in digits or words to one key ("15" and "fifteen", "21st" and "twenty-first"), and map British spellings to American ones from a curated table. Punctuation never changes a score.
 2. **Align** words with a weighted edit-distance alignment (insert, delete, substitute). A substitution is a spelling slip within a limit that scales with word length (three letters or fewer: a swapped or doubled letter only; four letters: one edit; five or more: two edits), and so is a word typed joined or split ("alot", "every one"); otherwise it is a wrong word. Long passages are first anchored on common start and end and on tokens unique to both texts (patience diff).
-3. **Classify** each reference word as correct, spelling slip, wrong or missing, plus extra words. Accuracy = correct words / reference words, with spelling slips counted as correct (one constant, SPELLING\_SLIPS\_COUNT\_AS\_CORRECT; the stored diff records which rule applied). Slips are still reported separately and are not mark candidates.
+3. **Classify** each reference word as correct, spelling slip, wrong or missing, plus extra words. Accuracy = correct words / reference words, with spelling slips counted as correct (one constant, SPELLING\_SLIPS\_COUNT\_AS\_CORRECT; the stored diff records which rule applied; [ADR 0019](../adr/0019-dictation-scoring-rules.md)). Slips are still reported separately and are not mark candidates.
 4. Every wrong or missing word becomes a **mark candidate** carrying its audio time from the word timestamps.
+
+The Dictation player permits unlimited replays of the passage with speeds 1x, 0.9x and 0.75x. Before a transcript exists, “replay segment” uses an 8-second chunk (the previous chunk within 1 s of a boundary), later replaced by sentence boundaries. Leaving/reloading preserves the active draft. Its control policy lives in `features/dictation/policy.ts`, alongside Blind's policy in its own feature, until they can move to the shared media folder together ([ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)).
 
 If the learner believes the reference transcript is wrong at some word, they can dispute that word from the diff. The corrected reference is saved (FR-TX-4) and the attempt is re-scored. This resolves the conflict between hiding the transcript and letting learners fix it.
 
@@ -213,7 +217,7 @@ All AI goes through four typed interfaces ("ports") and one gateway that adds qu
 | `SpeechAssessmentPort` | `assess(recording, reference_text, reference_audio)` | Per-word and per-sound scores, timing, pauses, fillers, pitch contour |
 | `TextAIPort` | `generate(task, input, output_schema)` | A validated Pydantic object of the requested schema |
 
-The ports are Python Protocols in `ai/ports.py` with vendor-neutral input and output types. Providers implement them in `ai/providers/`.
+The ports are async Python Protocols in `ai/ports.py` with vendor-neutral input and output types. Providers implement them in `ai/providers/`. Audio inputs are local file paths and times are seconds. Frozen Pydantic results reject unknown fields and invalid ranges and carry provider/model/version provenance; alignment words carry their reference index, unalignable words are omitted, and `unit_kind` distinguishes phones from characters ([ADR 0028](../adr/0028-ai-ports-gateway-and-self-hosted-speech-adapters.md)).
 
 ### 7.2 The gateway
 
@@ -226,6 +230,12 @@ Modules never call a provider directly; they call `ai.gateway`, which for every 
 5. **Validates** the result against the output schema and value ranges.
 6. On failure, quota exhaustion or invalid output, moves to the next provider. If none is left, it raises `AIUnavailable`, which callers turn into "feedback delayed" or "unavailable".
 7. **Logs** provider, model, version, prompt version, latency, units used and outcome to `ai.calls`, without the learner's identity.
+
+Configuration is versioned at `listenup/ai/ai.yaml`, with an ordered provider list per role and `provider`, `model`, `timeout_seconds`, `retries`, `retry_backoff_seconds`, `preload` and adapter options; `LISTENUP_AI_CONFIG` overrides the path. The registry validates adapters by role, and fake providers are refused in production. Only `grading` and `transcript` modules import the AI layer; the worker entry point also imports it as a composition root to preload models. Vendor libraries stay inside `ai/providers/` ([ADR 0028](../adr/0028-ai-ports-gateway-and-self-hosted-speech-adapters.md)).
+
+The deterministic fakes are model-free and selectable by configuration. Adapter contract tests replay recorded engine outputs through the schema mapping; the initial recordings are synthetic, so they validate mapping rather than real speech-model accuracy and must be replaced after the model spikes ([ADR 0028](../adr/0028-ai-ports-gateway-and-self-hosted-speech-adapters.md)).
+
+ADR 0028 records the first implementation phase: `get_gateway()` builds adapters once per process, enforces timeouts and retries transient failures with doubling backoff, then raises `AIUnavailable`. Local CPU speech adapters have zero retries. Quotas, eligibility, provider fallback and the `ai.calls` log above remain the full gateway design, completed separately from that initial phase ([ADR 0028](../adr/0028-ai-ports-gateway-and-self-hosted-speech-adapters.md)).
 
 ### 7.3 Prompts and outputs
 
@@ -264,6 +274,8 @@ The table below is a summary of the main tables, named by schema; the [ListenUp 
 | `identity.oauth_accounts` | identity | provider, subject, user\_id |
 | `identity.consents` | identity | user\_id, kind (terms, privacy, voice\_recording), version, granted\_at, withdrawn\_at |
 | `content.media_objects` | content | id, fingerprint (unique: YouTube video id, or upload hash per learner), source (youtube, upload), uploaded\_by, duration\_ms, status, playback\_key, video\_key, peaks\_key, ref\_count, last\_used\_at |
+| `content.uploads` | content | id, user\_id, storage\_key, filename, content\_type, size\_bytes, content\_id, media\_object\_id, confirmed\_at, queued\_at ([ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md), [ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)) |
+| `content.duplicate_uploads` | content | removed content\_id, user\_id, existing\_content\_id ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)) |
 | `content.contents` | content | id, user\_id, media\_object\_id, title, keep\_video; the learner's reference to a media object, once per library |
 | `content.passage_transcripts` | transcript | id, media\_object\_id, span (ms range), origin (creator\_captions, generated), status, packed arrays words, start\_ms, end\_ms, confidence, sentence\_starts, provider\_info |
 | `content.reference_profiles` | transcript | passage\_transcript\_id, model\_version, phones, pitch\_cents, intensity\_db, stats; computed once per passage when it is transcribed, read by every Shadow round |
@@ -271,8 +283,8 @@ The table below is a summary of the main tables, named by schema; the [ListenUp 
 | `practice.sessions` | practice | id, user\_id, content\_id, passage (ms range), entry (blind, dictation, both), current\_step, entry\_locked\_at, status, version |
 | `practice.session_steps` | practice | session\_id, step, position, status (locked, open, done, skipped), completed\_at |
 | `practice.attempts` | practice | id, session\_id, mode (blind, dictation), status (active, submitted, voided), started\_at, finished\_at |
-| `practice.blind_attempts` | blind | attempt\_id, media\_token\_hash, last\_position\_ms, last\_heartbeat\_at, resume\_count (0 or 1), void\_reason, gist\_text |
-| `practice.dictation_attempts` | dictation | attempt\_id, draft\_text, submitted\_text, scoring\_status, diff (JSONB), accuracy |
+| `practice.blind_attempts` | blind | attempt\_id, user\_id, media\_token\_hash, media\_expires\_at, passage\_start\_ms, passage\_end\_ms, last\_position\_ms, last\_heartbeat\_at, anchor\_position\_ms, anchor\_at, buffering\_ms, resume\_count (0 or 1), resume\_stop\_ms, void\_reason (including interrupted), gist\_text ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)) |
+| `practice.dictation_attempts` | dictation | attempt\_id, user\_id, draft\_text, draft\_version, submitted\_text, scoring\_status, diff (JSONB), accuracy, updated\_at ([ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)) |
 | `practice.marks` | review | id, session\_id, word\_from, word\_to, at\_ms, tag, note, source (dictation, manual), status |
 | `practice.cards` | cards | id, user\_id, session\_id, slot (1, 2), mark\_id, media\_object\_id, written\_form, heard\_form, snippet\_key |
 | `practice.shadow_segments` | shadow | session\_id, span (60 to 90 s, or the whole 30 to 60 s passage), chosen\_by, locked\_at |
@@ -283,6 +295,7 @@ The table below is a summary of the main tables, named by schema; the [ListenUp 
 | `grading.shadow_comparisons` | grading | session\_id, status, deltas, repeated\_mistakes, patterns, suggestions (JSONB) |
 | `ai.calls` | ai | id, role, task, provider, model, prompt\_version, latency\_ms, input\_units, output\_units, outcome, created\_at (partitioned by month) |
 | `ai.quota_usage` | ai | provider, period (day, month), period\_start, calls, units |
+| `ops.data_exports` | export | id, user\_id, status (pending/building/ready/failed/expired), archive\_key, archive\_bytes, file\_count, error\_code, requested\_at, ready\_at, expires\_at ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)) |
 
 Job tables come from the queue library's own SQL (Procrastinate, vendored and applied by migration 0003) in the same database, in their own procrastinate schema, which the database's search path includes.
 
@@ -293,15 +306,19 @@ Job tables come from the queue library's own SQL (Procrastinate, vendored and ap
 One private bucket. Media files are keyed by media object, because one YouTube video serves every learner who adds it; a learner's own files are grouped by user, so deleting an account removes that prefix plus the learner's upload media objects:
 
 ```
-media/{media_object_id}/source.{ext}      deleted after conversion
+media/{media_object_id}/source.{ext}      shared YouTube media; deleted after conversion
 media/{media_object_id}/playback.mp4
 media/{media_object_id}/video.mp4         only when video is kept
 media/{media_object_id}/peaks.json
+users/{user_id}/uploads/{upload_id}.{ext} original upload; deleted after conversion
+users/{user_id}/media/{media_object_id}/playback.mp4
+users/{user_id}/media/{media_object_id}/peaks.json
+users/{user_id}/exports/{export_id}.zip   retained 7 days after ready
 users/{user_id}/sessions/{session_id}/shadow/round-{n}.webm
 users/{user_id}/cards/{card_id}.m4a
 ```
 
-The bucket is never public. The browser only ever receives short-lived signed URLs issued after an ownership check.
+The bucket is never public. The browser only ever receives short-lived signed URLs issued after an ownership check. Production CORS allows `PUT` from the web origin with `Content-Type` for uploads ([ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md)) and `GET` for redirected peaks requests ([ADR 0026](../adr/0026-passage-picker-drawn-from-server-peaks.md)). Uploads use `users/{user_id}/uploads/{upload_id}.<ext>`, playback and peaks use `users/{user_id}/media/{media_object_id}/`, and exports use `users/{user_id}/exports/{export_id}.zip` ([ADR 0022](../adr/0022-upload-conversion-dedup-and-media-delivery.md), [ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)).
 
 ## 9. API design
 
@@ -314,19 +331,19 @@ The API is JSON over HTTPS under `/api/v1`, described by the OpenAPI schema Fast
 - **Idempotency:** submissions (gist, dictation, round complete) accept an `Idempotency-Key` header, so a retried request never creates a second attempt.
 - **Pagination:** cursor based (`?cursor=…&limit=…`).
 - **Rate limits:** per user and per IP on login, intake and grading endpoints.
-- **Live updates:** `GET /api/v1/events` is a Server-Sent Events stream per user with `job.progress`, `content.ready`, `grade.ready` and `attempt.voided` events. Event ids are \<process id>-\<sequence>; a reconnect with Last-Event-ID gets missed events replayed from a short per-user buffer, or one resync event when they cannot be replayed, and the client then refetches every resource it still shows as pending. While the stream is down, the client polls pending resources.
+- **Live updates:** `GET /api/v1/events` is a Server-Sent Events stream per user with `job.progress`, `content.ready`, `grade.ready`, `attempt.voided` and `export.ready` events ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)). Event ids are \<process id>-\<sequence>; a reconnect with Last-Event-ID gets missed events replayed from a short per-user buffer, or one resync event when they cannot be replayed, and the client then refetches every resource it still shows as pending. While the stream is down, the client polls pending resources.
 
 ### 9.2 Resources
 
 | Area | Endpoints |
 | --- | --- |
-| Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `POST /auth/password-reset`, `POST /auth/password-reset/confirm`, `GET /auth/oidc/google/start`, `GET /auth/oidc/google/callback` |
-| Account | `GET /me`, `DELETE /me` (deletes everything), `GET /me/export` |
-| Intake | `POST /uploads` (returns a signed upload URL), `POST /contents` (YouTube URL or upload id), `GET /contents`, `GET /contents/{id}`, `DELETE /contents/{id}` |
+| Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `POST /auth/password-reset`, `POST /auth/password-reset/confirm` ([ADR 0017](../adr/0017-password-reset-tokens-minted-by-the-email-job.md)), `GET /auth/oidc/google/start`, `GET /auth/oidc/google/callback` |
+| Account | `GET /me`, `DELETE /me` (deletes everything); `POST /me/exports` (202, idempotent), `GET /me/exports/latest`, `GET /me/exports/{id}/download` (owner-only 307 to a signed storage URL; [ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)) |
+| Intake | `POST /uploads` (signed upload URL), `DELETE /uploads/{id}` (cancel; [ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md)), `GET /uploads/usage` (storage and daily allowance; [ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)), `POST /contents` (YouTube URL or upload id), `GET /contents`, `GET /contents/{id}`, `DELETE /contents/{id}` |
 | Media | `GET /media/{media_object_id}` for playback, GET /cards/{id}/audio for a card snippet, GET /shadow/rounds/{id}/recording for the learner's own recording. Each checks ownership, then redirects to a short-lived signed URL |
-| Sessions | `POST /sessions` (content, passage, entry), `GET /sessions/{id}`, `PATCH /sessions/{id}/entry` (refused once Transcript starts), `POST /sessions/{id}/steps/{step}/skip` |
-| Blind | `POST /sessions/{id}/blind/attempts`, `POST /blind/attempts/{id}/heartbeat`, `POST /blind/attempts/{id}/gist` |
-| Dictation | `POST /sessions/{id}/dictation/attempts`, `PUT /dictation/attempts/{id}/draft`, `POST /dictation/attempts/{id}/submit`, `POST /dictation/attempts/{id}/disputes` |
+| Sessions | `POST /sessions` (content, passage, entry; playable clips only), `GET /sessions/{id}`, `PATCH /sessions/{id}/entry` (refused once Transcript starts), `POST /sessions/{id}/steps/{step}/skip`; entry and skip writes carry `version` in the body and stale writes return 409 `session_changed` ([ADR 0023](../adr/0023-session-endpoints-readiness-and-versions.md)) |
+| Blind | `POST /sessions/{id}/blind/attempts`, `GET /blind/attempts/{id}/media/{token}`, `POST /blind/attempts/{id}/heartbeat`, `POST /blind/attempts/{id}/void` (leave with `fetch(..., {keepalive: true})` and CSRF header), `POST /blind/attempts/{id}/gist` ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)) |
+| Dictation | `POST /sessions/{id}/dictation/attempts` (201 new or 200 with `resumed: true` for the live draft), `PUT /dictation/attempts/{id}/draft` (`draft_version`; stale differing text gets 409 `draft_conflict`, identical resend succeeds; [ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)), `POST /dictation/attempts/{id}/submit`, `POST /dictation/attempts/{id}/disputes` |
 | Transcript step | `GET /sessions/{id}/transcript` (only from the Transcript step on), `GET`, `POST`, `PATCH`, `DELETE /sessions/{id}/marks` |
 | Cards | `POST /sessions/{id}/cards`, `GET /cards`, `DELETE /cards/{id}` |
 | Shadow | `PUT /sessions/{id}/shadow/segment`, `POST /sessions/{id}/shadow/rounds` (returns a signed upload URL), `POST /shadow/rounds/{id}/complete`, `GET /sessions/{id}/shadow/comparison` |
@@ -381,9 +398,9 @@ listenup/
 └── CLAUDE.md
 ```
 
-- The web client's mode rules (which controls exist in Blind, Dictation, Shadow) live in one place, `media/`, as **control policies** per mode, mirroring the server rules.
+- The web client's mode rules (which controls exist in Blind, Dictation, Shadow) are **control policies** per mode, mirroring the server rules. Blind and Dictation currently keep them inside their respective feature folders; the shared `media/` folder is the intended consolidation once both move together ([ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)).
 - The web shell (ADR 0018) keeps every route in one table in `src/App.tsx`: `/sign-in`, `/register`, `/forgot-password`, `/reset-password`, `/library` and `/sessions/:sessionId`. Pathless guard routes, `RequireAuth` and `RedirectIfSignedIn`, handle sign-in, and a same-site `next` parameter returns the learner after it. Every page except sign-in and register is a lazy chunk, and `pnpm size` fails CI when the initial JavaScript is over 200 KB gzip. Design tokens are Tailwind theme variables in `src/index.css`, named after the design system's tokens and redefined for the dark theme.
-- The `media` worker image, which serves the `speech-interactive` and `intake` lanes, carries ffmpeg, yt-dlp and the speech models; the `default` worker (`ai` and `background` lanes) and the API image stay small.
+- The `media` worker image, which serves the `speech-interactive` and `intake` lanes, carries ffmpeg, yt-dlp and the optional `speech` extra (`faster-whisper`); it installs torch and torchaudio from the PyTorch CPU index. Those libraries are absent from the API, default worker and base `uv sync`. The media worker downloads `base.en` (about 150 MB) and `MMS_FA` (about 1.2 GB) on first start, including local Compose, into the retained `/models` volume; sizes remain provisional until the spikes select models. It preloads configured providers before readiness, and missing libraries fail startup ([ADR 0028](../adr/0028-ai-ports-gateway-and-self-hosted-speech-adapters.md)).
 - Local development runs `docker compose up` for PostgreSQL, SeaweedFS (S3 gateway on port 9000, with a one-off service that creates the listenup bucket), Mailpit (email catcher), the API and both workers, plus the Vite dev server.
 
 ## 11. Deployment
@@ -429,7 +446,7 @@ The largest risks are learner voice data, untrusted uploads and untrusted text s
 - **Minimum data to AI:** providers receive audio or text only, never email or user ids; ineligible providers are skipped by the gateway.
 - **Deletion:** deleting content, a session or the account removes database rows (cascade) and storage objects (by prefix) in one job, with a report of what was removed. An account is first disabled for a 7-day grace period in which signing in restores it; the deletion job runs when the period ends.
 - **Retention:** recordings kept for 90 days, then deleted by a scheduled job; grades and word labels stay.
-- **Export:** a learner can download their data as JSON plus their media files; YouTube media is excluded.
+- **Export:** a background-built ZIP with `data.json` and the learner's uploaded media files (not YouTube media). Each owning module contributes through `export_data(session, learner)` in its service; secrets, shared internal details, job queues and rate counters are omitted. One export per learner may be pending/building, at most three requests per UTC day; archives expire after seven days, and owner-only download redirects use 120 s signed URLs. The build reads data in one repeatable-read, read-only transaction and emits `export.ready` on success or final failure ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)).
 
 ### 12.3 Observability
 

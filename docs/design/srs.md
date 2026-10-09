@@ -99,9 +99,9 @@ These requirements cover everything around the practice modes: accounts, content
 | --- | --- | --- |
 | FR-CI-1 | Accept audio and video uploads (MP3, M4A, WAV, MP4, MOV, WEBM), show progress and allow cancel. | M |
 | FR-CI-2 | Accept a YouTube URL, validate it, show title and duration, and download the media to server storage. Until the legal review clears it (OQ-6), this stays behind a feature flag. | M |
-| FR-CI-3 | Reject unsupported formats, private or age-restricted videos, files over 500 MB, and uploads that would take the account over 2 GB of stored uploads, and intake beyond 120 minutes of new audio per learner per day (configurable), with a clear message. | M |
+| FR-CI-3 | Reject unsupported formats, private or age-restricted videos, files over 500 MiB (500 × 1024² bytes), and uploads that would take the account over 2 GiB (2 × 1024³ bytes) of stored uploads ([ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md)), and intake beyond 120 minutes of new audio per learner per UTC day (configurable), with a clear message and reset time. Check the daily cap before upload and again on confirmation; playable clips count at most 15 minutes each, clips still being prepared reserve 15 minutes each, and the clip that crosses the cap is admitted whole. The separate two-intake shared-lane limit queues further clips in the learner's own queue ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)). | M |
 | FR-CI-4 | Let the learner choose the passage: the whole clip, or a start and end time, from 30 seconds to 15 minutes long (C2). | M |
-| FR-CI-5 | Show processing status (downloading, transcribing, ready) and notify the learner when ready. | M |
+| FR-CI-5 | Show processing status (downloading, transcribing, ready) and notify the learner when ready. Upload preparation also reports queued, waiting, checking, converting and saving; notices never take focus and wait while a practice session is open ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)). | M |
 | FR-CI-6 | Store content privately per learner, never shared with other users. | M |
 | FR-CI-7 | Let the learner delete a piece of content and its derived data. | M |
 
@@ -124,7 +124,7 @@ These requirements cover everything around the practice modes: accounts, content
 | FR-PL-3 | Show a progress bar with the current step (for example "Step 3 of 5") and completed steps. | M |
 | FR-PL-4 | Unlock a step only when the previous step is complete. | M |
 | FR-PL-5 | Allow the entry choice to change until the Transcript step starts, then lock it. | M |
-| FR-PL-6 | Save progress, drafts and marks automatically and let the learner resume. | M |
+| FR-PL-6 | Save progress, drafts and marks automatically and let the learner resume. Starting Dictation again returns the live attempt and its draft; leaving or reloading never voids it. Versioned saves refuse stale text with 409 `draft_conflict`, except an identical resend, and preserve a local copy immediately ([ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)). | M |
 | FR-PL-7 | Not allow Transcript to be skipped; allow Card and Shadow to be skipped only after confirmation. | M |
 
 ### 4.5 Library
@@ -132,7 +132,7 @@ These requirements cover everything around the practice modes: accounts, content
 | ID | The system shall | Pri |
 | --- | --- | --- |
 | FR-LB-1 | List the learner's content with title, duration, source and last session status. | S |
-| FR-LB-2 | Let the learner start a new plan on content already in the library. | S |
+| FR-LB-2 | Let the learner start a new plan on content already in the library only when it is playable; otherwise return 409 `content_not_ready` ([ADR 0023](../adr/0023-session-endpoints-readiness-and-versions.md)). | S |
 | FR-LB-3 | List a learner's saved cards and marks across sessions. | S |
 
 ## 5. Functional requirements: practice modes
@@ -156,8 +156,8 @@ Each mode enforces its own rules in the system itself, not only in the interface
 | --- | --- | --- | --- |
 | FR-BL-1 | Play the whole passage with only start and volume controls; disable pause, seek, rewind and speed change. | M | BL-1 |
 | FR-BL-2 | Keep the transcript hidden throughout. | M | BL-2 |
-| FR-BL-3 | Warn before the learner leaves the screen, and treat leaving, reloading or seeking as a voided attempt. Allow one resume per attempt after an interruption the learner did not cause (a network stall, or a device or OS pause under 5 seconds). The resume is automatic, 3 seconds after the audio is ready, from 3 seconds before the stop, with no option to stay paused; a second interruption voids the attempt. | M | BL-1 |
-| FR-BL-4 | After playback ends, prompt for a gist of three sentences and require at least three sentences before continuing. The gist is then graded by AI and the learner gets feedback (see 5.2.1). | M | BL-3 |
+| FR-BL-3 | Warn before the learner leaves the screen, and treat leaving, reloading or seeking as a voided attempt. Allow one resume per attempt after an interruption the learner did not cause (a network stall, or a device or OS pause under 5 seconds). The resume is automatic, 3 seconds after the audio is ready, from 3 seconds before the stop, with no option to stay paused; a second interruption voids the attempt. The server records `interrupted` for a second interruption, a device pause of 5 seconds or more, or an unreported pause more than 6 seconds behind its anchor clock. Buffering is allowed for 20 seconds per listen and resets with the one resume, at most 40 seconds per attempt ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)). | M | BL-1 |
+| FR-BL-4 | After playback ends, prompt for a gist of three sentences and require at least three sentences before continuing. Each sentence ends with `.`, `!` or `?` followed by a space or the end and has at least three words; the gist is at most 2000 characters and is accepted only when the last accepted position is within 1 second of the passage end and the anchor clock has reached it ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)). The gist is then graded by AI and the learner gets feedback (see 5.2.1). | M | BL-3 |
 | FR-BL-5 | Store the attempt with a completion flag, and show the gist beside the transcript in the Transcript step. | S | BL-4, BL-5 |
 
 ### 5.2.1 Blind: AI gist grading
@@ -362,7 +362,7 @@ The system stores seven kinds of data, all owned by one learner, and must meet t
 - NFR-SEC-2: A learner can read only their own content, sessions and recordings; media links are access-controlled and expire.
 - NFR-SEC-3: Uploaded files are scanned and checked for type and size before processing.
 - NFR-SEC-4: Media and recordings are never shared, sold or used for any purpose other than the learner's own practice.
-- NFR-SEC-5: The learner can export or delete their data on request. YouTube media is not included in an export.
+- NFR-SEC-5: The learner can export or delete their data on request. YouTube media is not included in an export. Exports are background-built ZIP archives containing `data.json` and the learner's upload media, excluding service secrets and shared internal details. At most one export is pending or building per learner and three requests are allowed per UTC day; archives are kept seven days and download links last 120 seconds ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)).
 
 ### 8.4 Reliability and integrity
 

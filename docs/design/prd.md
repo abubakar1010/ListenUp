@@ -97,7 +97,7 @@ A learner can start a plan from either an uploaded file or a YouTube link, and r
 | CI-3 | Let the learner choose the passage to practice: the whole clip, or a start and end time, from 30 seconds to 15 minutes long. Dictation works on a short passage: 2 to 3 minutes by default. | Must |
 | CI-4 | Generate a reference transcript with timestamps from the audio, used by Dictation scoring and the Transcript step. For YouTube, use the creator's captions when available, else generate from the downloaded audio. | Must |
 | CI-5 | Let the learner correct the reference transcript before Dictation scoring, because an error there makes the diff wrong. | Should |
-| CI-6 | Show a clear error for unsupported formats, private or age-restricted videos, and files over the size limit (500 MB per file, 2 GB of stored uploads per account). | Must |
+| CI-6 | Show a clear error for unsupported formats, private or age-restricted videos, and files over the size limit (500 MiB per file, 2 GiB of stored uploads per account; binary units, [ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md)). | Must |
 | CI-7 | Save content to a library so a plan can be resumed or repeated later. | Should |
 
 **Rights note.** Uploads are private to the learner. YouTube content is downloaded to our servers so the app has full control of playback. It is stored privately per learner, never shared, shown to others or sold, and deletable by the learner. This breaches YouTube's terms unless legal review finds otherwise, so it is a known risk and YouTube intake stays behind a feature flag until legal review clears it (see risks and OQ-6).
@@ -122,7 +122,7 @@ Each mode has one purpose, enforced rules and a defined output. The five modes a
 - DI-2: Replays are unlimited. Provide replay of the last sentence or segment, plus a slower speed option (default 1x).
 - DI-3: The transcript is hidden throughout. No hints, no auto-complete, no spell-check suggestions.
 - DI-4: The learner types in a single text area. Draft is auto-saved.
-- DI-5: On submit, compare the learner's text with the reference transcript at word level. Highlight missing, wrong and extra words, and show the accuracy percentage.
+- DI-5: On submit, compare the learner's text with the reference transcript at word level. Highlight missing, wrong and extra words, and show the accuracy percentage. Spelling slips count as correct, are shown separately and are not mark candidates ([ADR 0019](../adr/0019-dictation-scoring-rules.md)).
 - DI-6: Each missing or wrong word can be added to the mark list for later steps.
 
 ### 6.2 Blind

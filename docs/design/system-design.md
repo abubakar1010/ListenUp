@@ -122,9 +122,11 @@ All background work flows through four priority lanes in the PostgreSQL queue, s
 | 1 `speech-interactive` | Shadow round analysis, three-round comparison | media | both slots | 3 min | 3 |
 | 2 `intake` | Metadata, download, conversion, passage transcription, reference profile, card snippets | media | 1 slot | 10 min | 5 |
 | 3 `ai` | Key points, gist grade, round feedback, suggestions | default | 8 async | 60 s | 4 (with provider fallback inside each attempt) |
-| 4 `background` | Email, deletion, retention sweeps, trends, scratch clean-up | default | 1 | 15 min | 5 |
+| 4 `background` | Email, deletion, retention sweeps, trends, scratch clean-up; data export build | default | 1 | 15 min; export build 45 min | 5; export build 3 ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)) |
 
 The two pools are separate processes, so a burst of AI calls (waiting on the network) never takes CPU from speech analysis, and vice versa. Each pool runs two Procrastinate workers: the media pool one on lanes 1 and 2 and one on lane 1 only, so speech work can use both slots and intake at most one; the default pool one with 8 concurrent AI jobs and one for background jobs.
+
+Data exports run on the background lane, one pending/building export per learner and three requests per UTC day. A finished ZIP is retained seven days and fetched through an owner-only redirect signed for 120 s. The build's 45-minute timeout and three attempts are job overrides; a large export can delay password-reset emails on this single-concurrency lane ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)).
 
 ### 4.2 Rules
 
@@ -132,7 +134,7 @@ The two pools are separate processes, so a burst of AI calls (waiting on the net
 - **Retries.** Exponential backoff with up to 20% jitter (about 10 s, 40 s, 160 s), until the lane's attempt limit, after which the job is failed and listed for operators. A PermanentError (for example a validation error) fails the job at once; every other error, including a timeout, retries. Job timeouts are separate from the learner-facing deadlines: the learner sees "Feedback unavailable" with a retry when no result is ready 30 s after a gist, 120 s after a Shadow round, or 90 s after round 3 for the three-round comparison.
 - **Unique job keys** prevent duplicates (for example two clicks on "retry"), and **locks per resource** coalesce identical work, such as two learners opening the same shared passage.
 - **Chaining.** Each job enqueues the next step on success (download, then convert, then transcribe, then profile), so progress survives restarts and each step retries on its own.
-- **Admission control.** Per learner: at most 2 intakes running and 120 minutes of new audio per day (configurable). Excess intakes wait in the learner's own queue rather than the shared one.
+- **Admission control.** Two distinct limits ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)): the 120-minute daily cap refuses new uploads with 429 `daily_audio_limit` and a reset time; the two-intake limit queues excess clips in the learner's own queue. “Running” means waiting or executing on the shared intake lane. The daily window starts at midnight UTC; display its reset time in the learner's local time. A playable clip counts its duration rounded to seconds, capped at 15 minutes; clips still being prepared reserve 15 minutes each. Duplicates, failed clips and reused shared media count nothing. Admit a new clip while used seconds plus reservations are below the cap, including the clip that crosses it (at most 15 minutes over). Check before upload and again on confirmation; count once in the conversion transaction, never reject in the conversion job. `content.uploads.queued_at` is NULL while waiting locally; each conversion end releases the oldest waiting upload under the per-learner lock, and confirmation fills free places too.
 - **Backpressure.** When a lane 1 job has waited more than 30 s, lane 2 pauses: intake jobs re-queue themselves 10 s later without using up an attempt. Intake resumes only when lane 1 has drained completely, so the pool does not flap; when the AI quota is low, lane 3 switches to quota-saving mode (section 7).
 
 ## 5. Speech compute efficiency
@@ -153,7 +155,7 @@ Speech work is the main cost, so the design avoids repeating it, keeps models lo
 - **Warm models.** Each media worker process loads its models once at start-up and keeps them in memory. A health check fails until loading finishes, so no job pays a cold-start cost.
 - **Quantised, English-only models.** int8 weights and English-only model variants; the smallest size that meets the accuracy threshold on the golden set wins.
 - **No thread oversubscription.** Each worker process gets a fixed thread count (for example 2 threads, 2 processes on a 4-core server), set through the inference library and `OMP_NUM_THREADS`, so jobs do not fight over cores.
-- **Memory budget.** Speech models are loaded in the media worker only; the API and default worker stay small. The self-hosted LLM is optional on stage 0 because a CPU LLM competes with speech work for the same cores; it is enabled only when hosted AI quotas run out.
+- **Memory budget.** Speech models are loaded in the media worker only; the API and default worker stay small. The media image alone installs the optional `speech` extra and CPU-index torch/torchaudio; `base.en` and `MMS_FA` download about 1.3 GB on first start into `/models`, with configured preloading before readiness and fixed CPU threads. These provisional models await spike results ([ADR 0028](../adr/0028-ai-ports-gateway-and-self-hosted-speech-adapters.md)). The self-hosted LLM is optional on stage 0 because a CPU LLM competes with speech work for the same cores; it is enabled only when hosted AI quotas run out.
 - **GPU switch point.** Move speech work to a GPU when peak CPU stays above 70% for a week or round feedback p95 exceeds 60 s. A modest GPU typically runs these models many times faster than CPU (est.), which is cheaper per round than adding CPU servers beyond stage 1.
 
 ## 6. Media and storage efficiency
@@ -278,9 +280,9 @@ An async Python server holds thousands of idle streams per process, far beyond s
 ### 9.2 Blind heartbeats
 
 - One heartbeat every 5 s, about 0.2 requests per second per learner in Blind.
-- The endpoint runs **one SQL `UPDATE`** that also checks validity (position moved forward in step with server time) and returns whether the attempt is still valid, so each heartbeat is a single database round trip with no ORM overhead. After a missed heartbeat from an interruption the learner did not cause, the attempt may resume once (one more small UPDATE); a second interruption voids it.
-- Network buffering is not cheating: the player reports `waiting` and `playing` events, and the server pauses its clock during reported buffering, up to 20 s per attempt.
-- On `pagehide` the browser uses `navigator.sendBeacon`, which is delivered even while the page closes.
+- The service locks the attempt row and applies the pure heartbeat judge in one transaction, then writes its decision. Position is measured against an anchor clock (at most 1.5 s ahead and 6 s behind), not by accumulating tolerances between beats; more than 15 s without a beat, a hidden page or a seek always voids. A first eligible interruption moves the anchor to `max(passage start, stop − 3 s)` and records the resume; a second interruption or device pause of 5 s or more records `interrupted` ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)).
+- Network buffering is not cheating: the player reports buffering and the server moves its anchor clock later, up to 20 s per listen; the one resume gets a fresh 20 s, at most 40 s per attempt. After 10 s without an answered beat the player stops and reports a network interruption when contact resumes ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)).
+- On `pagehide`, visibility changing to hidden and in-app unmount, the browser reports leaving with `fetch(..., {keepalive: true})` so it can include the required `X-CSRF-Token` header; `navigator.sendBeacon` cannot send it ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)).
 - Once the attempt starts, the player preloads the whole passage (`preload="auto"`, about 1.5 MB for 3 minutes) so buffering is rare.
 
 ### 9.3 Client weight and traffic
@@ -289,8 +291,8 @@ An async Python server holds thousands of idle streams per process, far beyond s
 | --- | --- |
 | Route-based code splitting; each mode and the waveform library load only when used | Initial JavaScript under 200 KB compressed (target) |
 | Content-hashed static files on a CDN | Repeat visits load from cache |
-| Waveform peaks from the server (section 6) | No audio decoding on phones |
-| Dictation autosave debounced to 2 s, with a version number for safe concurrent saves, plus a local copy in the browser | Few requests, no lost text when offline |
+| Waveform peaks from the server (section 6); passage picker draws SVG bars with accessible sliders, without wavesurfer.js; storage CORS allows GET from the web origin ([ADR 0026](../adr/0026-passage-picker-drawn-from-server-peaks.md)) | No audio decoding on phones |
+| Dictation autosave: immediate local copy, server save 2 s after the last edit, one request at a time; stale differing drafts get 409 `draft_conflict`, identical resend succeeds; reconnect or `Retry-After` retries preserve unsent work ([ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)) | Few requests, no lost text when offline, no silent overwrite between tabs |
 | Recordings uploaded straight to storage right after each round (about 0.2 MB) | 1 to 2 s on a typical mobile connection; the API never handles audio bytes |
 | 64 kbit/s audio playback | About 8 KB per second, workable on slow mobile networks |
 
