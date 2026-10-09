@@ -15,8 +15,11 @@ jobs:
   branch-name:
     name: Branch name is readable and auditable
     if: >-
-      github.actor != 'dependabot[bot]' &&
-      (github.event_name == 'pull_request' || github.ref_type == 'branch')
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.user.login != 'dependabot[bot]') ||
+      (github.event_name == 'push' && github.ref_type == 'branch' &&
+       github.actor != 'dependabot[bot]' &&
+       !startsWith(github.ref_name, 'dependabot/'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
