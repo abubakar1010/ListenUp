@@ -3,6 +3,7 @@
 Each test runs workers with wait=False: they take every job that is ready, then stop.
 """
 
+import asyncio
 import importlib.metadata
 from collections.abc import AsyncIterator
 from datetime import timedelta
@@ -338,20 +339,31 @@ async def test_a_stalled_job_with_a_copy_waiting_leaves_the_work_to_the_copy(
     queue: Database,
 ) -> None:
     async with queue.transaction() as session:
-        first = await enqueue(session, "test.record", unique_key="k:1", n=1)
-    await stall(queue, first)
+        first = await enqueue(session, "test.two_attempts", unique_key="k:1", item="a")
+    await stall(queue, first, attempts=1)
     async with queue.transaction() as session:
-        # Queued beside the running one, as backpressure does when it postpones a job.
+        # Backpressure hands the key to its successor before inserting it.
+        await session.execute(
+            text(
+                "UPDATE procrastinate.procrastinate_jobs SET queueing_lock = NULL, "
+                "args = args || jsonb_build_object('_postponed', true) WHERE id = :id"
+            ),
+            {"id": first},
+        )
         await session.execute(
             text("""
             SELECT procrastinate.procrastinate_defer_jobs_v1(ARRAY[ROW(
-              'background', 'test.record', 0, NULL, 'k:1', '{"n": 2}'::jsonb, NULL
+              'background', 'test.two_attempts', 0, NULL, 'k:1', '{"item": "a"}'::jsonb, NULL
             )::procrastinate.procrastinate_job_to_defer_v1])
             """)
         )
 
     assert await recover(queue) == 1
     assert [row["status"] for row in await jobs(queue)] == ["failed", "todo"]
+
+    assert calls == []  # replaced runs must not invoke final-failure handling
+    await work(Lane.BACKGROUND)
+    assert calls == [{"job": "two_attempts", "item": "a"}]
 
 
 async def backdate_speech_jobs(database: Database, seconds: int) -> None:
@@ -374,7 +386,7 @@ async def test_intake_pauses_while_speech_work_waits_and_resumes_when_it_drains(
     set_gate(Lane.INTAKE, SpeechBacklogGate())
     async with queue.transaction() as session:
         await enqueue(session, "test.speech")
-        await enqueue(session, "test.intake", clip="a")
+        await enqueue(session, "test.intake", unique_key="intake:a", clip="a")
     await backdate_speech_jobs(queue, 31)
 
     await work(Lane.INTAKE)
@@ -441,3 +453,44 @@ def test_new_connections_find_the_queue_schema(migrated_url: str) -> None:
         ).fetchone()
     assert path is not None and "procrastinate" in str(path[0])
     assert found == ("procrastinate",)
+
+
+@pytest.mark.anyio
+async def test_worker_start_cannot_defeat_concurrent_key_uniqueness(
+    queue: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checked = asyncio.Event()
+    resume = asyncio.Event()
+
+    async def delayed_enqueue() -> int | None:
+        async with queue.transaction() as session:
+            scalar = session.scalar
+
+            async def pause_after_check(statement: Any, *args: Any, **kwargs: Any) -> Any:
+                result = await scalar(statement, *args, **kwargs)
+                if "SELECT EXISTS" in str(statement):
+                    assert not result
+                    checked.set()
+                    await resume.wait()
+                return result
+
+            monkeypatch.setattr(session, "scalar", pause_after_check)
+            return await enqueue(session, "test.record", unique_key="race:1", n=2)
+
+    delayed = asyncio.create_task(delayed_enqueue())
+    try:
+        await asyncio.wait_for(checked.wait(), 5)
+        async with queue.transaction() as session:
+            first = await enqueue(session, "test.record", unique_key="race:1", n=1)
+        await stall(queue, first, worker_alive=True)
+    finally:
+        resume.set()
+    assert await asyncio.wait_for(delayed, 5) is None
+    assert [(row["id"], row["status"]) for row in await jobs(queue)] == [(first, "doing")]
+    async with queue.transaction() as session:
+        await session.execute(
+            text("SELECT procrastinate.procrastinate_retry_job_v2(:id, now(), NULL, NULL, NULL)"),
+            {"id": first},
+        )
+    await work(Lane.BACKGROUND)
+    assert [call["args"] for call in calls] == [{"n": 1}]

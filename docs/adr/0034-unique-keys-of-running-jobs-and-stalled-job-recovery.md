@@ -1,4 +1,4 @@
-# ADR 0033: Unique keys cover running jobs, and stalled jobs are recovered
+# ADR 0034: Unique keys cover running jobs, and stalled jobs are recovered
 
 - Status: Accepted
 - Date: 2026-10-08
@@ -13,6 +13,7 @@ ADR 0015 maps unique job keys to Procrastinate's queueing locks, which allow one
 
 ## Decision
 
+- **Database uniqueness.** Migration 0014 adds a partial unique index on queueing locks for `todo` and `doing`, so concurrent enqueue and worker-start races cannot defeat the key. Deploy with workers stopped; resolve any legacy duplicate active keys before upgrading, without dropping work silently. Backpressure atomically releases the current key and marks that run `_postponed` in the transaction that inserts its successor. Recovery settles a marked run without retry or `on_give_up`, because the successor owns the work.
 - **`enqueue` with a `unique_key` queues nothing while a job with that key is waiting or running** (status `todo` or `doing`), and returns None. The running job does the work, and if it fails, its retry can always go back to the queue. This applies to every job with a key; for all of them, the running job covers what a copy would have done.
 - **`platform.recover_stalled_jobs`** runs every 5 minutes on the background lane (a scheduled job, ADR 0029). A `doing` job is stalled when its worker has sent no heartbeat for a minute, or Procrastinate has already dropped the worker. Its run counts as a failed attempt:
   - with attempts left, it goes back to the queue at once;
@@ -24,4 +25,4 @@ ADR 0015 maps unique job keys to Procrastinate's queueing locks, which allow one
 - A purge whose worker dies resumes within about five minutes, from the step its request records. Every other job gets the same protection.
 - A handler must still be idempotent: a job whose worker died may have done part of its work, and it runs again.
 - The recovery runs only in the default pool, like every background-lane job. When that pool is down, nothing is recovered until it is back, and nothing could run then anyway.
-- System Design 4 and 11.1 should mention the recovery job and that a unique key covers running jobs. That document lives outside the repository and is not updated here.
+- System Design 4 and 11.3 mention the recovery job and that a unique key covers running jobs. The corresponding sections in `docs/design/` are synchronized in this PR.

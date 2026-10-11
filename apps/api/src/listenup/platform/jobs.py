@@ -140,6 +140,7 @@ app = procrastinate.App(
 )
 
 REQUEST_ID_ARG = "_request_id"
+POSTPONED_ARG = "_postponed"
 GATE_RETRY_SECONDS = 10
 
 
@@ -200,6 +201,7 @@ def job(
             raise ValueError(f"job {name} is already registered")
 
         async def run(context: JobContext, /, **args: Any) -> Any:
+            args.pop(POSTPONED_ARG, None)
             request_id = args.pop(REQUEST_ID_ARG, None)
             trace_carrier = args.pop(TRACE_ARG, None)
             database = _runtime.database
@@ -353,7 +355,13 @@ async def _defer(
             )
         return job_id
     except IntegrityError as error:
-        if "procrastinate_jobs_queueing_lock_idx" in str(error.orig):
+        if any(
+            name in str(error.orig)
+            for name in (
+                "procrastinate_jobs_queueing_lock_idx",
+                "procrastinate_jobs_active_key_idx",
+            )
+        ):
             return None
         raise
 
@@ -375,6 +383,18 @@ async def _postpone(
     if trace_carrier is not None:
         payload[TRACE_ARG] = trace_carrier
     async with database.transaction() as session:
+        # Transfer the active key in the same transaction that creates its copy.
+        # No concurrent enqueue can steal it. If this worker dies after commit,
+        # recovery settles the old run instead of retrying alongside its successor.
+        await session.execute(
+            text("""
+            UPDATE procrastinate.procrastinate_jobs
+               SET queueing_lock = NULL,
+                   args = args || jsonb_build_object(CAST(:marker AS text), true)
+             WHERE id = :id AND status = 'doing'
+            """),
+            {"id": current.id, "marker": POSTPONED_ARG},
+        )
         await session.execute(
             text("""
             SELECT procrastinate.procrastinate_defer_jobs_v1(ARRAY[ROW(
@@ -409,7 +429,7 @@ async def failed_jobs(session: AsyncSession, limit: int = 50) -> list[dict[str, 
          ORDER BY failed_at DESC NULLS LAST, j.id DESC
          LIMIT :limit
         """),
-        {"limit": limit, "internal_args": [REQUEST_ID_ARG, TRACE_ARG]},
+        {"limit": limit, "internal_args": [REQUEST_ID_ARG, TRACE_ARG, POSTPONED_ARG]},
     )
     return [dict(row) for row in rows.mappings()]
 
@@ -467,6 +487,12 @@ async def _settle_stalled_job(database: Database, job_id: int) -> bool:
             return False  # finished meanwhile, or another run is settling it
         task_name, attempts, args = row
         entry = _registry.get(task_name)
+        if args.get(POSTPONED_ARG):
+            await session.execute(
+                text("SELECT procrastinate.procrastinate_finish_job_v1(:id, 'failed', false)"),
+                {"id": job_id},
+            )
+            return True  # its successor owns the work and retry budget
         # `attempts` counts the runs before the one that stalled.
         if entry is None or attempts + 1 < entry.spec.max_attempts:
             try:
@@ -481,7 +507,13 @@ async def _settle_stalled_job(database: Database, job_id: int) -> bool:
                 logger.warning("stalled job queued again", extra={"job": task_name})
                 return True
             except IntegrityError as error:
-                if "procrastinate_jobs_queueing_lock_idx" not in str(error.orig):
+                if not any(
+                    name in str(error.orig)
+                    for name in (
+                        "procrastinate_jobs_queueing_lock_idx",
+                        "procrastinate_jobs_active_key_idx",
+                    )
+                ):
                     raise
         elif entry.on_give_up is not None:
             payload = dict(args)
