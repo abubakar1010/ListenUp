@@ -1,7 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useBlocker } from 'react-router';
 
 import { PageLoading } from '../../app/PageLoading';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { AlertIcon } from '../../components/icons';
@@ -101,6 +103,7 @@ export function BlindStep({ session, progress }: BlindStepProps) {
     stoppedHere ?? ended ?? (!listen && latest?.status === 'voided' ? latest : null);
   const phase = snapshot?.phase.kind;
   const listening = listen !== null && listen.inProgress;
+  const blocker = useBlocker(listening);
 
   useEffect(() => {
     if (audio.current) audio.current.volume = volume;
@@ -235,35 +238,54 @@ export function BlindStep({ session, progress }: BlindStepProps) {
   }
 
   return (
-    <PracticeLayout
-      heading={`Blind: ${session.content_title}`}
-      clipTitle={session.content_title}
-      clipMeta={
-        listening
-          ? 'Blind · listening'
-          : `Passage ${formatClock(start_ms)} to ${formatClock(end_ms)}`
-      }
-      back={listening ? null : { to: '/library', label: 'Library' }}
-      progress={listening ? <StepProgress session={session} /> : progress}
-      player={
-        <>
-          {/* No controls and not focusable: start and volume are the only controls. */}
-          <audio ref={audio} preload="auto" tabIndex={-1} aria-hidden="true" className="hidden" />
-          <BlindPlayer
-            status={status}
-            playedMs={played}
-            lengthMs={length}
-            volume={volume}
-            onVolume={setVolume}
-            onStart={() => void start()}
-          />
-        </>
-      }
-      rule={resumed && listening ? RULE_AFTER_RESUME : RULE}
-      workLabel="Blind"
-    >
-      {work}
-    </PracticeLayout>
+    <>
+      {blocker.state === 'blocked' && (
+        <ConfirmDialog
+          title="Leave Blind?"
+          confirmLabel="Leave Blind"
+          cancelLabel="Stay"
+          onConfirm={() => {
+            if (blocker.state !== 'blocked') return;
+            listen?.leave('left_page');
+            blocker.proceed();
+          }}
+          onCancel={() => {
+            if (blocker.state === 'blocked') blocker.reset();
+          }}
+        >
+          Leaving now ends this Blind attempt. Playback keeps going while you decide.
+        </ConfirmDialog>
+      )}
+      <PracticeLayout
+        heading={`Blind: ${session.content_title}`}
+        clipTitle={session.content_title}
+        clipMeta={
+          listening
+            ? 'Blind · listening'
+            : `Passage ${formatClock(start_ms)} to ${formatClock(end_ms)}`
+        }
+        back={listening ? null : { to: '/library', label: 'Library' }}
+        progress={listening ? <StepProgress session={session} /> : progress}
+        player={
+          <>
+            {/* No controls and not focusable: start and volume are the only controls. */}
+            <audio ref={audio} preload="auto" tabIndex={-1} aria-hidden="true" className="hidden" />
+            <BlindPlayer
+              status={status}
+              playedMs={played}
+              lengthMs={length}
+              volume={volume}
+              onVolume={setVolume}
+              onStart={() => void start()}
+            />
+          </>
+        }
+        rule={resumed && listening ? RULE_AFTER_RESUME : RULE}
+        workLabel="Blind"
+      >
+        {work}
+      </PracticeLayout>
+    </>
   );
 }
 

@@ -439,6 +439,16 @@ async def media_url(
     return storage.signed_download(key, ttl_seconds=ttl_seconds).url
 
 
+async def learner_content_ids_for_media(
+    session: AsyncSession, learner: uuid.UUID, media_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """Check ownership before another policy is evaluated for this media object."""
+    content_ids = await repository.learner_content_ids_for_media(session, learner, media_id)
+    if not content_ids:
+        raise ProblemError(404, "media_not_found", "This clip is not in your library.")
+    return content_ids
+
+
 def client_ip(request: Request) -> str | None:
     """The caller's address for per-IP limits, or None when the server got no real IP."""
     host = request.client.host if request.client else None

@@ -162,6 +162,25 @@ async def get_step(db: AsyncSession, session_id: uuid.UUID) -> BlindStep:
     )
 
 
+async def require_whole_clip_available(
+    db: AsyncSession,
+    learner: uuid.UUID,
+    content_ids: list[uuid.UUID],
+    now: datetime,
+) -> None:
+    """Refuse whole-clip access while any owned item's Blind listen is unfinished."""
+    for content_id in content_ids:
+        attempts = await practice.active_attempts_for_content(db, learner, content_id, Step.BLIND)
+        for attempt in attempts:
+            row = await repository.get(db, attempt.id)
+            if row is None or not heard_whole_passage(row.listen, now):
+                raise ProblemError(
+                    409,
+                    "blind_in_progress",
+                    "Finish or leave the Blind listen before playing this clip.",
+                )
+
+
 async def start(db: AsyncSession, session_id: uuid.UUID, now: datetime) -> Started:
     """Start a listen on the open Blind step (FR-BL-1, #62).
 

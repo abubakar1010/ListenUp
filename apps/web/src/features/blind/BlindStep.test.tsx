@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router';
 
 import { jsonResponse, renderWithProviders } from '../../test-utils';
@@ -17,12 +17,20 @@ afterEach(() => vi.restoreAllMocks());
 const SESSION = 'GET /sessions/session-1';
 const BLIND = 'GET /sessions/session-1/blind';
 
-function renderBlind() {
+function renderBlind(historyEntries = ['/sessions/session-1']) {
   return renderWithProviders(
     <Routes>
+      <Route
+        path="/library"
+        element={
+          <main>
+            <h1>Library</h1>
+          </main>
+        }
+      />
       <Route path="/sessions/:sessionId" element={<SessionPage />} />
     </Routes>,
-    { route: '/sessions/session-1' },
+    { historyEntries },
   );
 }
 
@@ -72,6 +80,79 @@ test('Start begins one attempt, loads the passage and hides the way out', async 
   expect(screen.queryByRole('button', { name: 'Change entry' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Start listening' })).toBeNull();
   expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+});
+
+test('Browser Back asks first; Stay keeps playback running and Leave voids before navigating', async () => {
+  const { calls } = mockRoutes({
+    [SESSION]: jsonResponse(200, sessionFixture({ entry: 'blind' })),
+    'POST /sessions/session-1/blind/attempts': jsonResponse(201, {
+      attempt: attemptFixture(),
+      media_url: '/api/v1/blind/attempts/attempt-1/media/token',
+      heartbeat_interval_ms: 5_000,
+      resume_delay_ms: 3_000,
+    }),
+    'POST /blind/attempts/attempt-1/void': jsonResponse(
+      200,
+      attemptFixture({ status: 'voided', void_reason: 'left_page' }),
+    ),
+  });
+  const { router, container } = renderBlind(['/library', '/sessions/session-1']);
+  const start = await screen.findByRole('button', { name: 'Start listening' });
+  const audio = container.querySelector('audio')!;
+  let paused = true;
+  Object.defineProperty(audio, 'paused', { configurable: true, get: () => paused });
+  vi.spyOn(audio, 'play').mockImplementation(async () => {
+    paused = false;
+  });
+  const pause = vi.spyOn(audio, 'pause').mockImplementation(() => {
+    paused = true;
+  });
+
+  fireEvent.click(start);
+  await screen.findByText('Starting');
+  fireEvent.canPlay(audio);
+  await waitFor(() => expect(paused).toBe(false));
+  fireEvent.playing(audio);
+  await screen.findByText('Listening', { exact: true });
+
+  await act(async () => router.navigate(-1));
+  const dialog = await screen.findByRole('dialog', { name: 'Leave Blind?' });
+  expect(dialog).toHaveTextContent('Playback keeps going while you decide.');
+  expect(paused).toBe(false);
+  expect(pause).not.toHaveBeenCalled();
+
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Stay' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(router.state.location.pathname).toBe('/sessions/session-1');
+  expect(paused).toBe(false);
+  expect(pause).not.toHaveBeenCalled();
+
+  await act(async () => router.navigate(-1));
+  fireEvent.click(await screen.findByRole('button', { name: 'Leave Blind' }));
+  await screen.findByRole('heading', { name: 'Library' });
+  expect(calls.find((call) => call.path === '/blind/attempts/attempt-1/void')?.body).toEqual({
+    reason: 'left_page',
+  });
+  expect(paused).toBe(true);
+});
+
+test('a server-completed listen can leave the gist form without voiding', async () => {
+  const { calls } = mockRoutes({
+    [SESSION]: jsonResponse(200, sessionFixture({ entry: 'blind' })),
+    [BLIND]: jsonResponse(
+      200,
+      blindStepFixture(attemptFixture({ position_ms: 280_000, listen_complete: true })),
+    ),
+  });
+  const { router } = renderBlind(['/library', '/sessions/session-1']);
+
+  expect(await screen.findByRole('textbox', { name: 'Your gist' })).toBeInTheDocument();
+  expect(calls.filter((call) => call.path.endsWith('/void'))).toHaveLength(0);
+  await act(async () => router.navigate(-1));
+
+  expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(calls.filter((call) => call.path.endsWith('/void'))).toHaveLength(0);
 });
 
 test('an attempt that ended says why and how to go on', async () => {

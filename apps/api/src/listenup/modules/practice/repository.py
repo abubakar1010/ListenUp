@@ -342,6 +342,25 @@ async def active_attempt(
     return AttemptRow(*row) if row else None
 
 
+async def active_attempts_for_content(
+    session: AsyncSession, user_id: uuid.UUID, content_id: uuid.UUID, mode: str
+) -> list[AttemptRow]:
+    """Active attempts in any session on this learner-owned content item."""
+    rows = await session.execute(
+        text("""
+        SELECT a.id, a.session_id, a.user_id, a.mode, a.status, a.started_at, a.finished_at
+          FROM practice.attempts a
+          JOIN practice.sessions s
+            ON s.id = a.session_id AND s.user_id = a.user_id
+         WHERE s.user_id = :user_id AND s.content_id = :content_id
+           AND a.mode = :mode AND a.status = 'active'
+         ORDER BY a.started_at, a.id
+        """),
+        {"user_id": user_id, "content_id": content_id, "mode": mode},
+    )
+    return [AttemptRow(*row) for row in rows]
+
+
 async def finish_attempt(
     session: AsyncSession, attempt_id: uuid.UUID, status: str
 ) -> AttemptRow | None:
