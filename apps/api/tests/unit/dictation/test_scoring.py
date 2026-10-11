@@ -213,6 +213,7 @@ def test_reference_from_transcript_arrays() -> None:
         ReferenceWord("Hi", 500, 100)
 
 
+@pytest.mark.performance
 def test_long_passage_scores_within_budget() -> None:
     """A 15-minute passage (FR-DI-1) of about 2,500 words with typical errors."""
     rng = random.Random(53)
