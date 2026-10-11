@@ -323,6 +323,13 @@ async def _defer(
     lock: str | None,
     run_at: datetime | None,
 ) -> int | None:
+    if unique_key is not None:
+        # Serialize producers until commit. The waiting-only queue index cannot
+        # protect a second producer once the first job has started running.
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"listenup:enqueue:{unique_key}"},
+        )
     if unique_key is not None and await session.scalar(
         text("""
         SELECT EXISTS (

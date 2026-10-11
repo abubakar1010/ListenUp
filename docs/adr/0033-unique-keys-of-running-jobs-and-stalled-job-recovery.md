@@ -14,6 +14,7 @@ ADR 0015 maps unique job keys to Procrastinate's queueing locks, which allow one
 ## Decision
 
 - **`enqueue` with a `unique_key` queues nothing while a job with that key is waiting or running** (status `todo` or `doing`), and returns None. The running job does the work, and if it fails, its retry can always go back to the queue. This applies to every job with a key; for all of them, the running job covers what a copy would have done.
+- Producers take a transaction-scoped PostgreSQL advisory lock derived from the unique key before checking and inserting. This serializes concurrent producers through commit, including when the first job starts before the second producer can insert; the queue's waiting-only unique index alone cannot cover that transition.
 - **`platform.recover_stalled_jobs`** runs every 5 minutes on the background lane (a scheduled job, ADR 0029). A `doing` job is stalled when its worker has sent no heartbeat for a minute, or Procrastinate has already dropped the worker. Its run counts as a failed attempt:
   - with attempts left, it goes back to the queue at once;
   - after its last attempt, its `on_give_up` runs (the purge marks its request `'failed'`) and the job is marked failed;

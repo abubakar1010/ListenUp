@@ -3,6 +3,7 @@
 Each test runs workers with wait=False: they take every job that is ready, then stop.
 """
 
+import asyncio
 import importlib.metadata
 from collections.abc import AsyncIterator
 from datetime import timedelta
@@ -14,6 +15,7 @@ import psycopg
 import pytest
 from procrastinate import schema
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.platform.database import Database
 from listenup.platform.jobs import (
@@ -36,6 +38,67 @@ from tests.integration.conftest import conninfo_to_url
 MIGRATIONS = Path(__file__).resolve().parents[2] / "migrations"
 
 calls: list[dict[str, Any]] = []
+
+
+@pytest.mark.anyio
+async def test_concurrent_producers_cannot_queue_a_copy_after_the_first_starts(
+    queue: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checked = asyncio.Event()
+    second_lock = asyncio.Event()
+    proceed = asyncio.Event()
+    original_scalar = AsyncSession.scalar
+    original_execute = AsyncSession.execute
+    checks = 0
+    locks = 0
+
+    async def scalar(self: AsyncSession, statement: Any, *args: Any, **kwargs: Any) -> Any:
+        nonlocal checks
+        result = await original_scalar(self, statement, *args, **kwargs)
+        if "SELECT EXISTS" in str(statement):
+            checks += 1
+            if checks == 1:
+                checked.set()
+                await proceed.wait()
+        return result
+
+    async def execute(self: AsyncSession, statement: Any, *args: Any, **kwargs: Any) -> Any:
+        nonlocal locks
+        if "pg_advisory_xact_lock" in str(statement):
+            locks += 1
+            if locks == 2:
+                second_lock.set()
+        return await original_execute(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "scalar", scalar)
+    monkeypatch.setattr(AsyncSession, "execute", execute)
+
+    async def producer(start: bool) -> int | None:
+        async with queue.transaction() as session:
+            result = await enqueue(session, "test.record", unique_key="concurrent")
+            if start:
+                # Model the worker claiming the first job before the other insert.
+                await session.execute(
+                    text(
+                        "UPDATE procrastinate.procrastinate_jobs SET status = 'doing' "
+                        "WHERE id = :id"
+                    ),
+                    {"id": result},
+                )
+            return result
+
+    async with asyncio.timeout(5):
+        first = asyncio.create_task(producer(True))
+        await checked.wait()
+        second = asyncio.create_task(producer(False))
+        try:
+            await second_lock.wait()
+            assert checks == 1
+        finally:
+            proceed.set()
+        assert await first is not None
+        assert await second is None
+    assert len(await jobs(queue)) == 1
 
 
 @job(Lane.BACKGROUND, "test.record")
