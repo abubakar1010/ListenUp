@@ -57,9 +57,11 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/api/uv.lock
       - run: uv sync --frozen --python 3.12
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
+      - run: uv run ruff check . ../../.github/scripts/check-coverage.py
+      - run: uv run ruff format --check . ../../.github/scripts/check-coverage.py
       - run: uv run mypy
+      - name: Coverage tooling types
+        run: uv run mypy ../../.github/scripts/check-coverage.py tests/unit/test_coverage_gate.py
       - name: Module boundaries (import-linter)
         run: uv run lint-imports
       - name: Migrations (upgrade, downgrade one, upgrade, drift check)
@@ -163,6 +165,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git cat-file -e "$BASE_SHA^{commit}"
+          uv run python ../../.github/scripts/check-coverage.py api coverage/coverage.xml
           uv run diff-cover coverage/coverage.xml --compare-branch "$BASE_SHA" \
             --ignore-staged --ignore-unstaged --fail-under 90
       - name: Web changed-line coverage
@@ -171,6 +174,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git cat-file -e "$BASE_SHA^{commit}"
+          ../api/.venv/bin/python ../../.github/scripts/check-coverage.py web coverage/cobertura-coverage.xml
           ../api/.venv/bin/diff-cover coverage/cobertura-coverage.xml --compare-branch "$BASE_SHA" \
             --ignore-staged --ignore-unstaged --fail-under 90
 

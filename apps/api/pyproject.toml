@@ -62,6 +62,9 @@ data_file = "coverage/.coverage"
 
 [tool.coverage.report]
 show_missing = true
+# Namespace packages are importable even without __init__.py. Discover their
+# unexecuted modules too, so new runtime code cannot disappear from the report.
+include_namespace_packages = true
 
 [tool.coverage.xml]
 output = "coverage/coverage.xml"

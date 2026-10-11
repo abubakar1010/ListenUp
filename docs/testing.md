@@ -41,7 +41,9 @@ For changed security rules, scoring and state transitions, verify that the asser
 - Whole-repository coverage is reported without an invented baseline. Establish any future repository-wide floor from a complete successful run; raise it as gaps are addressed. Do not present a partial run as the baseline.
 - When modifying untested legacy code, first add passing characterization tests for behavior that must remain. Then add a failing test for the intended change. Track untouched gaps separately; an existing gap does not excuse missing tests for the behavior being changed.
 
-Coverage commands and the PR gate are configured in `apps/api/pyproject.toml`, `apps/web/vite.config.ts` and `.github/workflows/ci.yml`.
+Coverage commands and the PR gate are configured in `apps/api/pyproject.toml`, `apps/web/vite.config.ts` and `.github/workflows/ci.yml`. Backend discovery includes namespace packages without `__init__.py`. Vitest and the coverage completeness check share `apps/web/coverage-exclusions.json`; this list contains only tests, declarations, named test helpers and generated schema types.
+
+Before calculating changed-line coverage, CI runs `.github/scripts/check-coverage.py` for each application. It inventories all runtime source files and requires an entry that resolves through diff-cover's own Cobertura path lookup. Missing files, empty reports that omit runtime files, and mismatched paths fail rather than silently shrinking the coverage denominator. Empty Python packages and types-only TypeScript files may have entries with no executable lines. Documentation/test-only diffs still pass when the runtime reports are complete. The script runs with the backend dev environment; from `apps/api`, use `uv run python ../../.github/scripts/check-coverage.py api coverage/coverage.xml` (or `web ../web/coverage/cobertura-coverage.xml`). Regression checks run with `uv run pytest tests/unit/test_coverage_gate.py`.
 
 From `apps/api`, with PostgreSQL and S3 running:
 
