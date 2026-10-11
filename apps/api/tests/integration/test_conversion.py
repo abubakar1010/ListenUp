@@ -10,15 +10,19 @@ LISTENUP_REQUIRE_S3=1 (as in CI).
 """
 
 import asyncio
+import concurrent.futures
 import dataclasses
 import json
 import os
 import subprocess
+import threading
+import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 import boto3
 import httpx
@@ -162,6 +166,7 @@ def run_job(migrated_url: str, added: Added, attempt: int = 1) -> None:
                 JobDeps(database, None, attempt),
                 media_object_id=added.media_id,
                 upload_id=added.upload_id,
+                user_id=added.source_key.split("/")[1],
             )
         finally:
             await database.dispose()
@@ -684,3 +689,95 @@ def test_a_real_upload_is_converted_and_plays_with_range_requests(
         assert httpx.get(real.signed_download(added.source_key).url).status_code == 404
     finally:
         use_storage(None)
+
+
+def test_a_retry_cleans_interrupted_files_after_the_media_row_is_gone(
+    client: TestClient, storage: FakeStorage, media: Media, migrated_url: str
+) -> None:
+    added = add_file(client, storage, media.mp3, migrated_url)
+    user = added.source_key.split("/")[1]
+    orphan = f"users/{user}/media/{added.media_id}/playback.mp4"
+    storage.arrive(orphan, 4, "audio/mp4", b"late")
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute("DELETE FROM identity.users WHERE id = %s", [user])
+    run_job(migrated_url, added)
+    assert orphan not in storage.objects
+
+
+def test_a_purge_during_conversion_prevents_any_final_storage_write(
+    client: TestClient,
+    storage: FakeStorage,
+    media: Media,
+    migrated_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    added = add_file(client, storage, media.mp3, migrated_url)
+    user = added.source_key.split("/")[1]
+    original = jobs.ffmpeg.convert
+
+    async def purge_before_upload(*args: Any, **kwargs: Any) -> jobs.ffmpeg.Converted:
+        converted = await original(*args, **kwargs)
+        with psycopg.connect(migrated_url, autocommit=True) as conn:
+            conn.execute("DELETE FROM identity.users WHERE id = %s", [user])
+        await storage.delete_prefix(f"users/{user}/")
+        return converted
+
+    monkeypatch.setattr(jobs.ffmpeg, "convert", purge_before_upload)
+    run_job(migrated_url, added)
+    assert not [key for key in storage.objects if key.startswith(f"users/{user}/")]
+
+
+def test_purge_waits_for_a_conversion_upload_before_sweeping(
+    client: TestClient,
+    storage: FakeStorage,
+    media: Media,
+    migrated_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.integration.test_account_deletion import (
+        delete_me,
+        deletion_request,
+        make_due,
+        run_purge_attempt,
+    )
+
+    added = add_file(client, storage, media.mp3, migrated_url)
+    user = uuid.UUID(added.source_key.split("/")[1])
+    assert delete_me(client).status_code == 202
+    make_due(migrated_url, user)
+    request = str(deletion_request(migrated_url, user)["id"])
+    uploading = threading.Event()
+    release = threading.Event()
+    original = storage.put_file
+
+    async def paused_upload(key: str, path: Path, content_type: str) -> None:
+        await original(key, path, content_type)
+        uploading.set()
+        assert await asyncio.to_thread(release.wait, 10)
+
+    monkeypatch.setattr(storage, "put_file", paused_upload)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        conversion = executor.submit(run_job, migrated_url, added)
+        try:
+            assert uploading.wait(10)
+            purge = executor.submit(run_purge_attempt, migrated_url, request, 1)
+            deadline = time.monotonic() + 5
+            with psycopg.connect(migrated_url, autocommit=True) as conn:
+                while time.monotonic() < deadline:
+                    waiting = conn.execute(
+                        "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() "
+                        "AND wait_event_type = 'Lock' AND query LIKE '%identity.users%'"
+                    ).fetchone()
+                    if waiting and waiting[0]:
+                        break
+                    time.sleep(0.01)
+                else:
+                    pytest.fail("purge did not wait for the storage writer")
+            assert not purge.done()
+            assert deletion_request(migrated_url, user)["status"] == "pending"
+        finally:
+            release.set()
+        conversion.result(timeout=10)
+        purge.result(timeout=10)
+    assert deletion_request(migrated_url, user)["status"] == "completed"
+    assert not [key for key in storage.objects if key.startswith(f"users/{user}/")]

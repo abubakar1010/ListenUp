@@ -460,6 +460,15 @@ async def hold_active_account(session: AsyncSession, learner: uuid.UUID) -> bool
     return await repository.hold_active_account(session, learner)
 
 
+async def hold_account_for_storage(session: AsyncSession, learner: uuid.UUID) -> bool:
+    """Hold the account across a storage write, so purge waits for its completion.
+
+    Unlike exports, conversions may finish while an account waits for deletion.
+    A deleting or missing account must never write new objects (DR-1, ADR 0029).
+    """
+    return await repository.hold_account_for_storage(session, learner)
+
+
 AccountsDep = Annotated[Accounts, Depends(get_accounts)]
 
 

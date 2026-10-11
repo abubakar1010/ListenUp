@@ -122,10 +122,14 @@ async def restore_account(session: AsyncSession, user_id: uuid.UUID) -> bool:
     False when there is nothing to restore: the grace period ended, or the purge job
     already took the account (it sets 'deleting' first, under the same row lock).
     """
+    # PostgreSQL now() is frozen at transaction start. Acquire the lock first,
+    # then check wall-clock time, including time spent verifying or waiting.
+    await lock_user_status(session, user_id)
     restored = await session.scalar(
         text("""
         UPDATE identity.users SET status = 'active', deletion_scheduled_at = NULL
-         WHERE id = :id AND status = 'pending_deletion' AND deletion_scheduled_at > now()
+         WHERE id = :id AND status = 'pending_deletion'
+           AND deletion_scheduled_at > clock_timestamp()
         RETURNING id
         """),
         {"id": user_id},
@@ -266,6 +270,19 @@ async def hold_active_account(session: AsyncSession, user_id: uuid.UUID) -> bool
         text("SELECT status FROM identity.users WHERE id = :id FOR SHARE"), {"id": user_id}
     )
     return status == "active"
+
+
+async def hold_account_for_storage(session: AsyncSession, user_id: uuid.UUID) -> bool:
+    """Fence storage writes against the purge's exclusive user-row lock.
+
+    Conversions may finish during the grace period. Once the purge sets deleting,
+    no new writer can start; existing writers finish before that change commits.
+    Keep the transaction open until uploads and their database writes finish.
+    """
+    status: str | None = await session.scalar(
+        text("SELECT status FROM identity.users WHERE id = :id FOR SHARE"), {"id": user_id}
+    )
+    return status in ("active", "pending_deletion")
 
 
 async def retire_reset_tokens(session: AsyncSession, user_id: uuid.UUID) -> None:

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.content import ffmpeg, repository
 from listenup.modules.content.domain import admission, media
+from listenup.modules.identity import service as identity
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database
 from listenup.platform.events import EventType, publish
@@ -126,6 +127,10 @@ async def _convert(
         if state is None:
             await _conversion_ended(session, learner)
     if state is None:
+        if learner is not None:
+            # An interrupted upload may have written files before the account was
+            # purged. Its retry still knows their prefix even without a media row.
+            await storage.delete_prefix(media.media_prefix(learner, media_id))
         logger.info("upload conversion skipped: the item is gone", extra={"media": str(media_id)})
         return
     if state.status in ("playable", "failed"):
@@ -172,29 +177,33 @@ async def _convert(
         await _progress(database, media_id, "saving")
         playback = media.playback_key(state.learner, media_id)
         peaks = media.peaks_key(state.learner, media_id)
-        await storage.put_file(playback, target, "video/mp4" if video else "audio/mp4")
-        await storage.put(peaks, media.peaks_json(converted.peaks), "application/json")
         size = target.stat().st_size
-
-    async with database.transaction() as session:
-        stored = await repository.mark_media_playable(
-            session,
-            media_id,
-            duration_ms=probe.duration_ms,
-            has_video=video,
-            playback_key=playback,
-            peaks_key=peaks,
-            playback_bytes=size,
-        )
-        if stored:
-            await _announce(session, media_id)
-            await add_to_window(
-                session,
-                daily_audio_key(state.learner),
-                admission.DAY,
-                admission.counted_seconds(probe.duration_ms),
-            )
-        await _conversion_ended(session, state.learner)
+        async with database.transaction() as session:
+            # The purge cannot pass its first exclusive user-row lock while this
+            # writer holds the row. Check before either storage upload (DR-1).
+            writable = await identity.hold_account_for_storage(session, state.learner)
+            stored = False
+            if writable:
+                await storage.put_file(playback, target, "video/mp4" if video else "audio/mp4")
+                await storage.put(peaks, media.peaks_json(converted.peaks), "application/json")
+                stored = await repository.mark_media_playable(
+                    session,
+                    media_id,
+                    duration_ms=probe.duration_ms,
+                    has_video=video,
+                    playback_key=playback,
+                    peaks_key=peaks,
+                    playback_bytes=size,
+                )
+            if stored:
+                await _announce(session, media_id)
+                await add_to_window(
+                    session,
+                    daily_audio_key(state.learner),
+                    admission.DAY,
+                    admission.counted_seconds(probe.duration_ms),
+                )
+            await _conversion_ended(session, state.learner)
     if not stored:
         # The learner deleted the item while it converted; nothing refers to the files.
         await storage.delete_prefix(media.media_prefix(state.learner, media_id))

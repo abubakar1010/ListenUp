@@ -1137,3 +1137,49 @@ def test_the_api_sees_only_its_own_deletion_requests(migrated_url: str, api_role
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             conn.execute("DELETE FROM ops.deletion_requests")
     assert seen == [(mine,)]
+
+
+def test_restore_rechecks_deadline_after_waiting_for_the_user_lock(
+    client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    email = unique_email()
+    user = register(client, email)
+    assert delete_me(client).status_code == 202
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE identity.users SET deletion_scheduled_at = "
+            "clock_timestamp() + interval '2 seconds' WHERE id = %s",
+            [user],
+        )
+        conn.execute(
+            "UPDATE ops.deletion_requests SET due_at = "
+            "(SELECT deletion_scheduled_at FROM identity.users WHERE id = %s) "
+            "WHERE subject_user_id = %s",
+            [user, user],
+        )
+    restoring = threading.Event()
+    original = identity_repository.restore_account
+
+    async def announced_restore(*args: Any, **kwargs: Any) -> bool:
+        restoring.set()
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(identity_repository, "restore_account", announced_restore)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        with psycopg.connect(migrated_url) as blocker:
+            blocker.execute("SELECT id FROM identity.users WHERE id = %s FOR UPDATE", [user])
+            future = executor.submit(login, client, email, restore=True)
+            assert restoring.wait(5)
+            blocker.execute(
+                "SELECT pg_sleep(GREATEST(0, extract(epoch FROM "
+                "deletion_scheduled_at - clock_timestamp())) + 0.05) "
+                "FROM identity.users WHERE id = %s",
+                [user],
+            )
+            blocker.commit()
+        response = future.result(timeout=10)
+    assert response.status_code == 401
+    assert response.json()["code"] == "invalid_credentials"
+    assert user_row(migrated_url, user)[0] == "pending_deletion"
+    assert deletion_request(migrated_url, user)["status"] == "pending"
+    assert client.get("/api/v1/me").status_code == 401

@@ -108,30 +108,29 @@ async def _build(
             storage, zip_path, Path(scratch), parts, learner, export, exported_at
         )
         size = zip_path.stat().st_size
-        await storage.put_file(key, zip_path, "application/zip")
-
-    ready_at = datetime.now(UTC)
-    expires_at = archive.expires_at(ready_at, settings.export_keep_days)
-    async with database.transaction(learner) as session:
-        # The account may have been deleted while the archive was built; the check holds
-        # the row, so a deletion cannot slip in before this transaction commits.
-        if await identity.hold_active_account(session, learner):
-            stored = await repository.mark_ready(
-                session,
-                export,
-                learner,
-                archive_key=key,
-                archive_bytes=size,
-                file_count=file_count,
-                ready_at=ready_at,
-                expires_at=expires_at,
-            )
-        else:
-            stored = False
-            await repository.mark_failed(session, export, learner, "account_deleted")
-        if stored:
-            await publish(session, learner, EventType.EXPORT_READY, export)
-            await queue_expiry(session, export, learner, expires_at)
+        ready_at = datetime.now(UTC)
+        expires_at = archive.expires_at(ready_at, settings.export_keep_days)
+        async with database.transaction(learner) as session:
+            # Hold the account before uploading, through the ready write. Deletion
+            # and purge wait for this writer; after either starts no archive is put.
+            if await identity.hold_active_account(session, learner):
+                await storage.put_file(key, zip_path, "application/zip")
+                stored = await repository.mark_ready(
+                    session,
+                    export,
+                    learner,
+                    archive_key=key,
+                    archive_bytes=size,
+                    file_count=file_count,
+                    ready_at=ready_at,
+                    expires_at=expires_at,
+                )
+            else:
+                stored = False
+                await repository.mark_failed(session, export, learner, "account_deleted")
+            if stored:
+                await publish(session, learner, EventType.EXPORT_READY, export)
+                await queue_expiry(session, export, learner, expires_at)
     if not stored:
         # The account was deleted while the archive was built: keep no copy of its data.
         await storage.delete(key)

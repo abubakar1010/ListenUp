@@ -14,7 +14,6 @@ import uuid
 import zipfile
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -400,7 +399,10 @@ def test_an_account_deleted_after_asking_gets_no_archive(
 
 
 def test_an_account_deleted_while_the_archive_is_built_keeps_no_archive(
-    make_client: ClientFactory, storage: FakeStorage, migrated_url: str
+    make_client: ClientFactory,
+    storage: FakeStorage,
+    migrated_url: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The check at the start passed; the learner deletes the account before it ends."""
     client = make_client()
@@ -408,21 +410,19 @@ def test_an_account_deleted_while_the_archive_is_built_keeps_no_archive(
     seeded(migrated_url, client, storage)
     started = request_export(client)
 
-    class DeletesWhileStoring(FakeStorage):
-        async def put_file(self, key: str, path: Path, content_type: str) -> None:
-            await super().put_file(key, path, content_type)
-            with psycopg.connect(migrated_url, autocommit=True) as conn:
-                conn.execute(
-                    "UPDATE identity.users SET status = 'pending_deletion', "
-                    "deletion_scheduled_at = now() + interval '7 days' WHERE id = %s",
-                    [user],
-                )
+    original = jobs._write_archive
 
-    racing = DeletesWhileStoring()
-    racing.objects.update(storage.objects)
-    racing.data.update(storage.data)
-    use_storage(racing)
+    async def delete_after_build(*args: Any, **kwargs: Any) -> int:
+        count = await original(*args, **kwargs)
+        with psycopg.connect(migrated_url, autocommit=True) as conn:
+            conn.execute(
+                "UPDATE identity.users SET status = 'pending_deletion', "
+                "deletion_scheduled_at = now() + interval '7 days' WHERE id = %s",
+                [user],
+            )
+        return count
 
+    monkeypatch.setattr(jobs, "_write_archive", delete_after_build)
     run_build(migrated_url, started["id"], user)
 
     with psycopg.connect(migrated_url) as conn:
@@ -437,7 +437,7 @@ def test_an_account_deleted_while_the_archive_is_built_keeps_no_archive(
         ).fetchone()
     assert row == ("failed", "account_deleted", None)
     assert queued == (0,)
-    assert not [key for key in racing.objects if "/exports/" in key]
+    assert not [key for key in storage.objects if "/exports/" in key]
 
 
 def test_a_ready_export_is_announced(
