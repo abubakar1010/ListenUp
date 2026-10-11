@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides shared project guidance for Claude Code and Codex. Codex enters through `AGENTS.md`; both tools follow the rules here and in `docs/workflow.md`.
 
 ## Project
 
@@ -22,7 +22,7 @@ The SRS keeps stable requirement IDs (`FR-DI-1`, `FR-BL-1`, `NFR-AI-1`, and so o
 - One story per session and per pull request; follow `docs/workflow.md` and the mandatory TDD policy in `docs/testing.md`: observe a focused failing test before implementing each behavior, make it pass, then refactor. Run targeted tests while working and full applicable checks once before the PR, then get an independent review.
 - Record actual red/green commands and outcomes, map acceptance criteria to named tests, and inspect changed-code coverage. Bug fixes start with a failing regression test. Read `AGENTS.md` for the shared agent instructions; the applicability rules for documentation and behavior-preserving changes are in `docs/testing.md`.
 - Before changing an area, read its section in `docs/conventions.md`. Read the design documents only when the story's acceptance criteria need them.
-- Cloud sessions run `.claude/hooks/session-start.sh` at start: PostgreSQL is running and dependencies are installed. S3 is not running locally, so S3 tests run in CI only.
+- Claude Code cloud sessions use `.claude/hooks/session-start.sh` through `.claude/settings.json`; verify its results before assuming dependencies or PostgreSQL are ready. Codex cloud tasks use the environment's saved installation/startup instructions; Claude hooks do not run automatically in Codex. Check required services in either tool. Run S3 integration tests locally when storage is available; report skipped checks when it is unavailable, and use CI for required service checks.
 
 ## Commands
 
@@ -75,7 +75,7 @@ TypeScript is pinned to 6.x because typescript-eslint does not support TypeScrip
 
 ## Decisions that shape the architecture
 
-- **Mode rules are enforced on the server and in the app, never by interface text alone.** Blind has no pause, seek, rewind or speed change, and leaving, reloading or seeking voids the attempt; one resume per attempt is allowed after an interruption the learner did not cause (a network stall, or a device or OS pause under 5 s), and a second interruption voids it. Dictation hides the transcript. Cards are capped at two per session. A Shadow segment is 60 to 90 seconds, or the whole passage when the passage is 30 to 60 seconds, with three rounds. Keep these rules in one place with automated tests (NFR-MNT-2).
+- **Mode rules are enforced on the server and in the app, never by interface text alone.** Blind has no pause, seek, rewind or speed change, and leaving, reloading or seeking during an unfinished listen voids the attempt. Warn before in-app navigation including Browser Back; preserve a completed listen when leaving or reloading the gist form. Whole-clip playback must be refused for the same learner and media during an unfinished Blind listen (ADR 0033); one resume per attempt is allowed after an interruption the learner did not cause (a network stall, or a device or OS pause under 5 s), and a second interruption voids it. Dictation hides the transcript. Cards are capped at two per session. A Shadow segment is 60 to 90 seconds, or the whole passage when the passage is 30 to 60 seconds, with three rounds. Keep these rules in one place with automated tests (NFR-MNT-2).
 - **Step order is gated.** A step unlocks only when the previous one is complete. The entry choice can change only until Transcript starts. Transcript cannot be skipped; Card and Shadow can be skipped after confirmation.
 - **Dictation scoring is a pure function** in `modules/dictation/domain` (`score_dictation`, ADR 0008 and 0019): spelling slips count as correct (`SPELLING_SLIPS_COUNT_AS_CORRECT`), and only wrong or missing words become mark candidates. Add British spellings to `spelling_variants.py`.
 - **Step order lives in `modules/practice/domain/plan.py`** (ADR 0021). Mode endpoints call `practice.service.require_step(db, session_id, Step.X)` first and report with `complete_step(db, session, Step.X)` in the same transaction; transcript reads use `require_reached`. Never write `practice.session_steps` directly. The entry locks when Transcript opens, writes check `sessions.version` (409 `session_changed`), and refusals use the codes in ADR 0021.
@@ -114,8 +114,10 @@ These rules are mandatory for every change, however small.
 - Every commit is authored and committed by the repository owner: `abu bakar <abubakar850772@gmail.com>`. Cloud sessions may preset a different git identity (for example `Claude <noreply@anthropic.com>`), so before the first commit of a session run `git config user.name "abu bakar"` and `git config user.email "abubakar850772@gmail.com"` in the repository, then check with `git log -1 --format='%an <%ae> | %cn <%ce>'` after committing.
 
 ### Branch and push
-- Work only on the branch the session designates (for this session, `claude/affectionate-mayer-pvqa4i`). Create it locally if it does not exist. Never push to another branch without explicit permission.
+- **Branch naming is mandatory in every session.** Before editing, run `git branch --show-current` and validate the result with `.github/scripts/check-branch-name.sh`. Working branches use `<type>/<purpose>`, where `type` is `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`, `hotfix`, or `release`, and `purpose` is a lowercase kebab-case description with at least two meaningful terms. Start the purpose with the issue or ticket ID when one exists (for example, `fix/142-login-timeout`, `feat/lu-87-shadow-feedback`, or `docs/branch-naming-policy`). Tool-based names (`codex/...`, `claude/...`), bare session names (`work`), UUIDs, hashes, and generated adjective/random slugs are forbidden. CI enforces the machine-checkable part; authors and reviewers enforce that the words accurately describe the story.
+- If a cloud tool creates an invalid local-only branch, rename it with `git branch -m <compliant-name>` before making changes. If an invalid branch is already pushed or attached to a pull request, stop and report it so the owner can coordinate a rename without losing review history.
+- Work only on the story's branch. Use an owner-designated branch only when it complies with this policy; otherwise create an unused compliant branch from current `main` and report its name. For fixes to an existing PR, use that PR's compliant branch. Never push to `main` or an unrelated story's branch without explicit permission.
 - Push with `git push -u origin <branch>`. If the push fails because of a network error, retry up to 4 times with exponential backoff (2s, 4s, 8s, 16s). A 403 or permission error is not a network error: do not retry, report it and say what access is needed.
 - Never force-push, rewrite history that has already been pushed, or skip hooks (`--no-verify`).
-- Do not open a pull request unless explicitly asked.
+- Open a pull request when explicitly asked, including a story prompt whose done criterion is one pull request. Review-only tasks do not authorize edits, a new PR or merging. The owner merges.
 - After pushing, confirm that `git status` is clean and the branch is up to date with its remote.

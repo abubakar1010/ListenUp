@@ -1,16 +1,49 @@
-# Repository instructions
+# ListenUp instructions for Codex
 
-Read `CLAUDE.md` for project context, commands, architecture constraints and commit rules. Read `docs/conventions.md` for the area being changed.
+Before working, read `CLAUDE.md` for shared project, architecture, command and
+commit rules, and `docs/workflow.md` for the story, planning and review process.
+Read the relevant section of `docs/conventions.md` before changing an area.
+These files apply to both Codex and Claude Code; keep shared rules there rather
+than duplicating them here.
 
-## Test-driven development is required
+- Design documents in `docs/design/` are the source of truth. Read only the
+  sections needed by the acceptance criteria. Record changed decisions with
+  their ADR; report conflicting requirements rather than choosing policy.
+- Use the existing checkout in an isolated cloud task. Do not create a Git
+  worktree unless the owner requests one. Start from current `main` for a new
+  story; use its existing branch when addressing an open PR.
+- At the start of every session, check the current branch before editing. Branch
+  names must follow the mandatory naming policy in `CLAUDE.md`: a change-type
+  prefix and a readable, auditable kebab-case purpose. Never use a tool name,
+  random identifier, or generated adjective as the branch's identity. Rename an
+  invalid local-only branch before work; stop and report an invalid pushed or PR
+  branch rather than continuing under it.
+- If the owner names a compliant branch, use it. Otherwise create one unused,
+  compliant branch for the story and report its name. Do not reuse a branch from
+  an unrelated PR.
+- For complex stories, present the short plan and wait for owner approval before
+  editing code. A story prompt that explicitly says "Plan first: no" controls
+  that task. Do not treat silence as approval.
+- Read a relevant `.claude/agents/*.md` file when using its specialist guidance.
+  Those files are instructions, not automatically installed Codex agents or
+  skills. Use available file-reading/editing tools in the actual checkout;
+  Claude-specific tool names or historical checkout paths are not prerequisites.
+  Do not spawn helpers unless the owner explicitly requests delegation.
+- Codex does not automatically execute `.claude/settings.json` hooks. Follow
+  the cloud environment's saved installation/startup instructions and verify
+  the required services and dependencies before running checks.
+- Review a PR in a fresh session using the review prompt in `docs/workflow.md`.
+  Report findings first; do not edit or merge during a review-only task.
+- Follow the commit authorship and Conventional Commit rules in `CLAUDE.md`.
+  Open a PR when requested by the task or its explicit "Done means one PR"
+  instruction. Fix findings in that PR; the owner merges.
 
-Follow `docs/testing.md` and `docs/workflow.md` for every behavior change:
+## Mandatory test-driven development
 
-- Before changing production code, turn the acceptance criterion or bug into a focused automated test. Run it and observe the expected failure.
-- Make the smallest implementation that passes, then refactor with the relevant tests green. Repeat in small behavior slices.
-- Test observable outcomes, relevant boundaries and failure paths. Use the test level that can expose the real defect; preserve database, ownership and provider contract checks.
-- Record the actual red and green commands and outcomes, map acceptance criteria to named tests, and review coverage of changed code. Never claim an unrun, skipped or blocked check passed.
-- Existing untested behavior needs characterization before refactoring. Documentation, formatting and other changes without executable behavior use the explicit applicability rules in `docs/testing.md`; do not invent meaningless tests.
-- Finish with the applicable checks in `docs/workflow.md`. CI coverage is supporting evidence; reviewers must also assess assertions and test-first evidence.
-
-These rules apply to Codex, Claude and human contributors. Do not defer tests until after implementation or weaken assertions, coverage thresholds or exclusions to make a change pass.
+Follow `docs/testing.md` and `docs/workflow.md` for new behavior and bug fixes:
+observe a focused failing test before implementation, make it pass, then refactor
+with tests green. Record actual red/green evidence, map acceptance criteria to
+named tests, and review relevant boundaries, failure cases and changed coverage.
+Apply the testing policy's characterization and non-behavior applicability rules.
+Never claim blocked, skipped or unrun checks passed, or weaken assertions or
+coverage exclusions to make a change pass. The same policy applies to both tools.

@@ -32,7 +32,7 @@ the assertions detect or the targeted mutation check performed. -->
 
 ## Checklist (docs/workflow.md)
 
-- [ ] Every acceptance criterion maps to named tests, including relevant boundary and failure cases
+- [ ] Every acceptance criterion maps to named tests, including relevant boundary and failure cases, or a documentation-only check
 - [ ] Actual red/green evidence is recorded for behavior changes, or applicability is explained per docs/testing.md
 - [ ] Changed-line coverage passes; uncovered branches and assertion quality reviewed
 - [ ] Backend checks pass (format, lint, mypy, import contracts, coverage suite and uninstrumented performance checks), or no backend change
@@ -40,4 +40,6 @@ the assertions detect or the targeted mutation check performed. -->
 - [ ] Generated API client refreshed and new routes in the access registry, or no API change
 - [ ] Web checks pass (lint, format, types, tests with coverage, build, size, e2e), or no web change
 - [ ] ADR added for each significant decision; area conventions updated in docs/conventions.md
-- [ ] Independent review done and its findings fixed
+- [ ] Relevant checks and their outcomes are described; unrun checks have reasons
+- [ ] Fresh-session review in Claude Code or Codex done and its findings fixed
+- [ ] Owner questions resolved and required CI green before the owner merges
