@@ -266,3 +266,21 @@ async def test_a_replayed_stream_ending_event_ends_the_stream_too() -> None:
     (chunk,) = await drain(again, 1)
     assert parse(chunk)["id"] == later.id
     assert hub.stream_count(A) == 1
+
+
+@pytest.mark.parametrize("queue_size", [1, 2, 5])
+async def test_nothing_can_replace_a_queued_terminal_event(queue_size: int) -> None:
+    hub = EventHub(queue_size=queue_size)
+    stream = await opened(hub, A)
+    disabled = hub.dispatch(A, EventType.ACCOUNT_DISABLED.value, str(A))
+    for number in range(queue_size + 2):
+        hub.dispatch(A, "job.progress", str(number))
+    hub.dispatch(A, EventType.ACCOUNT_DISABLED.value, str(A))
+    hub.mark_gap()
+    hub.close()
+    chunk = await anext(stream)
+    assert parse(chunk)["id"] == disabled.id
+    assert parse(chunk)["event"] == "account.disabled"
+    with pytest.raises(StopAsyncIteration):
+        await asyncio.wait_for(anext(stream), 1)
+    assert hub.stream_count(A) == 0
