@@ -29,6 +29,8 @@ Read the section for the area you are changing before you change it. The rules e
 
 ## Data export (ADR 0030)
 
+- Rejected export archives are removed by their deterministic storage key on every build retry, including after the request is marked `account_deleted` and the account is restored or purged. A failed storage deletion must not become an early-return success on the next attempt.
+
 - Data export (ADR 0030): a module that owns learner data offers `export_data(session, learner) -> ExportPart` (from `listenup.platform.export`) in its `service.py`, using `learner_rows(..., omit=(secret columns,))`, and is listed in `modules/export/collect.py`; `test_export.py` fails while a table with `user_id` is missing from the export. YouTube media files are never exported. `POST /me/exports` queues `export.build_archive`; the archive is reached only through `GET /me/exports/{id}/download` (a 307 to a short-lived signed link) and is deleted after `LISTENUP_EXPORT_KEEP_DAYS`.
 
 ## Accounts and deletion (ADR 0017, 0029)

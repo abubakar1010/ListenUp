@@ -86,20 +86,30 @@ async def build_archive(deps: JobDeps, export_id: str, user_id: str) -> None:
 async def _build(
     database: Database, storage: Storage, export: uuid.UUID, learner: uuid.UUID
 ) -> None:
+    key = archive.archive_key(learner, export)
+    cleanup = False
     async with database.transaction(learner) as session:
         if not await identity.account_is_active(session, learner):
             # Deleted after asking (ADR 0029): no copy of the data for a disabled
             # account. A learner who restores it can ask again.
             await repository.mark_failed(session, export, learner, "account_deleted")
             logger.info("export build skipped: account deleted", extra={"export": str(export)})
-            return
-        if not await repository.start_building(session, export, learner):
+            cleanup = True
+        elif not await repository.start_building(session, export, learner):
+            row = await repository.get(session, export, learner)
+            cleanup = row is None or row.error_code == "account_deleted"
             logger.info("export build skipped: nothing to build", extra={"export": str(export)})
-            return
+            if not cleanup:
+                return
+
+    if cleanup:
+        # A previous attempt may have committed account_deleted before storage
+        # deletion failed. Retry the deterministic key even after restore/purge.
+        await storage.delete(key)
+        return
 
     parts, exported_at = await _snapshot(database, learner)
     settings = get_settings()
-    key = archive.archive_key(learner, export)
     with tempfile.TemporaryDirectory(
         prefix="listenup-export-", dir=settings.media_scratch_dir
     ) as scratch:

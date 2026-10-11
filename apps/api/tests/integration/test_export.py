@@ -440,6 +440,49 @@ def test_an_account_deleted_while_the_archive_is_built_keeps_no_archive(
     assert not [key for key in racing.objects if "/exports/" in key]
 
 
+@pytest.mark.parametrize("restored", [False, True])
+def test_rejected_archive_cleanup_is_retried_after_storage_failure(
+    make_client: ClientFactory, storage: FakeStorage, migrated_url: str, restored: bool
+) -> None:
+    client = make_client()
+    user = learner_id(client)
+    started = request_export(client)
+
+    class Interrupted(FakeStorage):
+        attempts = 0
+
+        async def put_file(self, key: str, path: Path, content_type: str) -> None:
+            await super().put_file(key, path, content_type)
+            with psycopg.connect(migrated_url, autocommit=True) as conn:
+                conn.execute(
+                    "UPDATE identity.users SET status = 'pending_deletion', "
+                    "deletion_scheduled_at = now() + interval '7 days' WHERE id = %s",
+                    [user],
+                )
+
+        async def delete(self, key: str) -> None:
+            self.attempts += 1
+            if self.attempts == 1:
+                raise RuntimeError("temporary storage failure")
+            await super().delete(key)
+
+    interrupted = Interrupted()
+    use_storage(interrupted)
+    with pytest.raises(RuntimeError, match="temporary storage failure"):
+        run_build(migrated_url, started["id"], user)
+    assert any("/exports/" in key for key in interrupted.objects)
+    if restored:
+        with psycopg.connect(migrated_url, autocommit=True) as conn:
+            conn.execute(
+                "UPDATE identity.users SET status = 'active', deletion_scheduled_at = NULL "
+                "WHERE id = %s",
+                [user],
+            )
+    run_build(migrated_url, started["id"], user, attempt=2)
+    assert interrupted.attempts == 2
+    assert not any("/exports/" in key for key in interrupted.objects)
+
+
 def test_a_ready_export_is_announced(
     make_client: ClientFactory, storage: FakeStorage, migrated_url: str
 ) -> None:
