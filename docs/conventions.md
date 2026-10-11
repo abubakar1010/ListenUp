@@ -2,9 +2,9 @@
 
 Read the section for the area you are changing before you change it. The rules every change needs are in `CLAUDE.md`; these add what a single area needs. When you add a convention, put it here under its area, not in `CLAUDE.md`.
 
-## Jobs (ADR 0015, 0029, 0033)
+## Jobs (ADR 0015, 0029, 0034)
 
-- A `unique_key` holds while a job with that key waits or runs: `enqueue` returns None meanwhile. A job that also runs on a schedule passes `schedule="<cron>"` to `@job`. A job whose worker died is settled by `platform.recover_stalled_jobs` (back to the queue, or `on_give_up` after its last attempt), so a handler must be safe to run again after doing part of its work.
+- Migration 0014 enforces unique active queueing locks. Backpressure transfers the key and records its replaced run atomically; recovery does not retry that run. A `unique_key` holds while a job with that key waits or runs: `enqueue` returns None meanwhile. A job that also runs on a schedule passes `schedule="<cron>"` to `@job`. A job whose worker died is settled by `platform.recover_stalled_jobs` (back to the queue, or `on_give_up` after its last attempt), so a handler must be safe to run again after doing part of its work.
 
 ## Email (ADR 0017)
 
@@ -13,6 +13,7 @@ Read the section for the area you are changing before you change it. The rules e
 ## Uploads, media and the library (ADR 0020, 0022, 0027)
 
 - Uploads go straight from the browser to storage (ADR 0020): `POST /uploads` records a row in `content.uploads` and returns a PUT URL signed for the exact type and size; `POST /contents` confirms it. Limits are `LISTENUP_UPLOAD_*` settings. `Storage` has `head` and `delete`; tests swap `app.state.uploads.storage` for the fake in `tests/integration/intake_helpers.py`.
+- Storage-producing conversion and export jobs lock the account before uploading and hold the transaction through result persistence. Purge takes the exclusive user-row lock before its sweeps, preventing late writes after completion (ADR 0029).
 - Media files of an upload live under `users/<user id>/media/<media id>/` (`playback.mp4`, `peaks.json`); the conversion job `content.convert_upload` (ADR 0022) runs ffprobe and ffmpeg as async subprocesses in `LISTENUP_MEDIA_SCRATCH_DIR`. The browser plays media through `GET /api/v1/media/{media_object_id}` (and `/peaks`), which checks for the caller's content item and redirects (307) to a signed storage URL; never put storage URLs in cached API bodies.
 - Intake admission (ADR 0027): new audio counts per UTC day in `ops.rate_counters` (`intake:user:<id>`), at most 15 minutes a clip, added when the conversion job makes the clip playable; clips still being prepared reserve 15 minutes each. `POST /uploads` and `POST /contents` refuse with 429 `daily_audio_limit`. At most `LISTENUP_INTAKE_RUNNING_LIMIT` of a learner's conversions are on the intake lane; the rest wait with `content.uploads.queued_at` NULL until one ends. The conversion job records `media_objects.stage` and publishes `job.progress`; a removed duplicate answers 410 `duplicate_upload`. The storage cap counts `playback_bytes` once a clip is playable.
 - List endpoints page by keyset: an opaque `cursor` (`content/domain/cursor.py`) and `next_cursor` in the response, never OFFSET.

@@ -122,7 +122,9 @@ All background work flows through four priority lanes in the PostgreSQL queue, s
 | 1 `speech-interactive` | Shadow round analysis, three-round comparison | media | both slots | 3 min | 3 |
 | 2 `intake` | Metadata, download, conversion, passage transcription, reference profile, card snippets | media | 1 slot | 10 min | 5 |
 | 3 `ai` | Key points, gist grade, round feedback, suggestions | default | 8 async | 60 s | 4 (with provider fallback inside each attempt) |
-| 4 `background` | Email, deletion, retention sweeps, trends, scratch clean-up; data export build | default | 1 | 15 min; export build 45 min | 5; export build 3 ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)) |
+| 4 `background` | Email, deletion, retention sweeps, trends, scratch clean-up; data export build | default | 1 | 15 min; purge 30 min; export build 45 min | 5; purge and export build 3 ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)) |
+
+The purge sweep runs every 15 minutes; stalled-job recovery runs every 5 minutes. Unique keys cover queued and running jobs through a database partial unique index; postponed runs hand their key to a successor atomically ([ADR 0034](../adr/0034-unique-keys-of-running-jobs-and-stalled-job-recovery.md)). Workers enable schedules only for their served lanes.
 
 The two pools are separate processes, so a burst of AI calls (waiting on the network) never takes CPU from speech analysis, and vice versa. Each pool runs two Procrastinate workers: the media pool one on lanes 1 and 2 and one on lane 1 only, so speech work can use both slots and intake at most one; the default pool one with 8 concurrent AI jobs and one for background jobs.
 
@@ -273,7 +275,7 @@ Live updates use PostgreSQL's built-in notifications instead of a message broker
 1. When a job finishes, the worker runs `NOTIFY user_events` with a tiny payload: user id, event type and resource id. The notification is sent in the job's own transaction, so PostgreSQL delivers it only on commit.
 2. Each API process holds **one** listening database connection and keeps an in-memory map of open Server-Sent Events streams by user.
 3. The API forwards the event to that user's streams; the browser then fetches the resource. Payloads carry ids only, never data, so they stay far below PostgreSQL's notification size limit.
-4. Streams send a comment line every 25 s so proxies keep them open. On reconnect the browser sends `Last-Event-ID` and refetches anything still pending. Event ids are \<process id>-\<sequence>, and each process keeps a short replay buffer per user (the last 50 events for 2 minutes). A reconnect to the same process within that buffer gets the missed events replayed; any other reconnect gets one resync event, and the browser refetches every resource it still shows as pending. The stream is GET /api/v1/events.
+4. Streams send a comment line every 25 s so proxies keep them open. On reconnect the browser sends `Last-Event-ID` and refetches anything still pending. Event ids are \<process id>-\<sequence>, and each process keeps a short replay buffer per user (the last 50 events for 2 minutes). A reconnect to the same process within that buffer gets the missed events replayed; any other reconnect gets one resync event, and the browser refetches every resource it still shows as pending. The stream is GET /api/v1/events. `account.disabled` is terminal: it survives queue backpressure, later notifications, resync and shutdown, is delivered once, then closes the stream; reconnect is refused for disabled accounts (ADR 0029).
 
 An async Python server holds thousands of idle streams per process, far beyond stage 1 needs. At stage 2 the notification source moves to Redis publish and subscribe, with no client change.
 
@@ -333,7 +335,7 @@ Every failure degrades a feature rather than the practice session: a learner can
 
 ### 11.3 Idempotency everywhere
 
-- Jobs carry a unique key (for example `grade_round:<round id>`), so the same work is never queued twice.
+- Jobs carry a unique key (for example `grade_round:<round id>`), so the same work is never queued twice while waiting or running. Recovery retries work left by dead workers, counts failed attempts, and invokes final-failure handling; replaced backpressure runs are settled without retry (ADR 0034).
 - Submissions carry an `Idempotency-Key`; a repeated request returns the first result.
 - Every result write is an upsert on its natural key.
 
