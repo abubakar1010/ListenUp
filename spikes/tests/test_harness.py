@@ -78,11 +78,11 @@ def test_window_bounds_cover_the_audio_with_context_in_whole_frames() -> None:
         assert in_start == max(0, start - context) and in_end == min(n, end + context)
 
 
-def test_boundary_errors_match_by_text_and_time() -> None:
+def test_boundary_errors_locate_a_labelled_excerpt_by_text_context() -> None:
     predicted = [("the", 1.0, 1.2), ("cat", 1.25, 1.6), ("the", 30.0, 30.2), ("dog", 30.3, 30.6)]
     labelled = [("the", 30.05, 30.2), ("dog", 30.3, 30.7), ("bird", 31.0, 31.5)]
     errors = boundary_errors_ms(predicted, labelled)
-    # "the" matches the one at 30 s, not the first; "bird" has no match and is skipped.
+    # "the dog" anchors the excerpt; the unmatched "bird" is counted by the report.
     assert errors == pytest.approx([50, 0, 0, 100])
 
 

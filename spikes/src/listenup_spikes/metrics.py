@@ -3,6 +3,7 @@
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 FILLERS = ("um", "uh", "er", "erm", "hmm", "like", "you know")
 _CONTRACTIONS = {
@@ -122,33 +123,26 @@ def mean_boundary_error_ms(
 def boundary_errors_ms(
     predicted: Sequence[tuple[str, float, float]],
     labelled: Sequence[tuple[str, float, float]],
-    max_shift_s: float = 1.0,
 ) -> list[float]:
-    """Absolute start and end errors (ms) for each labelled word that a predicted word
-    matches: the same normalised text, starting within max_shift_s, nearest first, and
-    in order. Labels may cover only part of the predicted span (a hand-labelled window),
-    so matching is by time as well as text; unmatched labelled words are skipped."""
+    """Match ordered text blocks, then measure every matched boundary without a time
+    cutoff. Text context locates hand-labelled excerpts within the full passage;
+    timestamps never decide which words match. Disable the popular-word heuristic
+    because repeated words like 'the' are meaningful anchors in speech.
+
+    Unmatched labels have no measurable timing error. Callers must report their count
+    and must not pass an accuracy gate on incomplete coverage (see compare._row).
+    """
+    matcher = SequenceMatcher(
+        a=[tuple(normalize_words(w)) for w, _, _ in predicted],
+        b=[tuple(normalize_words(w)) for w, _, _ in labelled],
+        autojunk=False,
+    )
     errors: list[float] = []
-    j = 0
-    for word, start, end in labelled:
-        key = normalize_words(word)
-        best = None
-        k = j
-        while k < len(predicted) and predicted[k][1] <= start + max_shift_s:
-            shift = abs(predicted[k][1] - start)
-            if (
-                shift <= max_shift_s
-                and normalize_words(predicted[k][0]) == key
-                and (best is None or shift < abs(predicted[best][1] - start))
-            ):
-                best = k
-            k += 1
-        if best is None:
-            continue
-        errors.extend(
-            [abs(predicted[best][1] - start) * 1000, abs(predicted[best][2] - end) * 1000]
-        )
-        j = best + 1
+    for a, b, size in matcher.get_matching_blocks():
+        for offset in range(size):
+            _, start, end = labelled[b + offset]
+            _, pred_start, pred_end = predicted[a + offset]
+            errors.extend([abs(pred_start - start) * 1000, abs(pred_end - end) * 1000])
     return errors
 
 

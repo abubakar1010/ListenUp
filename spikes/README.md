@@ -19,12 +19,13 @@ uv sync --extra youtube --extra transcribe --extra datasets
 uv pip install --index-url https://download.pytorch.org/whl/cpu "torch==2.8.*" "torchaudio==2.8.*"
 uv pip install praat-parselmouth soundfile
 export OMP_NUM_THREADS=2                # 2 threads per worker process (System Design 5.2)
+export PYTHONPATH=../apps/api/src        # production text, Dictation and conversion helpers
 ```
 
 Run the scripts with `.venv/bin/python -m listenup_spikes.<module>` (or the `spike-*` names
-with `uv run --no-sync`), so `uv run` does not remove the CPU torch wheels. B1 and the
-NFR-PERF-2 check use the product's own Dictation rules and conversion command, so they run
-with `PYTHONPATH=../apps/api/src`.
+with `uv run --no-sync`), so `uv run` does not remove the CPU torch wheels. B1, B2, Shadow
+alignment and the NFR-PERF-2 check import the product's pure helpers through the
+`PYTHONPATH` above. B2 uses exactly the production alignment text preprocessing.
 
 Models download from Hugging Face on first use (MMS_FA from dl.fbaipublicfiles.com, the
 English wav2vec2 model from download.pytorch.org). Results are written as `.md` and `.json`;
@@ -61,6 +62,18 @@ spike-passages voxpopuli data/raw/vp_acc_test_0.parquet data/raw/vp_acc_test_1.p
 ```
 
 `spike-summary b1|b2 <results folder>` prints the tables used in `docs/spikes/`.
+
+`spike-compare` matches ordered text blocks before measuring timing differences; there
+is no timing cutoff. Reports include unmatched words and coverage, including missing
+passages and sources with zero matches. Boundary-error means describe matched words;
+the within-50/100-ms shares include all compared words in the denominator. The hand-label
+gate passes only with non-empty, complete label coverage and mean error <= 50 ms.
+Inspect text matches for repeated/ambiguous excerpts before accepting the hand-label
+result. Agreement between models cannot pass this gate.
+
+The original B2 JSON in `docs/spikes/data/b2/` predates these corrections and remains
+historical evidence only. Rebuild the audio and rerun B2 into fresh results/words folders
+before using it to validate the production model; see `docs/spikes/19-b2-alignment.md`.
 
 #16 (choose the server) and #23 (B6, free AI providers) are desk research: they compare
 current provider terms and limits and are recorded as ADRs, not run with this harness.

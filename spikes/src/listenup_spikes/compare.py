@@ -48,18 +48,27 @@ def load_labels(folder: Path) -> dict[str, Words]:
     return out
 
 
-def _row(name: str, errors: list[float], words: int) -> dict[str, object]:
-    s = spread(errors)
-    return {
+def _row(
+    name: str, errors: list[float], words: int, *, hand_labels: bool = False
+) -> dict[str, object]:
+    s = spread(errors) if errors else None
+    matched = len(errors) // 2
+    row: dict[str, object] = {
         "comparison": name,
-        "words_matched": s.count // 2,
+        "words_matched": matched,
         "words_compared": words,
-        "mean_ms": round(s.mean, 1),
-        "median_ms": round(s.median, 1),
-        "p90_ms": round(s.p90, 1),
-        "within_50ms": round(s.share_within_50ms, 3),
-        "within_100ms": round(s.share_within_100ms, 3),
+        "words_unmatched": words - matched,
+        "coverage": round(matched / words, 3) if words else 0.0,
+        "mean_ms": round(s.mean, 1) if s else None,
+        "median_ms": round(s.median, 1) if s else None,
+        "p90_ms": round(s.p90, 1) if s else None,
+        # Shares use ALL compared boundaries, so dropping a word cannot improve them.
+        "within_50ms": round(sum(e <= 50 for e in errors) / (2 * words), 3) if words else 0.0,
+        "within_100ms": round(sum(e <= 100 for e in errors) / (2 * words), 3) if words else 0.0,
     }
+    if hand_labels:
+        row["meets_hand_label_gate"] = bool(s and matched == words and s.mean <= 50)
+    return row
 
 
 def main() -> None:
@@ -85,31 +94,41 @@ def main() -> None:
         "comparison",
         "words_matched",
         "words_compared",
+        "words_unmatched",
+        "coverage",
         "mean_ms",
         "median_ms",
         "p90_ms",
         "within_50ms",
         "within_100ms",
+        "meets_hand_label_gate",
     ]
     report = Report(args.name, columns)
     report.summary["passages"] = args.only or "all"
 
-    labels = load_labels(args.labels) if args.labels else {}
+    labels = {
+        passage: words
+        for passage, words in (load_labels(args.labels) if args.labels else {}).items()
+        if not args.only or passage.startswith(args.only)
+    }
     report.summary["hand-labelled windows"] = len(labels)
+    report.summary["boundary_matching"] = "ordered text blocks; no timing cutoff; v2"
+    report.summary["hand_label_gate"] = (
+        "all labelled words matched and mean boundary error <= 50 ms"
+    )
     for name, words_of in sources.items():
         errors, compared = [], 0
         for passage, labelled in labels.items():
-            if passage in words_of:
-                errors += boundary_errors_ms(words_of[passage], labelled)
-                compared += len(labelled)
-        if errors:
-            report.add(**_row(f"{name} vs hand labels", errors, compared))
+            errors += boundary_errors_ms(words_of.get(passage, []), labelled)
+            compared += len(labelled)
+        if args.labels:
+            report.add(**_row(f"{name} vs hand labels", errors, compared, hand_labels=True))
     for a, b in combinations(names, 2):
         errors, compared = [], 0
-        for passage in sorted(set(sources[a]) & set(sources[b])):
-            errors += boundary_errors_ms(sources[a][passage], sources[b][passage])
+        for passage in sorted(sources[b]):
+            errors += boundary_errors_ms(sources[a].get(passage, []), sources[b][passage])
             compared += len(sources[b][passage])
-        if errors:
+        if compared:
             report.add(**_row(f"{a} vs {b} (agreement)", errors, compared))
     print(f"wrote {report.write(args.out)}")
 

@@ -116,6 +116,8 @@ Proposal for NFR-PERF-2 (replacing "to confirm after benchmarking"): **a 10-minu
 
 ## Word timestamps
 
+> **Historical comparison; rerun required.** The B2 tokenizer differed from production and the original comparator excluded shifts over one second. Those defects are corrected, but the figures in this section have not been regenerated. They cannot establish timestamp quality; see the corrected method and rerun commands in [B2](19-b2-alignment.md). B1 transcription speed and WER are unaffected by these fixes.
+
 `small.en`'s word times (beam 5, inside the passage) were compared with the two forced aligners from spike #19 on all 20 passages, word by word (start and end, matched by text and time). These are differences between systems; the hand-labelled check of #19 will put an absolute figure on them.
 
 | Compared with | Median | p90 | Within 50 ms | Within 100 ms |

@@ -71,6 +71,13 @@ jobs:
           docker logs storage
           exit 1
       - run: uv run pytest
+      - name: Spike harness regression tests (production pure helpers)
+        working-directory: spikes
+        run: |
+          uv sync --frozen --python 3.12
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run pytest
 
   web:
     name: Web (lint, format, types, tests, build)

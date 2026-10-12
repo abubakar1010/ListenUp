@@ -6,10 +6,12 @@
 
 > **Indicative numbers.** The stage 0 server (#16) does not exist yet. Every number here was measured on the cloud container below and must be rerun on stage 0 before it becomes a commitment. **The hand-labelled boundary check is pending** (see below): the boundary figures here are agreement between systems, not accuracy against a person.
 
+> **Review correction: the B2 results below are historical and do not validate the production adapter.** The original harness expanded contractions and stripped accents differently from production, and its boundary comparator discarded words shifted more than one second. Both defects are now fixed: B2 imports the production text helper, and comparison matches ordered text blocks without a timing cutoff and reports missing coverage. The original audio and per-word model outputs were unavailable in the review-fix workspace, so neither new model measurements nor corrected boundary statistics have been produced. Keep the original JSON for audit; regenerate all B2 settings and comparisons using the commands below before relying on the numeric conclusions. The model choice remains provisional pending that rerun and the human labels.
+
 **Machine:** Intel Xeon Processor @ 2.80 GHz, 4 cores, 1 thread per core, 15.7 GB RAM, no GPU, Linux x86_64, Python 3.12.3; one process with 2 threads (`torch.set_num_threads(2)`, `OMP_NUM_THREADS=2`). Run date: 2026-10-05.
 **Software:** torch 2.8.0 and torchaudio 2.8.0 (CPU wheels), `torchaudio.functional.forced_align`. Models: torchaudio's `MMS_FA` bundle (multilingual MMS aligner, about 300M parameters, 1.2 GB) and `WAV2VEC2_ASR_BASE_960H` (English wav2vec2 base fine-tuned on LibriSpeech 960 h, 95M parameters, 360 MB).
 
-## Questions and answers
+## Original questions and answers (superseded pending rerun)
 
 | Question (issue #19) | Answer |
 | --- | --- |
@@ -21,7 +23,7 @@
 
 **Test clips.** The same 20 passages as B1 ([method](18-b1-transcription.md#method)): 8 LibriSpeech test-clean, 6 test-other, 3 VoxPopuli native and 3 VoxPopuli accented, about 3 minutes each, licence-safe, no YouTube audio. The issue asks for 10 captioned passages; all 20 were aligned, which costs little and doubles the sample. Their reference text stands in for creator captions: written by people, punctuated, and for VoxPopuli not quite verbatim (it skips some false starts, uses digits, and has errors), which is what creator captions are like. Auto-generated captions are out of scope (Architecture 5.1).
 
-**What is aligned.** Each passage's text is aligned to the passage's own audio (the 5 s padding is cut off): creator captions are timed cues, so the product aligns the cues that cover the passage rather than text missing from the audio. Words are folded to the aligner's alphabet (a to z and apostrophe); words with no letters, such as "2009" or "500", cannot be aligned and get no times.
+**What is aligned.** Each passage's text is aligned to the passage's own audio (the 5 s padding is cut off). The corrected harness imports `listenup.ai.providers.alignment_text.alignable_words`: accents are folded, contractions are retained, punctuation is stripped without splitting whitespace words, and digit-only words get no times. This is the same function the production adapter uses. The historical runs below used a different tokenizer.
 
 **Settings.** Each model ran over the whole passage in one pass, and in 30 s windows (each window run with 1 s of extra audio on both sides, only the window's own frames kept; `align.py`, `window_bounds`). The English model was also run in 15 s windows and with dynamic int8 quantisation of its linear layers. Every setting ran in its own process so its peak memory is its own.
 
@@ -29,9 +31,9 @@
 - *Core-s per audio-s*: the process's CPU time across its threads for decoding the emissions and aligning, divided by the passage length. The target is about 0.2 or better (System Design 5.1: about a fifth of transcription).
 - *RTF*: wall time divided by audio length.
 - *Peak memory*: maximum resident set size of the process (model plus the largest passage).
-- *Boundary difference*: for each word, the absolute difference of its start time and of its end time between two sources, matched by text and time (`metrics.boundary_errors_ms`), reported as mean, median, 90th percentile and the share within 50 ms and 100 ms. Against hand labels this is the boundary error; between two systems it is agreement only.
+- *Boundary difference (corrected method)*: match ordered text blocks, then measure absolute start/end differences with no timing cutoff (`metrics.boundary_errors_ms`). Report mean, median and p90 over matched words, plus unmatched counts and coverage. Within-50/100-ms shares use all compared words, including unmatched words, in the denominator. Empty or incomplete hand-label comparisons cannot pass the <= 50 ms gate. Against hand labels this is boundary error; between systems it is agreement only.
 
-## Results
+## Historical results (must be regenerated)
 
 | Model | Emission | Core-s per audio-s (mean / max) | RTF (mean) | Peak memory | Load | Passages aligned | Words not aligned (digits, symbols) |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -64,7 +66,7 @@ Per set:
 | vp-en | 20 / 40 ms / 93.1% | 65 / 264 ms / 63.6% |
 | vp-accented | 20 / 40 ms / 92.9% | 67 / 292 ms / 64.1% |
 
-## Findings
+## Historical findings (must be revalidated)
 
 1. **Whole-passage emissions are the cost.** Self-attention grows with the square of the input length, so a 3-minute passage in one pass costs twice the CPU and three times the memory of 30 s windows, and the boundaries do not move (99.3% within 50 ms; 99.6% for `MMS_FA`). 15 s windows save only 6% more, so 30 s is kept.
 2. **int8 is free accuracy-wise.** Dynamic int8 quantisation of the linear layers cuts another 23% of CPU and leaves 99.2% of boundaries within 50 ms of the full-precision whole-passage run. Its effect on the per-letter posteriors that Shadow's measures use is for spike #20 to check.
@@ -73,7 +75,7 @@ Per set:
 5. **Numbers written in digits get no times.** 12 of 9,444 caption words (0.13%, all in VoxPopuli: "2009", "500") contain no letters, so the aligner leaves them out (ADR 0028's port already reports them as missing). Transcript sync should give such words the gap between their aligned neighbours; a follow-up for the transcript story.
 6. **`torchaudio.functional.forced_align` is deprecated and removed in torchaudio 2.9.** The worker image already pins torchaudio below 2.9, and the `MMS_FA` path used the same function, so nothing changes now; moving to a standalone CTC forced-alignment implementation is a prerequisite for upgrading torchaudio.
 
-## Capacity
+## Historical capacity estimate (must be revalidated)
 
 Alignment of a 3-minute passage costs about 0.18 x 185 = 33 core-s. System Design 2.2 budgets about 0.5 core-s per audio-s (90 core-s) for the whole reference profile (alignment, sounds, pitch); alignment now takes about a third of that budget, leaving the rest to the sound and pitch analysis spike #20 measures. A captioned YouTube passage needs this alignment instead of transcription plus alignment, saving about 100 core-s per new passage.
 
@@ -85,13 +87,19 @@ The issue's spot-check against hand labels needs a person to listen. Three 60 s 
 
 ```sh
 cd spikes   # setup and passage building: README.md
+export PYTHONPATH=../apps/api/src
 for model in WAV2VEC2_ASR_BASE_960H MMS_FA; do for window in 0 30; do
   .venv/bin/python -m listenup_spikes.b2_align data/passages --model $model --window-s $window \
-    --threads 2 --out data/results/b2 --words-out data/results/words
+    --threads 2 --out data/results/b2-v2 --words-out data/results/words-v2
 done; done
 .venv/bin/python -m listenup_spikes.b2_align data/passages --model WAV2VEC2_ASR_BASE_960H \
-  --window-s 30 --int8 --threads 2 --out data/results/b2 --words-out data/results/words
-.venv/bin/python -m listenup_spikes.compare data/results/words --labels ../docs/spikes/b2-labels \
-  --out data/results/b2
-.venv/bin/python -m listenup_spikes.summary b2 data/results/b2
+  --window-s 15 --threads 2 --out data/results/b2-v2 --words-out data/results/words-v2
+.venv/bin/python -m listenup_spikes.b2_align data/passages --model WAV2VEC2_ASR_BASE_960H \
+  --window-s 30 --int8 --threads 2 --out data/results/b2-v2 --words-out data/results/words-v2
+# Regenerate B1 words too when comparing Whisper timestamps against the new B2 output.
+.venv/bin/python -m listenup_spikes.b1_transcribe data/passages --model small.en --beam-size 5 \
+  --processes 2 --threads 2 --out data/results/b1-v2 --words-out data/results/words-v2
+.venv/bin/python -m listenup_spikes.compare data/results/words-v2 --labels ../docs/spikes/b2-labels \
+  --out data/results/b2-v2
+.venv/bin/python -m listenup_spikes.summary b2 data/results/b2-v2
 ```

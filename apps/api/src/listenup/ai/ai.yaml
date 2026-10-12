@@ -19,14 +19,14 @@ roles:
         vad_filter: true
   alignment:
     - provider: wav2vec2-ctc
-      model: WAV2VEC2_ASR_BASE_960H  # spike #19 (B2, ADR 0033): 0.18 core-s per audio-s
+      model: WAV2VEC2_ASR_BASE_960H  # ADR 0033 candidate; corrected B2 validation pending
       timeout_seconds: 300
       retries: 0
       preload: true
       options:
         threads: 2
-        window_seconds: 30  # half the CPU and a third of the memory of one pass
-        int8: true  # dynamic int8 linear layers: 23% less CPU, same boundaries
+        window_seconds: 30  # bounded emission windows; rerun B2 with production preprocessing
+        int8: true  # dynamic int8 linear layers; record this choice in provenance
   # No adapter yet: Shadow grading (#20, #21) and the hosted Text AI (#23) add them.
   speech_assessment: []
   text_ai: []

@@ -6,6 +6,14 @@
 
 ## Context
 
+**Review amendment (2026-10-11): alignment validation is provisional.** The original B2
+harness did not use the production tokenizer and excluded timing differences over one
+second. It now shares production preprocessing and matches text before measuring timing.
+The B2 numbers and boundary claims below are historical, not evidence that the production
+settings pass. Regeneration requires the original corpora and per-word outputs, absent
+from the review-fix workspace. The stage 0 rerun and human labels remain outstanding.
+No new model-performance measurements are claimed by this amendment.
+
 ADR 0028 shipped the transcription and alignment adapters with placeholder models (`base.en`, `MMS_FA`) until B1 and B2 measured speed and accuracy, and with hand-made contract recordings because the model hosts were unreachable where it was written. System Design 12.1 asks B1 for the Whisper size that meets about 1 core-second per audio-second at an acceptable word error rate, B2 for whether forced alignment of creator captions runs at about 0.2 core-seconds per audio-second with usable word boundaries, and SRS OI-2 for the WER that is "good enough" to score Dictation.
 
 The stage 0 server (#16) does not exist yet. Both spikes ran on a cloud container: Intel Xeon @ 2.80 GHz, 4 cores (1 thread each), 15.7 GB, no GPU, as 2 processes x 2 threads. The test clips are 20 three-minute passages with 5 s of padding: 14 from LibriSpeech test-clean and test-other (public-domain audio, human-verified text) and 6 from VoxPopuli (CC0 European Parliament speeches, native and accented, with imperfect reference text).
@@ -32,6 +40,14 @@ Real conversational and accented speech is not yet covered by a verified referen
 **NFR-PERF-2 (OI-3): a 10-minute upload is playable within 30 s (p95) of the upload completing**; upload transfer depends on the learner's network and is excluded. The product's own conversion of a 10-minute upload (playback MP4 and peaks in one decode) took 13.2 s for an AAC file and 15.6 s for an MP3 (median of 5), on one core. The transcript of a 3-minute passage keeps System Design 3.2's budget of 2 minutes from playable (measured 54 s mean, 79 s worst, with the other worker busy).
 
 **Alignment: torchaudio `WAV2VEC2_ASR_BASE_960H` (English wav2vec2 base), emissions in 30 s windows, dynamic int8 linear layers** (`ai.yaml`: `window_seconds: 30`, `int8: true`).
+
+The configured candidate is unchanged; validate it with the corrected B2 harness before
+shipping. The <= 50 ms hand-label gate additionally requires non-empty, complete coverage:
+missing labels or passages are reported and cannot be silently excluded from a pass.
+Inspect text matches for ambiguous repeated excerpts. Model agreement alone never passes
+the gate. Production provenance now includes `window_seconds` and `int8` alongside the
+torch/torchaudio versions (NFR-AI-5); historical contract recordings retain the provenance
+actually emitted when recorded, and future recordings use the expanded version string.
 
 | Aligner and setting | Core-s per audio-s, mean / max | Peak memory |
 | --- | --- | --- |

@@ -39,7 +39,14 @@ This writes `data/labels/NAME.wav` (60 s each) and leaves the templates here unt
 ```sh
 cd spikes
 uv run spike-labelkit import ../docs/spikes/b2-labels/windows.json ../docs/spikes/b2-labels
-uv run spike-compare data/results/words --labels ../docs/spikes/b2-labels --out data/results/b2
+uv run spike-compare data/results/words-v2 --labels ../docs/spikes/b2-labels --out data/results/b2-v2
 ```
 
 The import writes `PASSAGE.labels.csv` here (word, start, end, in the passage file's time). Commit the labelled TextGrids and the CSV files, then add the "vs hand labels" rows to `docs/spikes/19-b2-alignment.md` and the ADR.
+
+Use newly generated model output from the corrected B2 harness (see the B2 report).
+Comparison matches ordered text blocks without using timestamps to choose matches.
+Review repeated or ambiguous excerpts, inspect `words_unmatched` and `coverage`, and
+require `meets_hand_label_gate: true`: all labelled words must match and their mean
+boundary error must be <= 50 ms. A missing passage, zero matches, or empty label set
+cannot pass. Do not accept a low matched-only mean when coverage is incomplete.
