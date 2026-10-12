@@ -540,9 +540,12 @@ async def start_attempt(db: AsyncSession, session_id: uuid.UUID, mode: Step) -> 
             "This step already has an attempt in progress.",
             attempt_id=str(live.id) if live else None,
         ) from None
-    await analytics.record_listen_started(
-        db, practice.user_id, practice.id, practice.content_id, row.id, mode=mode.value
-    )
+    # Blind starts only after its explicit Start action. Dictation opens an attempt
+    # with the screen and records its listen separately on the first real playback.
+    if mode is Step.BLIND:
+        await analytics.record_listen_started(
+            db, practice.user_id, practice.id, practice.content_id, row.id, mode=mode.value
+        )
     return _attempt(row)
 
 

@@ -1,8 +1,8 @@
-"""Report the five PRD 2 success metrics for a date range (#101, ADR 0033).
+"""Report the five PRD 2 success metrics for a date range (#101, ADR 0034).
 
 Run from apps/api. Dates are UTC days and both ends are included:
 
-    uv run python scripts/analytics_report.py --from 2026-10-01 --to 2026-10-31 [--json]
+    uv run python scripts/analytics_report.py --from 2026-09-01 --to 2026-09-30 [--json]
 
 Connect as a login granted `listenup_readonly` (--database-url or
 LISTENUP_DATABASE_URL): that role reads every learner's analytics events but no
@@ -149,6 +149,8 @@ def main(argv: list[str] | None = None) -> str:
     if end <= start:
         parser.error("--to must be on or after --from")
     as_of = _moment(args.as_of) if args.as_of else datetime.now(UTC)
+    if as_of < end:
+        parser.error("--as-of must be at or after the end of the --to UTC day")
     report = asyncio.run(build(args.database_url, start, end, as_of, args.role))
     return as_json(report) if args.json else as_text(report)
 

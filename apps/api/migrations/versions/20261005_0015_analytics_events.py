@@ -1,4 +1,4 @@
-"""Product analytics events (#101, PRD 2 and 8.2, ADR 0033).
+"""Product analytics events (#101, PRD 2 and 8.2, ADR 0034).
 
 `ops.analytics_events` holds one row per product event, written by the API in the
 same transaction as the change it describes, so a refused or rolled-back request

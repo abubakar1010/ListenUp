@@ -1,4 +1,7 @@
-"""What each change of a plan records, and how marks are keyed (#101, ADR 0033)."""
+"""What each change of a plan records, and how marks are keyed (#101, ADR 0034)."""
+
+import hashlib
+import uuid
 
 import pytest
 
@@ -59,17 +62,22 @@ def test_an_unknown_step_is_refused() -> None:
 
 
 def test_a_marked_phrase_is_kept_only_as_a_stable_hash() -> None:
-    key = mark_pattern("Could've,")
+    learner = uuid.uuid4()
+    secret = b"a dedicated analytics key long enough for hmac"
+    key = mark_pattern("Could've,", learner, secret)
 
-    assert key == mark_pattern("could\u2019ve") == mark_pattern("  COULD'VE  ")
-    assert key != mark_pattern("could have")
+    assert key == mark_pattern("could\u2019ve", learner, secret)
+    assert key == mark_pattern("  COULD'VE  ", learner, secret)
+    assert key != mark_pattern("could have", learner, secret)
+    assert key != mark_pattern("Could've", uuid.uuid4(), secret)
+    assert key != hashlib.sha256(b"could've").hexdigest()[:32]
     assert "could" not in key
     assert len(key) == 32
 
 
 def test_a_phrase_without_words_is_refused() -> None:
     with pytest.raises(ValueError):
-        mark_pattern(" ... ")
+        mark_pattern(" ... ", uuid.uuid4(), b"secret")
 
 
 def test_values_outside_the_allowed_set_are_refused() -> None:

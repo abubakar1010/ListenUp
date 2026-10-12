@@ -57,6 +57,24 @@ async def open_attempt(
     )
 
 
+@router.post(
+    "/dictation/attempts/{attempt_id}/listen",
+    status_code=204,
+    responses={
+        404: {"description": "`attempt_not_found`"},
+        409: {"description": "`attempt_closed`, `step_locked` or `session_closed`"},
+    },
+)
+async def record_listen_started(
+    attempt_id: uuid.UUID, learner: CurrentLearner, db: DbSession
+) -> None:
+    """Record the attempt's first successful playback for the time-to-listen metric.
+
+    Repeated calls are idempotent. Opening the Dictation screen alone records nothing.
+    """
+    await service.record_listen_started(db, attempt_id)
+
+
 @router.put(
     "/dictation/attempts/{attempt_id}/draft",
     responses={

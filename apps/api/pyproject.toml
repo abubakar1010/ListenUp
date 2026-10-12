@@ -116,7 +116,7 @@ source_modules = ["listenup.modules.practice"]
 forbidden_modules = ["listenup.modules.blind", "listenup.modules.dictation", "listenup.modules.review", "listenup.modules.cards", "listenup.modules.shadow"]
 
 # Every module records its events through analytics.service, so analytics must not
-# import any other module back (ADR 0033). The whole package is forbidden, so a module
+# import any other module back (ADR 0034). The whole package is forbidden, so a module
 # added later is covered; the ignore line lets analytics use its own files.
 [[tool.importlinter.contracts]]
 name = "analytics imports no other module"

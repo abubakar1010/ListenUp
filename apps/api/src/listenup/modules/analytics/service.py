@@ -1,6 +1,6 @@
 """The analytics module's public API: record product events, export them, report on them.
 
-#101, PRD 2 and 8.2, ADR 0033. Other modules use only this file (Architecture 4.3),
+#101, PRD 2 and 8.2, ADR 0034. Other modules use only this file (Architecture 4.3),
 with one call per place where an event happens, inside the transaction that makes the
 change, so the event and the change commit or roll back together:
 
@@ -21,7 +21,7 @@ Events hold the learner's id and nothing else personal.
 Recording never fails the caller's action. Each `record_*` runs in a savepoint, and a
 value it does not recognise (a new step, entry or source type this module has not
 learnt) or a row the table refuses is logged and dropped; the step completion, plan
-start or upload that called it still commits. The ADR 0033 tests catch the drift.
+start or upload that called it still commits. The ADR 0034 tests catch the drift.
 """
 
 import functools
@@ -47,6 +47,7 @@ from listenup.modules.analytics.domain import (
     step_changes,
 )
 from listenup.modules.analytics.repository import NewEvent
+from listenup.platform.config import get_settings
 from listenup.platform.export import ExportPart, learner_rows
 
 logger = logging.getLogger(__name__)
@@ -239,7 +240,8 @@ async def record_mark_created(
     *,
     phrase: str,
 ) -> None:
-    """A mark was made; only a hash of its normalised phrase is kept (repeat failures)."""
+    """A mark was made; only its learner-scoped keyed pattern is kept."""
+    key = get_settings().analytics_hmac_key.get_secret_value().encode()
     await repository.insert(
         db,
         learner,
@@ -247,7 +249,7 @@ async def record_mark_created(
             EventType.MARK_CREATED,
             mark_id,
             session_id=session_id,
-            properties={"pattern": mark_pattern(phrase)},
+            properties={"pattern": mark_pattern(phrase, learner, key)},
         ),
     )
 
@@ -296,6 +298,6 @@ async def build_report(db: AsyncSession, start: datetime, end: datetime, as_of: 
 
 
 async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
-    """The learner's analytics events for their data export (#92, ADR 0033)."""
+    """The learner's analytics events for their data export (#92, ADR 0034)."""
     table = await learner_rows(session, "ops.analytics_events", learner, order_by="occurred_at")
     return ExportPart(tables=(table,))

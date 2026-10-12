@@ -1,4 +1,4 @@
-"""The product events of PRD 8.2 and the rules for what each one means (ADR 0033).
+"""The product events of PRD 8.2 and the rules for what each one means (ADR 0034).
 
 Pure: no framework, database or network code. The analytics service turns these into
 rows; other modules never build events themselves.
@@ -25,7 +25,9 @@ Meanings:
 """
 
 import hashlib
+import hmac
 import re
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -83,16 +85,18 @@ def step_changes(before: Mapping[str, str], after: Mapping[str, str]) -> list[St
 _WORDS = re.compile(r"[a-z0-9']+")
 
 
-def mark_pattern(phrase: str) -> str:
+def mark_pattern(phrase: str, learner: uuid.UUID, key: bytes) -> str:
     """A stable key for a marked phrase, so repeat failures can be matched (PRD 2).
 
     The phrase is lowercased and reduced to its words ("Could've," and "could've"
-    match), then hashed: the event never stores what the learner marked.
+    match), then keyed for one learner. The report can compare that learner's marks,
+    but its read-only role cannot recover common phrases or correlate learners.
     """
     words = " ".join(_WORDS.findall(phrase.lower().replace("\u2019", "'")))
     if not words:
         raise ValueError("a mark's phrase has no words")
-    return hashlib.sha256(words.encode()).hexdigest()[:32]
+    message = learner.bytes + b"\0" + words.encode()
+    return hmac.new(key, message, hashlib.sha256).hexdigest()[:32]
 
 
 def require_one_of(name: str, value: str, allowed: tuple[str, ...]) -> str:

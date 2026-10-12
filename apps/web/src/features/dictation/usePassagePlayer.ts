@@ -29,6 +29,7 @@ export function usePassagePlayer(
   audioRef: React.RefObject<HTMLAudioElement | null>,
   startMs: number,
   endMs: number,
+  onPlayback?: () => void,
 ): PassagePlayer {
   const durationMs = endMs - startMs;
   const [status, setStatus] = useState<PlayerStatus>('loading');
@@ -76,6 +77,7 @@ export function usePassagePlayer(
     };
     const onPlay = () => {
       setPlaying(true);
+      onPlayback?.();
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(loop);
     };
@@ -98,7 +100,7 @@ export function usePassagePlayer(
       audio.removeEventListener('timeupdate', check);
       audio.removeEventListener('error', onError);
     };
-  }, [audioRef, durationMs, moveTo, startMs]);
+  }, [audioRef, durationMs, moveTo, onPlayback, startMs]);
 
   const play = useCallback(() => {
     const audio = audioRef.current;

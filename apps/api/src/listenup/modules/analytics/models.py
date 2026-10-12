@@ -1,4 +1,4 @@
-"""Table of the analytics module (`ops.analytics_events`, migration 0015, ADR 0033).
+"""Table of the analytics module (`ops.analytics_events`, migration 0015, ADR 0034).
 
 The schema is created by the hand-written migration; this model mirrors it so that
 `alembic check` reports drift. The policies live only in the migration.

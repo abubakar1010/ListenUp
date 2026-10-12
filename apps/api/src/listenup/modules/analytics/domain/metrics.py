@@ -1,4 +1,4 @@
-"""The five success metrics of PRD 2, computed from analytics events (#101, ADR 0033).
+"""The five success metrics of PRD 2, computed from analytics events (#101, ADR 0034).
 
 Pure functions over a list of events, so each definition is tested on hand-built
 events. A report covers a date range [start, end): the cohort (plans, clips, learners
@@ -284,6 +284,8 @@ def compute_report(events: list[Event], start: datetime, end: datetime, as_of: d
     """The five metrics for [start, end), following events up to `as_of`."""
     if end <= start:
         raise ValueError("the range must end after it starts")
+    if as_of < end:
+        raise ValueError("as_of must be at or after the end of the reporting range")
     seen = [e for e in events if e.occurred_at < as_of]
     return Report(
         start=start,

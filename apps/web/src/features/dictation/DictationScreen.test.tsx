@@ -11,6 +11,7 @@ import { draftStorageKey, type DictationAttempt } from './api';
 const SESSION = sessionFixture({ entry: 'both', done: 1 });
 const ATTEMPT_PATH = `/sessions/${SESSION.id}/dictation/attempts`;
 const DRAFT_PATH = '/dictation/attempts/attempt-1/draft';
+const LISTEN_PATH = '/dictation/attempts/attempt-1/listen';
 
 function attempt(overrides: Partial<DictationAttempt> = {}): DictationAttempt {
   return {
@@ -66,6 +67,7 @@ function renderDictation(routes: Parameters<typeof mockRoutes>[0] = {}) {
       draft_version: 4,
       updated_at: '2026-10-03T10:51:00Z',
     }),
+    [`POST ${LISTEN_PATH}`]: new Response(null, { status: 204 }),
     ...routes,
   });
   renderWithProviders(
@@ -261,6 +263,43 @@ test('a locked Dictation step shows why', async () => {
 });
 
 describe('the player', () => {
+  test('records the first successful playback, not the screen opening', async () => {
+    const { calls } = renderDictation();
+    await textArea();
+    loadAudio();
+    expect(calls.filter((call) => call.path === LISTEN_PATH)).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    await waitFor(() => expect(calls.filter((call) => call.path === LISTEN_PATH)).toHaveLength(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+
+    expect(calls.filter((call) => call.path === LISTEN_PATH)).toHaveLength(1);
+  });
+
+  test('a failed listen signal retries on the next playback without blocking audio', async () => {
+    let sends = 0;
+    const { calls } = renderDictation({
+      [`POST ${LISTEN_PATH}`]: () => {
+        sends += 1;
+        return sends === 1
+          ? problem(503, 'temporarily_unavailable', 'Try again.')
+          : new Response(null, { status: 204 });
+      },
+    });
+    await textArea();
+    loadAudio();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    await waitFor(() => expect(calls.filter((call) => call.path === LISTEN_PATH)).toHaveLength(1));
+    expect(play).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+
+    await waitFor(() => expect(calls.filter((call) => call.path === LISTEN_PATH)).toHaveLength(2));
+    expect(play).toHaveBeenCalledTimes(2);
+  });
+
   test('starts at the passage and stops at its end', async () => {
     renderDictation();
     await textArea();

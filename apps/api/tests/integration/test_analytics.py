@@ -1,4 +1,4 @@
-"""Product analytics events and the success-metrics report (#101, PRD 2 and 8.2, ADR 0033).
+"""Product analytics events and the success-metrics report (#101, PRD 2 and 8.2, ADR 0034).
 
 The app connects as the API role, so row-level security applies and the role may only
 insert events. Events are read back as the migration owner. Mode steps without
@@ -31,8 +31,11 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.analytics import service as analytics
+from listenup.modules.blind import jobs as blind_jobs
+from listenup.modules.blind.domain import MAX_SILENCE_MS
 from listenup.modules.practice.service import Step
 from listenup.platform.database import Database
+from listenup.platform.jobs import JobDeps
 from tests.integration.conftest import conninfo_to_url
 from tests.integration.intake_helpers import (
     MB,
@@ -220,11 +223,82 @@ def test_a_voided_blind_attempt_is_abandoned_once(
     assert len(events_of(migrated_url, learner, "listen_started")) == 2
 
 
-def test_a_resumed_dictation_attempt_is_one_listen(client: TestClient, migrated_url: str) -> None:
+def test_a_vanished_blind_browser_is_expired_and_recorded(
+    client: TestClient, clock: Clock, migrated_url: str
+) -> None:
+    session_id = new_session(client, migrated_url, "blind")
+    attempt = uuid.UUID(attempt_id(start_attempt(client, session_id)))
+    clock.advance(MAX_SILENCE_MS + 1)
+
+    async def expire() -> None:
+        database = Database(conninfo_to_url(migrated_url), pool_size=1)
+        try:
+            await blind_jobs.expire_attempt_job(JobDeps(database, None, 1), str(attempt))
+            assert events_of(migrated_url, learner_id(client), "blind_abandoned") == [
+                ("blind_abandoned", None, {"reason": "missed_heartbeat"})
+            ]
+            await blind_jobs.expire_attempt(database, attempt, clock.now)  # a job retry
+        finally:
+            await database.dispose()
+
+    asyncio.run(expire())
+
+    assert events_of(migrated_url, learner_id(client), "blind_abandoned") == [
+        ("blind_abandoned", None, {"reason": "missed_heartbeat"})
+    ]
+    stopped = client.post(
+        f"/api/v1/blind/attempts/{attempt}/heartbeat",
+        json={"position_ms": START, "state": "playing", "visible": True},
+    )
+    assert stopped.status_code == 200
+    assert stopped.json()["action"] == "stop"
+
+
+def test_a_recent_blind_heartbeat_moves_the_expiry_check(
+    client: TestClient, clock: Clock, migrated_url: str
+) -> None:
+    session_id = new_session(client, migrated_url, "blind")
+    attempt = uuid.UUID(attempt_id(start_attempt(client, session_id)))
+    clock.advance(5_000)
+    assert beat(client, str(attempt), START + 5_000)["action"] == "continue"
+    clock.advance(MAX_SILENCE_MS - 5_000 + 1)  # the original check is due, the new one is not
+
+    async def check() -> None:
+        database = Database(conninfo_to_url(migrated_url), pool_size=1)
+        try:
+            await blind_jobs.expire_attempt(database, attempt, clock.now)
+        finally:
+            await database.dispose()
+
+    asyncio.run(check())
+
+    with psycopg.connect(migrated_url) as conn:
+        status = conn.execute(
+            "SELECT status FROM practice.attempts WHERE id = %s", [attempt]
+        ).fetchone()
+        queued = conn.execute(
+            "SELECT count(*) FROM procrastinate.procrastinate_jobs "
+            "WHERE task_name = %s AND args->>'attempt_id' = %s",
+            [blind_jobs.EXPIRE_ATTEMPT, str(attempt)],
+        ).fetchone()
+    assert status == ("active",)
+    assert queued == (2,)
+    assert events_of(migrated_url, learner_id(client), "blind_abandoned") == []
+
+
+def test_dictation_records_the_first_play_not_the_screen_open(
+    client: TestClient, migrated_url: str
+) -> None:
     session_id = new_session(client, migrated_url, "dictation")
     for _ in range(2):  # the second opening resumes the live attempt
         opened = client.post(f"/api/v1/sessions/{session_id}/dictation/attempts")
         assert opened.status_code in (200, 201), opened.text
+    attempt = opened.json()["id"]
+
+    assert events_of(migrated_url, learner_id(client), "listen_started") == []
+    for _ in range(2):  # a retry and later play are the same occurrence
+        played = client.post(f"/api/v1/dictation/attempts/{attempt}/listen")
+        assert played.status_code == 204, played.text
 
     assert events_of(migrated_url, learner_id(client), "listen_started") == [
         ("listen_started", None, {"mode": "dictation"})

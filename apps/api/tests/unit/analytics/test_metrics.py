@@ -1,4 +1,4 @@
-"""The five PRD 2 success metrics, computed from hand-built events (#101, ADR 0033)."""
+"""The five PRD 2 success metrics, computed from hand-built events (#101, ADR 0034)."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -285,3 +285,5 @@ def test_the_report_ignores_events_after_as_of_and_checks_its_range() -> None:
     assert report.repeat_failures is None
     with pytest.raises(ValueError):
         compute_report(events, END, START, AS_OF)
+    with pytest.raises(ValueError, match="as_of"):
+        compute_report(events, START, AS_OF + timedelta(days=1), AS_OF)

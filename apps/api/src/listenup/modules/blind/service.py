@@ -30,7 +30,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.analytics import service as analytics
-from listenup.modules.blind import repository
+from listenup.modules.blind import jobs, repository
 from listenup.modules.blind.domain import (
     MAX_CHARS,
     MIN_SENTENCES,
@@ -174,6 +174,7 @@ async def start(db: AsyncSession, session_id: uuid.UUID, now: datetime) -> Start
     token = secrets.token_urlsafe(32)
     listen = Listen.start(session.passage.start_ms, session.passage.end_ms, now)
     row = await repository.insert(db, attempt.id, attempt.user_id, _hash(token), listen)
+    await jobs.queue_expiry(db, attempt.id, listen.last_heartbeat_at)
     return Started(_view(attempt, row), token)
 
 
