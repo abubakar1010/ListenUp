@@ -459,6 +459,8 @@ The largest risks are learner voice data, untrusted uploads and untrusted text s
 
 ### 12.4 Testing
 
+Development follows the mandatory red/green/refactor policy in [docs/testing.md](../testing.md). Every behavior change starts with an observed failing test, and review checks the acceptance-criterion mapping, actual red/green evidence and relevant failure paths. CI reports line and branch coverage and gates pull requests at 90% coverage of changed executable lines in each application; coverage alone does not establish test quality or test-first chronology.
+
 | Level | What | Tools |
 | --- | --- | --- |
 | Unit | Domain rules: session state machine, Blind integrity checks, Dictation diff, card limit, score weighting, repeated-mistake detection | pytest, Hypothesis (property tests for the diff) |

@@ -19,7 +19,8 @@ The SRS keeps stable requirement IDs (`FR-DI-1`, `FR-BL-1`, `NFR-AI-1`, and so o
 
 ## How work is done here
 
-- One story per session and per pull request; follow `docs/workflow.md` (plan for complex stories, tests with the code, targeted tests while working, full checks once before the PR, then an independent review).
+- One story per session and per pull request; follow `docs/workflow.md` and the mandatory TDD policy in `docs/testing.md`: observe a focused failing test before implementing each behavior, make it pass, then refactor. Run targeted tests while working and full applicable checks once before the PR, then get an independent review.
+- Record actual red/green commands and outcomes, map acceptance criteria to named tests, and inspect changed-code coverage. Bug fixes start with a failing regression test. Read `AGENTS.md` for the shared agent instructions; the applicability rules for documentation and behavior-preserving changes are in `docs/testing.md`.
 - Before changing an area, read its section in `docs/conventions.md`. Read the design documents only when the story's acceptance criteria need them.
 - Claude Code cloud sessions use `.claude/hooks/session-start.sh` through `.claude/settings.json`; verify its results before assuming dependencies or PostgreSQL are ready. Codex cloud tasks use the environment's saved installation/startup instructions; Claude hooks do not run automatically in Codex. Check required services in either tool. Run S3 integration tests locally when storage is available; report skipped checks when it is unavailable, and use CI for required service checks.
 
@@ -37,6 +38,7 @@ Run from the repository root unless a directory is given.
 - `uv sync --extra speech` (plus CPU torch and torchaudio) runs the media worker with the real speech models outside Docker; otherwise set `LISTENUP_AI_CONFIG=src/listenup/ai/ai.fake.yaml` (ADR 0028).
 - `uv run uvicorn listenup.main:app --reload` — run the API without Docker (needs PostgreSQL).
 - `uv run pytest` — all tests; single test: `uv run pytest tests/unit/test_health.py::test_health_returns_ok`. `tests/integration/` creates throwaway databases on the server in `LISTENUP_DATABASE_URL` and throwaway buckets on the S3 server in `LISTENUP_S3_ENDPOINT_URL` (`docker compose up postgres storage` provides both), and skips when either is unreachable (CI sets `LISTENUP_REQUIRE_DB=1` and `LISTENUP_REQUIRE_S3=1` to fail instead).
+- `uv run pytest -m 'not performance' --cov --cov-report=term-missing:skip-covered --cov-report=xml --cov-report=html`, then `uv run pytest -m performance --no-cov` — coverage plus a separate uninstrumented performance check. Use both required-service flags for the complete coverage run; see `docs/testing.md` for the changed-code gate.
 - `uv run alembic upgrade head` — apply migrations; `uv run alembic downgrade -1` steps back; `uv run alembic check` fails if the models in `modules/*/models.py` drift from the schema. Migrations are hand-written SQL (ADR 0013): every table with `user_id` gets the `own_rows` policy from `migrations/rls.py`, and each new table needs explicit grants for `listenup_api`.
 - `uv run ruff check .` and `uv run ruff format .` — lint and format.
 - `uv run mypy` — type check (strict).
@@ -47,6 +49,7 @@ Run from the repository root unless a directory is given.
 **Web** (`cd apps/web`; pnpm):
 - `pnpm install`, then `pnpm dev` — Vite dev server on http://localhost:5173, proxying `/api` to :8000.
 - `pnpm test` — all tests; single test: `pnpm vitest run src/App.test.tsx -t "shows the product name"`.
+- `pnpm test:coverage` — frontend tests with line and branch coverage, including unimported production files.
 - `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm build`.
 - `pnpm api:generate` — regenerate `src/api/schema.ts` from the exported OpenAPI schema. CI fails if the committed client is out of date.
 - `pnpm e2e` — Playwright smoke test against the production build, with the API mocked in the test. Where `playwright install` is not possible, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium`; `E2E_PORT` changes the preview port (default 4173).

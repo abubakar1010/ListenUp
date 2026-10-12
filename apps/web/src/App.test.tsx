@@ -42,7 +42,7 @@ test('shows the product name and offers sign-in when nobody is signed in', async
     'href',
     '/register',
   );
-  expect(document.title).toBe('Sign in · ListenUp');
+  await waitFor(() => expect(document.title).toBe('Sign in · ListenUp'));
 });
 
 test('a signed-in learner starts in the library with their account in the header', async () => {
