@@ -20,3 +20,5 @@ cd apps/web && pnpm install && pnpm dev   # web client on http://localhost:5173
 ```
 
 The API health check is at http://localhost:8000/api/v1/health. Development commands, design documents and contribution rules are in [CLAUDE.md](CLAUDE.md).
+
+Contributions follow [the development workflow](docs/workflow.md) and mandatory [test-driven development](docs/testing.md): failing test first, passing implementation, then refactoring. Shared coding-agent instructions are in [AGENTS.md](AGENTS.md).

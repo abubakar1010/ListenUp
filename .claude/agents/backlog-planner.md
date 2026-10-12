@@ -39,7 +39,7 @@ Body sections, in this order:
 5. **Technical notes** — modules, tables, queues, endpoints touched, taken from the design documents. No invented detail; if something is undecided, link the decision issue.
 6. **Dependencies** — `Depends on #N` lines.
 7. **Estimate** — S (under 1 day), M (1 to 3 days), L (must be split before work starts).
-8. **Definition of done** — tests written and passing, CI green, docs updated where behaviour changed, accessibility checked for UI stories.
+8. **Definition of done** — TDD per `docs/testing.md`: acceptance criteria mapped to named tests, failing tests observed before behavior changes, red/green evidence recorded, relevant boundary/failure cases covered, changed-code coverage passing, CI green, docs updated where behaviour changed, accessibility checked for UI stories. Apply the policy's explicit rules for changes without executable behavior.
 
 ## Labels and linking
 
