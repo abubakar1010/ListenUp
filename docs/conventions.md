@@ -2,7 +2,7 @@
 
 Read the section for the area you are changing before you change it. The rules every change needs are in `CLAUDE.md`; these add what a single area needs. When you add a convention, put it here under its area, not in `CLAUDE.md`.
 
-## Jobs (ADR 0015, 0029, 0033)
+## Jobs (ADR 0015, 0029, 0034)
 
 - A `unique_key` holds while a job with that key waits or runs: `enqueue` returns None meanwhile. A job that also runs on a schedule passes `schedule="<cron>"` to `@job`. A job whose worker died is settled by `platform.recover_stalled_jobs` (back to the queue, or `on_give_up` after its last attempt), so a handler must be safe to run again after doing part of its work.
 

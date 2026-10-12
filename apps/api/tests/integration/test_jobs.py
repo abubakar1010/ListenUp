@@ -47,6 +47,7 @@ async def test_concurrent_producers_cannot_queue_a_copy_after_the_first_starts(
     checked = asyncio.Event()
     second_lock = asyncio.Event()
     proceed = asyncio.Event()
+    first_committed = asyncio.Event()
     original_scalar = AsyncSession.scalar
     original_execute = AsyncSession.execute
     checks = 0
@@ -60,6 +61,11 @@ async def test_concurrent_producers_cannot_queue_a_copy_after_the_first_starts(
             if checks == 1:
                 checked.set()
                 await proceed.wait()
+            else:
+                # Also coordinate the old implementation, which has no advisory
+                # lock. It must fail by admitting a duplicate, not by timing out.
+                second_lock.set()
+                await first_committed.wait()
         return result
 
     async def execute(self: AsyncSession, statement: Any, *args: Any, **kwargs: Any) -> Any:
@@ -85,7 +91,9 @@ async def test_concurrent_producers_cannot_queue_a_copy_after_the_first_starts(
                     ),
                     {"id": result},
                 )
-            return result
+        if start:
+            first_committed.set()
+        return result
 
     async with asyncio.timeout(5):
         first = asyncio.create_task(producer(True))
@@ -93,7 +101,6 @@ async def test_concurrent_producers_cannot_queue_a_copy_after_the_first_starts(
         second = asyncio.create_task(producer(False))
         try:
             await second_lock.wait()
-            assert checks == 1
         finally:
             proceed.set()
         assert await first is not None
