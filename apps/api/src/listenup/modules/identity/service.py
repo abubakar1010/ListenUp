@@ -200,12 +200,15 @@ class Accounts:
         if account.waiting_for_deletion:
             assert account.deletion_scheduled_at is not None
             if not restore:
+                deadline = await repository.pending_deletion_deadline(session, account.id)
+                if deadline is None:
+                    raise _invalid_credentials()
                 raise ProblemError(
                     409,
                     "account_pending_deletion",
                     "This account was deleted and is waiting to be removed. "
                     "Restore it to sign in, or leave it to be deleted.",
-                    deletion_scheduled_at=account.deletion_scheduled_at.isoformat(),
+                    deletion_scheduled_at=deadline.isoformat(),
                 )
             await set_learner(session, account.id)
             # The request row is locked before the users row, the order the purge uses,

@@ -5,6 +5,7 @@ Read the section for the area you are changing before you change it. The rules e
 ## Jobs (ADR 0015, 0029, 0034)
 
 - Migration 0014 enforces unique active queueing locks. Backpressure transfers the key and records its replaced run atomically; recovery does not retry that run. A `unique_key` holds while a job with that key waits or runs: `enqueue` returns None meanwhile. A job that also runs on a schedule passes `schedule="<cron>"` to `@job`. A job whose worker died is settled by `platform.recover_stalled_jobs` (back to the queue, or `on_give_up` after its last attempt), so a handler must be safe to run again after doing part of its work.
+- Recovery records the selected worker and attempt, then rechecks both and the worker heartbeat when locking the job for settlement. A stale selection cannot settle a restarted run or a worker whose heartbeat recovered.
 
 ## Email (ADR 0017)
 
@@ -35,6 +36,7 @@ Read the section for the area you are changing before you change it. The rules e
 ## Accounts and deletion (ADR 0017, 0029)
 
 - Every way of signing in ends in `Accounts.complete_sign_in` (`modules/identity/service.py`), which owns the restore step of an account waiting for deletion (409 `account_pending_deletion` until the learner sends `restore: true`). Google sign-in (#32) must call it too.
+- Sign-in rechecks the grace-period deadline with `clock_timestamp()` after password verification before offering restoration. Confirming restoration also checks it after acquiring the user-row lock; neither path relies on transaction-start time.
 - A disabled account reaches nothing: `identity.resolve_auth_session` returns a learner only while `users.status = 'active'`. Background work that must not run for a deleted account checks `identity.service.account_is_active` (the export build does).
 - The purge (`identity.purge_account`) deletes storage under `users/<id>/` first, then the `identity.users` row, then performs a final prefix sweep before it marks the request completed. A failed final sweep leaves the request at `storage_deleted`; retries preserve its earlier row-count report. Every learner table must be deleted with the user (a foreign key to `identity.users`, or to a parent that has one, with `ON DELETE CASCADE`), so a new table needs no purge code; `test_account_deletion.py` fails while any row with the learner's `user_id` survives. A module that keeps a learner's files outside `users/<id>/` needs its own step in the purge. Rate counters about a learner use keys ending in `:user:<id>` (`user_key` in `platform/rate_limit.py`), which the purge removes.
 - Password reset and account deletion both lock live reset-token rows before the learner's `identity.users` row. Keep that order when either flow changes; the concurrency regression in `test_account_deletion.py` proves they cannot deadlock.

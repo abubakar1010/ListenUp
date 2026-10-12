@@ -116,6 +116,19 @@ async def schedule_deletion(
     return result
 
 
+async def pending_deletion_deadline(session: AsyncSession, user_id: uuid.UUID) -> datetime | None:
+    """Recheck the restore offer after password verification, using wall-clock time."""
+    deadline: datetime | None = await session.scalar(
+        text("""
+        SELECT deletion_scheduled_at FROM identity.users
+         WHERE id = :id AND status = 'pending_deletion'
+           AND deletion_scheduled_at > clock_timestamp()
+        """),
+        {"id": user_id},
+    )
+    return deadline
+
+
 async def restore_account(session: AsyncSession, user_id: uuid.UUID) -> bool:
     """Reactivate an account whose grace period has not ended (#120).
 

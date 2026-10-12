@@ -1183,3 +1183,34 @@ def test_restore_rechecks_deadline_after_waiting_for_the_user_lock(
     assert user_row(migrated_url, user)[0] == "pending_deletion"
     assert deletion_request(migrated_url, user)["status"] == "pending"
     assert client.get("/api/v1/me").status_code == 401
+
+
+@pytest.mark.parametrize("restore", [False, True])
+def test_sign_in_rechecks_deadline_after_password_verification(
+    client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch, restore: bool
+) -> None:
+    from listenup.modules.identity import passwords
+
+    email = unique_email()
+    user = register(client, email)
+    assert delete_me(client).status_code == 202
+    verify = passwords.verify_password
+
+    async def verify_then_expire(password_hash: str | None, password: str) -> bool:
+        valid = await verify(password_hash, password)
+        # The lookup saw a restorable account; expire it while verification runs.
+        with psycopg.connect(migrated_url, autocommit=True) as conn:
+            conn.execute(
+                "UPDATE identity.users SET deletion_scheduled_at = "
+                "clock_timestamp() - interval '1 second' WHERE id = %s",
+                [user],
+            )
+        return valid
+
+    monkeypatch.setattr(passwords, "verify_password", verify_then_expire)
+    response = login(client, email, restore=restore)
+    assert response.status_code == 401
+    assert response.json()["code"] == "invalid_credentials"
+    assert user_row(migrated_url, user)[0] == "pending_deletion"
+    assert deletion_request(migrated_url, user)["status"] == "pending"
+    assert client.get("/api/v1/me").status_code == 401
