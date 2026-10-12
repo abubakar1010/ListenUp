@@ -1,6 +1,6 @@
 # ADR 0024: Blind heartbeats, the one resume and attempt-bound media
 
-- Status: Accepted
+- Status: Accepted; navigation and whole-clip access are refined by [ADR 0033](0033-design-review-policy-resolutions.md)
 - Date: 2026-10-03
 - Source: issues #62, #63 and #65; [SRS FR-BL-1 to FR-BL-5, NFR-REL-3](https://claude.ai/code/artifact/fd47a9cb-6515-4fde-a232-3ab8cc14f0dd); [System Design 9.2](https://claude.ai/code/artifact/98274889-96ba-4424-afad-c2cd056206e2); [Database Design 5](https://claude.ai/code/artifact/ba05f7b3-f881-41e5-86d6-dcb94a509644); ADR 0007; D13, D18; final UI D01 to D04, D07
 
@@ -23,7 +23,7 @@ ADR 0007 settled that the server enforces Blind with an attempt-bound media URL 
   - `network`: the player stops after 10 s without an answered beat, then reports when a beat gets through;
   - `device`: a pause the player did not make.
 
-  A beat with `buffering_ms` over the 20 s allowance also counts as a network stall. The first interruption gets the resume, unless it was a device pause of 5 s or more; a second interruption voids. A hidden page (`left_page`), a backward jump or a position outside the passage (`seek`), and more than 15 s without a beat (`missed_heartbeat`) always void.
+  A beat with `buffering_ms` over the 20 s allowance also counts as a network stall. The first interruption gets the resume, unless it was a device pause of 5 s or more; a second interruption voids. During an unfinished listen, a hidden page (`left_page`), a backward jump or a position outside the passage (`seek`) voids. More than 15 s without a beat (`missed_heartbeat`) voids only when no eligible interruption is reported; an explicitly reported first network interruption is judged before this timeout.
 - **The resume moves the anchor.** The server sets `resume_from = max(passage start, stop - 3 s)` and makes it the new anchor, with the clock starting at the grant. The rewind is therefore not a backward jump, and "Carry on now" (final UI D07) cannot run ahead. The resumed listen gets a fresh 20 s allowance. `resume_count` (0 or 1) and `resume_stop_ms` record the resume.
 - **`practice.blind_attempts` gains columns** beyond the Database Design, in migration 0009:
   - `media_expires_at`;
