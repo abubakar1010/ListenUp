@@ -453,9 +453,9 @@ async def recover_stalled_jobs(deps: JobDeps, timestamp: int | None = None) -> i
     """
     async with deps.database.transaction() as session:
         stalled = (
-            await session.scalars(
+            await session.execute(
                 text("""
-                SELECT j.id FROM procrastinate.procrastinate_jobs j
+                SELECT j.id, j.worker_id, j.attempts FROM procrastinate.procrastinate_jobs j
                   LEFT JOIN procrastinate.procrastinate_workers w ON w.id = j.worker_id
                  WHERE j.status = 'doing'
                    AND (w.id IS NULL OR w.last_heartbeat < now() - :stalled_after)
@@ -465,26 +465,38 @@ async def recover_stalled_jobs(deps: JobDeps, timestamp: int | None = None) -> i
             )
         ).all()
     settled = 0
-    for job_id in stalled:
-        if await _settle_stalled_job(deps.database, job_id):
+    for job_id, worker_id, attempts in stalled:
+        if await _settle_stalled_job(deps.database, job_id, worker_id, attempts):
             settled += 1
     return settled
 
 
-async def _settle_stalled_job(database: Database, job_id: int) -> bool:
+async def _settle_stalled_job(
+    database: Database, job_id: int, worker_id: int | None, attempts: int
+) -> bool:
     async with database.transaction() as session:
         row = (
             await session.execute(
                 text("""
-                SELECT task_name, attempts, args FROM procrastinate.procrastinate_jobs
-                 WHERE id = :id AND status = 'doing'
-                   FOR UPDATE SKIP LOCKED
+                SELECT j.task_name, j.attempts, j.args
+                  FROM procrastinate.procrastinate_jobs j
+                  LEFT JOIN procrastinate.procrastinate_workers w ON w.id = j.worker_id
+                 WHERE j.id = :id AND j.status = 'doing'
+                   AND j.worker_id IS NOT DISTINCT FROM CAST(:worker_id AS bigint)
+                   AND j.attempts = :attempts
+                   AND (w.id IS NULL OR w.last_heartbeat < clock_timestamp() - :stalled_after)
+                   FOR UPDATE OF j SKIP LOCKED
                 """),
-                {"id": job_id},
+                {
+                    "id": job_id,
+                    "worker_id": worker_id,
+                    "attempts": attempts,
+                    "stalled_after": STALLED_AFTER,
+                },
             )
         ).first()
         if row is None:
-            return False  # finished meanwhile, or another run is settling it
+            return False  # finished, restarted, healthy, or another run is settling it
         task_name, attempts, args = row
         entry = _registry.get(task_name)
         if args.get(POSTPONED_ARG):

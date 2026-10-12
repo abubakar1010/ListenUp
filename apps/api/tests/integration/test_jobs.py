@@ -16,6 +16,7 @@ import pytest
 from procrastinate import schema
 from sqlalchemy import text
 
+from listenup.platform import jobs as platform_jobs
 from listenup.platform.database import Database
 from listenup.platform.jobs import (
     RECOVER_STALLED_JOBS,
@@ -320,6 +321,88 @@ async def test_a_job_of_a_live_worker_is_left_alone(queue: Database) -> None:
 
     assert await recover(queue) == 0
     assert (await jobs(queue))[0]["status"] == "doing"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("attempts", "worker_alive", "stale_heartbeat"),
+    [(1, True, False), (1, False, False), (0, True, True)],
+)
+async def test_stale_recovery_does_not_settle_a_restarted_run(
+    queue: Database,
+    monkeypatch: pytest.MonkeyPatch,
+    attempts: int,
+    worker_alive: bool,
+    stale_heartbeat: bool,
+) -> None:
+    async with queue.transaction() as session:
+        job_id = await enqueue(session, "test.two_attempts", item="clip-1")
+    await stall(queue, job_id)
+    selected = asyncio.Event()
+    resume = asyncio.Event()
+    settle = platform_jobs._settle_stalled_job
+
+    async def delayed_settle(database: Database, id_: int, worker: int | None, runs: int) -> bool:
+        selected.set()
+        await resume.wait()
+        return await settle(database, id_, worker, runs)
+
+    monkeypatch.setattr(platform_jobs, "_settle_stalled_job", delayed_settle)
+    stale = asyncio.create_task(recover(queue))
+    try:
+        await asyncio.wait_for(selected.wait(), 5)
+        assert job_id is not None
+        # Another recovery requeues the old run. Even if the new run also stalls,
+        # only a fresh selection may settle it, not this snapshot of the old run.
+        assert await settle(queue, job_id, None, 0)
+        await stall(queue, job_id, attempts=attempts, worker_alive=worker_alive)
+        if stale_heartbeat:
+            async with queue.transaction() as session:
+                await session.execute(
+                    text(
+                        "UPDATE procrastinate.procrastinate_workers "
+                        "SET last_heartbeat = now() - interval '2 minutes'"
+                    )
+                )
+    finally:
+        resume.set()
+    assert await asyncio.wait_for(stale, 5) == 0
+    [state] = await jobs(queue)
+    assert (state["status"], state["attempts"]) == ("doing", attempts)
+    assert calls == []  # neither retry nor a final-failure callback for the new run
+
+
+@pytest.mark.anyio
+async def test_recovery_rechecks_a_workers_heartbeat_before_settlement(
+    queue: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with queue.transaction() as session:
+        job_id = await enqueue(session, "test.two_attempts", item="clip-1")
+    await stall(queue, job_id, attempts=1, worker_alive=True)
+    async with queue.transaction() as session:
+        await session.execute(
+            text(
+                "UPDATE procrastinate.procrastinate_workers "
+                "SET last_heartbeat = now() - interval '2 minutes'"
+            )
+        )
+    settle = platform_jobs._settle_stalled_job
+
+    async def refreshed_settle(database: Database, id_: int, worker: int | None, runs: int) -> bool:
+        async with database.transaction() as session:
+            await session.execute(
+                text(
+                    "UPDATE procrastinate.procrastinate_workers "
+                    "SET last_heartbeat = now() WHERE id = :id"
+                ),
+                {"id": worker},
+            )
+        return await settle(database, id_, worker, runs)
+
+    monkeypatch.setattr(platform_jobs, "_settle_stalled_job", refreshed_settle)
+    assert await recover(queue) == 0
+    assert (await jobs(queue))[0]["status"] == "doing"
+    assert calls == []
 
 
 @pytest.mark.anyio
