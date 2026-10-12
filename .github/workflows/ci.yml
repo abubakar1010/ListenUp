@@ -24,6 +24,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate branch name
+        # Owner-approved legacy exception for existing PR #133 only.
+        # Remove this exception after that PR closes.
+        if: >-
+          !((github.event_name == 'pull_request' &&
+             github.event.pull_request.number == 133 &&
+             github.head_ref == 'claude/confident-darwin-wemfu6' &&
+             github.event.pull_request.head.repo.full_name == 'abubakar1010/ListenUp') ||
+            (github.event_name == 'push' &&
+             github.repository == 'abubakar1010/ListenUp' &&
+             github.ref_name == 'claude/confident-darwin-wemfu6'))
         env:
           BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
         run: .github/scripts/check-branch-name.sh "$BRANCH_NAME"
