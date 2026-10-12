@@ -50,6 +50,7 @@ def main() -> None:
         f"spike-19-b2-{label}",
         ["passage", "audio_s", "wall_s", "core_s_per_audio_s", "rtf", "words", "unaligned"],
     )
+    report.summary["text_preprocessing"] = "listenup.ai.providers.alignment_text.alignable_words"
     rates = []
     for path, text in passages(args.data):
         meta = json.loads(path.with_suffix(".json").read_text())
@@ -89,6 +90,7 @@ def main() -> None:
                 json.dumps(
                     {
                         "source": f"{args.model} {label}",
+                        "text_preprocessing": report.summary["text_preprocessing"],
                         "window": [offset, offset + audio_s],
                         "words": [
                             {"word": w.word, "start": w.start + offset, "end": w.end + offset}

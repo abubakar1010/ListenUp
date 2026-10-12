@@ -13,6 +13,7 @@ from listenup.ai.providers.wav2vec2_ctc import (
     WINDOW_CONTEXT_SAMPLES,
     RawAlignment,
     RawSpan,
+    TorchaudioCtcEngine,
     Vocabulary,
     Wav2Vec2CtcAlignment,
     alignable_words,
@@ -158,3 +159,19 @@ def test_spans_per_word_drop_the_separator_spans() -> None:
 def test_spans_per_word_refuses_a_span_count_mismatch() -> None:
     with pytest.raises(ValueError, match="1 spans for 2 tokens"):
         spans_per_word([RawSpan(start=0, end=1, score=1.0)], [3, 2], ["go"], MMS)
+
+
+def test_alignment_versions_distinguish_inference_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("listenup.ai.providers.wav2vec2_ctc.metadata.version", lambda name: "2.8.0")
+    versions = set()
+    for window in (0.0, 15.0, 30.0):
+        for int8 in (False, True):
+            # Versioning needs no heavy model. Test all supported settings independently.
+            engine = object.__new__(TorchaudioCtcEngine)
+            engine._window_seconds = window
+            engine._int8 = int8
+            versions.add(engine.version)
+            assert f"window_seconds={window:g}" in engine.version
+            assert f"int8={str(int8).lower()}" in engine.version
+            assert engine.version.startswith("torchaudio 2.8.0; torch 2.8.0;")
+    assert len(versions) == 6

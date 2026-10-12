@@ -10,12 +10,9 @@ Both use the same path: emissions (optionally in windows, see `emissions`), then
 `torchaudio.functional.forced_align` over the words' letters, then one span per letter.
 """
 
-import re
 from dataclasses import dataclass
 
 import numpy as np
-
-from listenup_spikes.metrics import normalize_words
 
 SAMPLE_RATE = 16000
 FRAME_SAMPLES = 320  # both models: one emission frame per 20 ms
@@ -32,10 +29,10 @@ class AlignedWord:
 
 
 def alignable_words(text: str) -> list[str]:
-    """Words in the aligner's alphabet (a-z and apostrophe). Digits are dropped, so number
-    words should be spelled out in references for best results."""
-    words = [re.sub(r"[^a-z']", "", w) for w in normalize_words(text)]
-    return [w for w in words if w.strip("'")]
+    """Use the production adapter's exact targets (PYTHONPATH=../apps/api/src)."""
+    from listenup.ai.providers.alignment_text import alignable_words as production_words
+
+    return [word.tokens for word in production_words(text)]
 
 
 def window_bounds(num_samples: int, window_s: float) -> list[tuple[int, int, int, int]]:

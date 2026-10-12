@@ -14,9 +14,7 @@ to the port's schema, so contract tests replay recordings without the model.
 """
 
 import asyncio
-import re
 import threading
-import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import metadata
@@ -27,6 +25,8 @@ from pydantic import BaseModel
 
 from listenup.ai.config import ProviderEntry
 from listenup.ai.ports import AlignedUnit, AlignedWord, Alignment, Provenance
+from listenup.ai.providers.alignment_text import AlignableWord as AlignableWord
+from listenup.ai.providers.alignment_text import alignable_words as alignable_words
 from listenup.ai.providers.audio import decode_pcm
 
 PROVIDER = "wav2vec2-ctc"
@@ -52,25 +52,6 @@ class CtcEngine(Protocol):
     def version(self) -> str: ...
 
     def run(self, audio: Path, words: list[str]) -> RawAlignment: ...
-
-
-@dataclass(frozen=True)
-class AlignableWord:
-    index: int  # position in the reference text split on whitespace
-    text: str  # the word as written in the reference
-    tokens: str  # what the model aligns: lower-case a-z and apostrophes
-
-
-def alignable_words(text: str) -> list[AlignableWord]:
-    """Words in the aligner's alphabet. Accents are folded (cafe for café); words with no
-    letters (numbers, symbols) are left out, so spell numbers out in reference texts."""
-    found = []
-    for index, word in enumerate(text.split()):
-        folded = unicodedata.normalize("NFKD", word.replace("\N{RIGHT SINGLE QUOTATION MARK}", "'"))
-        tokens = re.sub(r"[^a-z']", "", folded.lower()).strip("'")
-        if tokens:
-            found.append(AlignableWord(index=index, text=word, tokens=tokens))
-    return found
 
 
 FRAME_SAMPLES = 320  # wav2vec2: one emission frame per 20 ms at 16 kHz
@@ -172,8 +153,9 @@ class TorchaudioCtcEngine:
             self._model = bundle.get_model()
             labels = bundle.get_labels()
             self._vocabulary = Vocabulary(tuple(labels), upper_case=True, separator="|")
-        if entry.options.get("int8", False):
-            # Dynamic int8 linear layers: 23% less CPU, same boundaries (spike #19).
+        self._int8 = bool(entry.options.get("int8", False))
+        if self._int8:
+            # Dynamic int8 linear layers; validate timing/posteriors with corrected B2.
             self._model = torch.ao.quantization.quantize_dynamic(
                 self._model, {torch.nn.Linear}, dtype=torch.qint8
             )
@@ -184,7 +166,11 @@ class TorchaudioCtcEngine:
 
     @property
     def version(self) -> str:
-        return f"torchaudio {metadata.version('torchaudio')}; torch {metadata.version('torch')}"
+        # NFR-AI-5: windowing and quantisation change both boundaries and posteriors.
+        return (
+            f"torchaudio {metadata.version('torchaudio')}; torch {metadata.version('torch')}"
+            f"; window_seconds={self._window_seconds:g}; int8={str(self._int8).lower()}"
+        )
 
     def run(self, audio: Path, words: list[str]) -> RawAlignment:
         torch = self._torch
