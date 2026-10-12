@@ -90,6 +90,8 @@ export function BlindStep({ session, progress }: BlindStepProps) {
   const [listen, setListen] = useState<BlindListen | null>(null);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<unknown>(null);
+  const [leaveError, setLeaveError] = useState<unknown>(null);
+  const [leaving, setLeaving] = useState(false);
   const [ended, setEnded] = useState<BlindAttempt | null>(null);
   const [volume, setVolume] = useState(0.8);
   const snapshot = useListen(listen);
@@ -185,6 +187,21 @@ export function BlindStep({ session, progress }: BlindStepProps) {
     }
   }
 
+  async function confirmLeave() {
+    if (blocker.state !== 'blocked' || !listen || leaving) return;
+    const pendingNavigation = blocker;
+    setLeaving(true);
+    setLeaveError(null);
+    try {
+      await listen.leaveForNavigation('left_page');
+      pendingNavigation.proceed();
+    } catch (error) {
+      setLeaveError(error);
+    } finally {
+      setLeaving(false);
+    }
+  }
+
   if (step.isPending) return <PageLoading />;
   if (step.isError) {
     return (
@@ -244,14 +261,19 @@ export function BlindStep({ session, progress }: BlindStepProps) {
           title="Leave Blind?"
           confirmLabel="Leave Blind"
           cancelLabel="Stay"
-          onConfirm={() => {
-            if (blocker.state !== 'blocked') return;
-            listen?.leave('left_page');
-            blocker.proceed();
-          }}
+          onConfirm={() => void confirmLeave()}
           onCancel={() => {
-            if (blocker.state === 'blocked') blocker.reset();
+            if (blocker.state === 'blocked' && !leaving) {
+              setLeaveError(null);
+              blocker.reset();
+            }
           }}
+          busy={leaving}
+          footer={
+            leaveError !== null && (
+              <ErrorPanel error={leaveError} onRetry={() => void confirmLeave()} />
+            )
+          }
         >
           Leaving now ends this Blind attempt. Playback keeps going while you decide.
         </ConfirmDialog>
