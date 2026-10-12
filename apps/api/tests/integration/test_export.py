@@ -29,9 +29,126 @@ from listenup.platform.storage import use_storage
 from tests.integration.conftest import conninfo_to_url
 from tests.integration.intake_helpers import ClientFactory, FakeStorage, client_factory, learner_id
 from tests.integration.seed import SeededLearner, seed_learner_data
+from tests.integration.test_password_reset import deliver
 
 PLAYBACK = b"uploaded playback bytes"
 YOUTUBE = b"youtube playback bytes"
+
+
+def test_early_expiry_keeps_a_future_job(
+    make_client: ClientFactory, storage: FakeStorage, migrated_url: str
+) -> None:
+    client = make_client()
+    user = learner_id(client)
+    started = request_export(client)
+    run_build(migrated_url, started["id"], user)
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute("UPDATE procrastinate.procrastinate_jobs SET scheduled_at = now()")
+    deliver(migrated_url)
+    with psycopg.connect(migrated_url) as conn:
+        waiting = conn.execute(
+            "SELECT count(*) FROM procrastinate.procrastinate_jobs WHERE task_name = %s "
+            "AND status = 'todo' AND scheduled_at > now() AND args->>'export_id' = %s",
+            [jobs.EXPIRE_ARCHIVE, started["id"]],
+        ).fetchone()
+    assert waiting == (1,)
+    assert any("/exports/" in key for key in storage.objects)
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE ops.data_exports SET expires_at = now() - interval '1 second' WHERE id = %s",
+            [started["id"]],
+        )
+        conn.execute("UPDATE procrastinate.procrastinate_jobs SET scheduled_at = now()")
+    deliver(migrated_url)
+    assert not any("/exports/" in key for key in storage.objects)
+    assert latest(client)["status"] == "expired"
+
+
+@pytest.mark.parametrize("status", ["pending", "building", "ready", "expired", "failed", "purged"])
+def test_cleanup_only_deletes_failed_or_purged_archives(
+    make_client: ClientFactory, storage: FakeStorage, migrated_url: str, status: str
+) -> None:
+    client = make_client()
+    user = learner_id(client)
+    started = request_export(client)
+    run_build(migrated_url, started["id"], user)
+    key = f"users/{user}/exports/{started['id']}.zip"
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        if status == "purged":
+            conn.execute("DELETE FROM identity.users WHERE id = %s", [user])
+        else:
+            conn.execute(
+                "UPDATE ops.data_exports SET status = %s WHERE id = %s", [status, started["id"]]
+            )
+
+    async def cleanup() -> None:
+        database = Database(conninfo_to_url(migrated_url), pool_size=1)
+        try:
+            await jobs.cleanup_archive(
+                JobDeps(database, None, 1), export_id=started["id"], user_id=user
+            )
+        finally:
+            await database.dispose()
+
+    asyncio.run(cleanup())
+    assert (key in storage.objects) == (status not in ("failed", "purged"))
+
+
+@pytest.mark.parametrize("restored", [False, True])
+def test_cleanup_survives_build_and_cleanup_retry_exhaustion(
+    make_client: ClientFactory, storage: FakeStorage, migrated_url: str, restored: bool
+) -> None:
+    client = make_client()
+    user = learner_id(client)
+    started = request_export(client)
+    key = f"users/{user}/exports/{started['id']}.zip"
+
+    class Broken(FakeStorage):
+        unavailable = True
+
+        async def delete(self, key: str) -> None:
+            if self.unavailable:
+                raise RuntimeError("storage unavailable")
+            await super().delete(key)
+
+    broken = Broken()
+    broken.arrive(key, 1, "application/zip", b"x")
+    use_storage(broken)
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute("DELETE FROM procrastinate.procrastinate_jobs")
+        conn.execute(
+            "UPDATE identity.users SET status = 'pending_deletion', "
+            "deletion_scheduled_at = now() + interval '7 days' WHERE id = %s",
+            [user],
+        )
+    with pytest.raises(RuntimeError, match="storage unavailable"):
+        run_build(migrated_url, started["id"], user, attempt=jobs.BUILD_ATTEMPTS)
+    with psycopg.connect(migrated_url) as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM procrastinate.procrastinate_jobs "
+            "WHERE task_name = 'export.cleanup_archive' AND status = 'todo'"
+        ).fetchone() == (1,)
+    # Exhaust the dedicated cleanup's attempts too. A future cycle must survive.
+    for _ in range(platform_jobs.LANES[platform_jobs.Lane.BACKGROUND].max_attempts):
+        with psycopg.connect(migrated_url, autocommit=True) as conn:
+            conn.execute("UPDATE procrastinate.procrastinate_jobs SET scheduled_at = now()")
+        deliver(migrated_url)
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM procrastinate.procrastinate_jobs "
+            "WHERE task_name = 'export.cleanup_archive' AND status = 'todo' "
+            "AND scheduled_at > now()"
+        ).fetchone() == (1,)
+        if restored:
+            conn.execute(
+                "UPDATE identity.users SET status = 'active', deletion_scheduled_at = NULL "
+                "WHERE id = %s",
+                [user],
+            )
+        conn.execute("UPDATE procrastinate.procrastinate_jobs SET scheduled_at = now()")
+    broken.unavailable = False
+    deliver(migrated_url)
+    assert key not in broken.objects
 
 
 @pytest.fixture
@@ -261,7 +378,9 @@ def test_archives_expire(
     assert job is not None and job[0] > datetime.now(UTC) + timedelta(days=6)
 
     # Not due yet: the job leaves the archive alone.
-    run_expiry(migrated_url, started["id"], str(a.user_id))
+    with pytest.raises(platform_jobs.Reschedule) as postponed:
+        run_expiry(migrated_url, started["id"], str(a.user_id))
+    assert postponed.value.run_at == job[0]
     assert key in storage.data
 
     with psycopg.connect(migrated_url, autocommit=True) as conn:

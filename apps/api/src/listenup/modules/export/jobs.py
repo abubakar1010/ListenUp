@@ -25,13 +25,15 @@ from listenup.platform.config import get_settings
 from listenup.platform.database import Database, set_learner
 from listenup.platform.events import EventType, publish
 from listenup.platform.export import ExportPart
-from listenup.platform.jobs import JobDeps, Lane, enqueue, job
+from listenup.platform.jobs import JobDeps, Lane, Reschedule, enqueue, job
 from listenup.platform.storage import Storage, get_storage
 
 logger = logging.getLogger(__name__)
 
 BUILD_ARCHIVE = "export.build_archive"
 EXPIRE_ARCHIVE = "export.expire_archive"
+CLEANUP_ARCHIVE = "export.cleanup_archive"
+CLEANUP_RETRY_AFTER = timedelta(hours=1)
 BUILD_ATTEMPTS = 3
 # Copying up to the 2 GB upload cap (D5) out of storage and back takes minutes.
 BUILD_TIMEOUT = timedelta(minutes=45)
@@ -57,6 +59,46 @@ async def _give_up_build(deps: JobDeps, export_id: str, user_id: str) -> None:
     async with deps.database.transaction(learner) as session:
         if await repository.mark_failed(session, export, learner, "export_failed"):
             await publish(session, learner, EventType.EXPORT_READY, export)
+        row = await repository.get(session, export, learner)
+        if row is None or row.status == "failed":
+            await _queue_cleanup(session, export_id, user_id)
+
+
+async def _queue_cleanup(
+    session: AsyncSession, export_id: str, user_id: str, *, run_at: datetime | None = None
+) -> None:
+    # A successor is allowed while the exhausted predecessor is still doing.
+    # The resource lock serializes duplicate cleanup, and deletion is idempotent.
+    await enqueue(
+        session,
+        CLEANUP_ARCHIVE,
+        lock=f"export_cleanup:{export_id}",
+        run_at=run_at,
+        export_id=export_id,
+        user_id=user_id,
+    )
+
+
+async def _give_up_cleanup(deps: JobDeps, export_id: str, user_id: str) -> None:
+    async with deps.database.transaction() as session:
+        await _queue_cleanup(
+            session, export_id, user_id, run_at=datetime.now(UTC) + CLEANUP_RETRY_AFTER
+        )
+
+
+@job(Lane.BACKGROUND, CLEANUP_ARCHIVE, on_give_up=_give_up_cleanup)
+async def cleanup_archive(deps: JobDeps, export_id: str, user_id: str) -> None:
+    """Remove a failed build's archive, independently of the account's current state.
+
+    Exhausted attempts schedule a new cycle an hour later, so recovery of storage
+    still removes the orphan after a restore or purge. Ready archives are protected.
+    """
+    export, learner = uuid.UUID(export_id), uuid.UUID(user_id)
+    async with deps.database.transaction(learner) as session:
+        row = await repository.get(session, export, learner)
+    if row is not None and row.status != "failed":
+        return
+    await get_storage().delete(archive.archive_key(learner, export))
 
 
 @job(
@@ -235,9 +277,7 @@ async def expire_archive(deps: JobDeps, export_id: str, user_id: str) -> None:
     assert row.expires_at is not None  # a ready export always has its expiry
     now = datetime.now(UTC)
     if row.expires_at > now:
-        async with deps.database.transaction(learner) as session:
-            await queue_expiry(session, export, learner, row.expires_at)
-        return
+        raise Reschedule(row.expires_at)
     await get_storage().delete(row.archive_key)
     async with deps.database.transaction(learner) as session:
         await repository.mark_expired(session, export, learner)

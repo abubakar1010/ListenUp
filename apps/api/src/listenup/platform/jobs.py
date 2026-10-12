@@ -81,6 +81,14 @@ class PermanentError(Exception):
     """The job can never succeed with these inputs; fail now without retrying."""
 
 
+class Reschedule(Exception):
+    """Postpone successful work to a future time without consuming failure retries."""
+
+    def __init__(self, run_at: datetime) -> None:
+        self.run_at = run_at
+        super().__init__("job is not due yet")
+
+
 class Backoff(BaseRetryStrategy):
     """About 10 s, 40 s, 160 s ... between attempts, each varied by up to 20%.
 
@@ -230,7 +238,19 @@ def job(
                     observed.outcome = "postponed"
                     return None
                 deps = JobDeps(database, current.id, attempt)
-                return await run_handler(name, deps, **args)
+                try:
+                    return await run_handler(name, deps, **args)
+                except Reschedule as later:
+                    await _postpone(
+                        database,
+                        current,
+                        args,
+                        request_id,
+                        trace_carrier,
+                        run_at=later.run_at,
+                    )
+                    observed.outcome = "postponed"
+                    return None
 
         app.task(
             name=name,
@@ -276,7 +296,7 @@ async def run_handler(name: str, deps: JobDeps, /, **args: Any) -> Any:
     try:
         async with asyncio.timeout(entry.spec.timeout.total_seconds()):
             return await entry.handler(deps, **args)
-    except PermanentError:
+    except (PermanentError, Reschedule):
         raise
     except Exception:
         if entry.on_give_up is not None and deps.attempt >= entry.spec.max_attempts:
@@ -371,6 +391,8 @@ async def _postpone(
     args: dict[str, Any],
     request_id: str | None,
     trace_carrier: dict[str, Any] | None,
+    *,
+    run_at: datetime | None = None,
 ) -> None:
     """Re-queue this job a little later instead of running it now.
 
@@ -381,6 +403,13 @@ async def _postpone(
         payload[REQUEST_ID_ARG] = request_id
     if trace_carrier is not None:
         payload[TRACE_ARG] = trace_carrier
+    # Convert the application's deadline to a relative database delay. If the DB
+    # clock is ahead, an absolute deadline could immediately run again in a loop.
+    delay = (
+        max(1.0, (run_at - datetime.now(UTC)).total_seconds())
+        if run_at is not None
+        else GATE_RETRY_SECONDS
+    )
     async with database.transaction() as session:
         await session.execute(
             text("""
@@ -396,7 +425,7 @@ async def _postpone(
                 "lock": current.lock,
                 "unique_key": current.queueing_lock,
                 "args": json.dumps(payload),
-                "delay": GATE_RETRY_SECONDS,
+                "delay": delay,
             },
         )
     logger.info("job postponed by backpressure", extra={"job": current.task_name})
