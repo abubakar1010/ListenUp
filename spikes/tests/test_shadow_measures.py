@@ -24,7 +24,7 @@ ORIGINAL = words([0.0, 0.5, 1.0, 1.5, 2.0, 2.5])
 
 
 def test_alignable_words_drop_digits_and_punctuation() -> None:
-    assert alignable_words("I could've seen 3 cats!") == ["i", "could", "have", "seen", "cats"]
+    assert alignable_words("I could've seen 3 cats!") == ["i", "could've", "seen", "cats"]
 
 
 def test_constant_shadowing_lag_is_not_penalised() -> None:

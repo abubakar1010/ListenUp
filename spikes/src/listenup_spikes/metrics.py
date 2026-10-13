@@ -3,6 +3,7 @@
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 FILLERS = ("um", "uh", "er", "erm", "hmm", "like", "you know")
 _CONTRACTIONS = {
@@ -117,3 +118,55 @@ def mean_boundary_error_ms(
     if not errors:
         raise ValueError("no matching words")
     return sum(errors) / len(errors)
+
+
+def boundary_errors_ms(
+    predicted: Sequence[tuple[str, float, float]],
+    labelled: Sequence[tuple[str, float, float]],
+) -> list[float]:
+    """Match ordered text blocks, then measure every matched boundary without a time
+    cutoff. Text context locates hand-labelled excerpts within the full passage;
+    timestamps never decide which words match. Disable the popular-word heuristic
+    because repeated words like 'the' are meaningful anchors in speech.
+
+    Unmatched labels have no measurable timing error. Callers must report their count
+    and must not pass an accuracy gate on incomplete coverage (see compare._row).
+    """
+    matcher = SequenceMatcher(
+        a=[tuple(normalize_words(w)) for w, _, _ in predicted],
+        b=[tuple(normalize_words(w)) for w, _, _ in labelled],
+        autojunk=False,
+    )
+    errors: list[float] = []
+    for a, b, size in matcher.get_matching_blocks():
+        for offset in range(size):
+            _, start, end = labelled[b + offset]
+            _, pred_start, pred_end = predicted[a + offset]
+            errors.extend([abs(pred_start - start) * 1000, abs(pred_end - end) * 1000])
+    return errors
+
+
+@dataclass(frozen=True)
+class Spread:
+    count: int
+    mean: float
+    median: float
+    p90: float
+    share_within_50ms: float  # 0..1
+    share_within_100ms: float
+
+
+def spread(values: Sequence[float]) -> Spread:
+    if not values:
+        raise ValueError("no values")
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    median = ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+    return Spread(
+        count=len(ordered),
+        mean=sum(ordered) / len(ordered),
+        median=median,
+        p90=percentile(ordered, 90),
+        share_within_50ms=sum(v <= 50 for v in ordered) / len(ordered),
+        share_within_100ms=sum(v <= 100 for v in ordered) / len(ordered),
+    )
