@@ -1,0 +1,26 @@
+# Prometheus for the `observability` Compose profile (ADR 0031). The app pushes
+# metrics over OTLP to /api/v1/otlp/v1/metrics (Prometheus runs with
+# --web.enable-otlp-receiver); nothing is scraped from the app.
+
+global:
+  evaluation_interval: 30s
+
+otlp:
+  # Keep the service name and environment as labels on every series.
+  promote_resource_attributes:
+    - service.name
+    - service.namespace
+    - deployment.environment.name
+
+storage:
+  tsdb:
+    # OTLP pushes from several processes can arrive slightly out of order.
+    out_of_order_time_window: 30m
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]

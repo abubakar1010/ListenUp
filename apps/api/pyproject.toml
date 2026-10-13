@@ -14,6 +14,9 @@ dependencies = [
     "procrastinate>=2.0",
     "boto3>=1.35",
     "argon2-cffi>=23.1",
+    "opentelemetry-api>=1.30",
+    "opentelemetry-sdk>=1.30",
+    "opentelemetry-exporter-otlp-proto-http>=1.30",
     "pyyaml>=6.0",
 ]
 
@@ -34,6 +37,8 @@ dev = [
     "types-boto3[s3]>=1.35",
     "hypothesis>=6.168.3",
     "types-pyyaml>=6.0",
+    "pytest-cov>=7.1.0",
+    "diff-cover>=10.6.0",
 ]
 
 [build-system]
@@ -46,6 +51,26 @@ packages = ["src/listenup"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = ["performance: wall-clock budgets; run without coverage instrumentation"]
+
+[tool.coverage.run]
+branch = true
+# Include modules that no test imports, not just files executed by the suite.
+source = ["src/listenup"]
+relative_files = true
+data_file = "coverage/.coverage"
+
+[tool.coverage.report]
+show_missing = true
+# Namespace packages are importable even without __init__.py. Discover their
+# unexecuted modules too, so new runtime code cannot disappear from the report.
+include_namespace_packages = true
+
+[tool.coverage.xml]
+output = "coverage/coverage.xml"
+
+[tool.coverage.html]
+directory = "coverage/html"
 
 [tool.ruff]
 line-length = 100

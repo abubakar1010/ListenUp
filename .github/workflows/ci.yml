@@ -12,6 +12,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  branch-name:
+    name: Branch name is readable and auditable
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.user.login != 'dependabot[bot]') ||
+      (github.event_name == 'push' && github.ref_type == 'branch' &&
+       github.actor != 'dependabot[bot]' &&
+       !startsWith(github.ref_name, 'dependabot/'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate branch name
+        env:
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        run: .github/scripts/check-branch-name.sh "$BRANCH_NAME"
+
   backend:
     name: Backend (lint, types, boundaries, tests)
     runs-on: ubuntu-latest
@@ -41,9 +57,11 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/api/uv.lock
       - run: uv sync --frozen --python 3.12
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
+      - run: uv run ruff check . ../../.github/scripts/check-coverage.py
+      - run: uv run ruff format --check . ../../.github/scripts/check-coverage.py
       - run: uv run mypy
+      - name: Coverage tooling types
+        run: uv run mypy ../../.github/scripts/check-coverage.py tests/unit/test_coverage_gate.py
       - name: Module boundaries (import-linter)
         run: uv run lint-imports
       - name: Migrations (upgrade, downgrade one, upgrade, drift check)
@@ -52,8 +70,10 @@ jobs:
           uv run alembic downgrade -1
           uv run alembic upgrade head
           uv run alembic check
-      - name: Install ffmpeg (upload conversion tests, as in the worker-media image)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Install ffmpeg (conversion tests) and the PostgreSQL 16 client (backup tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg postgresql-client-16
       - name: Start S3 storage (SeaweedFS, as in Docker Compose)
         working-directory: .
         run: |
@@ -70,7 +90,18 @@ jobs:
           done
           docker logs storage
           exit 1
-      - run: uv run pytest
+      - name: Tests with line and branch coverage
+        run: uv run pytest -m 'not performance' --cov --cov-report=term-missing:skip-covered --cov-report=xml --cov-report=html
+      - name: Backend coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: apps/api/coverage/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Performance budgets without coverage overhead
+        run: uv run pytest -m performance --no-cov
       - name: Spike harness regression tests (production pure helpers)
         working-directory: spikes
         run: |
@@ -99,10 +130,60 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm typecheck
-      - run: pnpm test
+      - run: pnpm test:coverage
+      - name: Web coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-coverage
+          path: apps/web/coverage/
+          if-no-files-found: error
+          retention-days: 14
       - run: pnpm build
       - name: Initial JavaScript within budget
         run: pnpm size
+
+  changed-coverage:
+    name: Changed executable lines (90% per app)
+    if: github.event_name == 'pull_request'
+    needs: [backend, web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # diff-cover needs the merge base, including on fork pull requests.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - run: uv sync --frozen --python 3.12 --project apps/api
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-coverage
+          path: apps/api/coverage
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-coverage
+          path: apps/web/coverage
+      - name: Backend changed-line coverage
+        working-directory: apps/api
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git cat-file -e "$BASE_SHA^{commit}"
+          uv run python ../../.github/scripts/check-coverage.py api coverage/coverage.xml
+          uv run diff-cover coverage/coverage.xml --compare-branch "$BASE_SHA" \
+            --ignore-staged --ignore-unstaged --fail-under 90
+      - name: Web changed-line coverage
+        working-directory: apps/web
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git cat-file -e "$BASE_SHA^{commit}"
+          ../api/.venv/bin/python ../../.github/scripts/check-coverage.py web coverage/cobertura-coverage.xml
+          ../api/.venv/bin/diff-cover coverage/cobertura-coverage.xml --compare-branch "$BASE_SHA" \
+            --ignore-staged --ignore-unstaged --fail-under 90
 
   e2e:
     name: Web smoke test (Playwright)
@@ -158,12 +239,33 @@ jobs:
           git diff --exit-code -- apps/web/src/api \
             || { echo "::error::Run scripts/export_openapi.py and pnpm api:generate, then commit the result."; exit 1; }
 
+  alerts:
+    name: Alert rules and observability config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prometheus config and alert rules are valid
+        run: |
+          docker run --rm -v "$PWD/infra/observability:/etc/prometheus:ro" \
+            --entrypoint promtool prom/prometheus:v3.5.0 \
+            check config /etc/prometheus/prometheus.yml
+      - name: Each alert fires on simulated data (and only then)
+        run: |
+          docker run --rm -v "$PWD/infra/observability:/rules:ro" -w /rules \
+            --entrypoint promtool prom/prometheus:v3.5.0 \
+            test rules alerts.test.yml
+      - name: Alertmanager config is valid
+        run: |
+          docker run --rm -v "$PWD/infra/observability:/cfg:ro" \
+            --entrypoint amtool prom/alertmanager:v0.28.1 \
+            check-config /cfg/alertmanager.yml
+
   images:
     name: Docker image (${{ matrix.target }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [api, worker, worker-media]
+        target: [api, worker, worker-media, backup]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

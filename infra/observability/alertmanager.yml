@@ -1,0 +1,20 @@
+# Alertmanager for the `observability` Compose profile (ADR 0031). Locally every
+# alert is emailed to Mailpit (http://localhost:8025). Production replaces the
+# receiver with the team's address or a free push service; see
+# docs/runbooks/alerts.md, "Where alerts go".
+
+route:
+  receiver: team
+  group_by: ["alertname", "lane", "provider"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: team
+    email_configs:
+      - to: ops@listenup.local
+        from: alerts@listenup.local
+        smarthost: mailpit:1025
+        require_tls: false
+        send_resolved: true

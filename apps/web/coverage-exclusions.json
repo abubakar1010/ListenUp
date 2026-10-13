@@ -1,0 +1,10 @@
+[
+  "src/**/*.test.{ts,tsx}",
+  "src/**/*.d.ts",
+  "src/test-setup.ts",
+  "src/test-utils.tsx",
+  "src/features/session/testApi.ts",
+  "src/features/session/fixtures.ts",
+  "src/features/blind/fixtures.ts",
+  "src/api/schema.ts"
+]
