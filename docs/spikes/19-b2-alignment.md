@@ -1,7 +1,7 @@
 # Spike #19 (B2): forced alignment of creator captions
 
 - Issue: [#19](https://github.com/abubakar1010/ListenUp/issues/19). Requirements: FR-TX-2, FR-TR-1, NFR-PERF-4. Sources: System Design 5.1, 12.1 (B2); Architecture 5.1, 7.5.
-- Decision: [ADR 0033](../adr/0033-speech-models-chosen-by-spikes-b1-and-b2.md).
+- Decision: [ADR 0034](../adr/0034-speech-models-chosen-by-spikes-b1-and-b2.md).
 - Raw results: [`data/b2/`](data/b2/), produced by `spikes/` (`spike-b2`, `spike-compare`, `spike-summary`). Hand-label kit: [`b2-labels/`](b2-labels/README.md).
 
 > **Indicative numbers.** The stage 0 server (#16) does not exist yet. Every number here was measured on the cloud container below and must be rerun on stage 0 before it becomes a commitment. **The hand-labelled boundary check is pending** (see below): the boundary figures here are agreement between systems, not accuracy against a person.
@@ -17,7 +17,7 @@
 | --- | --- |
 | Does wav2vec2 CTC forced alignment run at about 0.2 core-seconds per audio-second or better? | **Yes, with the English base model in 30 s windows and int8 linear layers: 0.177 core-s per audio-s on average, 0.182 at worst**, a third of `small.en` transcription (0.54). Not with `MMS_FA`, the aligner ADR 0028 shipped: 1.19 over a whole passage (5.9 GB peak memory) and 0.58 in windows. |
 | Are its word boundaries accurate enough for Transcript sync and Shadow timing? | **Very likely, to be confirmed by the hand labels.** Two independently trained aligners (the English base model and `MMS_FA`) put a word's start and end within one 20 ms frame of each other at the median and within 40 ms at the 90th percentile; 95.6% of boundaries agree within 50 ms. Transcript sync needs about 100 ms (FR-TR-1 highlights the current line; NFR-PERF-4 asks for frame-accurate seeking to a segment). Agreement is not accuracy, so the gate is the hand-labelled check below; phone-level timing for Shadow is spike #20's question. |
-| Which alignment model, and does the caption path ship? | **`WAV2VEC2_ASR_BASE_960H`, 30 s windows, int8 (ADR 0033). The caption path ships with YouTube intake, behind its flag (OQ-6)**, on the condition that the hand-labelled mean boundary error is at most 50 ms; if it is not, `MMS_FA` in 30 s windows (0.58 core-s per audio-s) is the fallback, still cheaper than transcribing. |
+| Which alignment model, and does the caption path ship? | **`WAV2VEC2_ASR_BASE_960H`, 30 s windows, int8 (ADR 0034). The caption path ships with YouTube intake, behind its flag (OQ-6)**, on the condition that the hand-labelled mean boundary error is at most 50 ms; if it is not, `MMS_FA` in 30 s windows (0.58 core-s per audio-s) is the fallback, still cheaper than transcribing. |
 
 ## Method
 
@@ -81,7 +81,7 @@ Alignment of a 3-minute passage costs about 0.18 x 185 = 33 core-s. System Desig
 
 ## Hand labels (pending)
 
-The issue's spot-check against hand labels needs a person to listen. Three 60 s windows are prepared in [`b2-labels/`](b2-labels/README.md): one test-clean (female reader), one test-other (male reader), one VoxPopuli accented (Spanish accent), about 450 words in all. Each has a Praat TextGrid whose hint tier carries only the reference text of the utterances in the window, with no times from any system, so the labels are independent of every system they measure. Labelling takes about 30 to 40 minutes per window; the README has the steps and the commands that import the labels and add the "vs hand labels" rows here and to ADR 0033.
+The issue's spot-check against hand labels needs a person to listen. Three 60 s windows are prepared in [`b2-labels/`](b2-labels/README.md): one test-clean (female reader), one test-other (male reader), one VoxPopuli accented (Spanish accent), about 450 words in all. Each has a Praat TextGrid whose hint tier carries only the reference text of the utterances in the window, with no times from any system, so the labels are independent of every system they measure. Labelling takes about 30 to 40 minutes per window; the README has the steps and the commands that import the labels and add the "vs hand labels" rows here and to ADR 0034.
 
 ## Reproduce
 

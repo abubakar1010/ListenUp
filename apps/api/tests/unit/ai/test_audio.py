@@ -1,4 +1,4 @@
-"""The speech adapters' shared ffmpeg decoder (ADR 0033). Needs ffmpeg on the PATH."""
+"""The speech adapters' shared ffmpeg decoder (ADR 0034). Needs ffmpeg on the PATH."""
 
 import struct
 import subprocess

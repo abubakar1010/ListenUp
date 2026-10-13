@@ -2,7 +2,7 @@
 
 Uses a torchaudio pipeline bundle named by `model` in `ai.yaml`: the multilingual
 `MMS_FA` aligner or an English ASR bundle such as `WAV2VEC2_ASR_BASE_960H` (spike #19,
-ADR 0033), with `forced_align` over the words' letters. With the `window_seconds` option
+ADR 0034), with `forced_align` over the words' letters. With the `window_seconds` option
 the model runs over the audio in windows rather than in one pass, and `int8: true`
 quantises its linear layers. Units are characters,
 so results say `unit_kind: character`. torch and torchaudio are imported only when the

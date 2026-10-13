@@ -1,7 +1,7 @@
 # Spike #18 (B1): CPU transcription speed and word accuracy
 
 - Issue: [#18](https://github.com/abubakar1010/ListenUp/issues/18). Requirements: FR-TX-1, NFR-PERF-2, NFR-AI-3, OI-2, OI-3. Sources: System Design 2.2, 3.2, 5, 12.1 (B1).
-- Decision: [ADR 0033](../adr/0033-speech-models-chosen-by-spikes-b1-and-b2.md).
+- Decision: [ADR 0034](../adr/0034-speech-models-chosen-by-spikes-b1-and-b2.md).
 - Raw results: [`data/b1/`](data/b1/) (one JSON per setting, every passage), produced by `spikes/` (`spike-b1`, `spike-perf2`, `spike-summary`).
 
 > **Indicative numbers.** The stage 0 server (#16) does not exist yet. Every number here was measured on the cloud container below and must be rerun on stage 0 before it becomes a commitment (System Design 12). The harness records the machine with every result.
@@ -122,7 +122,7 @@ Proposal for NFR-PERF-2 (replacing "to confirm after benchmarking"): **a 10-minu
 
 | Compared with | Median | p90 | Within 50 ms | Within 100 ms |
 | --- | --- | --- | --- | --- |
-| English wav2vec2 aligner (ADR 0033's choice) | 56 ms | 188 ms | 47.0% | 70.6% |
+| English wav2vec2 aligner (ADR 0034's choice) | 56 ms | 188 ms | 47.0% | 70.6% |
 | MMS_FA aligner | 57 ms | 184 ms | 46.1% | 70.8% |
 
 The two aligners agree with each other far more closely (median 20 ms, 95.6% within 50 ms), so most of the difference is Whisper's. On LibriSpeech the median is 52 to 53 ms; on VoxPopuli 65 to 67 ms with a p90 near 280 ms. Whisper's times are good enough to cut a passage to its words and to highlight the current line; where exact boundaries matter (Shadow timing, word-level seeking), the transcript is force-aligned as System Design 5.1 already plans.

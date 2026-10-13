@@ -2,7 +2,7 @@
 
 Both engines get their samples from ffmpeg (installed in the worker-media image) rather
 than from a library's own decoder: faster-whisper 1.2.1 decodes through PyAV with an
-argument PyAV 19 removed, so handing it a file path fails (spike #18, ADR 0033).
+argument PyAV 19 removed, so handing it a file path fails (spike #18, ADR 0034).
 """
 
 import subprocess

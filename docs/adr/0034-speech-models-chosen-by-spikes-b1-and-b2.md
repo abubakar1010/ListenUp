@@ -1,4 +1,4 @@
-# ADR 0033: Speech models chosen by spikes B1 and B2
+# ADR 0034: Speech models chosen by spikes B1 and B2
 
 - Status: Accepted (numbers indicative until rerun on the stage 0 server, #16)
 - Date: 2026-10-05

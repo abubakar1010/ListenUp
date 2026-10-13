@@ -1,4 +1,4 @@
-"""Model-independent alignment text, shared with the B2 benchmark (ADR 0033).
+"""Model-independent alignment text, shared with the B2 benchmark (ADR 0034).
 
 Keep this module free of speech and application dependencies so the spike can use
 exactly the production targets without installing the API or loading a model.
