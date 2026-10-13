@@ -66,6 +66,8 @@ Azure's 300 free minutes/month cover only **66–100 three-round sessions/month*
 
 These roles remain self-hosted. The hosted screen answers #23's “worth adding?” question; it does not change #18/#19 or the transcription session's configuration.
 
+Main synchronization, 2026-10-13: merged [ADR 0034](../adr/0034-speech-models-chosen-by-spikes-b1-and-b2.md) now selects `small.en` transcription and `WAV2VEC2_ASR_BASE_960H` alignment. Its corrected-harness and Stage 0 validation gates remain outstanding. The original ADR 0028/MMS_FA comparison below is historical context; MMS_FA's license warning applies if it is considered as a fallback, not to the currently configured primary model.
+
 | Candidate | Quota/rate and data terms | Quality/latency and paid move | Recommendation |
 | --- | --- | --- | --- |
 | **faster-whisper transcription; wav2vec2-CTC `MMS_FA` alignment** | ADR 0028 selects local CPU int8 `base.en` and torchaudio MMS_FA provisionally until #18/#19. No provider quota; local deployment controls retention/region/training. faster-whisper MIT; Whisper weights MIT. MMS_FA checkpoint is **CC-BY-NC-4.0**, so commercial deployment is **not cleared** merely because torchaudio code is open-source. [T1 · 2026-10-11] [T2 · 2026-10-11] [T3 · 2026-10-11] | faster-whisper maintainer benchmarks signal efficiency, not Stage 0 p95; exact quality/latency stays with #18/#19. [T1 · 2026-10-11] | Keep provider order unchanged. Escalate MMS_FA's noncommercial checkpoint license to #19 before commercial launch; choose commercially licensed weights there if needed. |
@@ -83,9 +85,9 @@ No hosted alignment provider is selected. Alignment quality, model licensing and
 | Text: round 3 feedback, suggestions | Local Qwen → Groq only with reserved free headroom → queue | Preserve hosted allowance for gist/key points. Templates for rounds 1–2 while saving mode is on; implementation details in #64. |
 | Speech assessment | Self-hosted composite from #20/#21 → optionally Azure PA for supported measures → queue/unavailable | Preserve local voice processing; Azure is eligible but tiny free pool and incomplete seven-measure coverage. No activation before quality, license, latency, consent and mapping gates. [P1 · 2026-10-11] [P2 · 2026-10-11] [A4 · 2026-10-11] [A5 · 2026-10-11] |
 | Transcription | Existing `faster-whisper` only | Keep ADR 0028/#18; no hosted fallback initially. |
-| Alignment | Existing `wav2vec2-ctc` only, pending #19/license review | Keep ADR 0028; MMS_FA is no-training eligible locally but not approved for commercial use. [T3 · 2026-10-11] |
+| Alignment | Existing `wav2vec2-ctc` only, current `WAV2VEC2_ASR_BASE_960H` under ADR 0034 | Retain merged #19's validation gates. Any MMS_FA fallback is no-training eligible locally but not approved for commercial use. [T3 · 2026-10-11] |
 
-These are selected directions with deployment gates, not claims that the unimplemented adapters are ready. ADR [0034](../adr/0034-free-ai-provider-order-and-eligibility.md) records the decision. #64 adds the runtime IDs, eligibility checks, per-task order, quotas, provenance, schemas and admin usage view. This PR proposes the order in its description and does not edit `ai.yaml`.
+These are selected directions with deployment gates, not claims that the unimplemented adapters are ready. ADR [0035](../adr/0035-free-ai-provider-order-and-eligibility.md) records the decision. #64 adds the runtime IDs, eligibility checks, per-task order, quotas, provenance, schemas and admin usage view. This PR proposes the order in its description and does not edit `ai.yaml`.
 
 ## Sources
 
