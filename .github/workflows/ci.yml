@@ -57,9 +57,11 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/api/uv.lock
       - run: uv sync --frozen --python 3.12
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
+      - run: uv run ruff check . ../../.github/scripts/check-coverage.py
+      - run: uv run ruff format --check . ../../.github/scripts/check-coverage.py
       - run: uv run mypy
+      - name: Coverage tooling types
+        run: uv run mypy ../../.github/scripts/check-coverage.py tests/unit/test_coverage_gate.py
       - name: Module boundaries (import-linter)
         run: uv run lint-imports
       - name: Migrations (upgrade, downgrade one, upgrade, drift check)
@@ -88,7 +90,25 @@ jobs:
           done
           docker logs storage
           exit 1
-      - run: uv run pytest
+      - name: Tests with line and branch coverage
+        run: uv run pytest -m 'not performance' --cov --cov-report=term-missing:skip-covered --cov-report=xml --cov-report=html
+      - name: Backend coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: apps/api/coverage/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Performance budgets without coverage overhead
+        run: uv run pytest -m performance --no-cov
+      - name: Spike harness regression tests (production pure helpers)
+        working-directory: spikes
+        run: |
+          uv sync --frozen --python 3.12
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run pytest
 
   web:
     name: Web (lint, format, types, tests, build)
@@ -110,10 +130,60 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm typecheck
-      - run: pnpm test
+      - run: pnpm test:coverage
+      - name: Web coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-coverage
+          path: apps/web/coverage/
+          if-no-files-found: error
+          retention-days: 14
       - run: pnpm build
       - name: Initial JavaScript within budget
         run: pnpm size
+
+  changed-coverage:
+    name: Changed executable lines (90% per app)
+    if: github.event_name == 'pull_request'
+    needs: [backend, web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # diff-cover needs the merge base, including on fork pull requests.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - run: uv sync --frozen --python 3.12 --project apps/api
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-coverage
+          path: apps/api/coverage
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-coverage
+          path: apps/web/coverage
+      - name: Backend changed-line coverage
+        working-directory: apps/api
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git cat-file -e "$BASE_SHA^{commit}"
+          uv run python ../../.github/scripts/check-coverage.py api coverage/coverage.xml
+          uv run diff-cover coverage/coverage.xml --compare-branch "$BASE_SHA" \
+            --ignore-staged --ignore-unstaged --fail-under 90
+      - name: Web changed-line coverage
+        working-directory: apps/web
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git cat-file -e "$BASE_SHA^{commit}"
+          ../api/.venv/bin/python ../../.github/scripts/check-coverage.py web coverage/cobertura-coverage.xml
+          ../api/.venv/bin/diff-cover coverage/cobertura-coverage.xml --compare-branch "$BASE_SHA" \
+            --ignore-staged --ignore-unstaged --fail-under 90
 
   e2e:
     name: Web smoke test (Playwright)

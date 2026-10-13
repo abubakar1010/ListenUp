@@ -10,9 +10,9 @@ either tool can build or review a story using the prompts below.
 
 1. **Ready (owner).** The issue has acceptance criteria and its dependencies are merged. A story whose blocker is open waits; it is not built around the gap.
 2. **Plan (complex stories only).** A story that adds a module, changes the data model, or touches security, privacy or AI grading starts with a plan of 10 to 15 lines: files to change, data changes and migration, risks, and the tests that prove each acceptance criterion. The owner approves or corrects it before any code.
-3. **Build.** Tests are written with the code. Run only the tests for the area while working; run the full checks once, before opening the pull request (the checklist below). Open one pull request for the story.
-4. **CI.** Every push runs the full suites, the image builds and the vulnerability scan. A red build is fixed in the same pull request.
-5. **Review.** A fresh session in Claude Code or Codex reviews the pull request using the review prompt below. In Claude Code, `/code-review <number> medium` is available when that command is installed. Its findings and the owner's answers to policy questions are fixed in the same pull request, followed by the affected checks. Re-review material changes; required CI checks must pass before merge.
+3. **Build with TDD.** Follow [the testing policy](testing.md): write and run a focused failing test before implementing each behavior, make it pass, then refactor with tests green. Bug fixes start with a failing regression test. Record actual red/green evidence and acceptance-criterion-to-test mappings as you work. Run targeted tests during each cycle; run the full applicable checks once before the pull request (the checklist below). Prepare one pull request for the story; open it when requested, following `CLAUDE.md`.
+4. **CI.** Every push runs the full suites, coverage reporting, the image builds and the vulnerability scan. Pull requests also require at least 90% coverage of changed executable lines in each application. A red build is fixed in the same pull request.
+5. **Review.** A fresh session in Claude Code or Codex reviews the pull request using the review prompt below. In Claude Code, `/code-review <number> medium` is available when that command is installed. Its findings and the owner's answers to policy questions are fixed in the same pull request, followed by the affected checks. Re-review material changes; required CI checks must pass before merge. Review actual red/green evidence, assertion quality, uncovered branches and relevant failure cases per `docs/testing.md`; CI cannot establish test-first chronology.
 6. **Merge (owner).** Merge, close the session, and start the next story from `main`.
 
 Run two or three sessions at once on stories that touch different areas. Each has its own branch and pull request, so nothing needs merging by hand.
@@ -62,8 +62,11 @@ Plan first: <yes or no>. If yes, stop after the plan and wait for approval.
 Read CLAUDE.md and docs/workflow.md; in Codex also follow AGENTS.md.
 Read docs/conventions.md for the areas you touch. Read the design documents only
 where an acceptance criterion needs them.
-Done means every item of the checklist in docs/workflow.md, then one pull request.
-Do not merge; the owner merges after fresh-session review and passing CI.
+Follow docs/testing.md: failing test first, minimal implementation, green, refactor.
+Record actual red/green outcomes and map acceptance criteria to named tests.
+Done means every applicable item of the checklist in docs/workflow.md. Prepare
+one PR for the story; open it when requested, including an explicit done criterion
+of one PR (CLAUDE.md). Do not merge; the owner merges after review and passing CI.
 ```
 
 ## Prompt template for a review session
@@ -77,6 +80,8 @@ Read CLAUDE.md, docs/workflow.md and the conventions for the changed areas;
 in Codex also follow AGENTS.md. Read the issue's acceptance criteria and cited
 design sections/ADRs. For design synchronization, read .claude/agents/docs-sync.md.
 Check correctness, security, regressions, scope, acceptance criteria and validation.
+Check actual red/green evidence, assertion quality and uncovered branches per
+docs/testing.md; CI cannot prove test-first chronology.
 Report actionable findings with severity, file/line, impact and suggested fix.
 List policy contradictions as questions for the owner; do not invent decisions.
 Distinguish confirmed findings from assumptions and checks you could not run.
@@ -91,11 +96,13 @@ PR. A review-only session remains read-only unless the owner changes its task.
 
 Before opening the pull request:
 
-- [ ] Every acceptance criterion is covered by a meaningful test or, for documentation-only work, an appropriate document check; anything not done is listed in the pull request with the reason.
-- [ ] Backend changed: `uv run ruff format --check .`, `uv run ruff check .`, `uv run mypy`, `uv run lint-imports`, `LISTENUP_REQUIRE_DB=1 uv run pytest`. Require storage with `LISTENUP_REQUIRE_S3=1` for S3 checks; distinguish skips from passes.
+- [ ] Every acceptance criterion maps to a named test, including relevant boundary, denial and failure cases, or an appropriate documentation-only check; unmet criteria are listed and block completion of the story.
+- [ ] Each behavior change has actual red/green evidence; bug fixes have a regression test observed failing before the fix. Applicability notes follow `docs/testing.md`.
+- [ ] Changed-code coverage meets the gate; uncovered branches and assertion quality have been reviewed. Skipped or blocked checks are disclosed and required checks must pass before merge.
+- [ ] Backend changed: `uv run ruff format --check .`, `uv run ruff check .`, `uv run mypy`, `uv run lint-imports`, then the full coverage and uninstrumented performance commands in `docs/testing.md` with PostgreSQL and S3 required for integration tests.
 - [ ] Migrations (when the schema changed): `uv run alembic upgrade head`, `uv run alembic check`, `uv run alembic downgrade -1` and back up; a new table with `user_id` has the `own_rows` policy and explicit grants.
 - [ ] API changed: `uv run python scripts/export_openapi.py` and `pnpm api:generate`, with the generated files committed; each new route is in `tests/integration/access_registry.py`.
-- [ ] Web changed: `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm size`, and `pnpm e2e`.
+- [ ] Web changed: `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm test:coverage`, `pnpm build`, `pnpm size`, and `pnpm e2e`.
 - [ ] A significant decision has an ADR in `docs/adr/`; a new convention for an area is added to `docs/conventions.md`.
 - [ ] Commits follow the rules in `CLAUDE.md`.
 - [ ] The PR describes the resulting behavior, relevant checks and outcomes, skipped/unrun checks with reasons, and any owner decisions still needed. Mark unrelated checks not applicable; do not claim unrun checks passed.

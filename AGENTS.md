@@ -37,3 +37,13 @@ than duplicating them here.
 - Follow the commit authorship and Conventional Commit rules in `CLAUDE.md`.
   Open a PR when requested by the task or its explicit "Done means one PR"
   instruction. Fix findings in that PR; the owner merges.
+
+## Mandatory test-driven development
+
+Follow `docs/testing.md` and `docs/workflow.md` for new behavior and bug fixes:
+observe a focused failing test before implementation, make it pass, then refactor
+with tests green. Record actual red/green evidence, map acceptance criteria to
+named tests, and review relevant boundaries, failure cases and changed coverage.
+Apply the testing policy's characterization and non-behavior applicability rules.
+Never claim blocked, skipped or unrun checks passed, or weaken assertions or
+coverage exclusions to make a change pass. The same policy applies to both tools.
