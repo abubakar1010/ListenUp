@@ -1,0 +1,96 @@
+{
+ "source": "recorded",
+ "port": "transcription",
+ "model": "small.en",
+ "options": {
+  "compute_type": "int8",
+  "cpu_threads": 2,
+  "beam_size": 5,
+  "vad_filter": true
+ },
+ "provider": "faster-whisper",
+ "version": "faster-whisper 1.2.1; ctranslate2 4.8.2; int8",
+ "input": {
+  "audio": "1995-1826-0007.flac",
+  "language": "en"
+ },
+ "raw": {
+  "language": "en",
+  "duration": 7.06,
+  "segments": [
+   {
+    "start": 0.02,
+    "end": 6.76,
+    "text": " Find some crust wells there. Big Plantations, rated at $250,000.",
+    "words": [
+     {
+      "start": 0.02,
+      "end": 0.64,
+      "word": " Find",
+      "probability": 0.8929779529571533
+     },
+     {
+      "start": 0.64,
+      "end": 0.9,
+      "word": " some",
+      "probability": 0.9936811923980713
+     },
+     {
+      "start": 0.9,
+      "end": 1.22,
+      "word": " crust",
+      "probability": 0.5113573670387268
+     },
+     {
+      "start": 1.22,
+      "end": 1.6,
+      "word": " wells",
+      "probability": 0.734321117401123
+     },
+     {
+      "start": 1.6,
+      "end": 2.14,
+      "word": " there.",
+      "probability": 0.9638396501541138
+     },
+     {
+      "start": 2.82,
+      "end": 2.88,
+      "word": " Big",
+      "probability": 0.9442908763885498
+     },
+     {
+      "start": 2.88,
+      "end": 3.72,
+      "word": " Plantations,",
+      "probability": 0.6709586828947067
+     },
+     {
+      "start": 4.26,
+      "end": 4.34,
+      "word": " rated",
+      "probability": 0.9112542271614075
+     },
+     {
+      "start": 4.34,
+      "end": 4.6,
+      "word": " at",
+      "probability": 0.9760234355926514
+     },
+     {
+      "start": 4.6,
+      "end": 5.52,
+      "word": " $250",
+      "probability": 0.9673731327056885
+     },
+     {
+      "start": 5.52,
+      "end": 6.76,
+      "word": ",000.",
+      "probability": 0.9848489463329315
+     }
+    ]
+   }
+  ]
+ }
+}
