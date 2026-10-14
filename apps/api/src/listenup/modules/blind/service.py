@@ -29,7 +29,8 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from listenup.modules.blind import repository
+from listenup.modules.analytics import service as analytics
+from listenup.modules.blind import jobs, repository
 from listenup.modules.blind.domain import (
     MAX_CHARS,
     MIN_SENTENCES,
@@ -192,6 +193,7 @@ async def start(db: AsyncSession, session_id: uuid.UUID, now: datetime) -> Start
     token = secrets.token_urlsafe(32)
     listen = Listen.start(session.passage.start_ms, session.passage.end_ms, now)
     row = await repository.insert(db, attempt.id, attempt.user_id, _hash(token), listen)
+    await jobs.queue_expiry(db, attempt.id, listen)
     return Started(_view(attempt, row), token)
 
 
@@ -204,6 +206,9 @@ async def _void(
     row = await repository.save(db, attempt.id, listen, void_reason=reason.value)
     ended = await practice.finish_attempt(db, attempt.id, AttemptStatus.VOIDED)
     await publish(db, attempt.user_id, EventType.ATTEMPT_VOIDED, attempt.id)
+    await analytics.record_blind_abandoned(
+        db, attempt.user_id, attempt.session_id, attempt.id, reason=reason.value
+    )
     # Only voids are logged (Database Design 11.1): beats are too many to keep.
     logger.info(
         "blind attempt voided",
@@ -234,6 +239,8 @@ async def heartbeat(
         return Heartbeat(Action.STOP, view, None)
     if verdict.listen != row.listen:
         row = await repository.save(db, attempt.id, verdict.listen)
+    if verdict.action is Action.RESUME:
+        await jobs.queue_expiry(db, attempt.id, row.listen)
     return Heartbeat(verdict.action, _view(attempt, row), verdict.resume_from_ms)
 
 

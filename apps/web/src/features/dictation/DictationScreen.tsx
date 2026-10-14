@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
@@ -10,6 +10,7 @@ import { formatClock } from '../session/time';
 import {
   MAX_DRAFT_CHARS,
   draftStorageKey,
+  recordListenStarted,
   saveDraft,
   useDictationAttempt,
   type DictationAttempt,
@@ -108,7 +109,26 @@ function DictationWork({
     save: (text, version) => saveDraft(attempt.id, text, version),
   });
   const audio = useRef<HTMLAudioElement>(null);
-  const player = usePassagePlayer(audio, attempt.passage.start_ms, attempt.passage.end_ms);
+  const listenRecorded = useRef(false);
+  const listenRecording = useRef(false);
+  const recordFirstPlay = useCallback(() => {
+    if (listenRecorded.current || listenRecording.current) return;
+    listenRecording.current = true;
+    void recordListenStarted(attempt.id)
+      .then(() => {
+        listenRecorded.current = true;
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        listenRecording.current = false;
+      });
+  }, [attempt.id]);
+  const player = usePassagePlayer(
+    audio,
+    attempt.passage.start_ms,
+    attempt.passage.end_ms,
+    recordFirstPlay,
+  );
   const textArea = useRef<HTMLTextAreaElement>(null);
   const [announcement, setAnnouncement] = useState('');
 

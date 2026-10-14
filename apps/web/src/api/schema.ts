@@ -260,6 +260,28 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/dictation/attempts/{attempt_id}/listen': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Record Listen Started
+     * @description Record the attempt's first successful playback for the time-to-listen metric.
+     *
+     *     Repeated calls are idempotent. Opening the Dictation screen alone records nothing.
+     */
+    post: operations['record_listen_started_api_v1_dictation_attempts__attempt_id__listen_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/events': {
     parameters: {
       query?: never;
@@ -1951,6 +1973,49 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  record_listen_started_api_v1_dictation_attempts__attempt_id__listen_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `attempt_closed`, `step_locked` or `session_closed` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
       };
     };
   };

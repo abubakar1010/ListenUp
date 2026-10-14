@@ -1,10 +1,12 @@
 """Application settings, read from environment variables prefixed with LISTENUP_."""
 
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+LOCAL_ANALYTICS_HMAC_KEY = "listenup-local-analytics-key-change-me"
 
 
 class Settings(BaseSettings):
@@ -75,6 +77,13 @@ class Settings(BaseSettings):
     export_keep_days: int = 7
     export_link_seconds: int = 120
 
+    # Product analytics (#101, ADR 0035). Mark phrases are keyed with this secret and
+    # the learner id before they reach the events table. Keep it stable across API
+    # instances and deploys: changing it breaks repeat-failure comparisons.
+    analytics_hmac_key: SecretStr = Field(
+        default=SecretStr(LOCAL_ANALYTICS_HMAC_KEY), min_length=32
+    )
+
     # Where media workers write source and converted files while a job runs; the
     # system's temporary directory when unset. Each job removes its own files.
     media_scratch_dir: str | None = None
@@ -127,6 +136,17 @@ class Settings(BaseSettings):
         if self.cookie_secure is not None:
             return self.cookie_secure
         return self.environment not in ("local", "test")
+
+    @model_validator(mode="after")
+    def require_production_analytics_key(self) -> Self:
+        if (
+            self.environment not in ("local", "test")
+            and self.analytics_hmac_key.get_secret_value() == LOCAL_ANALYTICS_HMAC_KEY
+        ):
+            raise ValueError(
+                "LISTENUP_ANALYTICS_HMAC_KEY must be set outside local and test environments"
+            )
+        return self
 
 
 @lru_cache
