@@ -1,4 +1,4 @@
-"""The five PRD 2 success metrics, computed from hand-built events (#101, ADR 0034)."""
+"""The five PRD 2 success metrics, computed from hand-built events (#101, ADR 0035)."""
 
 import uuid
 from datetime import UTC, datetime, timedelta

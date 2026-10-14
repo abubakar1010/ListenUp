@@ -1,4 +1,4 @@
-# ADR 0034: Product analytics as server-side events in PostgreSQL, reported by a read-only script
+# ADR 0035: Product analytics as server-side events in PostgreSQL, reported by a read-only script
 
 - Status: Accepted
 - Date: 2026-10-05
@@ -34,7 +34,7 @@ The unique key `analytics_events_once (event_type, subject_id, step)`, with `NUL
 - No email, name, IP address, user agent, title, transcript or typed text. A mark is stored only as an HMAC of its normalised phrase, keyed with a dedicated service secret and scoped by learner id (`pattern`). The report can compare one learner's failures but cannot dictionary-match common phrases or correlate the same phrase across learners. `LISTENUP_ANALYTICS_HMAC_KEY` must be stable and non-default outside local and test environments.
 - `user_id` is the account's random id, which is pseudonymous: the events table alone does not name anyone.
 - `user_id` references `identity.users ON DELETE CASCADE`. The purge in #91 ends with `DELETE FROM identity.users`, so the learner's events go with the account without any change to the purge, and its catalog-based purge report counts them. Anonymising instead (keeping rows with the id removed) was rejected: DR-1 says deletion removes all of the learner's data, and the metrics do not need a deleted learner's history.
-- `content_id` and `session_id` have no foreign key. Deleting a clip or a session (DR-2) keeps its events: they hold no content, the ids then point to nothing, and later deletions do not rewrite past metrics.
+- `content_id` and `session_id` have no foreign key. Deleting a clip or a session keeps its events: they hold no content, the ids then point to nothing, and later deletions do not rewrite past metrics. This is an explicit owner-approved exception to DR-2 and AT-9 (2026-10-15), now recorded in the SRS and Database Design. Events remain in learner exports and are removed on account deletion; this implementation has no separate age-based expiry.
 - Because `user_id` is the account id rather than a separate pseudonym, the events are the learner's data: `analytics.service.export_data` adds them to the data export (NFR-SEC-5, ADR 0030), and `test_export.py` covers them.
 
 ### Access
@@ -69,4 +69,4 @@ The script reads every event before `--as-of` and computes in Python. Beta volum
 - Recording never fails the learner's action: each `record_*` runs in a savepoint, and a value analytics does not know, or a row the table refuses, is logged and dropped. The cost is a silently missing event, so a new step, entry or source type must be added to `analytics.domain` and the CHECKs in the same change.
 - The analytics HMAC key is a deployment secret shared by API instances. Rotating it starts a new pattern namespace and therefore needs an explicit migration/versioning decision; accidental use of the local default is refused outside local and test environments.
 - Marks from sessions that started before migration 0015 have no `plan_started` event. The repeat-failure trend counts them in its totals but gives them no session number.
-- The Database Design does not list the table yet; its owner adds it.
+- The Database Design records the table, grants, reporting policy, account deletion and export behavior. The owner approved retention after clip/session deletion as an explicit exception to DR-2 and AT-9; all documents now state the same policy.

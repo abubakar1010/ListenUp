@@ -1,4 +1,4 @@
-"""What each change of a plan records, and how marks are keyed (#101, ADR 0034)."""
+"""What each change of a plan records, and how marks are keyed (#101, ADR 0035)."""
 
 import hashlib
 import uuid

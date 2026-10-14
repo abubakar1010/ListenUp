@@ -1,6 +1,6 @@
 """The analytics module's public API: record product events, export them, report on them.
 
-#101, PRD 2 and 8.2, ADR 0034. Other modules use only this file (Architecture 4.3),
+#101, PRD 2 and 8.2, ADR 0035. Other modules use only this file (Architecture 4.3),
 with one call per place where an event happens, inside the transaction that makes the
 change, so the event and the change commit or roll back together:
 
@@ -21,7 +21,7 @@ Events hold the learner's id and nothing else personal.
 Recording never fails the caller's action. Each `record_*` runs in a savepoint, and a
 value it does not recognise (a new step, entry or source type this module has not
 learnt) or a row the table refuses is logged and dropped; the step completion, plan
-start or upload that called it still commits. The ADR 0034 tests catch the drift.
+start or upload that called it still commits. The ADR 0035 tests catch the drift.
 """
 
 import functools
@@ -298,6 +298,6 @@ async def build_report(db: AsyncSession, start: datetime, end: datetime, as_of: 
 
 
 async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
-    """The learner's analytics events for their data export (#92, ADR 0034)."""
+    """The learner's analytics events for their data export (#92, ADR 0035)."""
     table = await learner_rows(session, "ops.analytics_events", learner, order_by="occurred_at")
     return ExportPart(tables=(table,))

@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     export_keep_days: int = 7
     export_link_seconds: int = 120
 
-    # Product analytics (#101, ADR 0034). Mark phrases are keyed with this secret and
+    # Product analytics (#101, ADR 0035). Mark phrases are keyed with this secret and
     # the learner id before they reach the events table. Keep it stable across API
     # instances and deploys: changing it breaks repeat-failure comparisons.
     analytics_hmac_key: SecretStr = Field(

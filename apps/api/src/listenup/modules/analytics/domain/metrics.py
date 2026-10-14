@@ -1,4 +1,4 @@
-"""The five success metrics of PRD 2, computed from analytics events (#101, ADR 0034).
+"""The five success metrics of PRD 2, computed from analytics events (#101, ADR 0035).
 
 Pure functions over a list of events, so each definition is tested on hand-built
 events. A report covers a date range [start, end): the cohort (plans, clips, learners

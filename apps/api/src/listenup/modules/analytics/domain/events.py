@@ -1,4 +1,4 @@
-"""The product events of PRD 8.2 and the rules for what each one means (ADR 0034).
+"""The product events of PRD 8.2 and the rules for what each one means (ADR 0035).
 
 Pure: no framework, database or network code. The analytics service turns these into
 rows; other modules never build events themselves.

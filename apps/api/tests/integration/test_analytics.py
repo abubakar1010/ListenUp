@@ -1,4 +1,4 @@
-"""Product analytics events and the success-metrics report (#101, PRD 2 and 8.2, ADR 0034).
+"""Product analytics events and the success-metrics report (#101, PRD 2 and 8.2, ADR 0035).
 
 The app connects as the API role, so row-level security applies and the role may only
 insert events. Events are read back as the migration owner. Mode steps without

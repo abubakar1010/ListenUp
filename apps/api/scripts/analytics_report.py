@@ -1,4 +1,4 @@
-"""Report the five PRD 2 success metrics for a date range (#101, ADR 0034).
+"""Report the five PRD 2 success metrics for a date range (#101, ADR 0035).
 
 Run from apps/api. Dates are UTC days and both ends are included:
 

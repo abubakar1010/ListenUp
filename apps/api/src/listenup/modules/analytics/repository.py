@@ -1,4 +1,4 @@
-"""SQL for `ops.analytics_events` (migration 0015, ADR 0034).
+"""SQL for `ops.analytics_events` (migration 0015, ADR 0035).
 
 Inserts run in the caller's transaction. As the API role, row-level security limits
 them to the current learner, and the role may not read the table back; the report

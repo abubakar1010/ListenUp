@@ -345,7 +345,7 @@ The system stores seven kinds of data, all owned by one learner, and must meet t
 | ShadowRound | session id, segment start and end, round number (1 to 3), transcript shown, recording, speaking measures, grade, feedback | With its session; the recording itself is deleted 90 days after recording |
 
 - DR-1: Deleting an account disables it at once. Signing in within 7 days opens an explicit restore confirmation; only choosing Restore reactivates it, while Keep it deleted signs out and preserves the deletion schedule ([ADR 0033](../adr/0033-design-review-policy-resolutions.md)). After that grace period, deletion removes all of the learner's data, media and recordings.
-- DR-2: Deleting content removes the learner's sessions, marks, recordings and transcript corrections. A shared transcript is deleted only when no learner's content uses that media any more; an upload's transcript is deleted with it.
+- DR-2: Deleting content removes the learner's sessions, marks, recordings and transcript corrections. A shared transcript is deleted only when no learner's content uses that media any more; an upload's transcript is deleted with it. Pseudonymous product analytics events are an explicit exception: deleting content or a session retains their ids and typed metadata for historical metrics, without learner text or content. They remain in the learner's export and are removed on account deletion under DR-1 ([analytics ADR](../adr/0035-product-analytics-events-in-postgres.md), owner-approved 2026-10-15).
 
 ### 8.2 Performance
 
@@ -433,7 +433,7 @@ The MVP is accepted when every Must requirement passes its test below and the op
 | AT-6 | Run Shadow | Segment is 60 to 90 seconds (or the whole passage when it is 30 to 60 seconds); three rounds; round 1 shows text, rounds 2 and 3 do not | FR-SH-1 to FR-SH-3, FR-SH-6 |
 | AT-7 | Run each of the three plan paths | Steps are 4, 4 and 5; steps unlock in order; entry choice can change before Transcript and not after | FR-PL-1 to FR-PL-7 |
 | AT-8 | Sign in from a second browser | Sessions, marks, cards and library appear | FR-ACC-2 |
-| AT-9 | Delete content and an account | All related data, media and recordings are gone | FR-CI-7, FR-ACC-4, DR-1, DR-2 |
+| AT-9 | Delete content and an account | Content deletion removes related learning data, media and recordings, except pseudonymous product analytics retained under DR-2. Account deletion removes all learner data, including analytics events, under DR-1 | FR-CI-7, FR-ACC-4, DR-1, DR-2 |
 
 ### 9.2 Traceability to the PRD
 
