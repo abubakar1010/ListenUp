@@ -1,0 +1,28 @@
+File type = "ooTextFile"
+Object class = "TextGrid"
+
+xmin = 0
+xmax = 60.0
+tiers? <exists>
+size = 2
+item []:
+    item [1]:
+        class = "IntervalTier"
+        name = "words"
+        xmin = 0
+        xmax = 60.0
+        intervals: size = 1
+        intervals [1]:
+            xmin = 0
+            xmax = 60.0
+            text = ""
+    item [2]:
+        class = "IntervalTier"
+        name = "hint"
+        xmin = 0
+        xmax = 60.0
+        intervals: size = 1
+        intervals [1]:
+            xmin = 0
+            xmax = 60.0
+            text = "we have spoken of pearl's rich and luxuriant beauty a beauty that shone with deep and vivid tints a bright complexion eyes possessing intensity both of depth and glow and hair already of a deep glossy brown and which in after years would be nearly akin to black it was the scarlet letter in another form the scarlet letter endowed with life the mother herself as if the red ignominy were so deeply scorched into her brain that all her conceptions assumed its form had carefully wrought out the similitude lavishing many hours of morbid ingenuity to create an analogy between the object of her affection and the emblem of her guilt and torture but in truth pearl was the one as well as the other and only in consequence of that identity had hester contrived so perfectly to represent the scarlet letter in her appearance come therefore and let us fling mud at them but pearl who was a dauntless child after frowning stamping her foot and shaking her little hand with a variety of threatening gestures suddenly made a rush at the knot of her enemies and put them all to flight"

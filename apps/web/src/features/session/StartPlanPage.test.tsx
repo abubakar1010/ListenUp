@@ -129,6 +129,10 @@ test('the handles are sliders the keyboard fully operates, and the fields follow
   expect(end).toHaveAttribute('aria-valuemin', '30');
   expect(end).toHaveAttribute('aria-valuemax', '600');
 
+  // The announcement deliberately waits 1 s, exactly RTL's default timeout.
+  // Control that delay instead of racing it against the runner's real clock.
+  vi.useFakeTimers({ shouldClearNativeTimers: true });
+
   fireEvent.keyDown(start, { key: 'ArrowRight' });
   expect(start).toHaveAttribute('aria-valuenow', '1');
   fireEvent.keyDown(start, { key: 'ArrowRight', shiftKey: true });
@@ -153,9 +157,11 @@ test('the handles are sliders the keyboard fully operates, and the fields follow
   expect(screen.getByText('long').textContent).toBe('7:55 long');
 
   // The length is announced once the learner stops moving a handle.
-  await waitFor(() =>
-    expect(screen.getByRole('status')).toHaveTextContent('7 minutes 55 seconds selected'),
-  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(screen.getByRole('status')).toHaveTextContent('7 minutes 55 seconds selected');
+  vi.useRealTimers();
 
   fireEvent.click(startButton());
   await screen.findByRole('heading', { name: 'Session page' });

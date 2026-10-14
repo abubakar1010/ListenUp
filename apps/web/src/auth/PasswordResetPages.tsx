@@ -5,7 +5,7 @@ import { Link, useLocation } from 'react-router';
 import { api, ApiError } from '../api/client';
 import type { components } from '../api/schema';
 import { errorMessage } from './errorMessage';
-import { ME_KEY } from './useMe';
+import { changeSession } from './session';
 
 type ResetRequested = components['schemas']['PasswordResetRequested'];
 
@@ -99,8 +99,9 @@ export function PasswordResetConfirmPage() {
   const submit = useMutation({
     mutationFn: () =>
       api<void>('/auth/password-reset/confirm', { method: 'POST', body: { token, password } }),
+    meta: { changesSession: true },
     // A reset signs the learner out everywhere, this browser included.
-    onSuccess: () => queryClient.setQueryData(ME_KEY, null),
+    onSuccess: () => changeSession(queryClient, null),
   });
 
   function onSubmit(event: FormEvent) {

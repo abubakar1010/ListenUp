@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router';
 
 import { api, type Me } from '../api/client';
-import { ME_KEY } from '../auth/useMe';
+import { changeSession } from '../auth/session';
 import { buttonClass } from '../components/button';
 import { describeError } from '../components/describeError';
 
@@ -25,13 +25,9 @@ export function AccountMenu({ me }: { me: Me }) {
   const queryClient = useQueryClient();
 
   const signOut = useMutation({
+    meta: { changesSession: true },
     mutationFn: () => api<void>('/auth/logout', { method: 'POST' }),
-    onSuccess: () => {
-      // Drop everything cached for this learner; the signed-in guard then sends
-      // the page to sign in.
-      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== ME_KEY[0] });
-      queryClient.setQueryData(ME_KEY, null);
-    },
+    onSuccess: () => changeSession(queryClient, null),
   });
 
   useEffect(() => {
