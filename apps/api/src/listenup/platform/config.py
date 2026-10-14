@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     password_reset_minutes: int = 60  # how long an emailed reset link works
     password_reset_ip_limit: int = 10  # reset requests (and, separately, resets) per IP per hour
     password_reset_email_limit: int = 3  # reset emails per address per hour
+    # Account deletion (FR-ACC-4, DR-1, D9): a deleted account is disabled at once and
+    # can be restored by signing in for this many days; then the purge job removes it.
+    account_deletion_grace_days: int = 7
 
     # File uploads (FR-CI-1, FR-CI-3, D5). Sizes are binary: 500 MB is 500 MiB, as
     # operating systems show file sizes.

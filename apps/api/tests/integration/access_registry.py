@@ -116,6 +116,12 @@ def _usage_counts_only_b(world: World, response: httpx.Response) -> str | None:
     return None if used == 0 else f"B's storage use is {used}, which counts A's uploads"
 
 
+def _deletion_summary_counts_only_b(world: World, response: httpx.Response) -> str | None:
+    found = response.json()
+    expected = {"clips": 0, "practice_sessions": 0, "cards": 0, "recordings": 0}
+    return None if found == expected else f"B's deletion summary counts A's data: {found}"
+
+
 def _new_upload(world: World) -> dict[str, object]:
     return {"filename": "b-clip.mp3", "content_type": "audio/mpeg", "size_bytes": 1_000_000}
 
@@ -139,6 +145,11 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         "authorised by the one-time token from the email, not by a login session"
     ),
     ("GET", "/api/v1/me"): Scoped(a_sees=lambda w: [w.a.user_id]),
+    ("GET", "/api/v1/me/deletion-summary"): Scoped(check=_deletion_summary_counts_only_b),
+    # B can only ever delete B's own account; with a wrong password nothing happens.
+    ("DELETE", "/api/v1/me"): Scoped(
+        status=403, body=lambda w: {"password": "not B's password", "confirm": True}
+    ),
     # -- content: uploads and intake ---------------------------------------------------
     ("GET", "/api/v1/uploads/usage"): Scoped(check=_usage_counts_only_b),
     ("POST", "/api/v1/uploads"): Scoped(status=201, body=_new_upload),

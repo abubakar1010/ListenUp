@@ -18,7 +18,9 @@ const ContentPage = lazy(() => import('./features/content/ContentPage'));
 const SessionPage = lazy(() => import('./features/session/SessionPage'));
 const StartPlanPage = lazy(() => import('./features/session/StartPlanPage'));
 const SettingsPage = lazy(() => import('./features/account/SettingsPage'));
+const DeleteAccountPage = lazy(() => import('./features/account/DeleteAccountPage'));
 const NotFoundPage = lazy(() => import('./app/NotFoundPage'));
+const AccountDeletedPage = lazy(() => import('./features/account/AccountDeletedPage'));
 const PasswordResetRequestPage = lazy(() =>
   import('./auth/PasswordResetPages').then((m) => ({ default: m.PasswordResetRequestPage })),
 );
@@ -74,6 +76,15 @@ export function App() {
               </>
             }
           />
+          <Route
+            path="/account-deleted"
+            element={
+              <>
+                <PageTitle title="Account deleted" />
+                <AccountDeletedPage />
+              </>
+            }
+          />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
 
@@ -84,6 +95,7 @@ export function App() {
             <Route path="/contents/:contentId" element={<ContentPage />} />
             <Route path="/contents/:contentId/plan" element={<StartPlanPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/settings/delete-account" element={<DeleteAccountPage />} />
           </Route>
           <Route path="/sessions/:sessionId" element={<SessionPage />} />
         </Route>

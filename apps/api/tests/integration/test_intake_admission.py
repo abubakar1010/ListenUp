@@ -26,6 +26,7 @@ from listenup.modules.content import jobs
 from listenup.platform.config import Settings
 from listenup.platform.database import Database
 from listenup.platform.jobs import JobDeps, PermanentError
+from listenup.platform.storage import use_storage
 from tests.integration.conftest import conninfo_to_url, with_csrf
 from tests.integration.intake_helpers import (
     PASSWORD,
@@ -44,9 +45,9 @@ LIMIT_SECONDS = 120 * 60
 @pytest.fixture
 def storage() -> Iterator[FakeStorage]:
     fake = FakeStorage()
-    jobs.use_storage(fake)
+    use_storage(fake)
     yield fake
-    jobs.use_storage(None)
+    use_storage(None)
 
 
 @pytest.fixture

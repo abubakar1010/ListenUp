@@ -13,13 +13,18 @@ retrying; anything else is retried with exponential backoff and jitter.
 A job whose failure must leave a visible state (an item marked failed instead of
 processing for ever) passes `on_give_up`: it runs after the last attempt fails, timeouts
 included, outside the timeout, with the job's own arguments.
+
+A worker that dies mid-job (killed, redeployed, out of memory) leaves the job 'doing',
+holding its lock, and no attempt is counted. `recover_stalled_jobs`, scheduled on the
+background lane, puts such jobs back in the queue as a failed attempt, or gives them
+up when that was their last one.
 """
 
 import asyncio
 import json
 import logging
 import random
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -135,6 +140,7 @@ app = procrastinate.App(
 )
 
 REQUEST_ID_ARG = "_request_id"
+POSTPONED_ARG = "_postponed"
 GATE_RETRY_SECONDS = 10
 
 
@@ -157,9 +163,11 @@ class JobType:
     spec: LaneSpec
     handler: Handler
     on_give_up: Handler | None = None
+    schedule: str | None = None  # cron expression (UTC) for a job that runs on its own
 
 
 _registry: dict[str, JobType] = {}
+_scheduled: set[str] = set()
 
 
 def job(
@@ -169,9 +177,16 @@ def job(
     timeout: timedelta | None = None,
     max_attempts: int | None = None,
     on_give_up: Handler | None = None,
+    schedule: str | None = None,
 ) -> Callable[[Handler], Handler]:
     """Register `handler` as job `name` on `lane`; see the module docstring for
-    `on_give_up`."""
+    `on_give_up`.
+
+    `schedule` (a cron expression in UTC) makes it a scheduled job as well: the worker
+    pool that serves `lane` queues it at each tick (`install_schedules`), with a
+    `timestamp` argument. Procrastinate records each tick it queued, so several
+    processes serving the lane still queue a tick once.
+    """
     base = LANES[lane]
     spec = LaneSpec(
         timeout or base.timeout,
@@ -186,6 +201,7 @@ def job(
             raise ValueError(f"job {name} is already registered")
 
         async def run(context: JobContext, /, **args: Any) -> Any:
+            args.pop(POSTPONED_ARG, None)
             request_id = args.pop(REQUEST_ID_ARG, None)
             trace_carrier = args.pop(TRACE_ARG, None)
             database = _runtime.database
@@ -225,10 +241,30 @@ def job(
             pass_context=True,
             retry=Backoff(spec.max_attempts, get_settings().job_retry_base_seconds),
         )(run)
-        _registry[name] = JobType(name, lane, spec, handler, on_give_up)
+        _registry[name] = JobType(name, lane, spec, handler, on_give_up, schedule)
         return handler
 
     return register
+
+
+def install_schedules(lanes: Iterable[Lane]) -> list[str]:
+    """Turn on the scheduled jobs of `lanes` in this process; returns their names.
+
+    Only worker processes call this (`listenup.worker`), for the lanes they serve, so
+    tests and the API never queue scheduled work on their own.
+    """
+    served = set(lanes)
+    installed: list[str] = []
+    for job_type in _registry.values():
+        if job_type.schedule is None or job_type.lane not in served:
+            continue
+        if job_type.name not in _scheduled:
+            app.periodic(cron=job_type.schedule, periodic_id=job_type.name)(
+                app.tasks[job_type.name]
+            )
+            _scheduled.add(job_type.name)
+        installed.append(job_type.name)
+    return installed
 
 
 async def run_handler(name: str, deps: JobDeps, /, **args: Any) -> Any:
@@ -261,10 +297,13 @@ async def enqueue(
 ) -> int | None:
     """Queue job `name` in the caller's transaction; returns its id.
 
-    `unique_key`: while a job with this key is waiting, queueing another is a no-op
-    and returns None (for example 'grade_round:<round id>', so two clicks on retry
-    queue one job). `lock`: jobs sharing a lock run one at a time, so identical work
-    on one resource is never done twice in parallel.
+    `unique_key`: while a job with this key is waiting or running, queueing another
+    is a no-op and returns None (for example 'grade_round:<round id>', so two clicks
+    on retry queue one job). A running job counts too: if it failed while a copy
+    waited, its retry could not go back to the queue (Procrastinate allows one
+    waiting job per key), and it would be stuck 'doing'. `lock`: jobs sharing a lock
+    run one at a time, so identical work on one resource is never done twice in
+    parallel.
     """
     job_type = _registry.get(name)
     if job_type is None:
@@ -286,6 +325,15 @@ async def _defer(
     lock: str | None,
     run_at: datetime | None,
 ) -> int | None:
+    if unique_key is not None and await session.scalar(
+        text("""
+        SELECT EXISTS (
+          SELECT FROM procrastinate.procrastinate_jobs
+           WHERE queueing_lock = :unique_key AND status IN ('todo', 'doing'))
+        """),
+        {"unique_key": unique_key},
+    ):
+        return None
     try:
         # A savepoint, so a duplicate key does not abort the caller's transaction.
         async with session.begin_nested():
@@ -307,7 +355,13 @@ async def _defer(
             )
         return job_id
     except IntegrityError as error:
-        if "procrastinate_jobs_queueing_lock_idx" in str(error.orig):
+        if any(
+            name in str(error.orig)
+            for name in (
+                "procrastinate_jobs_queueing_lock_idx",
+                "procrastinate_jobs_active_key_idx",
+            )
+        ):
             return None
         raise
 
@@ -329,6 +383,18 @@ async def _postpone(
     if trace_carrier is not None:
         payload[TRACE_ARG] = trace_carrier
     async with database.transaction() as session:
+        # Transfer the active key in the same transaction that creates its copy.
+        # No concurrent enqueue can steal it. If this worker dies after commit,
+        # recovery settles the old run instead of retrying alongside its successor.
+        await session.execute(
+            text("""
+            UPDATE procrastinate.procrastinate_jobs
+               SET queueing_lock = NULL,
+                   args = args || jsonb_build_object(CAST(:marker AS text), true)
+             WHERE id = :id AND status = 'doing'
+            """),
+            {"id": current.id, "marker": POSTPONED_ARG},
+        )
         await session.execute(
             text("""
             SELECT procrastinate.procrastinate_defer_jobs_v1(ARRAY[ROW(
@@ -363,9 +429,116 @@ async def failed_jobs(session: AsyncSession, limit: int = 50) -> list[dict[str, 
          ORDER BY failed_at DESC NULLS LAST, j.id DESC
          LIMIT :limit
         """),
-        {"limit": limit, "internal_args": [REQUEST_ID_ARG, TRACE_ARG]},
+        {"limit": limit, "internal_args": [REQUEST_ID_ARG, TRACE_ARG, POSTPONED_ARG]},
     )
     return [dict(row) for row in rows.mappings()]
+
+
+RECOVER_STALLED_JOBS = "platform.recover_stalled_jobs"
+RECOVER_SCHEDULE = "*/5 * * * *"
+# Workers write a heartbeat every 10 s and drop workers silent for 30 s; a job is
+# stalled once its worker has been silent this long, or was dropped.
+STALLED_AFTER = timedelta(minutes=1)
+
+
+@job(Lane.BACKGROUND, RECOVER_STALLED_JOBS, schedule=RECOVER_SCHEDULE)
+async def recover_stalled_jobs(deps: JobDeps, timestamp: int | None = None) -> int:
+    """Settle jobs left 'doing' by a worker that died (System Design 11.1, 11.3).
+
+    Such a job still holds its lock, so every later job sharing the lock would wait
+    behind it for ever. Its run counts as a failed attempt: it goes back to the queue,
+    or, when that was its last attempt, its `on_give_up` runs and it is marked failed.
+    A job whose key already has a copy waiting is marked failed too, since the copy
+    does the work. Returns how many jobs it settled.
+    """
+    async with deps.database.transaction() as session:
+        stalled = (
+            await session.execute(
+                text("""
+                SELECT j.id, j.worker_id, j.attempts FROM procrastinate.procrastinate_jobs j
+                  LEFT JOIN procrastinate.procrastinate_workers w ON w.id = j.worker_id
+                 WHERE j.status = 'doing'
+                   AND (w.id IS NULL OR w.last_heartbeat < now() - :stalled_after)
+                 ORDER BY j.id
+                """),
+                {"stalled_after": STALLED_AFTER},
+            )
+        ).all()
+    settled = 0
+    for job_id, worker_id, attempts in stalled:
+        if await _settle_stalled_job(deps.database, job_id, worker_id, attempts):
+            settled += 1
+    return settled
+
+
+async def _settle_stalled_job(
+    database: Database, job_id: int, worker_id: int | None, attempts: int
+) -> bool:
+    async with database.transaction() as session:
+        row = (
+            await session.execute(
+                text("""
+                SELECT j.task_name, j.attempts, j.args
+                  FROM procrastinate.procrastinate_jobs j
+                  LEFT JOIN procrastinate.procrastinate_workers w ON w.id = j.worker_id
+                 WHERE j.id = :id AND j.status = 'doing'
+                   AND j.worker_id IS NOT DISTINCT FROM CAST(:worker_id AS bigint)
+                   AND j.attempts = :attempts
+                   AND (w.id IS NULL OR w.last_heartbeat < clock_timestamp() - :stalled_after)
+                   FOR UPDATE OF j SKIP LOCKED
+                """),
+                {
+                    "id": job_id,
+                    "worker_id": worker_id,
+                    "attempts": attempts,
+                    "stalled_after": STALLED_AFTER,
+                },
+            )
+        ).first()
+        if row is None:
+            return False  # finished, restarted, healthy, or another run is settling it
+        task_name, attempts, args = row
+        entry = _registry.get(task_name)
+        if args.get(POSTPONED_ARG):
+            await session.execute(
+                text("SELECT procrastinate.procrastinate_finish_job_v1(:id, 'failed', false)"),
+                {"id": job_id},
+            )
+            return True  # its successor owns the work and retry budget
+        # `attempts` counts the runs before the one that stalled.
+        if entry is None or attempts + 1 < entry.spec.max_attempts:
+            try:
+                async with session.begin_nested():
+                    await session.execute(
+                        text("""
+                        SELECT procrastinate.procrastinate_retry_job_v2(
+                          :id, now(), NULL, NULL, NULL)
+                        """),
+                        {"id": job_id},
+                    )
+                logger.warning("stalled job queued again", extra={"job": task_name})
+                return True
+            except IntegrityError as error:
+                if not any(
+                    name in str(error.orig)
+                    for name in (
+                        "procrastinate_jobs_queueing_lock_idx",
+                        "procrastinate_jobs_active_key_idx",
+                    )
+                ):
+                    raise
+        elif entry.on_give_up is not None:
+            payload = dict(args)
+            request_id = payload.pop(REQUEST_ID_ARG, None)
+            payload.pop(TRACE_ARG, None)
+            with request_id_bound(request_id):
+                await entry.on_give_up(JobDeps(database, job_id, attempts + 1), **payload)
+        await session.execute(
+            text("SELECT procrastinate.procrastinate_finish_job_v1(:id, 'failed', false)"),
+            {"id": job_id},
+        )
+        logger.error("stalled job failed", extra={"job": task_name})
+        return True
 
 
 class SpeechBacklogGate:

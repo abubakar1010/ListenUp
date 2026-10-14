@@ -645,16 +645,45 @@ CREATE UNIQUE INDEX data_exports_one_live ON ops.data_exports (user_id)
 -- Audit of deletions. No foreign key: it must outlive the deleted account.
 CREATE TABLE ops.deletion_requests (
   id               uuid PRIMARY KEY,
-  subject_user_id  uuid NOT NULL,
+  subject_user_id  uuid NOT NULL,     -- no foreign key: the audit outlives the account
   scope            text NOT NULL CHECK (scope IN ('account', 'content', 'session', 'recordings')),
   target_id        uuid,
   status           text NOT NULL DEFAULT 'pending'
-                   CHECK (status IN ('pending', 'storage_deleted', 'completed', 'failed')),
+                   CHECK (status IN ('pending', 'storage_deleted', 'completed', 'failed',
+                                     'cancelled')),
   storage_prefixes text[] NOT NULL DEFAULT '{}',
-  report           jsonb,            -- counts of rows and objects removed
+  media_object_ids uuid[] NOT NULL DEFAULT '{}',
+  report           jsonb,             -- counts of rows and objects removed
   requested_at     timestamptz NOT NULL DEFAULT now(),
-  completed_at     timestamptz
+  due_at           timestamptz NOT NULL DEFAULT now(),
+  cancelled_at     timestamptz,
+  completed_at     timestamptz,
+  failed_at        timestamptz,       -- the purge's last attempt failed; retried later
+  CHECK ((status = 'cancelled') = (cancelled_at IS NOT NULL)),
+  CHECK ((status = 'completed') = (completed_at IS NOT NULL)),
+  CHECK ((status = 'failed') = (failed_at IS NOT NULL)),
+  CHECK (due_at >= requested_at)
 );
+-- The purge job's sweep: open requests by due time.
+CREATE INDEX deletion_requests_due_idx ON ops.deletion_requests (due_at)
+  WHERE status IN ('pending', 'storage_deleted', 'failed');
+CREATE UNIQUE INDEX deletion_requests_one_open_account_idx
+  ON ops.deletion_requests (subject_user_id)
+  WHERE scope = 'account' AND status IN ('pending', 'storage_deleted', 'failed');
+
+
+-- ADR 0029, migration 0015: committed writers survive loss of their row-lock connection.
+CREATE TABLE ops.storage_writes (
+  id              uuid PRIMARY KEY,
+  subject_user_id uuid NOT NULL REFERENCES identity.users ON DELETE RESTRICT,
+  owner           text NOT NULL,  -- host/container and process ID
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX storage_writes_subject_idx ON ops.storage_writes (subject_user_id);
+ALTER TABLE ops.storage_writes ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT, DELETE ON ops.storage_writes TO listenup_worker;
+-- No API grants/policy and no automatic expiry. Reconcile interrupted writers
+-- only after their S3 requests have completed or been reliably aborted.
 
 CREATE TABLE ops.takedowns (
   id              uuid PRIMARY KEY,
@@ -791,7 +820,7 @@ Four database roles separate who can change the schema, who serves learners and 
 
 No role has superuser rights, and credentials for each come from the environment, not the repository. The baseline migration creates listenup\_api, listenup\_worker (BYPASSRLS) and listenup\_readonly as NOLOGIN roles when they are missing, with their timeouts (section 12.3), and never drops them; each environment enables login with a password from its secrets. The role that runs migrations takes listenup\_owner's place; on a managed database whose migration role is not a superuser, an administrator creates the roles once beforehand. Workers get rights on every application table through default privileges, while the API and read-only roles get explicit grants per table, so a new table stays closed to them until its migration opens it.
 
-Explicit grants for the newly recorded tables: `content.uploads` permits `SELECT, INSERT, UPDATE, DELETE` ([ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md)); `content.duplicate_uploads` permits only `SELECT` ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)); Blind and Dictation attempt rows permit `SELECT, INSERT, UPDATE` ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md), [ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)); `ops.data_exports` permits `SELECT, INSERT`, while workers update status and archive metadata ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)). All use the `own_rows` policy below.
+Explicit grants for the newly recorded tables: `content.uploads` permits `SELECT, INSERT, UPDATE, DELETE` ([ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md)); `content.duplicate_uploads` permits only `SELECT` ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)); Blind and Dictation attempt rows permit `SELECT, INSERT, UPDATE` ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md), [ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)); `ops.data_exports` permits `SELECT, INSERT`, while workers update status and archive metadata ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)). All use the `own_rows` policy below. `ops.deletion_requests` permits `SELECT, INSERT, UPDATE`, with an `own_requests` policy on `subject_user_id`; the API cannot delete the audit (ADR 0029).
 
 ### 9.2 Row-level security
 
@@ -821,8 +850,9 @@ CREATE POLICY own_rows ON practice.sessions
 -- The API calls it first, then sets app.user_id.
 CREATE FUNCTION identity.resolve_auth_session(p_token_hash bytea) RETURNS uuid
   LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
-  SELECT user_id FROM identity.auth_sessions
-   WHERE token_hash = p_token_hash AND expires_at > now()
+  SELECT s.user_id FROM identity.auth_sessions s
+    JOIN identity.users u ON u.id = s.user_id
+   WHERE s.token_hash = p_token_hash AND s.expires_at > now() AND u.status = 'active'
 $$;
 REVOKE EXECUTE ON FUNCTION identity.resolve_auth_session(bytea) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION identity.resolve_auth_session(bytea) TO listenup_api;
@@ -852,11 +882,11 @@ Deletion removes storage objects first and database rows second, so a crash midw
 
 ### 10.1 Account deletion
 
-1. The API sets `users.status = 'pending_deletion'` and `deletion_scheduled_at` to 7 days ahead, and ends all login sessions. The account is disabled at once; signing in before `deletion_scheduled_at` offers explicit restoration without unlocking practice or changing the schedule. A CSRF-protected Restore action rechecks the deadline and status under a row lock, then sets `status = 'active'`, `deletion_scheduled_at = NULL`; Keep it deleted signs out without changing either field ([ADR 0033](../adr/0033-design-review-policy-resolutions.md)).
-2. When `deletion_scheduled_at` passes, a scheduled job (using `users_deletion_due_idx`) sets `users.status = 'deleting'` and writes an `ops.deletion_requests` row listing the storage prefix `users/<id>/` and the learner's upload media objects. The account can no longer sign in or be restored.
-3. A background job deletes those storage prefixes and marks the request `storage_deleted`.
-4. The job runs `DELETE FROM identity.users WHERE id = $1`. Cascades remove every learner row; the reference-count trigger decrements shared media.
-5. The request is marked `completed` with a report of rows and objects removed.
+1. The API sets `users.status = 'pending_deletion'` and `deletion_scheduled_at` to 7 days ahead, writes an `ops.deletion_requests` row immediately with the same `due_at`, ends login sessions and retires unused reset links. Sign-in before the deadline offers explicit restoration; only a CSRF-protected sign-in with `restore: true` reactivates it and cancels the audit request. Restore locks the request before the user row, then checks `clock_timestamp()` against the deadline (ADR 0029).
+2. Every 15 minutes, the due-request sweep queues a purge. It takes the request lock and exclusive user-row lock, sets `status = 'deleting'` and records upload media ids. Conversion and export writers commit an `ops.storage_writes` registration under the account lock, recheck eligibility, then hold the user row through storage uploads and result persistence. Their transaction-local idle timeout is the job budget plus 60 seconds, and cancellation drains uploads before releasing either fence. Purge checks registrations under its exclusive user-row lock and refuses to sweep past an unfinished writer even if its connection has died. Uncertain S3 upload errors retain their registrations even during cancellation. Registrations have no expiry; interrupted workers require verified storage completion or reliable abort before operator reconciliation (ADR 0029, [runbook](../runbooks/storage-writers.md)). Later writes are refused.
+3. The purge deletes `users/<id>/` and marks the request `storage_deleted`.
+4. It deletes `identity.users`; cascades remove learner rows and reference-count triggers release shared media. The row-count report is persisted in the same transaction and preserved on retries.
+5. It sweeps storage once more and only then marks the request `completed` with rows and objects removed. A failed final sweep leaves it retryable at `storage_deleted`. A purge that exhausts three attempts is marked `failed` and the sweep retries it after an hour. Cancelled and completed audit requests outlive the account. The API has an `own_requests` RLS policy and SELECT/INSERT/UPDATE grants, without DELETE.
 
 Content, session and recording deletions follow the same order at a smaller scope.
 

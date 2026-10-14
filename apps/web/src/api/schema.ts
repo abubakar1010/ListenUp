@@ -13,7 +13,12 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Login */
+    /**
+     * Login
+     * @description Sign in. An account deleted less than the grace period ago answers 409
+     *     `account_pending_deletion` (with `deletion_scheduled_at`) until the learner sends
+     *     `restore: true`, which cancels the deletion (#120).
+     */
     post: operations['login_api_v1_auth_login_post'];
     delete?: never;
     options?: never;
@@ -328,6 +333,34 @@ export interface paths {
     };
     /** Me */
     get: operations['me_api_v1_me_get'];
+    put?: never;
+    post?: never;
+    /**
+     * Delete Me
+     * @description Delete the account (FR-ACC-4, DR-1, D9; ADR 0029).
+     *
+     *     The account is disabled at once and every login session ends. Everything is
+     *     deleted when the grace period ends, unless the learner signs in and restores the
+     *     account before then.
+     */
+    delete: operations['delete_me_api_v1_me_delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/deletion-summary': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Deletion Summary
+     * @description Counts for the review step before account deletion (UX-06).
+     */
+    get: operations['deletion_summary_api_v1_me_deletion_summary_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -974,6 +1007,41 @@ export interface components {
        */
       status: 'pending' | 'building' | 'ready' | 'failed' | 'expired';
     };
+    /** DeleteAccount */
+    DeleteAccount: {
+      /**
+       * Confirm
+       * @description Must be true: the learner confirmed.
+       * @constant
+       */
+      confirm: true;
+      /**
+       * Password
+       * @description The current password, asked again.
+       */
+      password: string;
+    };
+    /** DeletionScheduled */
+    DeletionScheduled: {
+      /**
+       * Deletion Scheduled At
+       * Format: date-time
+       */
+      deletion_scheduled_at: string;
+      /** Detail */
+      detail: string;
+    };
+    /** DeletionSummary */
+    DeletionSummary: {
+      /** Cards */
+      cards: number;
+      /** Clips */
+      clips: number;
+      /** Practice Sessions */
+      practice_sessions: number;
+      /** Recordings */
+      recordings: number;
+    };
     /**
      * DictationAttempt
      * @description The learner's Dictation attempt with its saved draft (FR-DI-1, FR-DI-4).
@@ -1158,6 +1226,11 @@ export interface components {
     };
     /** Me */
     Me: {
+      /**
+       * Deletion Grace Days
+       * @description Days a deleted account can be restored before its data is removed.
+       */
+      deletion_grace_days: number;
       /** Display Name */
       display_name: string | null;
       /** Email */
@@ -1316,6 +1389,19 @@ export interface components {
       status: components['schemas']['StepStatus'];
       step: components['schemas']['Step'];
     };
+    /** SignIn */
+    SignIn: {
+      /** Email */
+      email: string;
+      /** Password */
+      password: string;
+      /**
+       * Restore
+       * @description Restore an account waiting for deletion (#120). Without it, signing in to such an account answers 409 account_pending_deletion with the date.
+       * @default false
+       */
+      restore: boolean;
+    };
     /** SkipStep */
     SkipStep: {
       /**
@@ -1461,7 +1547,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['Credentials'];
+        'application/json': components['schemas']['SignIn'];
       };
     };
     responses: {
@@ -1965,7 +2051,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description A Server-Sent Events stream of the learner's events: job.progress, content.ready, grade.ready, attempt.voided, export.ready and resync. */
+      /** @description A Server-Sent Events stream of the learner's events: job.progress, content.ready, grade.ready, attempt.voided, export.ready, account.disabled (the stream then ends) and resync. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -2062,6 +2148,59 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['Me'];
+        };
+      };
+    };
+  };
+  delete_me_api_v1_me_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DeleteAccount'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeletionScheduled'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  deletion_summary_api_v1_me_deletion_summary_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeletionSummary'];
         };
       };
     };

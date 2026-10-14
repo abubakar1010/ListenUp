@@ -55,4 +55,5 @@ export const LEARNER = {
   email: 'learner@example.com',
   display_name: null,
   email_verified: false,
+  deletion_grace_days: 7,
 };

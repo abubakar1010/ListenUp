@@ -7,6 +7,7 @@ the HTML part, so a value can never inject markup.
 
 import html
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from importlib import resources
 from string import Template
 
@@ -39,6 +40,24 @@ def render(template: str, to: str, values: dict[str, str]) -> EmailContent:
 def password_reset(to: str, link: str, valid_minutes: int) -> EmailContent:
     """The reset email (FR-ACC-3): one link that works once, within the time stated."""
     return render("password_reset", to, {"link": link, "valid_for": _duration(valid_minutes)})
+
+
+def account_deletion(to: str, deletion_at: datetime, sign_in_link: str) -> EmailContent:
+    """The deletion confirmation (FR-ACC-4, D9): when the data goes, and how to restore it.
+
+    The learner's time zone is unknown here, so the time is stated in UTC.
+    """
+    when = deletion_at.astimezone(UTC)
+    date = f"{when.day} {when:%B %Y}"
+    return render(
+        "account_deletion",
+        to,
+        {
+            "deletion_date": date,
+            "deletion_time": f"{date}, {when:%H:%M} UTC",
+            "sign_in_link": sign_in_link,
+        },
+    )
 
 
 def _duration(minutes: int) -> str:
