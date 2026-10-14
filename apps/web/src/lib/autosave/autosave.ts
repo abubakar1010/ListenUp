@@ -200,12 +200,13 @@ export class Autosave<T> {
     this.clearTimer();
     if (this.dirty && !this.inFlight && this.status.kind !== 'conflict') {
       const sent = this.value;
-      this.options.save(sent, this.version).then(
+      const baseVersion = this.version;
+      this.options.save(sent, baseVersion).then(
         (result) => {
           if (!this.running && this.options.equals(this.value, sent)) {
             this.version = result.version;
             this.dirty = false;
-            this.removeLocal();
+            this.removeLocal({ value: sent, baseVersion });
           }
         },
         () => undefined, // the local copy is restored on the next visit
@@ -296,17 +297,18 @@ export class Autosave<T> {
       return;
     }
     const sent = this.value;
+    const baseVersion = this.version;
     this.inFlight = true;
     this.status = { kind: 'saving' };
     this.emit();
     try {
-      const result = await this.options.save(sent, this.version);
+      const result = await this.options.save(sent, baseVersion);
       this.inFlight = false;
       this.retries = 0;
       this.version = result.version;
       if (this.options.equals(this.value, sent)) {
         this.dirty = false;
-        this.removeLocal();
+        this.removeLocal({ value: sent, baseVersion });
         this.status = { kind: 'saved', at: result.savedAt ?? new Date(this.options.now()) };
       } else {
         this.writeLocal(); // newer edits, now based on the new version
@@ -380,11 +382,19 @@ export class Autosave<T> {
     }
   }
 
-  private removeLocal(): void {
+  private removeLocal(acknowledged?: LocalCopy<T>): void {
     try {
+      // Another visit may have replaced the copy while this save was pending.
+      // Compare the serialized copy so object-valued drafts work too.
+      if (
+        acknowledged &&
+        this.options.storage?.getItem(this.options.storageKey) !== JSON.stringify(acknowledged)
+      ) {
+        return;
+      }
       this.options.storage?.removeItem(this.options.storageKey);
     } catch {
-      // Blocked site data: nothing was stored either.
+      // Blocked site data: leave any recovery copy alone.
     }
   }
 }
