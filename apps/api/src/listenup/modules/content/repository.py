@@ -516,3 +516,18 @@ async def learner_media(
         )
     ).first()
     return MediaFiles(*row) if row else None
+
+
+async def learner_content_ids_for_media(
+    session: AsyncSession, learner: uuid.UUID, media_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """Content rows that make this media object visible to the learner."""
+    rows = await session.execute(
+        text("""
+        SELECT id FROM content.contents
+         WHERE media_object_id = :media_id AND user_id = :learner
+         ORDER BY id
+        """),
+        {"media_id": media_id, "learner": learner},
+    )
+    return [row.id for row in rows]

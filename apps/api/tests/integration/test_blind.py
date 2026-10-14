@@ -94,6 +94,17 @@ def start_session(client: TestClient, migrated_url: str, entry: str = "blind") -
     return str(response.json()["id"])
 
 
+def media_for_session(migrated_url: str, session_id: str) -> str:
+    with psycopg.connect(migrated_url) as conn:
+        row = conn.execute(
+            "SELECT c.media_object_id FROM practice.sessions s "
+            "JOIN content.contents c ON c.id = s.content_id WHERE s.id = %s",
+            [session_id],
+        ).fetchone()
+    assert row is not None
+    return str(row[0])
+
+
 def start_attempt(client: TestClient, session_id: str) -> dict[str, object]:
     response = client.post(f"/api/v1/sessions/{session_id}/blind/attempts")
     assert response.status_code == 201, response.text
@@ -227,6 +238,72 @@ def test_the_media_is_refused_once_the_attempt_ended(client: TestClient, session
 
     assert response.status_code == 410
     assert response.json()["code"] == "media_expired"
+
+
+def test_whole_clip_is_blocked_until_server_recognizes_listen_completion(
+    client: TestClient, session_id: str, clock: Clock, storage: FakeStorage, migrated_url: str
+) -> None:
+    started = start_attempt(client, session_id)
+    media_id = media_for_session(migrated_url, session_id)
+
+    blocked = client.get(f"/api/v1/media/{media_id}", follow_redirects=False)
+    assert (blocked.status_code, blocked.json()["code"]) == (409, "blind_in_progress")
+    # The attempt-bound route remains available while the general route is blocked.
+    assert client.get(str(started["media_url"]), follow_redirects=False).status_code == 307
+
+    play(client, clock, attempt_id(started), START, END)
+    allowed = client.get(f"/api/v1/media/{media_id}", follow_redirects=False)
+
+    assert allowed.status_code == 307
+    assert storage.downloads[-1][0].endswith("/playback.mp4")
+
+
+def test_whole_clip_access_returns_after_the_blind_attempt_is_voided(
+    client: TestClient, session_id: str, migrated_url: str
+) -> None:
+    started = start_attempt(client, session_id)
+    media_id = media_for_session(migrated_url, session_id)
+    blocked = client.get(f"/api/v1/media/{media_id}", follow_redirects=False)
+    assert (blocked.status_code, blocked.json()["code"]) == (409, "blind_in_progress")
+
+    client.post(f"/api/v1/blind/attempts/{attempt_id(started)}/void", json={"reason": "left_page"})
+
+    allowed = client.get(f"/api/v1/media/{media_id}", follow_redirects=False)
+    assert allowed.status_code == 307
+
+
+def test_other_learner_keeps_the_normal_media_ownership_404(
+    client: TestClient,
+    session_id: str,
+    make_client: ClientFactory,
+    migrated_url: str,
+) -> None:
+    start_attempt(client, session_id)
+    media_id = media_for_session(migrated_url, session_id)
+    other = make_client()
+
+    response = other.get(f"/api/v1/media/{media_id}", follow_redirects=False)
+
+    assert (response.status_code, response.json()["code"]) == (404, "media_not_found")
+
+
+def test_another_learner_can_play_media_they_own_during_first_learners_listen(
+    client: TestClient, session_id: str, make_client: ClientFactory, migrated_url: str
+) -> None:
+    start_attempt(client, session_id)
+    media_id = media_for_session(migrated_url, session_id)
+    other = make_client()
+    other_user_id = other.get("/api/v1/me").json()["id"]
+    with psycopg.connect(migrated_url) as conn:
+        conn.execute(
+            "INSERT INTO content.contents (id, user_id, media_object_id, title) "
+            "VALUES (%s, %s, %s, %s)",
+            [uuid.uuid4(), other_user_id, media_id, "Shared clip"],
+        )
+
+    response = other.get(f"/api/v1/media/{media_id}", follow_redirects=False)
+
+    assert response.status_code == 307
 
 
 def test_another_learner_gets_nothing(

@@ -75,12 +75,15 @@ class Owned:
 
     B gets `status` (404, as if it did not exist) with problem `code`, and nothing of
     A's changes. `params` fills the path template; `body` is the JSON body, if any.
+    `owner_status` and `owner_code` allow a GET to specify A's expected refusal.
     """
 
     code: str
     params: Params = no_params
     body: Body | None = None
     status: int = 404
+    owner_status: int | None = None
+    owner_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -217,7 +220,10 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ),
     # -- media -------------------------------------------------------------------------
     ("GET", "/api/v1/media/{media_object_id}"): Owned(
-        "media_not_found", params=lambda w: {"media_object_id": w.a.media_id}
+        "media_not_found",
+        params=lambda w: {"media_object_id": w.a.media_id},
+        owner_status=409,
+        owner_code="blind_in_progress",
     ),
     ("GET", "/api/v1/media/{media_object_id}/peaks"): Owned(
         "media_not_found", params=lambda w: {"media_object_id": w.a.media_id}

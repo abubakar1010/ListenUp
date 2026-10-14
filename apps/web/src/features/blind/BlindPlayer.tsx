@@ -2,7 +2,8 @@ import { buttonClass } from '../../components/button';
 import { CheckIcon, LockIcon } from '../../components/icons';
 import { formatClock, spokenLength } from '../session/time';
 
-export type PlayerStatus = 'before' | 'starting' | 'listening' | 'waiting' | 'resuming' | 'done';
+export type PlayerStatus =
+  'before' | 'starting' | 'listening' | 'waiting' | 'resuming' | 'finishing' | 'done';
 
 interface BlindPlayerProps {
   status: PlayerStatus;
@@ -19,6 +20,7 @@ const STATUS_TEXT: Record<Exclude<PlayerStatus, 'before'>, string> = {
   listening: 'Listening',
   waiting: 'Waiting for connection',
   resuming: 'Carrying on soon',
+  finishing: 'Saving listen',
   done: 'Listen complete',
 };
 
