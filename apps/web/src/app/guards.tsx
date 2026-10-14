@@ -22,7 +22,7 @@ export function RequireAuth() {
   const me = useMe();
   const location = useLocation();
 
-  if (me.data) return <SignedInRoot />;
+  if (me.data) return <SignedInRoot key={me.data.id} />;
   if (me.isPending) return <PageLoading />;
   if (me.isError) return <ErrorPage error={me.error} onRetry={() => void me.refetch()} />;
   return <Navigate to={signInPath(location)} replace />;
