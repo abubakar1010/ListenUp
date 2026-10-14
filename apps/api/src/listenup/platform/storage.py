@@ -10,6 +10,7 @@ in-memory LRU cache, so a page that asks for the same file repeatedly gets the s
 URL and the browser cache keeps working.
 """
 
+import asyncio
 import hashlib
 import time
 from collections import OrderedDict
@@ -23,6 +24,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
+from listenup.platform.cancellation import finish_on_cancel
 from listenup.platform.config import Settings, get_settings
 
 if TYPE_CHECKING:
@@ -32,6 +34,10 @@ REUSE_FRACTION = 0.8
 CACHE_SIZE = 10_000
 DELETE_BATCH = 1000  # the S3 limit for one DeleteObjects call
 DOWNLOAD_CHUNK = 1024 * 1024
+
+
+class StorageWriteUncertain(RuntimeError):
+    """A failed client request does not establish whether S3 finished its write."""
 
 
 @dataclass(frozen=True)
@@ -157,20 +163,37 @@ class S3Storage:
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         check_key(key)
-        await anyio.to_thread.run_sync(
-            lambda: self._client.put_object(
-                Bucket=self.bucket, Key=key, Body=data, ContentType=content_type
+        await finish_on_cancel(
+            asyncio.get_running_loop().run_in_executor(
+                None,
+                self._write_sync,
+                lambda: self._client.put_object(
+                    Bucket=self.bucket, Key=key, Body=data, ContentType=content_type
+                ),
             )
         )
 
     async def put_file(self, key: str, path: Path, content_type: str) -> None:
         """Upload a local file; large files go up in parts without being read into memory."""
         check_key(key)
-        await anyio.to_thread.run_sync(
-            lambda: self._client.upload_file(
-                str(path), self.bucket, key, ExtraArgs={"ContentType": content_type}
+        await finish_on_cancel(
+            asyncio.get_running_loop().run_in_executor(
+                None,
+                self._write_sync,
+                lambda: self._client.upload_file(
+                    str(path), self.bucket, key, ExtraArgs={"ContentType": content_type}
+                ),
             )
         )
+
+    @staticmethod
+    def _write_sync(operation: Callable[[], object]) -> None:
+        try:
+            operation()
+        except Exception as error:
+            # A timeout/error can race a server-side PUT or multipart completion.
+            # Keep the durable fence until storage settlement is established.
+            raise StorageWriteUncertain("storage write completion is unknown") from error
 
     async def download(self, key: str, destination: Path) -> Downloaded | None:
         """Stream one object into a local file, hashing it on the way.

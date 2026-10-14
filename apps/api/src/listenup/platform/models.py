@@ -22,6 +22,21 @@ from listenup.platform.db import Base
 Timestamp = TIMESTAMP(timezone=True)
 
 
+class StorageWrite(Base):
+    __tablename__ = "storage_writes"
+    __table_args__ = (
+        Index("storage_writes_subject_idx", "subject_user_id"),
+        {"schema": "ops"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    subject_user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("identity.users.id", ondelete="RESTRICT")
+    )
+    owner: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+
+
 class RateCounter(Base):
     __tablename__ = "rate_counters"
     __table_args__ = (

@@ -672,6 +672,19 @@ CREATE UNIQUE INDEX deletion_requests_one_open_account_idx
   WHERE scope = 'account' AND status IN ('pending', 'storage_deleted', 'failed');
 
 
+-- ADR 0029, migration 0015: committed writers survive loss of their row-lock connection.
+CREATE TABLE ops.storage_writes (
+  id              uuid PRIMARY KEY,
+  subject_user_id uuid NOT NULL REFERENCES identity.users ON DELETE RESTRICT,
+  owner           text NOT NULL,  -- host/container and process ID
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX storage_writes_subject_idx ON ops.storage_writes (subject_user_id);
+ALTER TABLE ops.storage_writes ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT, DELETE ON ops.storage_writes TO listenup_worker;
+-- No API grants/policy and no automatic expiry. Reconcile interrupted writers
+-- only after their S3 requests have completed or been reliably aborted.
+
 CREATE TABLE ops.takedowns (
   id              uuid PRIMARY KEY,
   media_object_id uuid REFERENCES content.media_objects ON DELETE SET NULL,
@@ -870,7 +883,7 @@ Deletion removes storage objects first and database rows second, so a crash midw
 ### 10.1 Account deletion
 
 1. The API sets `users.status = 'pending_deletion'` and `deletion_scheduled_at` to 7 days ahead, writes an `ops.deletion_requests` row immediately with the same `due_at`, ends login sessions and retires unused reset links. Sign-in before the deadline offers explicit restoration; only a CSRF-protected sign-in with `restore: true` reactivates it and cancels the audit request. Restore locks the request before the user row, then checks `clock_timestamp()` against the deadline (ADR 0029).
-2. Every 15 minutes, the due-request sweep queues a purge. It takes the request lock and exclusive user-row lock, sets `status = 'deleting'` and records upload media ids. Existing conversion and export writers hold the user row through storage uploads and result persistence, so the purge waits for them; later writes are refused.
+2. Every 15 minutes, the due-request sweep queues a purge. It takes the request lock and exclusive user-row lock, sets `status = 'deleting'` and records upload media ids. Conversion and export writers commit an `ops.storage_writes` registration under the account lock, recheck eligibility, then hold the user row through storage uploads and result persistence. Their transaction-local idle timeout is the job budget plus 60 seconds, and cancellation drains uploads before releasing either fence. Purge checks registrations under its exclusive user-row lock and refuses to sweep past an unfinished writer even if its connection has died. Uncertain S3 upload errors retain their registrations even during cancellation. Registrations have no expiry; interrupted workers require verified storage completion or reliable abort before operator reconciliation (ADR 0029, [runbook](../runbooks/storage-writers.md)). Later writes are refused.
 3. The purge deletes `users/<id>/` and marks the request `storage_deleted`.
 4. It deletes `identity.users`; cascades remove learner rows and reference-count triggers release shared media. The row-count report is persisted in the same transaction and preserved on retries.
 5. It sweeps storage once more and only then marks the request `completed` with rows and objects removed. A failed final sweep leaves it retryable at `storage_deleted`. A purge that exhausts three attempts is marked `failed` and the sweep retries it after an hour. Cancelled and completed audit requests outlive the account. The API has an `own_requests` RLS policy and SELECT/INSERT/UPDATE grants, without DELETE.

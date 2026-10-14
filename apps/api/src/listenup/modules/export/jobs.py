@@ -21,12 +21,14 @@ from listenup.modules.export import repository
 from listenup.modules.export.collect import collect
 from listenup.modules.export.domain import archive
 from listenup.modules.identity import service as identity
+from listenup.platform.cancellation import finish_on_cancel
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database, set_learner
 from listenup.platform.events import EventType, publish
 from listenup.platform.export import ExportPart
 from listenup.platform.jobs import JobDeps, Lane, enqueue, job
 from listenup.platform.storage import Storage, get_storage
+from listenup.platform.storage_fence import storage_transaction
 
 logger = logging.getLogger(__name__)
 
@@ -110,11 +112,13 @@ async def _build(
         size = zip_path.stat().st_size
         ready_at = datetime.now(UTC)
         expires_at = archive.expires_at(ready_at, settings.export_keep_days)
-        async with database.transaction(learner) as session:
+        async with storage_transaction(
+            database, learner, identity.hold_active_account, BUILD_TIMEOUT
+        ) as (session, writable):
             # Hold the account before uploading, through the ready write. Deletion
             # and purge wait for this writer; after either starts no archive is put.
-            if await identity.hold_active_account(session, learner):
-                await storage.put_file(key, zip_path, "application/zip")
+            if writable:
+                await finish_on_cancel(storage.put_file(key, zip_path, "application/zip"))
                 stored = await repository.mark_ready(
                     session,
                     export,

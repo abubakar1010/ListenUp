@@ -11,12 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from listenup.modules.content import ffmpeg, repository
 from listenup.modules.content.domain import admission, media
 from listenup.modules.identity import service as identity
+from listenup.platform.cancellation import finish_on_cancel
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database
 from listenup.platform.events import EventType, publish
-from listenup.platform.jobs import JobDeps, Lane, PermanentError, enqueue, job
+from listenup.platform.jobs import LANES, JobDeps, Lane, PermanentError, enqueue, job
 from listenup.platform.rate_limit import add_to_window
 from listenup.platform.storage import Storage, get_storage
+from listenup.platform.storage_fence import storage_transaction
 
 logger = logging.getLogger(__name__)
 
@@ -178,14 +180,19 @@ async def _convert(
         playback = media.playback_key(state.learner, media_id)
         peaks = media.peaks_key(state.learner, media_id)
         size = target.stat().st_size
-        async with database.transaction() as session:
+        async with storage_transaction(
+            database, state.learner, identity.hold_account_for_storage, LANES[Lane.INTAKE].timeout
+        ) as (session, writable):
             # The purge cannot pass its first exclusive user-row lock while this
             # writer holds the row. Check before either storage upload (DR-1).
-            writable = await identity.hold_account_for_storage(session, state.learner)
             stored = False
             if writable:
-                await storage.put_file(playback, target, "video/mp4" if video else "audio/mp4")
-                await storage.put(peaks, media.peaks_json(converted.peaks), "application/json")
+                await finish_on_cancel(
+                    storage.put_file(playback, target, "video/mp4" if video else "audio/mp4")
+                )
+                await finish_on_cancel(
+                    storage.put(peaks, media.peaks_json(converted.peaks), "application/json")
+                )
                 stored = await repository.mark_media_playable(
                     session,
                     media_id,

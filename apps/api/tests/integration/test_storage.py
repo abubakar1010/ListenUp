@@ -4,9 +4,13 @@ Uses the server at LISTENUP_S3_ENDPOINT_URL (SeaweedFS in Docker Compose and CI)
 throwaway bucket. Skipped when no server is reachable, unless LISTENUP_REQUIRE_S3=1.
 """
 
+import asyncio
 import os
+import threading
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
 
 import boto3
 import httpx
@@ -74,3 +78,42 @@ async def test_delete_by_prefix_removes_only_that_folder(storage: S3Storage) -> 
     assert deleted == 3
     assert httpx.get(storage.signed_download("users/7/a.mp3").url).status_code == 404
     assert httpx.get(storage.signed_download("users/77/keep.mp3").url).status_code == 200
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("file_upload", [False, True])
+async def test_cancelled_real_s3_upload_settles_before_a_sweep(
+    storage: S3Storage, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, file_upload: bool
+) -> None:
+    started, release = threading.Event(), threading.Event()
+    method = "upload_file" if file_upload else "put_object"
+    original = getattr(storage._client, method)
+
+    def paused(*args: Any, **kwargs: Any) -> None:
+        started.set()
+        assert release.wait(5)
+        original(*args, **kwargs)
+
+    monkeypatch.setattr(storage._client, method, paused)
+    prefix = f"users/{uuid.uuid4()}/"
+    key = prefix + "late-upload"
+    path = tmp_path / "upload"
+    path.write_bytes(b"actual S3 transfer")
+    operation = (
+        storage.put_file(key, path, "audio/mp4")
+        if file_upload
+        else storage.put(key, path.read_bytes(), "audio/mp4")
+    )
+    task = asyncio.create_task(operation)
+    try:
+        assert await asyncio.to_thread(started.wait, 5)
+        task.cancel()
+        await asyncio.sleep(0.02)
+        assert not task.done()
+    finally:
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert await storage.head(key) is not None
+    assert await storage.delete_prefix(prefix) == 1
+    assert await storage.head(key) is None

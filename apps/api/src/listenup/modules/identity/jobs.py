@@ -16,6 +16,7 @@ from listenup.platform import rate_limit
 from listenup.platform.config import get_settings
 from listenup.platform.jobs import JobDeps, Lane, enqueue, job
 from listenup.platform.storage import get_storage
+from listenup.platform.storage_fence import require_no_storage_writes
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +208,7 @@ async def purge_account(deps: JobDeps, request_id: str) -> dict[str, Any] | None
             # should not happen; an active account is never purged.
             logger.error("deletion request of an active account", extra={"request": request_id})
             return None
+        await require_no_storage_writes(session, learner)
         if status == "pending_deletion":
             await repository.mark_account_deleting(session, learner)
         if status is not None:
