@@ -198,6 +198,51 @@ test('a failed leave void stays on the page and can be retried', async () => {
   expect(calls.filter((call) => call.path.endsWith('/void'))).toHaveLength(2);
 });
 
+test('the gist and navigation unlock only after the server acknowledges completion', async () => {
+  let acknowledge: (response: Response) => void = () => {};
+  const finalBeat = new Promise<Response>((resolve) => (acknowledge = resolve));
+  const { calls } = mockRoutes({
+    [SESSION]: jsonResponse(200, sessionFixture({ entry: 'blind' })),
+    'POST /sessions/session-1/blind/attempts': jsonResponse(201, {
+      attempt: attemptFixture(),
+      media_url: '/api/v1/blind/attempts/attempt-1/media/token',
+      heartbeat_interval_ms: 5_000,
+      resume_delay_ms: 3_000,
+    }),
+    'POST /blind/attempts/attempt-1/heartbeat': () => finalBeat,
+  });
+  const { router, container } = renderBlind(['/library', '/sessions/session-1']);
+  fireEvent.click(await screen.findByRole('button', { name: 'Start listening' }));
+  await screen.findByText('Starting');
+  const audio = container.querySelector('audio')!;
+  fireEvent.playing(audio);
+  audio.currentTime = 280;
+  fireEvent.timeUpdate(audio);
+
+  expect(await screen.findByText('Saving your listen. Keep this screen open.')).toHaveAttribute(
+    'role',
+    'status',
+  );
+  expect(screen.queryByRole('textbox', { name: 'Your gist' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Library' })).not.toBeInTheDocument();
+  await act(async () => router.navigate(-1));
+  fireEvent.click(await screen.findByRole('button', { name: 'Stay' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+  acknowledge(
+    jsonResponse(200, {
+      action: 'continue',
+      attempt: attemptFixture({ position_ms: 280_000, listen_complete: true }),
+      resume_from_ms: null,
+      resume_delay_ms: 3_000,
+    }),
+  );
+  await screen.findByRole('textbox', { name: 'Your gist' });
+  await act(async () => router.navigate(-1));
+  await screen.findByRole('heading', { name: 'Library' });
+  expect(calls.filter((call) => call.path.endsWith('/void'))).toHaveLength(0);
+});
+
 test('a server-completed listen can leave the gist form without voiding', async () => {
   const { calls } = mockRoutes({
     [SESSION]: jsonResponse(200, sessionFixture({ entry: 'blind' })),

@@ -216,7 +216,7 @@ export function BlindStep({ session, progress }: BlindStepProps) {
   const length = end_ms - start_ms;
   // The gist: heard to the end in this page, or an earlier listen that finished.
   const gistAttempt =
-    phase === 'ended' && listen
+    phase === 'ended' && listen && !listening
       ? listen.attemptId
       : latest?.status === 'active' && latest.listen_complete && !listen
         ? latest.id
@@ -224,6 +224,7 @@ export function BlindStep({ session, progress }: BlindStepProps) {
 
   let status: PlayerStatus = 'before';
   if (gistAttempt) status = 'done';
+  else if (phase === 'ended') status = 'finishing';
   else if (starting || phase === 'loading') status = 'starting';
   else if (phase === 'playing') status = 'listening';
   else if (phase === 'waiting') status = 'waiting';
@@ -234,6 +235,8 @@ export function BlindStep({ session, progress }: BlindStepProps) {
   let work: ReactNode;
   if (gistAttempt) {
     work = <GistForm sessionId={session.id} attemptId={gistAttempt} />;
+  } else if (phase === 'ended') {
+    work = <p role="status">Saving your listen. Keep this screen open.</p>;
   } else if (snapshot && listening) {
     work = (
       <Listening

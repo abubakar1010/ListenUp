@@ -287,12 +287,14 @@ test('real Browser Back stays guarded until the final heartbeat is acknowledged'
   await expect
     .poll(() => posts.some((post) => (post.body as { state?: string } | null)?.state === 'ended'))
     .toBe(true);
+  await expect(page.getByRole('textbox', { name: 'Your gist' })).toHaveCount(0);
 
   await page.goBack();
   await expect(page.getByRole('dialog', { name: 'Leave Blind?' })).toBeVisible();
   expect(posts.filter((post) => post.path.endsWith('/void'))).toHaveLength(0);
 
   await page.getByRole('button', { name: 'Stay' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   releaseFinal();
   await expect(page.getByRole('textbox', { name: 'Your gist' })).toBeVisible();
   await page.goBack();
