@@ -77,10 +77,10 @@ export function usePassagePlayer(
     };
     const onPlay = () => {
       setPlaying(true);
-      onPlayback?.();
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(loop);
     };
+    const onPlaying = () => onPlayback?.();
     const onPause = () => {
       setPlaying(false);
       cancelAnimationFrame(frame);
@@ -88,6 +88,7 @@ export function usePassagePlayer(
     const onError = () => setStatus('error');
     audio.addEventListener('loadedmetadata', onLoaded);
     audio.addEventListener('play', onPlay);
+    audio.addEventListener('playing', onPlaying);
     audio.addEventListener('pause', onPause);
     audio.addEventListener('timeupdate', check);
     audio.addEventListener('error', onError);
@@ -96,6 +97,7 @@ export function usePassagePlayer(
       cancelAnimationFrame(frame);
       audio.removeEventListener('loadedmetadata', onLoaded);
       audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('playing', onPlaying);
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('timeupdate', check);
       audio.removeEventListener('error', onError);

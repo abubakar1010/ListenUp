@@ -19,7 +19,7 @@ import json
 import uuid
 from collections import Counter
 from collections.abc import Awaitable, Callable, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -32,7 +32,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.analytics import service as analytics
 from listenup.modules.blind import jobs as blind_jobs
-from listenup.modules.blind.domain import MAX_SILENCE_MS
+from listenup.modules.blind import service as blind_service
+from listenup.modules.blind.domain import MAX_SILENCE_MS, Beat, Interruption, PlayerState
 from listenup.modules.practice.service import Step
 from listenup.platform.database import Database
 from listenup.platform.jobs import JobDeps
@@ -228,7 +229,7 @@ def test_a_vanished_blind_browser_is_expired_and_recorded(
 ) -> None:
     session_id = new_session(client, migrated_url, "blind")
     attempt = uuid.UUID(attempt_id(start_attempt(client, session_id)))
-    clock.advance(MAX_SILENCE_MS + 1)
+    clock.advance(300_000)
 
     async def expire() -> None:
         database = Database(conninfo_to_url(migrated_url), pool_size=1)
@@ -261,7 +262,7 @@ def test_a_recent_blind_heartbeat_moves_the_expiry_check(
     attempt = uuid.UUID(attempt_id(start_attempt(client, session_id)))
     clock.advance(5_000)
     assert beat(client, str(attempt), START + 5_000)["action"] == "continue"
-    clock.advance(MAX_SILENCE_MS - 5_000 + 1)  # the original check is due, the new one is not
+    clock.advance(295_000)  # the original recovery deadline is due, the new one is not
 
     async def check() -> None:
         database = Database(conninfo_to_url(migrated_url), pool_size=1)
@@ -283,6 +284,142 @@ def test_a_recent_blind_heartbeat_moves_the_expiry_check(
         ).fetchone()
     assert status == ("active",)
     assert queued == (2,)
+    assert events_of(migrated_url, learner_id(client), "blind_abandoned") == []
+
+
+def test_worker_preserves_first_network_recovery(
+    client: TestClient, clock: Clock, migrated_url: str
+) -> None:
+    session_id = new_session(client, migrated_url, "blind")
+    attempt = attempt_id(start_attempt(client, session_id))
+    play(client, clock, attempt, START, START + 10_000)
+    clock.advance(MAX_SILENCE_MS + 1)
+
+    async def check() -> None:
+        database = Database(conninfo_to_url(migrated_url), pool_size=1)
+        try:
+            await blind_jobs.expire_attempt(database, uuid.UUID(attempt), clock.now)
+        finally:
+            await database.dispose()
+
+    asyncio.run(check())
+    clock.advance(40_000 - MAX_SILENCE_MS - 1)
+    answer = beat(client, attempt, START + 12_000, "interrupted", interruption="network")
+    assert answer["action"] == "resume"
+    assert events_of(migrated_url, learner_id(client), "blind_abandoned") == []
+
+
+def expire_at(url: str, attempt: str, now: datetime) -> None:
+    async def run() -> None:
+        database = Database(conninfo_to_url(url), pool_size=1)
+        try:
+            await blind_jobs.expire_attempt(database, uuid.UUID(attempt), now)
+        finally:
+            await database.dispose()
+
+    asyncio.run(run())
+
+
+def test_worker_uses_short_silence_timeout_after_resume(
+    client: TestClient, clock: Clock, migrated_url: str
+) -> None:
+    session_id = new_session(client, migrated_url, "blind")
+    attempt = attempt_id(start_attempt(client, session_id))
+    clock.advance(40_000)
+    assert beat(client, attempt, START, "interrupted", interruption="network")["action"] == "resume"
+    due = clock.now + timedelta(milliseconds=MAX_SILENCE_MS + 1)
+    with psycopg.connect(migrated_url) as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM procrastinate.procrastinate_jobs "
+            "WHERE task_name = %s AND args->>'attempt_id' = %s AND scheduled_at = %s",
+            [blind_jobs.EXPIRE_ATTEMPT, attempt, due],
+        ).fetchone() == (1,)
+    expire_at(migrated_url, attempt, due)
+    expire_at(migrated_url, attempt, due)
+    assert events_of(migrated_url, learner_id(client), "blind_abandoned") == [
+        ("blind_abandoned", None, {"reason": "missed_heartbeat"})
+    ]
+
+
+def test_worker_preserves_a_completed_listen(
+    client: TestClient, clock: Clock, migrated_url: str
+) -> None:
+    session_id = new_session(client, migrated_url, "blind")
+    attempt = attempt_id(start_attempt(client, session_id))
+    play(client, clock, attempt, START, END)
+    clock.advance(300_000)
+    expire_at(migrated_url, attempt, clock.now)
+    assert events_of(migrated_url, learner_id(client), "blind_abandoned") == []
+    assert (
+        client.post(
+            f"/api/v1/blind/attempts/{attempt}/gist", json={"text": SENTENCES_3}
+        ).status_code
+        == 201
+    )
+
+
+def test_worker_failure_rolls_back_and_retry_records_once(
+    client: TestClient, clock: Clock, migrated_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session_id = new_session(client, migrated_url, "blind")
+    attempt = attempt_id(start_attempt(client, session_id))
+    clock.advance(300_000)
+
+    async def fail_publish(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("publication failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(blind_jobs, "publish", fail_publish)
+        with pytest.raises(RuntimeError, match="publication failed"):
+            expire_at(migrated_url, attempt, clock.now)
+    with psycopg.connect(migrated_url) as conn:
+        assert conn.execute(
+            "SELECT status FROM practice.attempts WHERE id = %s", [attempt]
+        ).fetchone() == ("active",)
+    assert events_of(migrated_url, learner_id(client), "blind_abandoned") == []
+    expire_at(migrated_url, attempt, clock.now)
+    expire_at(migrated_url, attempt, clock.now)
+    assert len(events_of(migrated_url, learner_id(client), "blind_abandoned")) == 1
+
+
+def test_recovery_committing_while_worker_waits_on_lock_is_preserved(
+    client: TestClient, clock: Clock, migrated_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session_id = new_session(client, migrated_url, "blind")
+    attempt = uuid.UUID(attempt_id(start_attempt(client, session_id)))
+    clock.advance(299_999)
+
+    async def race() -> None:
+        database = Database(conninfo_to_url(migrated_url), pool_size=2)
+        entered = asyncio.Event()
+        original_get = blind_jobs.repository.get
+
+        async def observed_get(db: AsyncSession, attempt_id: uuid.UUID, *, lock: bool = False):
+            entered.set()
+            return await original_get(db, attempt_id, lock=lock)
+
+        try:
+            async with database.transaction() as db:
+                await original_get(db, attempt, lock=True)
+                monkeypatch.setattr(blind_jobs.repository, "get", observed_get)
+                worker = asyncio.create_task(
+                    blind_jobs.expire_attempt(
+                        database, attempt, clock.now + timedelta(milliseconds=1)
+                    )
+                )
+                await asyncio.wait_for(entered.wait(), timeout=5)
+                result = await blind_service.heartbeat(
+                    db,
+                    attempt,
+                    Beat(START, PlayerState.INTERRUPTED, interruption=Interruption.NETWORK),
+                    clock.now,
+                )
+                assert result.action.value == "resume"
+            await asyncio.wait_for(worker, timeout=5)
+        finally:
+            await database.dispose()
+
+    asyncio.run(race())
     assert events_of(migrated_url, learner_id(client), "blind_abandoned") == []
 
 

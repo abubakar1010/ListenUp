@@ -40,6 +40,7 @@ beforeEach(() => {
   play = vi.fn<(this: HTMLMediaElement) => Promise<void>>(function (this: HTMLMediaElement) {
     Object.defineProperty(this, 'paused', { value: false, configurable: true });
     this.dispatchEvent(new Event('play'));
+    this.dispatchEvent(new Event('playing'));
     return Promise.resolve();
   });
   pause = vi.fn<(this: HTMLMediaElement) => void>(function (this: HTMLMediaElement) {
@@ -263,6 +264,28 @@ test('a locked Dictation step shows why', async () => {
 });
 
 describe('the player', () => {
+  test.each(['error', 'pause'])('pending playback followed by %s is not a listen', async (end) => {
+    let rejectPlay: (error: Error) => void = () => undefined;
+    play.mockImplementation(function (this: HTMLMediaElement) {
+      Object.defineProperty(this, 'paused', { value: false, configurable: true });
+      this.dispatchEvent(new Event('play'));
+      this.dispatchEvent(new Event('waiting'));
+      return new Promise<void>((_resolve, reject) => {
+        rejectPlay = reject;
+      });
+    });
+    const { calls } = renderDictation();
+    await textArea();
+    loadAudio();
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    await act(async () => {
+      if (end === 'pause') audio().pause();
+      else audio().dispatchEvent(new Event('error'));
+      rejectPlay(new DOMException('Playback never started', 'AbortError'));
+    });
+    expect(calls.filter((call) => call.path === LISTEN_PATH)).toHaveLength(0);
+  });
+
   test('records the first successful playback, not the screen opening', async () => {
     const { calls } = renderDictation();
     await textArea();

@@ -174,7 +174,7 @@ async def start(db: AsyncSession, session_id: uuid.UUID, now: datetime) -> Start
     token = secrets.token_urlsafe(32)
     listen = Listen.start(session.passage.start_ms, session.passage.end_ms, now)
     row = await repository.insert(db, attempt.id, attempt.user_id, _hash(token), listen)
-    await jobs.queue_expiry(db, attempt.id, listen.last_heartbeat_at)
+    await jobs.queue_expiry(db, attempt.id, listen)
     return Started(_view(attempt, row), token)
 
 
@@ -220,6 +220,8 @@ async def heartbeat(
         return Heartbeat(Action.STOP, view, None)
     if verdict.listen != row.listen:
         row = await repository.save(db, attempt.id, verdict.listen)
+    if verdict.action is Action.RESUME:
+        await jobs.queue_expiry(db, attempt.id, row.listen)
     return Heartbeat(verdict.action, _view(attempt, row), verdict.resume_from_ms)
 
 

@@ -1,13 +1,13 @@
 """Delayed cleanup for Blind attempts whose browser stopped sending heartbeats."""
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.analytics import service as analytics
 from listenup.modules.blind import repository
-from listenup.modules.blind.domain import MAX_SILENCE_MS, VoidReason
+from listenup.modules.blind.domain import Listen, VoidReason
 from listenup.modules.practice import service as practice
 from listenup.modules.practice.service import AttemptStatus, Step
 from listenup.platform.database import Database
@@ -19,16 +19,9 @@ from listenup.platform.jobs import JobDeps, Lane, enqueue, job
 EXPIRE_ATTEMPT = "blind.expire_attempt"
 
 
-def expiry_due(last_heartbeat_at: datetime) -> datetime:
-    """The first instant at which the heartbeat gap is over the allowed maximum."""
-    return last_heartbeat_at + timedelta(milliseconds=MAX_SILENCE_MS + 1)
-
-
-async def queue_expiry(
-    session: AsyncSession, attempt_id: uuid.UUID, last_heartbeat_at: datetime
-) -> None:
+async def queue_expiry(session: AsyncSession, attempt_id: uuid.UUID, listen: Listen) -> None:
     """Queue one check for this version of the attempt's heartbeat deadline."""
-    due = expiry_due(last_heartbeat_at)
+    due = listen.abandonment_deadline()
     await enqueue(
         session,
         EXPIRE_ATTEMPT,
@@ -60,8 +53,8 @@ async def expire_attempt(database: Database, attempt_id: uuid.UUID, now: datetim
             return
         if attempt.mode is not Step.BLIND or attempt.status is not AttemptStatus.ACTIVE:
             return
-        if now < expiry_due(row.listen.last_heartbeat_at):
-            await queue_expiry(session, attempt.id, row.listen.last_heartbeat_at)
+        if now < row.listen.abandonment_deadline():
+            await queue_expiry(session, attempt.id, row.listen)
             return
 
         await repository.save(
