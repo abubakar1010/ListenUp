@@ -1,0 +1,89 @@
+{
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "cores": 4,
+    "memory_gb": 15.7,
+    "machine": "x86_64",
+    "python": "3.12.3",
+    "omp_num_threads": null,
+    "date": "2026-10-05"
+  },
+  "summary": {
+    "mp3 128k stereo 44.1k: median wall_s": 15.55,
+    "mp3 128k stereo 44.1k: max wall_s": 15.98,
+    "m4a aac 128k stereo 44.1k: median wall_s": 13.17,
+    "m4a aac 128k stereo 44.1k: max wall_s": 13.3
+  },
+  "rows": [
+    {
+      "source": "mp3 128k stereo 44.1k",
+      "run": 1,
+      "audio_s": 600.0,
+      "wall_s": 15.55,
+      "core_s": 15.93
+    },
+    {
+      "source": "mp3 128k stereo 44.1k",
+      "run": 2,
+      "audio_s": 600.0,
+      "wall_s": 15.81,
+      "core_s": 16.25
+    },
+    {
+      "source": "mp3 128k stereo 44.1k",
+      "run": 3,
+      "audio_s": 600.0,
+      "wall_s": 15.98,
+      "core_s": 16.3
+    },
+    {
+      "source": "mp3 128k stereo 44.1k",
+      "run": 4,
+      "audio_s": 600.0,
+      "wall_s": 15.49,
+      "core_s": 15.85
+    },
+    {
+      "source": "mp3 128k stereo 44.1k",
+      "run": 5,
+      "audio_s": 600.0,
+      "wall_s": 15.07,
+      "core_s": 15.46
+    },
+    {
+      "source": "m4a aac 128k stereo 44.1k",
+      "run": 1,
+      "audio_s": 600.0,
+      "wall_s": 13.21,
+      "core_s": 13.68
+    },
+    {
+      "source": "m4a aac 128k stereo 44.1k",
+      "run": 2,
+      "audio_s": 600.0,
+      "wall_s": 13.01,
+      "core_s": 13.45
+    },
+    {
+      "source": "m4a aac 128k stereo 44.1k",
+      "run": 3,
+      "audio_s": 600.0,
+      "wall_s": 13.0,
+      "core_s": 13.48
+    },
+    {
+      "source": "m4a aac 128k stereo 44.1k",
+      "run": 4,
+      "audio_s": 600.0,
+      "wall_s": 13.3,
+      "core_s": 13.66
+    },
+    {
+      "source": "m4a aac 128k stereo 44.1k",
+      "run": 5,
+      "audio_s": 600.0,
+      "wall_s": 13.17,
+      "core_s": 13.53
+    }
+  ]
+}

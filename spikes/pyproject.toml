@@ -13,6 +13,8 @@ transcribe = ["faster-whisper>=1.1"]
 # B2, #20, B3: alignment, phoneme scoring, pitch. torchaudio's MMS_FA aligner is in
 # maintenance mode upstream, so keep it below 2.9 until the spike settles the model.
 speech = ["torch>=2.4,<2.9", "torchaudio>=2.4,<2.9", "praat-parselmouth>=0.4", "soundfile>=0.12"]
+# B1, B2: building test passages from LibriSpeech (FLAC) and VoxPopuli (parquet)
+datasets = ["soundfile>=0.12", "pyarrow>=15"]
 
 [project.scripts]
 spike-youtube = "listenup_spikes.youtube_intake:main"
@@ -20,7 +22,11 @@ spike-b1 = "listenup_spikes.b1_transcribe:main"
 spike-b2 = "listenup_spikes.b2_align:main"
 spike-b4 = "listenup_spikes.b4_fillers:main"
 spike-shadow = "listenup_spikes.shadow_prototype:main"
-spike-librispeech = "listenup_spikes.datasets:main"
+spike-passages = "listenup_spikes.datasets:main"
+spike-compare = "listenup_spikes.compare:main"
+spike-labelkit = "listenup_spikes.labelkit:main"
+spike-perf2 = "listenup_spikes.perf2:main"
+spike-summary = "listenup_spikes.summary:main"
 
 [dependency-groups]
 dev = ["pytest>=8.3", "ruff>=0.6"]

@@ -1,0 +1,8 @@
+{
+ "about": "Hand-labelling windows for spike #19 (B2). start_s is in the passage file's time (passage plus 5 s padding), as built by spike-passages; see README.md.",
+ "windows": {
+  "clean-f-1221": {"passage": "ls-clean-1221-135767", "start_s": 65.0, "seconds": 60.0},
+  "other-m-1688": {"passage": "ls-other-1688-142285", "start_s": 65.0, "seconds": 60.0},
+  "accented-es-20090218": {"passage": "vp-accented-20090218-0900-plenary-13-en", "start_s": 65.0, "seconds": 60.0}
+ }
+}

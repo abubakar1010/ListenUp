@@ -7,7 +7,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { formatDeletionDate } from '../features/account/deletionApi';
 import { errorMessage } from './errorMessage';
 import { nextPath } from './next';
-import { ME_KEY } from './useMe';
+import { changeSession } from './session';
 
 type Mode = 'sign-in' | 'register';
 
@@ -39,6 +39,7 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
   const [searchParams] = useSearchParams();
 
   const submit = useMutation({
+    meta: { changesSession: true },
     mutationFn: (restore: boolean) =>
       api<Me>(copy.path, {
         method: 'POST',
@@ -53,7 +54,7 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
     },
     onSuccess: (me) => {
       setRestoreUntil(null);
-      queryClient.setQueryData(ME_KEY, me);
+      changeSession(queryClient, me);
       // Back to the page that sent the learner here, else the library.
       void navigate(nextPath(searchParams), { replace: true });
     },
