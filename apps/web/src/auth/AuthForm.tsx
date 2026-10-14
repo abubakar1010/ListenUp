@@ -5,7 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { api, ApiError, type Me } from '../api/client';
 import { errorMessage } from './errorMessage';
 import { nextPath } from './next';
-import { ME_KEY } from './useMe';
+import { changeSession } from './session';
 
 type Mode = 'sign-in' | 'register';
 
@@ -24,9 +24,10 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
   const [searchParams] = useSearchParams();
 
   const submit = useMutation({
+    meta: { changesSession: true },
     mutationFn: () => api<Me>(copy.path, { method: 'POST', body: { email, password } }),
     onSuccess: (me) => {
-      queryClient.setQueryData(ME_KEY, me);
+      changeSession(queryClient, me);
       // Back to the page that sent the learner here, else the library.
       void navigate(nextPath(searchParams), { replace: true });
     },

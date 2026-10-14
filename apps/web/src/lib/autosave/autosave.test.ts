@@ -3,6 +3,14 @@ import { Autosave, SaveConflict, type LocalStore, type SaveFn, type SaveResult }
 
 const KEY = 'draft:attempt-1';
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((finish) => {
+    resolve = finish;
+  });
+  return { promise, resolve };
+}
+
 function memoryStore(initial: Record<string, string> = {}): LocalStore & {
   data: Record<string, string>;
 } {
@@ -110,7 +118,7 @@ describe('debounce', () => {
 
   test('typing during a save sends the newer text after it, on the new version', async () => {
     let finish: (result: SaveResult) => void = () => undefined;
-    const { autosave, save } = setup({
+    const { autosave, save, store } = setup({
       save: () => new Promise<SaveResult>((resolve) => (finish = resolve)),
     });
     autosave.update('first');
@@ -121,6 +129,7 @@ describe('debounce', () => {
     finish({ version: 1 });
     await settle();
     expect(autosave.getSnapshot().status.kind).toBe('pending');
+    expect(JSON.parse(store.getItem(KEY)!)).toEqual({ value: 'first and more', baseVersion: 1 });
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(save.mock.calls).toEqual([
@@ -150,6 +159,102 @@ describe('debounce', () => {
 });
 
 describe('local copy', () => {
+  test.each(['stopped final-save', 'in-flight save'])(
+    '%s acknowledgment preserves newer local work for a reload',
+    async (path) => {
+      const finalSave = deferred<SaveResult>();
+      const old = setup({ save: () => finalSave.promise });
+      old.autosave.update('old text');
+      if (path === 'in-flight save') old.autosave.flush();
+      old.autosave.stop();
+      expect(old.save).toHaveBeenCalledExactlyOnceWith('old text', 0);
+
+      const newerSave = deferred<SaveResult>();
+      const newer = setup({ store: old.store, save: () => newerSave.promise });
+      expect(newer.autosave.getSnapshot()).toMatchObject({ value: 'old text', restored: true });
+      newer.autosave.update('newer unsaved text');
+      const newerCopy = old.store.getItem(KEY);
+      expect(JSON.parse(newerCopy!)).toEqual({ value: 'newer unsaved text', baseVersion: 0 });
+
+      finalSave.resolve({ version: 1 });
+      await settle();
+
+      expect(old.store.getItem(KEY)).toBe(newerCopy);
+      expect(newer.save).not.toHaveBeenCalled();
+      const reloaded = new Autosave({
+        storageKey: KEY,
+        value: 'old text',
+        version: 1,
+        storage: old.store,
+        save: () => newerSave.promise,
+      });
+      expect(reloaded.getSnapshot()).toMatchObject({
+        value: 'newer unsaved text',
+        restored: true,
+        status: { kind: 'conflict', theirs: 'old text', theirVersion: 1 },
+      });
+      newer.autosave.stop();
+    },
+  );
+
+  test.each(['stopped final-save', 'in-flight save'])(
+    '%s acknowledgment still cleans up object-valued local work',
+    async (path) => {
+      const finalSave = deferred<SaveResult>();
+      const store = memoryStore();
+      const autosave = new Autosave({
+        storageKey: KEY,
+        value: { text: '' },
+        version: 0,
+        storage: store,
+        save: () => finalSave.promise,
+      });
+      autosave.start();
+      autosave.update({ text: 'saved object' });
+      if (path === 'in-flight save') autosave.flush();
+      autosave.stop();
+      expect(JSON.parse(store.getItem(KEY)!)).toEqual({
+        value: { text: 'saved object' },
+        baseVersion: 0,
+      });
+
+      finalSave.resolve({ version: 1 });
+      await settle();
+
+      expect(store.getItem(KEY)).toBeNull();
+    },
+  );
+
+  test.each(['stopped final-save', 'in-flight save'])(
+    '%s acknowledgment preserves the same text based on a newer version',
+    async (path) => {
+      const finalSave = deferred<SaveResult>();
+      const old = setup({ save: () => finalSave.promise });
+      old.autosave.update('same text');
+      if (path === 'in-flight save') old.autosave.flush();
+      old.autosave.stop();
+
+      const pendingSave = deferred<SaveResult>();
+      const newer = setup({
+        value: 'same text',
+        version: 1,
+        store: old.store,
+        save: () => pendingSave.promise,
+      });
+      newer.autosave.update('temporary edit');
+      newer.autosave.update('same text');
+      const newerCopy = old.store.getItem(KEY);
+      expect(JSON.parse(newerCopy!)).toEqual({ value: 'same text', baseVersion: 1 });
+
+      finalSave.resolve({ version: 1 });
+      await settle();
+
+      expect(old.store.getItem(KEY)).toBe(newerCopy);
+      expect(newer.save).not.toHaveBeenCalled();
+      newer.autosave.stop();
+    },
+  );
+
   test('every edit is kept on this device until the server has it', async () => {
     const { autosave, store } = setup({ version: 2 });
 
