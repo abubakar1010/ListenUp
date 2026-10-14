@@ -82,7 +82,18 @@ function problem(route: Route, status: number, code: string, detail: string) {
 }
 
 /** The API, answered in the test: a Blind session and its attempts. */
-async function fakeApi(page: Page, { complete = false } = {}) {
+async function fakeApi(
+  page: Page,
+  {
+    complete = false,
+    waitForFinalHeartbeat,
+    waitForVoid,
+  }: {
+    complete?: boolean;
+    waitForFinalHeartbeat?: () => Promise<void>;
+    waitForVoid?: () => Promise<void>;
+  } = {},
+) {
   const posts: { path: string; body: unknown; headers: Record<string, string> }[] = [];
   let open: 'blind' | 'transcript' = 'blind';
   let current: ReturnType<typeof attempt> | null = complete
@@ -93,7 +104,13 @@ async function fakeApi(page: Page, { complete = false } = {}) {
     const path = new URL(request.url()).pathname.replace('/api/v1', '');
     const method = request.method();
     if (method === 'POST') {
-      posts.push({ path, body: request.postDataJSON(), headers: request.headers() });
+      let body: unknown = null;
+      try {
+        body = request.postDataJSON();
+      } catch {
+        // Browser media requests can use POST without a JSON body.
+      }
+      posts.push({ path, body, headers: request.headers() });
     }
     if (path === '/health') {
       return route.fulfill({
@@ -102,6 +119,28 @@ async function fakeApi(page: Page, { complete = false } = {}) {
       });
     }
     if (path === '/me') return route.fulfill({ json: LEARNER });
+    if (path === '/library/contents') {
+      return route.fulfill({
+        json: {
+          items: [
+            {
+              id: 'clip-1',
+              title: 'Why cities plant street trees',
+              source: 'upload',
+              status: 'playable',
+              duration_ms: 30_000,
+              created_at: '2026-10-03T09:00:00Z',
+              last_session_status: 'active',
+              stage: null,
+              queue_position: null,
+            },
+          ],
+          next_cursor: null,
+        },
+      });
+    }
+    if (path === '/sessions')
+      return route.fulfill({ json: { items: [session(open)], next_cursor: null } });
     if (path === '/sessions/s-1') return route.fulfill({ json: session(open) });
     if (path === '/sessions/s-1/blind') {
       return route.fulfill({
@@ -130,11 +169,21 @@ async function fakeApi(page: Page, { complete = false } = {}) {
       return route.fulfill({ contentType: 'audio/wav', body: silentWav(31) });
     }
     if (path === '/blind/attempts/a-1/heartbeat') {
+      const beat = request.postDataJSON() as { position_ms: number; state: string };
+      if (beat.state === 'ended') {
+        await waitForFinalHeartbeat?.();
+        current = attempt({ position_ms: beat.position_ms, listen_complete: true });
+      }
       return route.fulfill({
         json: { action: 'continue', attempt: current, resume_from_ms: null, resume_delay_ms: 3000 },
       });
     }
     if (path === '/blind/attempts/a-1/void') {
+      try {
+        await waitForVoid?.();
+      } catch {
+        return problem(route, 503, 'temporary_failure', 'Please try again.');
+      }
       const { reason } = request.postDataJSON() as { reason: string };
       current = attempt({ status: 'voided', void_reason: reason, position_ms: 2_000 });
       return route.fulfill({ json: current });
@@ -217,4 +266,91 @@ test('after the whole passage the gist needs three sentences', async ({ page }) 
   const submitted = posts.filter((p) => p.path.endsWith('/gist'));
   expect(submitted).toHaveLength(1);
   expect(submitted[0].headers['idempotency-key']).toBe('gist-a-1');
+});
+
+test('real Browser Back stays guarded until the final heartbeat is acknowledged', async ({
+  page,
+}) => {
+  let releaseFinal: () => void = () => {};
+  const finalGate = new Promise<void>((resolve) => (releaseFinal = resolve));
+  const { posts } = await fakeApi(page, { waitForFinalHeartbeat: () => finalGate });
+  await page.goto('/library');
+  await page.getByRole('link', { name: 'Resume Why cities plant street trees' }).click();
+
+  const player = page.getByRole('group', { name: 'Blind player' });
+  await player.getByRole('button', { name: 'Start listening' }).click();
+  await expect(player.getByText('Listening', { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    const audio = document.querySelector('audio')!;
+    Object.defineProperty(audio, 'currentTime', { configurable: true, get: () => 30 });
+    audio.dispatchEvent(new Event('timeupdate'));
+  });
+  await expect
+    .poll(() => posts.some((post) => (post.body as { state?: string } | null)?.state === 'ended'))
+    .toBe(true);
+  await expect(page.getByRole('textbox', { name: 'Your gist' })).toHaveCount(0);
+
+  await page.goBack();
+  await expect(page.getByRole('dialog', { name: 'Leave Blind?' })).toBeVisible();
+  expect(posts.filter((post) => post.path.endsWith('/void'))).toHaveLength(0);
+
+  await page.getByRole('button', { name: 'Stay' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  releaseFinal();
+  await expect(page.getByRole('textbox', { name: 'Your gist' })).toBeVisible();
+  await page.goBack();
+
+  await expect(page.getByRole('heading', { name: 'Library' })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(posts.filter((post) => post.path.endsWith('/void'))).toHaveLength(0);
+});
+
+test('Browser Back waits for the leave void and a failed void can be retried', async ({ page }) => {
+  let releaseVoid: () => void = () => {};
+  const voidGate = new Promise<void>((resolve) => (releaseVoid = resolve));
+  let voidRequests = 0;
+  const { posts } = await fakeApi(page, {
+    waitForVoid: async () => {
+      voidRequests += 1;
+      if (voidRequests === 1) throw new Error('temporary network failure');
+      if (voidRequests === 2) await voidGate;
+    },
+  });
+  await page.goto('/library');
+  await page.getByRole('link', { name: 'Resume Why cities plant street trees' }).click();
+  const player = page.getByRole('group', { name: 'Blind player' });
+  await player.getByRole('button', { name: 'Start listening' }).click();
+  await expect(player.getByText('Listening', { exact: true })).toBeVisible();
+
+  await page.goBack();
+  const dialog = page.getByRole('dialog', { name: 'Leave Blind?' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Leave Blind' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Something went wrong');
+  await expect(page.getByRole('heading', { name: 'Library' })).toHaveCount(0);
+  expect(posts.filter((post) => post.path.endsWith('/void'))).toHaveLength(1);
+
+  await dialog.getByRole('alert').getByRole('button', { name: 'Try again' }).click();
+  await expect.poll(() => voidRequests).toBe(2);
+  await expect(page.getByRole('heading', { name: 'Library' })).toHaveCount(0);
+  releaseVoid();
+  await expect(page.getByRole('heading', { name: 'Library' })).toBeVisible();
+  expect(posts.filter((post) => post.path.endsWith('/void'))).toHaveLength(2);
+});
+
+test('a completed gist can leave and reload without voiding the listen', async ({ page }) => {
+  const { posts } = await fakeApi(page, { complete: true });
+  await page.goto('/library');
+  await page.getByRole('link', { name: 'Resume Why cities plant street trees' }).click();
+  await expect(page.getByRole('textbox', { name: 'Your gist' })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Library' })).toBeVisible();
+  expect(posts.filter((post) => post.path.endsWith('/void'))).toHaveLength(0);
+
+  await page.getByRole('link', { name: 'Resume Why cities plant street trees' }).click();
+  await expect(page.getByRole('textbox', { name: 'Your gist' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: 'Your gist' })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(posts.filter((post) => post.path.endsWith('/void'))).toHaveLength(0);
 });

@@ -8,7 +8,7 @@ export interface Call {
   headers: Record<string, string>;
 }
 
-type Handler = (call: Call) => Response;
+type Handler = (call: Call) => Response | Promise<Response>;
 
 /**
  * Mocks fetch by "METHOD /path" (path after /api/v1, with its query). Records every

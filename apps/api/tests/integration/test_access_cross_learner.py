@@ -230,9 +230,19 @@ def check_access(
 
         if method in SAFE_METHODS:
             own = request(a, method, path, body)
-            assert own.is_success or own.is_redirect, (
-                f"{route}: A's own request failed: {own.status_code}"
-            )
+            if isinstance(entry, Owned) and entry.owner_status is not None:
+                assert own.status_code == entry.owner_status, (
+                    f"{route}: A got {describe(own)}, not {entry.owner_status} {entry.owner_code}"
+                )
+                if entry.owner_code is not None:
+                    assert problem_code(own) == entry.owner_code, (
+                        f"{route}: A got {describe(own)}, not {entry.owner_status} "
+                        f"{entry.owner_code}"
+                    )
+            else:
+                assert own.is_success or own.is_redirect, (
+                    f"{route}: A's own request failed: {own.status_code}"
+                )
             if isinstance(entry, Scoped) and entry.a_sees:
                 missing = [str(i) for i in entry.a_sees(world) if str(i) not in own.text]
                 assert not missing, f"{route}: A's own answer lacks {missing}; fix the fixture"

@@ -83,6 +83,8 @@ export class BlindListen {
   private inFlight = false;
   /** The final beat waits for the one in flight; the server must learn the end. */
   private finalPending = false;
+  private finalAcknowledged = false;
+  private navigationLeave: Promise<void> | null = null;
   private disposed = false;
   private left = false;
   private deviceStopAt: number | null = null;
@@ -155,7 +157,8 @@ export class BlindListen {
   get inProgress(): boolean {
     if (this.left) return false;
     const kind = this.snapshot.phase.kind;
-    return kind !== 'ended' && kind !== 'stopped' && kind !== 'failed';
+    if (kind === 'ended') return !this.finalAcknowledged;
+    return kind !== 'stopped' && kind !== 'failed';
   }
 
   /** The learner leaves: report it, keeping the request alive while the page unloads. */
@@ -168,6 +171,24 @@ export class BlindListen {
       .void(this.attemptId, reason, true)
       .then((attempt) => this.set({ phase: { kind: 'stopped', attempt } }))
       .catch((error: unknown) => this.set({ phase: { kind: 'failed', error } }));
+  }
+
+  /** Void before an in-app transition; failures leave playback running for a retry. */
+  leaveForNavigation(reason: ClientVoidReason = 'left_page'): Promise<void> {
+    if (this.navigationLeave) return this.navigationLeave;
+    if (this.disposed || !this.inProgress) return Promise.resolve();
+    this.navigationLeave = this.server
+      .void(this.attemptId, reason)
+      .then((attempt) => {
+        this.left = true;
+        this.stop();
+        this.set({ phase: { kind: 'stopped', attempt } });
+      })
+      .catch((error: unknown) => {
+        this.navigationLeave = null;
+        throw error;
+      });
+    return this.navigationLeave;
   }
 
   /** Stop timers and listeners; the audio stops too. */
@@ -338,6 +359,10 @@ export class BlindListen {
       this.lastBeatOkAt = this.now();
       this.waitedMs = 0;
       if (this.waitingSince !== null) this.waitingSince = this.now();
+      if (body.state === 'ended' && answer.attempt.listen_complete) {
+        this.finalAcknowledged = true;
+        this.set({ positionMs: this.end });
+      }
       this.handle(answer);
     } catch (error) {
       this.beatFailed(error);

@@ -35,6 +35,7 @@ from fastapi import Depends, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.modules.analytics import service as analytics
 from listenup.modules.content import jobs, repository
 from listenup.modules.content.domain import admission
 from listenup.modules.content.domain import cursor as cursors
@@ -311,6 +312,7 @@ class Uploads:
             keep_video=keep_video,
         )
         await repository.mark_upload_confirmed(session, upload_id, content_id, media_id)
+        await analytics.record_content_added(session, learner, content_id, source_type="upload")
         await jobs.start_waiting_uploads(session, learner, self.settings.intake_running_limit)
         created = await repository.get_content(session, content_id)
         assert created is not None
@@ -437,6 +439,16 @@ async def media_url(
             media_status=files.status,
         )
     return storage.signed_download(key, ttl_seconds=ttl_seconds).url
+
+
+async def learner_content_ids_for_media(
+    session: AsyncSession, learner: uuid.UUID, media_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """Check ownership before another policy is evaluated for this media object."""
+    content_ids = await repository.learner_content_ids_for_media(session, learner, media_id)
+    if not content_ids:
+        raise ProblemError(404, "media_not_found", "This clip is not in your library.")
+    return content_ids
 
 
 def client_ip(request: Request) -> str | None:

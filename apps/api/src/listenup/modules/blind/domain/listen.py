@@ -40,6 +40,8 @@ HEARTBEAT_INTERVAL_MS = 5_000
 """How often the player sends a beat."""
 MAX_SILENCE_MS = 15_000
 """A gap between beats longer than this, without a reported interruption, voids."""
+NETWORK_RECOVERY_MS = 300_000
+"""The first interruption must recover before five minutes since the last beat."""
 AHEAD_TOLERANCE_MS = 1_500
 """How far the position may run ahead of the server's clock (network and timer jitter)."""
 LAG_TOLERANCE_MS = 6_000
@@ -144,10 +146,16 @@ class Listen:
 
     def media_deadline(self) -> datetime:
         """When the attempt's media URL stops working: the rest of the passage by the
-        clock, the waiting still allowed, and a grace period (#62)."""
+        clock, waiting, the first recovery allowance, and a grace period (#62)."""
         rest = self.passage_end_ms - self.anchor_position_ms
         waiting = BUFFERING_BUDGET_MS - self.buffering_ms
-        return self.anchor_at + timedelta(milliseconds=rest + waiting + MEDIA_GRACE_MS)
+        recovery = NETWORK_RECOVERY_MS if self.resume_count < MAX_RESUMES else 0
+        return self.anchor_at + timedelta(milliseconds=rest + waiting + recovery + MEDIA_GRACE_MS)
+
+    def abandonment_deadline(self) -> datetime:
+        """Preserve the first network resume; used by the worker and heartbeat rule."""
+        delay = NETWORK_RECOVERY_MS if self.resume_count < MAX_RESUMES else MAX_SILENCE_MS + 1
+        return self.last_heartbeat_at + timedelta(milliseconds=delay)
 
     def expected_position_ms(self, now: datetime) -> int:
         """Where playback should be at `now` by the server's clock."""
@@ -196,6 +204,8 @@ def judge(listen: Listen, beat: Beat, now: datetime) -> Verdict:
         return Verdict(Action.CONTINUE, listen)  # the listen is over; late beats change nothing
 
     elapsed = max(0, _ms(now - listen.last_heartbeat_at))
+    if listen.resume_count == 0 and now >= listen.abandonment_deadline():
+        return _void(listen, VoidReason.MISSED_HEARTBEAT)
     if beat.state is PlayerState.INTERRUPTED:
         if beat.position_ms > listen.expected_position_ms(now) + AHEAD_TOLERANCE_MS:
             return _void(listen, VoidReason.TOO_FAST)

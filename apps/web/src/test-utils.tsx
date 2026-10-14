@@ -1,18 +1,25 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
 import type { ReactElement } from 'react';
-import { MemoryRouter } from 'react-router';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 
 import { createQueryClient } from './app/queryClient';
 
-export function renderWithProviders(ui: ReactElement, { route = '/' } = {}) {
+export function renderWithProviders(
+  ui: ReactElement,
+  { route = '/', historyEntries = [route] }: { route?: string; historyEntries?: string[] } = {},
+) {
   const queryClient = createQueryClient();
   queryClient.setDefaultOptions({ queries: { retry: false } });
-  return render(
+  const router = createMemoryRouter([{ path: '*', element: ui }], {
+    initialEntries: historyEntries,
+  });
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+  return { ...rendered, router };
 }
 
 export function jsonResponse(status: number, body?: unknown): Response {

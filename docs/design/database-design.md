@@ -642,6 +642,29 @@ CREATE INDEX data_exports_user_idx ON ops.data_exports (user_id, requested_at DE
 CREATE UNIQUE INDEX data_exports_one_live ON ops.data_exports (user_id)
   WHERE status IN ('pending', 'building');
 
+-- ADR 0035, migration 0015: product events and the PRD 2 metrics report.
+CREATE TABLE ops.analytics_events (
+  id          uuid PRIMARY KEY,
+  user_id     uuid NOT NULL REFERENCES identity.users ON DELETE CASCADE,
+  event_type  text NOT NULL
+              CHECK (event_type IN ('content_added', 'plan_started', 'step_started',
+                                    'step_completed', 'listen_started', 'dictation_replays',
+                                    'blind_abandoned', 'mark_created', 'card_created',
+                                    'shadow_round_completed')),
+  subject_id  uuid NOT NULL,
+  step        text CHECK (step IN ('blind', 'dictation', 'transcript', 'card', 'shadow')),
+  content_id  uuid,  -- no foreign key in the implemented schema; see lifecycle note below
+  session_id  uuid,  -- no foreign key in the implemented schema; see lifecycle note below
+  properties  jsonb NOT NULL DEFAULT '{}'
+              CHECK (jsonb_typeof(properties) = 'object' AND pg_column_size(properties) <= 1000),
+  occurred_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT analytics_events_step_events_have_a_step
+    CHECK ((step IS NOT NULL) = (event_type IN ('step_started', 'step_completed'))),
+  CONSTRAINT analytics_events_once UNIQUE NULLS NOT DISTINCT (event_type, subject_id, step)
+);
+CREATE INDEX analytics_events_type_time_idx ON ops.analytics_events (event_type, occurred_at);
+CREATE INDEX analytics_events_user_idx ON ops.analytics_events (user_id, occurred_at);
+
 -- Audit of deletions. No foreign key: it must outlive the deleted account.
 CREATE TABLE ops.deletion_requests (
   id               uuid PRIMARY KEY,
@@ -669,6 +692,7 @@ CREATE INDEX takedowns_fingerprint_idx ON ops.takedowns (fingerprint);
 
 - **Idempotency keys** expire after 24 hours (a scheduled delete using the age index).
 - **Takedowns** block re-adding the same source: intake checks `ops.takedowns` by fingerprint before downloading.
+- **Analytics events** are inserted through `analytics.service` in the source transaction; retries use `ON CONFLICT DO NOTHING`. Properties contain only typed metadata, never learner text or identifying account fields. Mark patterns use a dedicated secret and learner-scoped HMAC. Dictation counts the first media `playing` signal; Blind abandonment follows the recovery deadline in ADR 0024. Replay, mark, card and Shadow recording functions are available, but their feature callers remain deferred. The read-only script computes the PRD 2 metrics and refuses a reporting range extending beyond `--as-of` ([ADR 0035](../adr/0035-product-analytics-events-in-postgres.md)).
 
 ## 8. Integrity rules
 
@@ -795,6 +819,8 @@ Explicit grants for the newly recorded tables: `content.uploads` permits `SELECT
 
 ### 9.2 Row-level security
 
+`ops.analytics_events` is an insert-only exception to the API's usual read/write grants: `listenup_api` receives `INSERT` only, under `own_rows`. `listenup_readonly` receives `SELECT` with a separate `analytics_report` policy (`FOR SELECT TO listenup_readonly USING (true)`), permitting cross-learner metrics without access to identity data. Workers read events for learner exports through their default grants. Neither the API nor the report role may update or delete events. Account deletion removes them through the foreign-key cascade ([ADR 0035](../adr/0035-product-analytics-events-in-postgres.md)).
+
 The API sets the current learner at the start of every transaction, and each learner table has one policy:
 
 ```sql
@@ -814,6 +840,7 @@ CREATE POLICY own_rows ON practice.sessions
 -- grading.round_grades, grading.shadow_comparisons, grading.learner_trends,
 -- grading.pattern_history, ops.idempotency_keys, content.uploads,
 -- content.duplicate_uploads, ops.data_exports (ADRs 0020, 0027, 0030).
+-- ops.analytics_events also uses own_rows and the separate reporting policy (ADR 0035).
 
 -- Before the learner is known, SECURITY DEFINER functions executable only by listenup_api
 -- are the one way through: this one returns the learner of a live login session and nothing
@@ -859,6 +886,8 @@ Deletion removes storage objects first and database rows second, so a crash midw
 5. The request is marked `completed` with a report of rows and objects removed.
 
 Content, session and recording deletions follow the same order at a smaller scope.
+
+Analytics events cascade on account deletion and are included in the learner's export (DR-1, NFR-SEC-5). They have no content/session foreign keys and survive clip or session deletion as the owner-approved exception to DR-2 and AT-9 (2026-10-15). Retained events contain only pseudonymous ids and typed metadata, including learner-scoped HMAC patterns, never learner text or content. There is no independent age-based expiry in this implementation; account deletion removes all of the learner's events. See ADR 0035.
 
 ### 10.2 Shared media
 

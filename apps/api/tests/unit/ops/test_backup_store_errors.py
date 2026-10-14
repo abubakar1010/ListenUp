@@ -8,6 +8,8 @@ from pydantic import SecretStr
 from listenup.ops.store import S3BackupStore
 from listenup.platform.config import Settings
 
+PRODUCTION_ANALYTICS_KEY = SecretStr("a-stable-production-analytics-key-123")
+
 
 class FakeClient:
     def __init__(self, response: dict[str, Any]) -> None:
@@ -39,11 +41,23 @@ def test_a_delete_without_errors_succeeds() -> None:
 def test_production_refuses_a_missing_or_shared_backup_bucket() -> None:
     for backup_bucket in (None, "listenup"):
         with pytest.raises(ValueError, match="separate from the media bucket"):
-            S3BackupStore(Settings(environment="production", backup_bucket=backup_bucket))
+            S3BackupStore(
+                Settings(
+                    environment="production",
+                    backup_bucket=backup_bucket,
+                    analytics_hmac_key=PRODUCTION_ANALYTICS_KEY,
+                )
+            )
 
 
 def test_production_accepts_a_separate_backup_bucket() -> None:
-    store = S3BackupStore(Settings(environment="production", backup_bucket="listenup-backups"))
+    store = S3BackupStore(
+        Settings(
+            environment="production",
+            backup_bucket="listenup-backups",
+            analytics_hmac_key=PRODUCTION_ANALYTICS_KEY,
+        )
+    )
 
     assert store.bucket == "listenup-backups"
 

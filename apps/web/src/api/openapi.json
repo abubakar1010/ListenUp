@@ -2180,6 +2180,47 @@
         "tags": ["dictation"]
       }
     },
+    "/api/v1/dictation/attempts/{attempt_id}/listen": {
+      "post": {
+        "description": "Record the attempt's first successful playback for the time-to-listen metric.\n\nRepeated calls are idempotent. Opening the Dictation screen alone records nothing.",
+        "operationId": "record_listen_started_api_v1_dictation_attempts__attempt_id__listen_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "409": {
+            "description": "`attempt_closed`, `step_locked` or `session_closed`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Listen Started",
+        "tags": ["dictation"]
+      }
+    },
     "/api/v1/events": {
       "get": {
         "description": "Stream the learner's live events (System Design 9.1).\n\nEach event carries only its type and the id of the resource to refetch.",
@@ -2536,7 +2577,7 @@
             "description": "No item of yours uses this media object"
           },
           "409": {
-            "description": "Not playable yet (`media_not_ready`)"
+            "description": "Not playable yet (`media_not_ready`) or blocked by an unfinished Blind listen (`blind_in_progress`)"
           },
           "422": {
             "content": {
@@ -2577,7 +2618,7 @@
             "description": "No item of yours uses this media object"
           },
           "409": {
-            "description": "Not playable yet (`media_not_ready`)"
+            "description": "Not playable yet (`media_not_ready`) or blocked by an unfinished Blind listen (`blind_in_progress`)"
           },
           "422": {
             "content": {
