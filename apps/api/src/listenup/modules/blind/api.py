@@ -6,7 +6,7 @@ the server's (`server_now`), never the browser's.
 
 import dataclasses
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Request, Response
@@ -21,15 +21,11 @@ from listenup.modules.blind.domain import (
 )
 from listenup.modules.content.service import UploadsDep
 from listenup.modules.identity.service import CurrentLearner
+from listenup.platform.clock import server_now
 from listenup.platform.database import DbSession
 from listenup.platform.idempotency import IdempotencyKeyHeader, request_fingerprint, run_once
 
 router = APIRouter(tags=["blind"])
-
-
-def server_now() -> datetime:
-    """The server's clock; tests override this dependency."""
-    return datetime.now(UTC)
 
 
 Now = Annotated[datetime, Depends(server_now)]

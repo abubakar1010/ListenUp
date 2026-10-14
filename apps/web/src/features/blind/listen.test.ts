@@ -72,7 +72,9 @@ function setup(heartbeat?: (beat: HeartbeatIn) => Promise<HeartbeatOut>) {
   const server = {
     heartbeat: vi.fn(async (_id: string, beat: HeartbeatIn) => {
       beats.push(beat);
-      return heartbeat ? heartbeat(beat) : answer();
+      return heartbeat
+        ? heartbeat(beat)
+        : answer({ attempt: attemptFixture({ listen_complete: beat.state === 'ended' }) });
     }),
     void: vi.fn(async () => attemptFixture({ status: 'voided', void_reason: 'seek' })),
   } satisfies BlindApi;
@@ -154,12 +156,12 @@ test('the end of the passage stops playback and sends the last beat', async () =
 test('the last beat waits for a slow beat in flight instead of being dropped', async () => {
   let release: () => void = () => {};
   let hang = false;
-  const { media, beats, listen } = setup(async () => {
+  const { media, beats, listen } = setup(async (beat) => {
     if (hang) {
       hang = false;
       await new Promise<void>((resolve) => (release = resolve));
     }
-    return answer();
+    return answer({ attempt: attemptFixture({ listen_complete: beat.state === 'ended' }) });
   });
   await started(media, listen);
 
@@ -175,6 +177,36 @@ test('the last beat waits for a slow beat in flight instead of being dropped', a
   expect(beats.at(-1)).toMatchObject({ position_ms: END, state: 'ended' });
 });
 
+test('the listen stays unfinished until the final heartbeat is acknowledged', async () => {
+  const releases: (() => void)[] = [];
+  const { media, listen } = setup(async (beat) => {
+    if (beat.state === 'playing' || beat.state === 'ended') {
+      await new Promise<void>((resolve) => releases.push(resolve));
+    }
+    return answer({
+      attempt: attemptFixture({ listen_complete: beat.state === 'ended' }),
+    });
+  });
+  await started(media, listen);
+
+  media.progress(5_000);
+  await vi.advanceTimersByTimeAsync(5_000); // the regular heartbeat waits for the server
+  expect(releases).toHaveLength(1);
+  media.progress(END - START);
+  await vi.advanceTimersByTimeAsync(0); // the final beat queues behind the regular beat
+
+  expect(listen.inProgress).toBe(true);
+  releases.shift()?.();
+  await vi.advanceTimersByTimeAsync(0); // the final heartbeat is now in flight
+  expect(releases).toHaveLength(1);
+  expect(listen.inProgress).toBe(true);
+
+  releases.shift()?.();
+  await vi.advanceTimersByTimeAsync(0);
+
+  expect(listen.inProgress).toBe(false);
+});
+
 test('the last beat is sent again after a network failure', async () => {
   let failures = 1;
   const { media, beats, listen } = setup(async (beat) => {
@@ -182,7 +214,7 @@ test('the last beat is sent again after a network failure', async () => {
       failures -= 1;
       throw new TypeError('network down');
     }
-    return answer();
+    return answer({ attempt: attemptFixture({ listen_complete: beat.state === 'ended' }) });
   });
   await started(media, listen);
 

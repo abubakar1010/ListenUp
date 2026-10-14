@@ -2207,7 +2207,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description Not playable yet (`media_not_ready`) */
+      /** @description Not playable yet (`media_not_ready`) or blocked by an unfinished Blind listen (`blind_in_progress`) */
       409: {
         headers: {
           [name: string]: unknown;
@@ -2250,7 +2250,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description Not playable yet (`media_not_ready`) */
+      /** @description Not playable yet (`media_not_ready`) or blocked by an unfinished Blind listen (`blind_in_progress`) */
       409: {
         headers: {
           [name: string]: unknown;

@@ -528,6 +528,17 @@ async def active_attempt(db: AsyncSession, session_id: uuid.UUID, mode: Step) ->
     return _attempt(row) if row else None
 
 
+async def active_attempts_for_content(
+    db: AsyncSession, user_id: uuid.UUID, content_id: uuid.UUID, mode: Step
+) -> list[Attempt]:
+    """Active attempts in every session using this content item."""
+    _check_mode(mode)
+    return [
+        _attempt(row)
+        for row in await repository.active_attempts_for_content(db, user_id, content_id, mode.value)
+    ]
+
+
 async def latest_attempt(db: AsyncSession, session_id: uuid.UUID, mode: Step) -> Attempt | None:
     """The newest attempt at a step, live or ended; None before the first one.
 
