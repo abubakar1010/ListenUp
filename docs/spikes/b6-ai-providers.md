@@ -87,7 +87,7 @@ No hosted alignment provider is selected. Alignment quality, model licensing and
 | Transcription | Existing `faster-whisper` only | Keep ADR 0028/#18; no hosted fallback initially. |
 | Alignment | Existing `wav2vec2-ctc` only, current `WAV2VEC2_ASR_BASE_960H` under ADR 0034 | Retain merged #19's validation gates. Any MMS_FA fallback is no-training eligible locally but not approved for commercial use. [T3 · 2026-10-11] |
 
-These are selected directions with deployment gates, not claims that the unimplemented adapters are ready. ADR [0035](../adr/0035-free-ai-provider-order-and-eligibility.md) records the decision. #64 adds the runtime IDs, eligibility checks, per-task order, quotas, provenance, schemas and admin usage view. This PR proposes the order in its description and does not edit `ai.yaml`.
+These are selected directions with deployment gates, not claims that the unimplemented adapters are ready. ADR [0037](../adr/0037-free-ai-provider-order-and-eligibility.md) records the decision. #64 adds the runtime IDs, eligibility checks, per-task order, quotas, provenance, schemas and admin usage view. This PR proposes the order in its description and does not edit `ai.yaml`.
 
 ## Sources
 

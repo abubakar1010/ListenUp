@@ -1,4 +1,4 @@
-# ADR 0035: Free AI provider order and learner-data eligibility
+# ADR 0037: Free AI provider order and learner-data eligibility
 
 - Status: Accepted (provider enablement remains gated below)
 - Date: 2026-10-11
