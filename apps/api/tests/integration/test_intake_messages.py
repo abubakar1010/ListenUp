@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from listenup.modules.content import jobs
 from listenup.platform.database import Database
 from listenup.platform.jobs import JobDeps, PermanentError
+from listenup.platform.storage import use_storage
 from tests.integration.conftest import conninfo_to_url
 from tests.integration.intake_helpers import (
     MB,
@@ -33,9 +34,9 @@ from tests.integration.intake_helpers import (
 @pytest.fixture
 def storage() -> Iterator[FakeStorage]:
     fake = FakeStorage()
-    jobs.use_storage(fake)
+    use_storage(fake)
     yield fake
-    jobs.use_storage(None)
+    use_storage(None)
 
 
 @pytest.fixture

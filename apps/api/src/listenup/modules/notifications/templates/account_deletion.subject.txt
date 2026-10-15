@@ -1,0 +1,1 @@
+Your ListenUp account will be deleted on $deletion_date

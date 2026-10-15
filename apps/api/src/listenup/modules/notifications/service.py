@@ -5,6 +5,7 @@ handling a request. The transport is the SMTP adapter unless something else was
 configured (tests use an in-memory one).
 """
 
+from datetime import datetime
 from typing import Protocol
 
 from listenup.modules.notifications import emails
@@ -12,7 +13,13 @@ from listenup.modules.notifications.emails import EmailContent
 from listenup.modules.notifications.smtp import SmtpTransport
 from listenup.platform.config import get_settings
 
-__all__ = ["EmailContent", "EmailTransport", "send_password_reset", "use_transport"]
+__all__ = [
+    "EmailContent",
+    "EmailTransport",
+    "send_account_deletion",
+    "send_password_reset",
+    "use_transport",
+]
 
 
 class EmailTransport(Protocol):
@@ -38,3 +45,8 @@ def _current() -> EmailTransport:
 async def send_password_reset(to: str, link: str, valid_minutes: int) -> None:
     """Email a password reset link (FR-ACC-3)."""
     await _current().send(emails.password_reset(to, link, valid_minutes))
+
+
+async def send_account_deletion(to: str, deletion_at: datetime, sign_in_link: str) -> None:
+    """Confirm a deletion and say how to restore the account before `deletion_at` (D9)."""
+    await _current().send(emails.account_deletion(to, deletion_at, sign_in_link))

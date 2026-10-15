@@ -1,0 +1,13 @@
+Hello,
+
+The ListenUp account that uses this email address was deleted. We have signed it out on every device, and nobody can use it now.
+
+Your library, practice sessions, cards and recordings are kept until $deletion_time. After that, everything is deleted for good and cannot be brought back.
+
+Changed your mind? Sign in with this email address and your password before then and confirm that you want the account back. Everything will be as you left it:
+
+$sign_in_link
+
+If you did not delete your account, sign in now to restore it, then change your password.
+
+ListenUp

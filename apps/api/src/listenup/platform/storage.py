@@ -23,7 +23,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from listenup.platform.config import Settings
+from listenup.platform.config import Settings, get_settings
 
 if TYPE_CHECKING:
     from types_boto3_s3 import S3Client
@@ -257,3 +257,20 @@ class S3Storage:
     def _forget_prefix(self, prefix: str) -> None:
         for cache_key in [k for k in self._cache if k[0].startswith(prefix)]:
             del self._cache[cache_key]
+
+
+class _Shared:
+    """The process-wide storage background jobs use: S3 from the settings, or a fake."""
+
+    instance: Storage | None = None
+
+
+def use_storage(storage: Storage | None) -> None:
+    """Swap the storage every job uses (tests); None goes back to S3 from the settings."""
+    _Shared.instance = storage
+
+
+def get_storage() -> Storage:
+    if _Shared.instance is None:
+        _Shared.instance = S3Storage(get_settings())
+    return _Shared.instance

@@ -58,6 +58,13 @@ class EventType(StrEnum):
     GRADE_READY = "grade.ready"
     ATTEMPT_VOIDED = "attempt.voided"
     EXPORT_READY = "export.ready"  # a data export finished: ready or failed (#92)
+    # The learner's account was disabled (deleted, ADR 0029). Their open streams get
+    # this event and then end; reconnecting needs a login session, which is gone.
+    ACCOUNT_DISABLED = "account.disabled"
+
+
+STREAM_ENDING_EVENTS = frozenset({EventType.ACCOUNT_DISABLED})
+"""Events after which the stream ends, whether sent live or replayed on reconnect."""
 
 
 RESYNC = "resync"
@@ -105,6 +112,13 @@ class Event:
         return f"id: {self.id}\nevent: {self.type}\ndata: {data}\n\n"
 
 
+@dataclass(frozen=True)
+class _EndingEvent:
+    """A final event that is delivered before its stream closes."""
+
+    event: Event
+
+
 class _Signal(Enum):
     RESYNC = "resync"
     CLOSE = "close"
@@ -113,7 +127,7 @@ class _Signal(Enum):
 RESYNC_MESSAGE = f'event: {RESYNC}\ndata: {{"type": "{RESYNC}"}}\n\n'
 KEEP_ALIVE = ": keep-alive\n\n"
 
-_Item = Event | _Signal
+_Item = Event | _EndingEvent | _Signal
 
 
 @dataclass(eq=False)
@@ -186,7 +200,10 @@ class EventHub:
         replay.events.append((now, sequence, event))
         self._prune(replay, now)
         for subscription in self._streams.get(user_id, ()):
-            self._put(subscription, event)
+            if event_type in STREAM_ENDING_EVENTS:
+                self._end(subscription, event)
+            else:
+                self._put(subscription, event)
         if now >= self._next_sweep:
             self._sweep(now)
         return event
@@ -231,6 +248,11 @@ class EventHub:
                 self._put(subscription, _Signal.RESYNC)
             else:
                 for event in missed:
+                    if event.type in STREAM_ENDING_EVENTS:
+                        # As if live. Later events follow on the next reconnect, which
+                        # names this event as the last one seen.
+                        self._end(subscription, event)
+                        return subscription
                     self._put(subscription, event)
         self._streams.setdefault(user_id, set()).add(subscription)
         return subscription
@@ -300,6 +322,14 @@ class EventHub:
             subscription.queue.put_nowait(_Signal.RESYNC)
             logger.warning("event stream fell behind; sent resync")
 
+    def _end(self, subscription: Subscription, event: Event) -> None:
+        """Deliver `event` and end; a full queue drops only the older backlog."""
+        try:
+            subscription.queue.put_nowait(_EndingEvent(event))
+        except asyncio.QueueFull:
+            _drain(subscription.queue)
+            subscription.queue.put_nowait(_EndingEvent(event))
+
 
 def _drain(queue: asyncio.Queue[_Item]) -> None:
     while not queue.empty():
@@ -326,6 +356,9 @@ async def event_stream(
                 return
             elif item is _Signal.RESYNC:
                 yield RESYNC_MESSAGE
+            elif isinstance(item, _EndingEvent):
+                yield item.event.encode()
+                return
             else:
                 assert isinstance(item, Event)
                 yield item.encode()
@@ -420,8 +453,8 @@ def events_router(learner: Callable[..., Any]) -> APIRouter:
             200: {
                 "description": (
                     "A Server-Sent Events stream of the learner's events: "
-                    "job.progress, content.ready, grade.ready, attempt.voided, export.ready "
-                    "and resync."
+                    "job.progress, content.ready, grade.ready, attempt.voided, export.ready, "
+                    "account.disabled (the stream then ends) and resync."
                 ),
                 "content": {"text/event-stream": {"schema": {"type": "string"}}},
             }
