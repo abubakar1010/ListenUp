@@ -1,7 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useBlocker } from 'react-router';
 
 import { PageLoading } from '../../app/PageLoading';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { AlertIcon } from '../../components/icons';
@@ -88,6 +90,8 @@ export function BlindStep({ session, progress }: BlindStepProps) {
   const [listen, setListen] = useState<BlindListen | null>(null);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<unknown>(null);
+  const [leaveError, setLeaveError] = useState<unknown>(null);
+  const [leaving, setLeaving] = useState(false);
   const [ended, setEnded] = useState<BlindAttempt | null>(null);
   const [volume, setVolume] = useState(0.8);
   const snapshot = useListen(listen);
@@ -101,6 +105,7 @@ export function BlindStep({ session, progress }: BlindStepProps) {
     stoppedHere ?? ended ?? (!listen && latest?.status === 'voided' ? latest : null);
   const phase = snapshot?.phase.kind;
   const listening = listen !== null && listen.inProgress;
+  const blocker = useBlocker(listening);
 
   useEffect(() => {
     if (audio.current) audio.current.volume = volume;
@@ -182,6 +187,21 @@ export function BlindStep({ session, progress }: BlindStepProps) {
     }
   }
 
+  async function confirmLeave() {
+    if (blocker.state !== 'blocked' || !listen || leaving) return;
+    const pendingNavigation = blocker;
+    setLeaving(true);
+    setLeaveError(null);
+    try {
+      await listen.leaveForNavigation('left_page');
+      pendingNavigation.proceed();
+    } catch (error) {
+      setLeaveError(error);
+    } finally {
+      setLeaving(false);
+    }
+  }
+
   if (step.isPending) return <PageLoading />;
   if (step.isError) {
     return (
@@ -196,7 +216,7 @@ export function BlindStep({ session, progress }: BlindStepProps) {
   const length = end_ms - start_ms;
   // The gist: heard to the end in this page, or an earlier listen that finished.
   const gistAttempt =
-    phase === 'ended' && listen
+    phase === 'ended' && listen && !listening
       ? listen.attemptId
       : latest?.status === 'active' && latest.listen_complete && !listen
         ? latest.id
@@ -204,6 +224,7 @@ export function BlindStep({ session, progress }: BlindStepProps) {
 
   let status: PlayerStatus = 'before';
   if (gistAttempt) status = 'done';
+  else if (phase === 'ended') status = 'finishing';
   else if (starting || phase === 'loading') status = 'starting';
   else if (phase === 'playing') status = 'listening';
   else if (phase === 'waiting') status = 'waiting';
@@ -214,6 +235,8 @@ export function BlindStep({ session, progress }: BlindStepProps) {
   let work: ReactNode;
   if (gistAttempt) {
     work = <GistForm sessionId={session.id} attemptId={gistAttempt} />;
+  } else if (phase === 'ended') {
+    work = <p role="status">Saving your listen. Keep this screen open.</p>;
   } else if (snapshot && listening) {
     work = (
       <Listening
@@ -235,35 +258,59 @@ export function BlindStep({ session, progress }: BlindStepProps) {
   }
 
   return (
-    <PracticeLayout
-      heading={`Blind: ${session.content_title}`}
-      clipTitle={session.content_title}
-      clipMeta={
-        listening
-          ? 'Blind · listening'
-          : `Passage ${formatClock(start_ms)} to ${formatClock(end_ms)}`
-      }
-      back={listening ? null : { to: '/library', label: 'Library' }}
-      progress={listening ? <StepProgress session={session} /> : progress}
-      player={
-        <>
-          {/* No controls and not focusable: start and volume are the only controls. */}
-          <audio ref={audio} preload="auto" tabIndex={-1} aria-hidden="true" className="hidden" />
-          <BlindPlayer
-            status={status}
-            playedMs={played}
-            lengthMs={length}
-            volume={volume}
-            onVolume={setVolume}
-            onStart={() => void start()}
-          />
-        </>
-      }
-      rule={resumed && listening ? RULE_AFTER_RESUME : RULE}
-      workLabel="Blind"
-    >
-      {work}
-    </PracticeLayout>
+    <>
+      {blocker.state === 'blocked' && (
+        <ConfirmDialog
+          title="Leave Blind?"
+          confirmLabel="Leave Blind"
+          cancelLabel="Stay"
+          onConfirm={() => void confirmLeave()}
+          onCancel={() => {
+            if (blocker.state === 'blocked' && !leaving) {
+              setLeaveError(null);
+              blocker.reset();
+            }
+          }}
+          busy={leaving}
+          footer={
+            leaveError !== null && (
+              <ErrorPanel error={leaveError} onRetry={() => void confirmLeave()} />
+            )
+          }
+        >
+          Leaving now ends this Blind attempt. Playback keeps going while you decide.
+        </ConfirmDialog>
+      )}
+      <PracticeLayout
+        heading={`Blind: ${session.content_title}`}
+        clipTitle={session.content_title}
+        clipMeta={
+          listening
+            ? 'Blind · listening'
+            : `Passage ${formatClock(start_ms)} to ${formatClock(end_ms)}`
+        }
+        back={listening ? null : { to: '/library', label: 'Library' }}
+        progress={listening ? <StepProgress session={session} /> : progress}
+        player={
+          <>
+            {/* No controls and not focusable: start and volume are the only controls. */}
+            <audio ref={audio} preload="auto" tabIndex={-1} aria-hidden="true" className="hidden" />
+            <BlindPlayer
+              status={status}
+              playedMs={played}
+              lengthMs={length}
+              volume={volume}
+              onVolume={setVolume}
+              onStart={() => void start()}
+            />
+          </>
+        }
+        rule={resumed && listening ? RULE_AFTER_RESUME : RULE}
+        workLabel="Blind"
+      >
+        {work}
+      </PracticeLayout>
+    </>
   );
 }
 

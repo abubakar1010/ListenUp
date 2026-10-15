@@ -41,6 +41,12 @@ uploads/<upload id>.<ext>      originals of uploads not converted yet (when stil
 
 `data.json` maps each schema-qualified table name to its rows, with every column except the ones listed under `omitted_columns`. Values become JSON in `export/domain/archive.py`: ids and times as text, ranges as `{lower, upper, bounds}`. Each file is listed with its size and SHA-256.
 
+### Retry-safe archive lifecycle
+
+An expiry that runs before the application deadline raises the platform's `Reschedule` signal. The worker creates a future successor through its postponement path, preserves job arguments and trace context, and succeeds the current attempt. This deliberately bypasses producer deduplication of a key held by the current running job and does not consume failure retries. The deadline is converted to a relative database delay, with a minimum one-second delay to avoid a tight loop under clock skew.
+
+When the build exhausts its retries, its give-up transaction also queues `export.cleanup_archive` for failed or purged exports. Cleanup uses the deterministic archive key and does not depend on the account staying disabled. Pending, building, ready and expired exports are protected. Cleanup has its own resource lock and normal retry budget; when that budget is exhausted it durably queues a new cleanup cycle an hour later, without a producer unique key that could reject the running predecessor. Thus storage recovery eventually removes a rejected archive even after account restoration or purge. Duplicate cleanup is harmless and serialized by its lock.
+
 ### What is left out
 
 - **YouTube media files**, always (D10, CLAUDE.md). Only `source = 'upload'` media uploaded by the learner contributes files; the YouTube item, its media row (video id, title, duration) and its practice are exported as data.

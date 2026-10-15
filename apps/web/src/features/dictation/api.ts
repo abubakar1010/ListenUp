@@ -28,6 +28,13 @@ export function useDictationAttempt(sessionId: string) {
   });
 }
 
+/** Record the first playback, rather than merely opening the Dictation screen. */
+export function recordListenStarted(attemptId: string): Promise<void> {
+  return api<void>(`/dictation/attempts/${encodeURIComponent(attemptId)}/listen`, {
+    method: 'POST',
+  });
+}
+
 /**
  * Save the draft on the version it was based on. A newer draft on the server (another
  * tab or browser) comes back as `SaveConflict` with that draft (#50).

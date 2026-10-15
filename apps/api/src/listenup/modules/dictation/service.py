@@ -23,6 +23,7 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.modules.analytics import service as analytics
 from listenup.modules.content import service as content
 from listenup.modules.dictation import repository
 from listenup.modules.practice import service as practice
@@ -36,6 +37,7 @@ __all__ = [
     "Draft",
     "export_data",
     "open_attempt",
+    "record_listen_started",
     "save_draft",
 ]
 
@@ -141,6 +143,30 @@ async def save_draft(
         draft_text=current.draft_text,
         draft_version=current.draft_version,
         updated_at=current.updated_at.isoformat(),
+    )
+
+
+async def record_listen_started(db: AsyncSession, attempt_id: uuid.UUID) -> None:
+    """Record the first actual playback of an active Dictation attempt.
+
+    The event is unique on the attempt id, so a retry or another play is harmless.
+    """
+    try:
+        attempt = await practice.get_attempt(db, attempt_id)
+    except ProblemError:
+        raise _not_found() from None
+    if attempt.mode is not Step.DICTATION:
+        raise _not_found()
+    session = await practice.require_step(db, attempt.session_id, Step.DICTATION)
+    if attempt.status is not AttemptStatus.ACTIVE:
+        raise ProblemError(409, "attempt_closed", "This attempt has already ended.")
+    await analytics.record_listen_started(
+        db,
+        attempt.user_id,
+        attempt.session_id,
+        session.content_id,
+        attempt.id,
+        mode=Step.DICTATION.value,
     )
 
 

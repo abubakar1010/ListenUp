@@ -2,6 +2,10 @@
 
 Read the section for the area you are changing before you change it. The rules every change needs are in `CLAUDE.md`; these add what a single area needs. When you add a convention, put it here under its area, not in `CLAUDE.md`.
 
+## Jobs (ADR 0015, 0029, 0036)
+
+- A `unique_key` holds while a job with that key waits or runs: `enqueue` returns None meanwhile. A job that also runs on a schedule passes `schedule="<cron>"` to `@job`. A job whose worker died is settled by `platform.recover_stalled_jobs` (back to the queue, or `on_give_up` after its last attempt), so a handler must be safe to run again after doing part of its work.
+
 ## Email (ADR 0017)
 
 - Email goes only through `modules/notifications/service.py` and is sent from background jobs. Never put a secret token in job arguments, because the queue keeps them (ADR 0017). Settings are `LISTENUP_SMTP_*`; tests swap the transport with `notifications.service.use_transport`.
@@ -19,6 +23,8 @@ Read the section for the area you are changing before you change it. The rules e
 - Blind (ADR 0024): the heartbeat rules are the pure `judge` in `modules/blind/domain/listen.py`, and the gist sentence rule is `domain/gist.py` (mirrored in `apps/web/src/features/blind/gist.ts`). Routes take the time from the `server_now` dependency, which tests override. Blind media goes only through `GET /blind/attempts/{id}/media/{token}`, a redirect signed with `signed_download(..., ttl_seconds=...)` for the attempt's window.
 - Dictation drafts save with `PUT /dictation/attempts/{id}/draft` and the `draft_version` the client last saw (409 `draft_conflict` with the current draft); `POST /sessions/{id}/dictation/attempts` resumes the live attempt instead of voiding it (ADR 0025).
 
+- Blind's first network recovery must arrive before five minutes after its last accepted heartbeat (ADR 0024). `Listen.abandonment_deadline()` is shared by heartbeat validation and worker expiry. Granting a resume queues the shorter expiry check; a completed listen is preserved. Dictation's analytics callback runs on media `playing`, not `play`.
+
 ## AI layer (ADR 0028)
 
 - B2 alignment benchmarks import the production pure text helper from `ai/providers/alignment_text.py`; never expand contractions or normalize accents differently in the harness. Boundary validation matches text before measuring timestamps, reports unmatched coverage, and cannot pass incomplete hand labels. Alignment provenance includes window size and quantization, since both can change output for the same model (ADR 0034, NFR-AI-5).
@@ -27,7 +33,22 @@ Read the section for the area you are changing before you change it. The rules e
 
 ## Data export (ADR 0030)
 
+- Expiry handlers raise `Reschedule(deadline)` when not due; the worker postpones the job without producer deduplication or failure-budget consumption. Exhausted export builds queue independent `export.cleanup_archive` work; exhausted cleanup cycles schedule another cycle an hour later, preserving cleanup after restoration or purge.
+
+- Rejected export archives are removed by their deterministic storage key on every build retry, including after the request is marked `account_deleted` and the account is restored or purged. A failed storage deletion must not become an early-return success on the next attempt.
+
 - Data export (ADR 0030): a module that owns learner data offers `export_data(session, learner) -> ExportPart` (from `listenup.platform.export`) in its `service.py`, using `learner_rows(..., omit=(secret columns,))`, and is listed in `modules/export/collect.py`; `test_export.py` fails while a table with `user_id` is missing from the export. YouTube media files are never exported. `POST /me/exports` queues `export.build_archive`; the archive is reached only through `GET /me/exports/{id}/download` (a 307 to a short-lived signed link) and is deleted after `LISTENUP_EXPORT_KEEP_DAYS`.
+
+## Accounts and deletion (ADR 0017, 0029)
+
+- Every way of signing in ends in `Accounts.complete_sign_in` (`modules/identity/service.py`), which owns the restore step of an account waiting for deletion (409 `account_pending_deletion` until the learner sends `restore: true`). Google sign-in (#32) must call it too.
+- A disabled account reaches nothing: `identity.resolve_auth_session` returns a learner only while `users.status = 'active'`. Background work that must not run for a deleted account checks `identity.service.account_is_active` (the export build does).
+- The purge (`identity.purge_account`) deletes storage under `users/<id>/` first, then the `identity.users` row, then performs a final prefix sweep before it marks the request completed. A failed final sweep leaves the request at `storage_deleted`; retries preserve its earlier row-count report. Every learner table must be deleted with the user (a foreign key to `identity.users`, or to a parent that has one, with `ON DELETE CASCADE`), so a new table needs no purge code; `test_account_deletion.py` fails while any row with the learner's `user_id` survives. A module that keeps a learner's files outside `users/<id>/` needs its own step in the purge. Rate counters about a learner use keys ending in `:user:<id>` (`user_key` in `platform/rate_limit.py`), which the purge removes.
+- Password reset and account deletion both lock live reset-token rows before the learner's `identity.users` row. Keep that order when either flow changes; the concurrency regression in `test_account_deletion.py` proves they cannot deadlock.
+
+## Analytics (ADR 0035)
+
+- Product events (PRD 8.2) are recorded on the server through `modules/analytics/service.py`, one call per place where the event happens, inside the request transaction that makes the change. Never insert into `ops.analytics_events` directly, and never put personal data or learner text in an event (a mark keeps only a learner-scoped HMAC of its normalised phrase). A repeat of the same (event, subject, step) is ignored, so callers need no checks of their own. Dictation records `listen_started` through its authenticated endpoint on the first successful media play; opening the screen is not a listen. Marks, cards, Shadow rounds and Dictation submission call `record_mark_created`, `record_card_created`, `record_shadow_round_completed` and `record_dictation_replays` when they are built. Blind queues a delayed expiry check so a vanished browser is still voided and recorded. The analytics module imports no other module. The success-metrics report is `scripts/analytics_report.py`, run as `listenup_readonly`, and refuses ranges that extend beyond `--as-of`.
 
 ## Operations: telemetry and backups (ADR 0031, 0032)
 
@@ -41,8 +62,8 @@ Read the section for the area you are changing before you change it. The rules e
 - Account transitions use `auth/session.changeSession`: cancel outstanding reads before publishing sign-in, sign-out or a completed password reset. The query client clears private queries and mutation results whenever `/me` identifies a different learner or signs out (NFR-SEC-2). The protected subtree is keyed by learner id so account replacement also drops private notices and closes the previous live-events connection. Do not replace `me` directly from an authentication mutation; an older `/me` response could otherwise undo the transition.
 - Only authentication mutations that synchronously publish their own session use `meta: { changesSession: true }`. Other mutations keep their originating account generation through completion; stale success, error and settlement callbacks are suppressed. Keep cache writes in the synchronous part of callbacks; a callback that awaits additional work must independently check its account scope before later writes. Regression tests cover response ordering, callback settlement and reuse of mutation options.
 - Confirmations use `ConfirmDialog` (`src/components/ConfirmDialog.tsx`): focus starts on the safe action, stays inside, and Escape cancels. Session data lives under the `['sessions']` query key (`src/features/session/api.ts`).
-- Routes live in `src/App.tsx` (lazy pages; guards `RequireAuth` and `RedirectIfSignedIn` in `src/app/guards.tsx`). Design tokens are Tailwind theme variables in `src/index.css` (`bg-surface-raised`, `text-ink-muted`, `text-title`). Show API errors with `ErrorPanel` (ADR 0018). Live events map to query keys in `queryKeysForEvent` in `src/app/guards.tsx`.
+- Routes live in `src/App.tsx` (lazy pages; guards `RequireAuth` and `RedirectIfSignedIn` in `src/app/guards.tsx`). Design tokens are Tailwind theme variables in `src/index.css` (`bg-surface-raised`, `text-ink-muted`, `text-title`). Show API errors with `ErrorPanel` (ADR 0018). Live events map to query keys in `queryKeysForEvent` in `src/app/guards.tsx`. A live event that ends the stream (`account.disabled`) is listed in `STREAM_ENDING_EVENTS` on the server, so a replay ends it too.
 - The passage picker (#42, ADR 0026) draws the server's peaks without wavesurfer.js: the rules are pure functions in `src/features/session/passage.ts`, the state is the reducer in `passageState.ts`, and the handles are `role="slider"` elements in `Waveform.tsx`. Playwright does not follow redirects for routed requests, so e2e fakes answer `/api/v1/media/{id}` and `/peaks` directly.
 - Drafts and marks save through `src/lib/autosave` (`useAutosave`, `SaveStatus`): a local copy at once, a server save 2 s after the last edit on the server's version, `SaveConflict` on a stale version (ADR 0025). The Dictation player's control policy is `src/features/dictation/policy.ts`; Blind's playback policy and heartbeat protocol are in `src/features/blind/listen.ts`, and it reports a leave with `api(..., {keepalive: true})` because sendBeacon cannot send the CSRF header.
 - Clip notices (`src/features/content/ClipNotices.tsx`) turn `content.ready` into a polite live-region notice that never takes focus and waits while a `/sessions/` page is open. Upload refusals map to messages in `src/features/library/refusals.ts`.
-- Account settings live at `/settings` (`src/features/account/SettingsPage.tsx`); each section is its own component (`DataExportSection.tsx`).
+- Account settings live at `/settings` (`src/features/account/SettingsPage.tsx`); each section is its own component (`DataExportSection.tsx`, `DeleteAccountSection.tsx`).

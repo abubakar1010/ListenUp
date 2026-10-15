@@ -34,6 +34,20 @@ def listen() -> Listen:
     return Listen.start(START, END, T0)
 
 
+@pytest.mark.parametrize(
+    "gap, action", [(299_999, Action.RESUME), (300_000, Action.STOP), (300_001, Action.STOP)]
+)
+def test_first_network_recovery_has_a_five_minute_deadline(gap: int, action: Action) -> None:
+    verdict = judge(
+        listen(),
+        Beat(START, PlayerState.INTERRUPTED, interruption=Interruption.NETWORK),
+        at(gap),
+    )
+    assert verdict.action is action
+    if action is Action.STOP:
+        assert verdict.void_reason is VoidReason.MISSED_HEARTBEAT
+
+
 def play(state: Listen, *beats: tuple[int, int]) -> Listen:
     """Send (seconds after T0, position after the passage start) beats that must pass."""
     for when, position in beats:
@@ -394,8 +408,14 @@ def test_the_browser_cannot_report_server_reasons() -> None:
         client_void(listen(), VoidReason.TOO_FAST)
 
 
+def test_initial_media_window_covers_the_five_minute_recovery() -> None:
+    assert listen().media_deadline() > at(300_000 + END - START)
+
+
 def test_the_media_deadline_is_the_passage_plus_waiting_and_grace() -> None:
-    assert listen().media_deadline() == at(END - START + BUFFERING_BUDGET_MS + MEDIA_GRACE_MS)
+    assert listen().media_deadline() == at(
+        END - START + BUFFERING_BUDGET_MS + MEDIA_GRACE_MS + 300_000
+    )
 
 
 def test_a_resume_moves_the_media_deadline() -> None:

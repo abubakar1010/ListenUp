@@ -1,10 +1,12 @@
 """Application settings, read from environment variables prefixed with LISTENUP_."""
 
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+LOCAL_ANALYTICS_HMAC_KEY = "listenup-local-analytics-key-change-me"
 
 
 class Settings(BaseSettings):
@@ -52,6 +54,9 @@ class Settings(BaseSettings):
     password_reset_minutes: int = 60  # how long an emailed reset link works
     password_reset_ip_limit: int = 10  # reset requests (and, separately, resets) per IP per hour
     password_reset_email_limit: int = 3  # reset emails per address per hour
+    # Account deletion (FR-ACC-4, DR-1, D9): a deleted account is disabled at once and
+    # can be restored by signing in for this many days; then the purge job removes it.
+    account_deletion_grace_days: int = 7
 
     # File uploads (FR-CI-1, FR-CI-3, D5). Sizes are binary: 500 MB is 500 MiB, as
     # operating systems show file sizes.
@@ -74,6 +79,13 @@ class Settings(BaseSettings):
     export_daily_limit: int = 3
     export_keep_days: int = 7
     export_link_seconds: int = 120
+
+    # Product analytics (#101, ADR 0035). Mark phrases are keyed with this secret and
+    # the learner id before they reach the events table. Keep it stable across API
+    # instances and deploys: changing it breaks repeat-failure comparisons.
+    analytics_hmac_key: SecretStr = Field(
+        default=SecretStr(LOCAL_ANALYTICS_HMAC_KEY), min_length=32
+    )
 
     # Where media workers write source and converted files while a job runs; the
     # system's temporary directory when unset. Each job removes its own files.
@@ -127,6 +139,17 @@ class Settings(BaseSettings):
         if self.cookie_secure is not None:
             return self.cookie_secure
         return self.environment not in ("local", "test")
+
+    @model_validator(mode="after")
+    def require_production_analytics_key(self) -> Self:
+        if (
+            self.environment not in ("local", "test")
+            and self.analytics_hmac_key.get_secret_value() == LOCAL_ANALYTICS_HMAC_KEY
+        ):
+            raise ValueError(
+                "LISTENUP_ANALYTICS_HMAC_KEY must be set outside local and test environments"
+            )
+        return self
 
 
 @lru_cache

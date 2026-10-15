@@ -11,6 +11,7 @@ from typing import Any
 from alembic import context
 from sqlalchemy import create_engine, text
 
+from listenup.modules.analytics import models as _analytics_models  # noqa: F401
 from listenup.modules.blind import models as _blind_models  # noqa: F401
 from listenup.modules.content import models as _content_models  # noqa: F401
 from listenup.modules.dictation import models as _dictation_models  # noqa: F401

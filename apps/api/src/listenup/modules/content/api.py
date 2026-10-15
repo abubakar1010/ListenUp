@@ -7,9 +7,11 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from listenup.modules.blind import service as blind_service
 from listenup.modules.content import schemas, service
 from listenup.modules.content.service import UploadsDep
 from listenup.modules.identity.service import CurrentLearner
+from listenup.platform.clock import server_now
 from listenup.platform.database import DbSession
 from listenup.platform.idempotency import IdempotencyKeyHeader, request_fingerprint, run_once
 
@@ -167,7 +169,12 @@ async def get_content(
 _MEDIA_RESPONSES: dict[int | str, dict[str, Any]] = {
     307: {"description": "Redirect to a short-lived signed storage URL"},
     404: {"description": "No item of yours uses this media object"},
-    409: {"description": "Not playable yet (`media_not_ready`)"},
+    409: {
+        "description": (
+            "Not playable yet (`media_not_ready`) or blocked by an unfinished Blind listen "
+            "(`blind_in_progress`)"
+        )
+    },
 }
 
 
@@ -187,6 +194,8 @@ async def play_media(
 ) -> RedirectResponse:
     """The playback file. Redirects to a signed storage URL that serves range requests,
     so the player starts on the first bytes and seeks without downloading everything."""
+    content_ids = await service.learner_content_ids_for_media(session, learner, media_object_id)
+    await blind_service.require_whole_clip_available(session, learner, content_ids, server_now())
     return _redirect(await service.media_url(session, uploads.storage, learner, media_object_id))
 
 

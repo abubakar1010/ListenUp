@@ -75,12 +75,15 @@ class Owned:
 
     B gets `status` (404, as if it did not exist) with problem `code`, and nothing of
     A's changes. `params` fills the path template; `body` is the JSON body, if any.
+    `owner_status` and `owner_code` allow a GET to specify A's expected refusal.
     """
 
     code: str
     params: Params = no_params
     body: Body | None = None
     status: int = 404
+    owner_status: int | None = None
+    owner_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +119,12 @@ def _usage_counts_only_b(world: World, response: httpx.Response) -> str | None:
     return None if used == 0 else f"B's storage use is {used}, which counts A's uploads"
 
 
+def _deletion_summary_counts_only_b(world: World, response: httpx.Response) -> str | None:
+    found = response.json()
+    expected = {"clips": 0, "practice_sessions": 0, "cards": 0, "recordings": 0}
+    return None if found == expected else f"B's deletion summary counts A's data: {found}"
+
+
 def _new_upload(world: World) -> dict[str, object]:
     return {"filename": "b-clip.mp3", "content_type": "audio/mpeg", "size_bytes": 1_000_000}
 
@@ -139,6 +148,11 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         "authorised by the one-time token from the email, not by a login session"
     ),
     ("GET", "/api/v1/me"): Scoped(a_sees=lambda w: [w.a.user_id]),
+    ("GET", "/api/v1/me/deletion-summary"): Scoped(check=_deletion_summary_counts_only_b),
+    # B can only ever delete B's own account; with a wrong password nothing happens.
+    ("DELETE", "/api/v1/me"): Scoped(
+        status=403, body=lambda w: {"password": "not B's password", "confirm": True}
+    ),
     # -- content: uploads and intake ---------------------------------------------------
     ("GET", "/api/v1/uploads/usage"): Scoped(check=_usage_counts_only_b),
     ("POST", "/api/v1/uploads"): Scoped(status=201, body=_new_upload),
@@ -207,6 +221,9 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ("POST", "/api/v1/sessions/{session_id}/dictation/attempts"): Owned(
         "session_not_found", params=lambda w: {"session_id": w.a.sessions["dictation"]}
     ),
+    ("POST", "/api/v1/dictation/attempts/{attempt_id}/listen"): Owned(
+        "attempt_not_found", params=lambda w: {"attempt_id": w.a.dictation_attempt_id}
+    ),
     ("PUT", "/api/v1/dictation/attempts/{attempt_id}/draft"): Owned(
         "attempt_not_found",
         params=lambda w: {"attempt_id": w.a.dictation_attempt_id},
@@ -214,7 +231,10 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ),
     # -- media -------------------------------------------------------------------------
     ("GET", "/api/v1/media/{media_object_id}"): Owned(
-        "media_not_found", params=lambda w: {"media_object_id": w.a.media_id}
+        "media_not_found",
+        params=lambda w: {"media_object_id": w.a.media_id},
+        owner_status=409,
+        owner_code="blind_in_progress",
     ),
     ("GET", "/api/v1/media/{media_object_id}/peaks"): Owned(
         "media_not_found", params=lambda w: {"media_object_id": w.a.media_id}
