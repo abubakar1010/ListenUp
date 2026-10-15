@@ -247,6 +247,12 @@ def ref_count(migrated_url: str, media_id: uuid.UUID) -> int | None:
 
 def test_the_deletion_review_counts_what_will_go(client: TestClient, migrated_url: str) -> None:
     _, _, world = signed_in_learner_with_data(client, migrated_url)
+    # Summary counts must work without widening the API's append-only analytics
+    # rights after analytics is installed alongside account deletion.
+    with psycopg.connect(migrated_url) as conn:
+        assert conn.execute(
+            "SELECT has_table_privilege('listenup_api', 'ops.analytics_events', 'SELECT')"
+        ).fetchone() == (False,)
 
     response = client.get("/api/v1/me/deletion-summary")
 

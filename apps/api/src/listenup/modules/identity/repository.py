@@ -505,7 +505,9 @@ async def deletion_requested_at(session: AsyncSession, user_id: uuid.UUID) -> da
     return requested
 
 
-async def count_learner_rows(session: AsyncSession, user_id: uuid.UUID) -> dict[str, int]:
+async def count_learner_rows(
+    session: AsyncSession, user_id: uuid.UUID, *, summary_only: bool = False
+) -> dict[str, int]:
     """Rows of the learner in every application table, by table (for the purge report).
 
     Found from the catalog, so a table added later is counted without changing this:
@@ -520,8 +522,11 @@ async def count_learner_rows(session: AsyncSession, user_id: uuid.UUID) -> dict[
             ON t.table_schema = c.table_schema AND t.table_name = c.table_name
          WHERE t.table_type = 'BASE TABLE' AND c.column_name IN ('user_id', 'uploaded_by')
            AND c.table_schema IN ('identity', 'content', 'practice', 'grading', 'ops')
+           AND (:summary_only IS FALSE
+                OR c.table_name IN ('contents', 'sessions', 'cards', 'recordings'))
          ORDER BY 1, 2, 3
-        """)
+        """),
+        {"summary_only": summary_only},
     )
     tables = [(schema, table, column) for schema, table, column in columns]
     counts: dict[str, int] = {"identity.users": 1}
@@ -542,7 +547,9 @@ async def count_learner_rows(session: AsyncSession, user_id: uuid.UUID) -> dict[
 
 async def deletion_summary(session: AsyncSession, user_id: uuid.UUID) -> dict[str, int]:
     """Learner-facing counts for the account-deletion review page (UX-06)."""
-    rows = await count_learner_rows(session, user_id)
+    # The API cannot read append-only analytics tables. Only count the data this
+    # screen displays; the worker's purge audit still inventories every table.
+    rows = await count_learner_rows(session, user_id, summary_only=True)
     return {
         "clips": rows.get("content.contents", 0),
         "practice_sessions": rows.get("practice.sessions", 0),
