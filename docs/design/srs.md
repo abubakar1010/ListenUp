@@ -349,6 +349,12 @@ The system stores seven kinds of data, all owned by one learner, and must meet t
 
 ### 8.2 Performance
 
+Development checks may run locally or in GitHub Actions. Actual-deployment latency
+and capacity validation is a mandatory pre-launch gate; during development it may
+be tracked as deferred and unverified, never passed by inference from a CI runner.
+Targets remain unchanged; see [ADR 0039](../adr/0039-performance-validation-before-launch.md)
+and [launch tracker #155](https://github.com/abubakar1010/ListenUp/issues/155).
+
 | ID | Requirement | Target |
 | --- | --- | --- |
 | NFR-PERF-1 | Playback starts after a step opens | Within 2 seconds |

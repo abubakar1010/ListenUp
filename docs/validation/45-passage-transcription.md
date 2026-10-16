@@ -3,12 +3,24 @@
 Branch: `feat/45-passage-transcription`, based on main `598eccad861e00e28baa0faf16d6902e9057631d`.
 Dependencies #42 and #43 were merged in PR #126 (merge `035d6ea4158ee8bdbe857cd033a06a44d5d03374`), which is an ancestor of this base. Their issue statuses are not blockers.
 
+## Current development / launch status
+
+PR #154 merged at `f2220fbb85033e24b21612e31729299bdb799d04`; issue #45 was
+closed at the owner's request. Under the subsequently owner-approved
+[ADR 0039](../adr/0039-performance-validation-before-launch.md), actual-server
+performance validation is **deferred until staging — unverified**, tracked in
+[pre-launch gate #155](https://github.com/abubakar1010/ListenUp/issues/155).
+The p95 <120 s target remains mandatory before public launch. No qualifying
+measurement has run. Historical test results and TDD deviations below remain
+unchanged; fresh-session independent review was not performed before #154 merged.
+This performance-policy change does not retroactively satisfy that review gap.
+
 ## Acceptance criteria
 
 | Criterion | Named tests | Result / limit |
 | --- | --- | --- |
 | AT-1 / FR-TX-1: a selected three-minute passage reaches transcribed with word timings | `test_selection_queues_intake_transactionally`, `test_passage_reaches_transcribed_and_provenance_round_trip`, `test_three_minute_passage_real_storage_decode_and_configured_gateway`, `test_absolute_word_offsets_and_sentence_boundaries`, `test_padding_clamped` | Functional path tested with real PostgreSQL, S3 and ffmpeg; deterministic provider boundaries. |
-| AT-1 timing: p95 under two minutes after playable on stage 0 | Functional tests above do **not** establish this criterion. The planned `test_stage0_transcription_p95` was not added or run without a stage-0 target and real-model corpus. | **Unverified; blocks completion of the story.** No container timings are presented as stage-0 evidence. |
+| AT-1 timing: p95 under two minutes after playable on stage 0 | Functional tests above do **not** establish this criterion. The planned `test_stage0_transcription_p95` was not added or run without a stage-0 target and real-model corpus. | **Deferred until staging — unverified; blocks public launch via #155.** No container timings are presented as stage-0 evidence. |
 | Learner B processes only uncovered audio | `test_second_learner_reuses_shared_media_only`, `test_overlap_processes_only_gaps`, `test_overlap_reuses_cache_and_retry_keeps_completed_spans`, `test_retry_resumes_after_partial_success_within_one_job` | Shared-media fixture proves reuse across learners; upload fingerprints remain learner-scoped. |
 | FR-TX-3 / NFR-AI-5: origin, provider, model and version retained | `test_passage_reaches_transcribed_and_provenance_round_trip`, `test_absolute_word_offsets_and_sentence_boundaries`, `test_three_minute_passage_real_storage_decode_and_configured_gateway` | Exact stored values and provider configuration asserted. |
 | Exclusion constraint, including concurrency | `test_exclusion_rejects_overlap`, `test_concurrent_database_writers_cannot_overlap`, `test_concurrent_requests_reuse_spans`, `test_cache_span_must_be_finite_nonempty_and_nonnegative` | PostgreSQL constraint tested separately from worker serialization. |
@@ -42,7 +54,7 @@ All mutations stayed outside the working source. Supplemental real-storage, mult
 
 Checked issue #16, issue #112, ADR 0034, the B1 report, deployment runbooks, and the managed environment's configured access. The issues remain open, the documents say the stage-0 server is not provisioned/deployed, and this environment has no configured host/credentials/VPN for it. No reachable target was available to test; no deployment is inferred from local Docker services.
 
-When stage 0 is available, run the real configured `small.en` adapter with warmed media workers against the B1 three-minute corpus, selecting passages immediately after playable. Record host/CPU/thread/model settings, playable timestamps, queue start/wait and committed readiness timestamps, sample count and p95. Include cache misses and normal competing worker load. The acceptance threshold is p95 <120 seconds from playable; provider-only or container benchmarks do not satisfy it. Independent review and required CI are also prerequisites to merge.
+When stage 0 is available, run the real configured `small.en` adapter with warmed media workers against the B1 three-minute corpus, selecting passages immediately after playable. Record host/CPU/thread/model settings, playable timestamps, queue start/wait and committed readiness timestamps, sample count and p95. Include cache misses and normal competing worker load. The acceptance threshold is p95 <120 seconds from playable; provider-only or container benchmarks do not satisfy it. The benchmark evidence requires independent review before launch. Normal story review and CI requirements remain unchanged; the historical merge exception is disclosed above.
 
 ## Final checks
 

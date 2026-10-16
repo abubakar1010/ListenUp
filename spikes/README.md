@@ -1,11 +1,17 @@
 # Technical spikes (epic #5)
 
 Benchmark harness for the spikes that decide model sizes, budgets and go/no-go calls before
-feature work starts. This is not application code: it has its own dependencies so the heavy
-speech libraries stay out of `apps/api`.
+public launch. Preliminary runs may inform feature work during development. This is
+not application code: it has its own dependencies so the heavy speech libraries
+stay out of `apps/api`.
 
-**Numbers must come from the stage 0 server (#16), not a laptop or CI.** The harness records
-the machine's CPU, core count and memory with every result.
+**Launch acceptance numbers must come from the stage 0 server (#16).** Laptop,
+container and GitHub-hosted CI results are preliminary and must be labelled with
+their actual host. GitHub Actions may orchestrate qualifying runs on the stage-0
+server. The harness records the machine's CPU, core count and memory with every
+result. Actual-server performance validation is tracked before launch in #155
+([ADR 0039](../docs/adr/0039-performance-validation-before-launch.md)); model-quality
+requirements are not waived.
 
 ## Setup on the benchmark server
 

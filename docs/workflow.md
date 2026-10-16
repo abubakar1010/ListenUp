@@ -8,7 +8,7 @@ either tool can build or review a story using the prompts below.
 
 ## The steps
 
-1. **Ready (owner).** The issue has acceptance criteria and its dependencies are merged. A story whose blocker is open waits; it is not built around the gap.
+1. **Ready (owner).** The issue has acceptance criteria and its dependencies are merged. A story whose blocker is open waits; it is not built around the gap. Actual-server performance validation may be deferred under the development/staging policy below; implementation dependencies remain blockers.
 2. **Plan (complex stories only).** A story that adds a module, changes the data model, or touches security, privacy or AI grading starts with a plan of 10 to 15 lines: files to change, data changes and migration, risks, and the tests that prove each acceptance criterion. The owner approves or corrects it before any code.
 3. **Build with TDD.** Follow [the testing policy](testing.md): write and run a focused failing test before implementing each behavior, make it pass, then refactor with tests green. Bug fixes start with a failing regression test. Record actual red/green evidence and acceptance-criterion-to-test mappings as you work. Run targeted tests during each cycle; run the full applicable checks once before the pull request (the checklist below). Prepare one pull request for the story; open it when requested, following `CLAUDE.md`.
 4. **CI.** Every push runs the full suites, coverage reporting, the image builds and the vulnerability scan. Pull requests also require at least 90% coverage of changed executable lines in each application. A red build is fixed in the same pull request.
@@ -29,6 +29,35 @@ Verify setup in the actual environment. Claude Code may run its session-start
 hook; Codex follows saved environment installation/startup instructions. Neither
 a hook configuration nor a saved script proves services are running. Check the
 dependencies, database and storage needed by the story before validation.
+
+## Development checks and the pre-launch performance gate
+
+Development may be completed locally or with GitHub Actions before a cloud server
+is provisioned ([ADR 0039](adr/0039-performance-validation-before-launch.md)). All
+applicable functional, security, integration, migration, coverage and independent
+review requirements still apply. Required CI must be green before merge.
+
+GitHub-hosted performance checks detect regressions on the recorded runner; they
+do not establish latency on the eventual deployment. No additional benchmark job
+is introduced by this policy. Existing uninstrumented performance checks remain
+required when applicable. When available, Actions may also orchestrate measurements
+on the actual stage-0 host, for example through a self-hosted runner; the execution
+host, workload and real adapters determine whether the result qualifies.
+
+Only actual-server performance criteria may move from a story's development gate
+to the mandatory **pre-launch gate**. Record each as **deferred until staging —
+unverified**, link its unchanged target and evidence requirements to the open
+[launch validation tracker #155](https://github.com/abubakar1010/ListenUp/issues/155),
+and retain the gap in the story's validation record and PR. A development story may
+then close without claiming that criterion passed. Missing functional evidence,
+security tests, implementation dependencies or model-quality validation cannot be
+waived through this exception.
+
+Before public launch, provision the server (#16), deploy the release candidate
+(#112), run the applicable System Design §12 benchmarks and end-to-end §1 targets,
+and independently review the recorded evidence. The release owner verifies tracker
+#155 is satisfied; an absent server, failed result or missing evidence blocks launch.
+This is a documented release gate, not an automated GitHub deployment protection.
 
 ## Choosing the model
 
@@ -96,7 +125,7 @@ PR. A review-only session remains read-only unless the owner changes its task.
 
 Before opening the pull request:
 
-- [ ] Every acceptance criterion maps to a named test, including relevant boundary, denial and failure cases, or an appropriate documentation-only check; unmet criteria are listed and block completion of the story.
+- [ ] Every acceptance criterion maps to a named test, including relevant boundary, denial and failure cases, or an appropriate documentation-only check; unmet criteria are listed and block completion of the story, except actual-server performance criteria explicitly deferred and tracked under the policy above.
 - [ ] Each behavior change has actual red/green evidence; bug fixes have a regression test observed failing before the fix. Applicability notes follow `docs/testing.md`.
 - [ ] Changed-code coverage meets the gate; uncovered branches and assertion quality have been reviewed. Skipped or blocked checks are disclosed and required checks must pass before merge.
 - [ ] Backend changed: `uv run ruff format --check .`, `uv run ruff check .`, `uv run mypy`, `uv run lint-imports`, then the full coverage and uninstrumented performance commands in `docs/testing.md` with PostgreSQL and S3 required for integration tests.
