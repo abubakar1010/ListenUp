@@ -233,7 +233,8 @@ CREATE TRIGGER contents_touch BEFORE UPDATE ON content.contents
 CREATE TABLE content.passage_transcripts (
   id              uuid PRIMARY KEY,
   media_object_id uuid NOT NULL REFERENCES content.media_objects ON DELETE CASCADE,
-  span            int4range NOT NULL CHECK (NOT isempty(span) AND lower(span) >= 0),
+  span            int4range NOT NULL CHECK (NOT isempty(span) AND NOT lower_inf(span)
+                                            AND NOT upper_inf(span) AND lower(span) >= 0),
   origin          text NOT NULL CHECK (origin IN ('creator_captions', 'generated')),
   status          text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'failed')),
   words           text[] NOT NULL DEFAULT '{}',
@@ -273,7 +274,7 @@ CREATE TABLE content.transcript_corrections (
 ```
 
 - **Why corrections are per learner.** Transcripts of a YouTube video are shared, so one learner's dispute (FR-TX-4) must not change what another learner is scored against. Corrections are an overlay applied when that learner's Dictation is scored. An admin can promote a correction to the shared transcript when several learners agree.
-- **Reading a passage.** A session's passage may be covered by more than one cached span. The transcript service selects the rows whose `span && passage` (one GiST index lookup) and concatenates their words in time order.
+- **Reading a passage.** A session's passage may be covered by more than one cached span. The transcript service selects ready rows whose `span && passage` (one GiST index lookup), verifies complete coverage, and concatenates words starting inside the passage in time order. Word times are absolute media milliseconds, with final ends bounded by the passage. Failed spans do not provide coverage and do not prevent retry. Cache spans must be finite ([ADR 0038](../adr/0038-passage-transcription-cache.md)).
 - **Upload privacy.** An upload's fingerprint includes the uploader's id, so identical files from two learners never share a row. Confirmation stores a provisional `upload:<user id>:pending:<upload id>` fingerprint; conversion streams SHA-256 and removes a duplicate in favour of the older item. Conversion deletes the original after storing playback and peaks; both are under `users/<user id>/media/<media id>/` ([ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md), [ADR 0022](../adr/0022-upload-conversion-dedup-and-media-delivery.md)).
 - **Upload accounting and progress.** The cap counts playback bytes for playable clips, the original while preparing or while an upload can still be confirmed (24 h), and zero for failed clips. `queued_at` marks placement on the shared lane; `media_objects.stage` records checking/converting/saving, while the API derives queued/waiting and queue position. A removed duplicate resolves to 410 `duplicate_upload` with its retained item; another learner gets 404 ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)).
 - **Why NO ACTION, not RESTRICT.** Both refuse to delete media that a content item still uses, but RESTRICT checks at once, so deleting an account failed when the cascade removed the learner's uploaded media before their content rows. NO ACTION checks at the end of the statement, after the cascade (migration 0005).

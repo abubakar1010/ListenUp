@@ -55,6 +55,8 @@ RETRY_MILLISECONDS = 3000
 class EventType(StrEnum):
     JOB_PROGRESS = "job.progress"
     CONTENT_READY = "content.ready"
+    TRANSCRIPT_READY = "transcript.ready"
+    TRANSCRIPT_FAILED = "transcript.failed"
     GRADE_READY = "grade.ready"
     ATTEMPT_VOIDED = "attempt.voided"
     EXPORT_READY = "export.ready"  # a data export finished: ready or failed (#92)

@@ -439,7 +439,11 @@ async def start_plan(
                 "The part you chose ends after the clip does. Choose an end time within the clip.",
                 duration_ms=item.duration_ms,
             )
-    return await start_session(db, learner, content_id, passage, entry)
+    from listenup.modules.transcript import service as transcript
+
+    session = await start_session(db, learner, content_id, passage, entry)
+    await transcript.queue_passage(db, session)
+    return session
 
 
 @dataclass(frozen=True)
