@@ -75,3 +75,23 @@ def test_empty_word_timing_is_rejected():
     )
     with pytest.raises(ValueError, match="empty"):
         pack(transcript, (0, 10000))
+
+
+@pytest.mark.parametrize("title", ["Dr.", "Mr.", "Mrs.", "Ms.", "Prof.", "Rev."])
+def test_person_titles_do_not_end_sentences(title):
+    transcript = result().model_copy(
+        update={
+            "segments": (
+                TranscriptSegment(
+                    start=0,
+                    end=2,
+                    text="",
+                    words=tuple(
+                        TimedWord(text=word, start=i * 0.3, end=i * 0.3 + 0.2, confidence=0.9)
+                        for i, word in enumerate([title, "Jones", "arrived.", "Next."])
+                    ),
+                ),
+            )
+        }
+    )
+    assert pack(transcript, (0, 10000)).sentence_starts == [0, 3]

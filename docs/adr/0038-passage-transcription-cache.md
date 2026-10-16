@@ -22,7 +22,8 @@ Migration 0017 creates the designed `content.passage_transcripts` table, with fi
 nonempty half-open millisecond spans and the GiST exclusion constraint for non-failed
 rows. Words have absolute media timestamps, confidence scaled to 0–1000, and sentence
 start indices derived from sentence-ending punctuation across provider segments;
-acoustic chunk boundaries do not by themselves start a new sentence. Each ready
+acoustic chunk boundaries do not by themselves start a new sentence. Common
+person titles (Dr., Mr., Mrs., Ms., Prof. and Rev.) do not end a sentence. Each ready
 row retains the actual provider, model, version and `generated` origin. Empty output is valid coverage of
 silence. Empty, invalid or unordered word timings are rejected rather than stored.
 The cache enforces non-null confidence values in 0–1000, valid non-null sentence

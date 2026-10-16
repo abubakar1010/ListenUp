@@ -115,7 +115,7 @@ Packing plus the job/read suite passed all 26 focused tests after the fix. The
 backend coverage suite is rerun for this source change; the prior 1,079-test run
 is retained as intermediate evidence, not the final result.
 
-### Final reconciliation validation
+### Reconciliation validation before the final title guard
 
 - Backend format/lint pass (254 files), strict mypy passes (135 source files), and
   all six import contracts pass.
@@ -149,3 +149,15 @@ is retained as intermediate evidence, not the final result.
   new commit and fresh-session independent review remain separate checks.
 - Stage-0 p95 is still unavailable/unverified for the reasons and measurement
   procedure above; neither local wall-clock results nor deterministic AI establish it.
+
+
+### Final title-abbreviation regression
+
+`uv run pytest tests/unit/test_transcript_packing.py -q` observed **six failures,
+five passes** before the title guard: each case of
+`test_person_titles_do_not_end_sentences` (Dr., Mr., Mrs., Ms., Prof., Rev.) produced
+an extra sentence boundary before the person's name. The shared punctuation helper
+now excludes these common person titles. Packing plus the job/read suite then
+passed **32 tests**. This is an additional observed Red → Green cycle, not a
+supplemental test-first claim. The full final-state backend/CI results are recorded
+in the PR after revalidation; the 1,081-test result above predates this small guard.
