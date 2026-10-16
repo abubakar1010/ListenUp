@@ -43,6 +43,7 @@ READY_FILE = Path("/tmp/listenup-worker-ready")
 JOB_MODULES: list[str] = [
     "listenup.modules.identity.jobs",
     "listenup.modules.content.jobs",
+    "listenup.modules.transcript.jobs",
     "listenup.modules.blind.jobs",
     "listenup.modules.export.jobs",
 ]

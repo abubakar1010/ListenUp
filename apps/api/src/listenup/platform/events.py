@@ -55,6 +55,8 @@ RETRY_MILLISECONDS = 3000
 class EventType(StrEnum):
     JOB_PROGRESS = "job.progress"
     CONTENT_READY = "content.ready"
+    TRANSCRIPT_READY = "transcript.ready"
+    TRANSCRIPT_FAILED = "transcript.failed"
     GRADE_READY = "grade.ready"
     ATTEMPT_VOIDED = "attempt.voided"
     EXPORT_READY = "export.ready"  # a data export finished: ready or failed (#92)
@@ -453,7 +455,8 @@ def events_router(learner: Callable[..., Any]) -> APIRouter:
             200: {
                 "description": (
                     "A Server-Sent Events stream of the learner's events: "
-                    "job.progress, content.ready, grade.ready, attempt.voided, export.ready, "
+                    "job.progress, content.ready, transcript.ready, transcript.failed, "
+                    "grade.ready, attempt.voided, export.ready, "
                     "account.disabled (the stream then ends) and resync."
                 ),
                 "content": {"text/event-stream": {"schema": {"type": "string"}}},

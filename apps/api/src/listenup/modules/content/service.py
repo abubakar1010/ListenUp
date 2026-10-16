@@ -573,3 +573,26 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
         ),
         files=tuple(files),
     )
+
+
+@dataclass(frozen=True)
+class TranscriptionSource:
+    media_id: uuid.UUID
+    duration_ms: int
+    playback_key: str
+
+
+async def transcription_source(
+    db: AsyncSession, learner: uuid.UUID, content_id: uuid.UUID
+) -> TranscriptionSource:
+    """Worker input reached through the learner's content, never a caller-supplied key."""
+    item = await get_content(db, learner, content_id)
+    files = await repository.learner_media(db, learner, item.media_object_id)
+    if (
+        files is None
+        or files.status != "playable"
+        or not files.playback_key
+        or item.duration_ms is None
+    ):
+        raise ProblemError(409, "content_not_ready", "Playback is not ready for transcription.")
+    return TranscriptionSource(item.media_object_id, item.duration_ms, files.playback_key)
