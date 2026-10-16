@@ -36,6 +36,7 @@ Read the section for the area you are changing before you change it. The rules e
 - Queue passage transcription through `transcript.service.queue_passage` in the plan-start transaction. Jobs use intake, a per-session unique key and per-media lock; all AI calls remain inside `transcript` through the existing gateway.
 - Cache spans and word timings are absolute, half-open milliseconds. Only ready spans cover audio; process missing windows, preserve committed gaps on retry, and retain each span's provenance. Never weaken the database exclusion constraint to resolve a race.
 - Transcript reads go through `transcript.service.read_passage` with the learner's RLS session and an explicit worker-role database. Ownership and `require_reached(TRANSCRIPT)` precede privileged reads. No direct API-role grant on the cache.
+- `sentence_starts` follows sentence-ending punctuation across provider chunks; do not equate acoustic segments with sentences. Ready cache rows require provider/model/version provenance and valid confidence/sentence-index arrays.
 - `transcript.ready` and `transcript.failed` carry session IDs only. They are invalidation signals and may repeat after retries. Do not expose text through progress events.
 
 ## Data export (ADR 0030)

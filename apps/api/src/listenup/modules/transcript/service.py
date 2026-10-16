@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from listenup.modules.content import service as content
 from listenup.modules.practice import service as practice
 from listenup.modules.transcript import repository
+from listenup.modules.transcript.domain.sentences import ends_sentence
 from listenup.modules.transcript.domain.spans import missing_spans
 from listenup.platform.database import Database
 from listenup.platform.errors import ProblemError
@@ -72,14 +73,14 @@ async def read_passage(
     sentences: list[int] = []
     provenance: list[dict[str, str]] = []
     for row in rows:
-        first = True
         provenance.append({"origin": row.origin, **row.provider_info})
         for i, word in enumerate(row.words):
             if not span[0] <= row.start_ms[i] < span[1]:
                 continue
-            if first or i in row.sentence_starts:
+            # Index zero is implicit at the start of each independently cached span.
+            # It starts a new sentence here only if the preceding span ended one.
+            if not words or (i in row.sentence_starts and (i > 0 or ends_sentence(words[-1]))):
                 sentences.append(len(words))
-            first = False
             words.append(word)
             starts.append(row.start_ms[i])
             ends.append(min(row.end_ms[i], span[1]))

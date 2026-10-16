@@ -46,3 +46,32 @@ def test_invalid_provider_timings_rejected():
 def test_silence_is_valid_cached_coverage():
     packed = pack(result().model_copy(update={"segments": ()}), (0, 10000))
     assert packed.words == packed.sentence_starts == []
+
+
+def test_sentences_follow_punctuation_across_provider_segments():
+    def word(text, start, end):
+        return TimedWord(text=text, start=start, end=end, confidence=0.9)
+
+    transcript = result().model_copy(
+        update={
+            "segments": (
+                TranscriptSegment(start=0, end=1, text="A", words=(word("A", 0, 1),)),
+                TranscriptSegment(
+                    start=1,
+                    end=4,
+                    text="sentence. Next one?",
+                    words=(word("sentence.", 1, 2), word("Next", 2, 3), word("one?", 3, 4)),
+                ),
+            )
+        }
+    )
+    assert pack(transcript, (0, 10000)).sentence_starts == [0, 2]
+
+
+def test_empty_word_timing_is_rejected():
+    word = TimedWord(text="empty", start=1, end=1, confidence=0.9)
+    transcript = result().model_copy(
+        update={"segments": (TranscriptSegment(start=1, end=1, text="empty", words=(word,)),)}
+    )
+    with pytest.raises(ValueError, match="empty"):
+        pack(transcript, (0, 10000))

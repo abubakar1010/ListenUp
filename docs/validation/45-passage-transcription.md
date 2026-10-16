@@ -49,7 +49,7 @@ When stage 0 is available, run the real configured `small.en` adapter with warme
 Results are recorded in the PR after the complete checks finish. Local commands use PostgreSQL 16 and SeaweedFS. The first full coverage attempt had 1050 passes and seven setup errors because `pg_dump`/`pg_restore` were missing after the environment restart; those tools were supplied from the existing PostgreSQL 16 image, and all seven backup tests then passed. That incomplete run is not claimed as the final successful run.
 
 
-Final local results (2026-10-16):
+Original PR local results, before reconciliation (2026-10-16):
 
 - `uv run ruff format --check .`: 252 files formatted; `uv run ruff check .`: passed.
 - `uv run mypy`: passed, 134 source files; `uv run lint-imports`: all six contracts kept.
@@ -63,3 +63,89 @@ Final local results (2026-10-16):
 - `git diff --check`: passed. Migration/model, service boundaries, packed arrays, retries and exclusion enforcement reviewed against the cited design sections.
 
 Coverage gaps were reviewed, not excluded: ffmpeg termination during a cancelled decode, database unlock failure/connection invalidation, nonfinite timing defense, unavailable playback metadata, and no-op late failure settlement have unexecuted defensive paths. The report also marks the contention raise line uncovered although `test_concurrent_requests_reuse_spans` asserts `Reschedule` and verifies that the second request processes only the gap. The read-service executable lines are fully covered. Independent review should inspect these failure boundaries; coverage is not a substitute for their assertions.
+
+## Reconciliation on the existing PR
+
+The follow-up continues from pushed commit `0e4f04f` on PR #154. Its explicit
+learner check, worker-role read boundary, failed-span recovery and lock-contention
+rescheduling are retained. The independently implemented local branch was preserved
+rather than replacing or rewriting this pushed history. Only useful missing
+behavior and validation were brought across.
+
+| Behavior | Named tests | Actual Red | Green |
+| --- | --- | --- | --- |
+| Sentence boundaries within/across acoustic chunks; reject zero-duration words | `test_sentences_follow_punctuation_across_provider_segments`, `test_empty_word_timing_is_rejected` | `uv run pytest tests/unit/test_transcript_packing.py tests/integration/test_transcript_schema.py -q`: two packing failures, nine schema failures, ten passes. Sentence indexes were `[0,1]` rather than `[0,2]`; zero-duration words were accepted. | Same focused suite passed after implementation. |
+| Ready cache confidence, sentence indexes and required provenance | `test_ready_cache_rejects_invalid_confidence_sentence_indexes_and_provenance` | Nine invalid updates were accepted before the new CHECK constraints. An additional focused schema run observed three failures for null array entries and a JSON array posing as provenance (16 passes). | Packing/schema suite: 24 passed after non-null array checks and the provenance-object/type/key checks. |
+| Browser subscription to both named transcript events | `useLiveEvents.test.tsx`: `handles every event type and ignores malformed data` | `pnpm vitest run src/events/useLiveEvents.test.tsx -t 'handles every event type'`: one failed, nine skipped; expected five events, received three. Both transcript events were ignored. | Entire hook file: ten passed after adding both subscriptions. |
+
+Reconciliation tests first passed against the existing job implementation, with no
+changes to job orchestration: `test_slow_provider_does_not_hold_an_idle_transaction`,
+`test_session_deleted_during_provider_call_discards_result`, and
+`test_real_intake_worker_retries_provider_failure`. They are characterization and
+additional boundary evidence, not new test-first claims. The real worker is observed
+at `todo`/attempt 1 after a provider failure and `succeeded`/attempt 2 after retry,
+with exactly one ready cache span and no premature failed marker.
+
+`test_extraction_seeks_to_requested_audio_and_keeps_duration` verifies the actual
+PCM samples and frame count for a 1.25–2.5 second audio window. The existing direct
+SQL concurrency test now observes `pg_blocking_pids` before committing the first
+writer; it passes with a real competing insert blocked on the exclusion constraint.
+`test_cache_complement_covers_each_millisecond_once` adds an independently stated
+Hypothesis set-complement invariant to the existing range arithmetic. These are
+supplemental validation of retained behavior.
+
+The original TDD deviation above remains disclosed. The reconciliation does not
+retroactively claim that notification, cleanup or deactivation code was test-first.
+SSE descriptions and generated API files now list `transcript.ready` and
+`transcript.failed`; no new route is added. ADR 0038 and the database design reflect
+sentence handling and cache integrity checks.
+
+Migration 0017 remains an unmerged PR migration. The local database that had already
+applied an earlier 0017 was downgraded to 0016 before reapplying it, then passed the
+normal upgrade/check/downgrade/upgrade round trip. This is not a deployed-database
+migration procedure.
+
+A final read-path regression, `test_cached_spans_do_not_split_a_continuing_sentence`,
+was then run Red: `uv run pytest tests/integration/test_passage_transcription.py::test_cached_spans_do_not_split_a_continuing_sentence -q`
+failed with `[0,1,2]` instead of `[0,2]`. The service had treated every cache-span
+start as a sentence start even when the sentence continued across the span.
+Packing and reads now share the punctuation rule; the service preserves actual
+stored internal boundaries without adding a false boundary between cached spans.
+Packing plus the job/read suite passed all 26 focused tests after the fix. The
+backend coverage suite is rerun for this source change; the prior 1,079-test run
+is retained as intermediate evidence, not the final result.
+
+### Final reconciliation validation
+
+- Backend format/lint pass (254 files), strict mypy passes (135 source files), and
+  all six import contracts pass.
+- With PostgreSQL 16/SeaweedFS and PostgreSQL 16 client tools on PATH:
+  `LISTENUP_REQUIRE_DB=1 LISTENUP_REQUIRE_S3=1 uv run pytest -m 'not performance' --cov --cov-report=term-missing:skip-covered --cov-report=xml --cov-report=html`
+  passed **1,081 tests**, one performance test deselected, no service skips, in
+  221.85 seconds. This run includes the final sentence-composition fix and all new
+  characterization/property tests.
+- `uv run pytest -m performance --no-cov`: **one passed**. This remains the scoring
+  budget, not a stage-0 transcription measurement.
+- Runtime inventory passes `check-coverage.py` for both applications. Backend
+  changed-line coverage against `origin/main`: **96% (266/276)**. Transcript service
+  executable lines and both transcript domain helpers are fully covered.
+- Reviewed remaining ten changed uncovered lines: unavailable playback metadata;
+  ffmpeg termination during cancellation; unexpected context-error propagation;
+  late no-op failure settlement; nonfinite provider timing; advisory-unlock failure
+  invalidation; and the contention raise line (the contention test still asserts
+  `Reschedule` and verifies gap-only processing). No exclusions/assertions weakened.
+- Migration upgrade/check/downgrade/re-upgrade passes with no drift; the full
+  integration suite also validates migration round trips and a full downgrade.
+- OpenAPI export and pinned-pnpm API generation pass; generated descriptions list
+  both transcript events. No new route, so no access-registry addition is needed.
+- Pinned pnpm 10.28.0: lint, format, typecheck, coverage (**300 tests in 32 files**),
+  build and size (**120.3 KB gzip / 200 KB budget**) pass. Playwright with system
+  Chromium passes **30 tests** against its mocked API.
+- Web diff-cover reports no changed executable lines: the runtime edit adds two
+  array members whose initializer is instrumented on existing line 5. Complete
+  runtime inventory passes; the red/green hook test explicitly asserts delivery of
+  both new event types. Generated API files retain existing coverage policy.
+- `git diff --check` passes. The existing PR's pushed history is retained. CI on the
+  new commit and fresh-session independent review remain separate checks.
+- Stage-0 p95 is still unavailable/unverified for the reasons and measurement
+  procedure above; neither local wall-clock results nor deterministic AI establish it.

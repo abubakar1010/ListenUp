@@ -455,7 +455,8 @@ def events_router(learner: Callable[..., Any]) -> APIRouter:
             200: {
                 "description": (
                     "A Server-Sent Events stream of the learner's events: "
-                    "job.progress, content.ready, grade.ready, attempt.voided, export.ready, "
+                    "job.progress, content.ready, transcript.ready, transcript.failed, "
+                    "grade.ready, attempt.voided, export.ready, "
                     "account.disabled (the stream then ends) and resync."
                 ),
                 "content": {"text/event-stream": {"schema": {"type": "string"}}},

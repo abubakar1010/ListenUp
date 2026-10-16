@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 export const LIVE_EVENT_TYPES = [
   'job.progress',
   'content.ready',
+  'transcript.ready',
+  'transcript.failed',
   'grade.ready',
   'attempt.voided',
   'export.ready',

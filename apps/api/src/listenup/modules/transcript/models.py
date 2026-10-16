@@ -30,6 +30,24 @@ class PassageTranscript(Base):
             "cardinality(words) = cardinality(start_ms) AND cardinality(words) = "
             "cardinality(end_ms) AND cardinality(words) = cardinality(confidence)"
         ),
+        CheckConstraint(
+            "array_position(confidence, NULL) IS NULL "
+            "AND 0 <= ALL(confidence) AND 1000 >= ALL(confidence)"
+        ),
+        CheckConstraint(
+            "array_position(sentence_starts, NULL) IS NULL "
+            "AND 0 <= ALL(sentence_starts) AND cardinality(words) > ALL(sentence_starts)"
+        ),
+        CheckConstraint(
+            "status <> 'ready' OR (jsonb_typeof(provider_info) = 'object' "
+            "AND provider_info ?& ARRAY['provider','model','version'] "
+            "AND jsonb_typeof(provider_info->'provider') = 'string' "
+            "AND length(provider_info->>'provider') > 0 "
+            "AND jsonb_typeof(provider_info->'model') = 'string' "
+            "AND length(provider_info->>'model') > 0 "
+            "AND jsonb_typeof(provider_info->'version') = 'string' "
+            "AND length(provider_info->>'version') > 0)"
+        ),
         ExcludeConstraint(
             ("media_object_id", "="), ("span", "&&"), using="gist", where=text("status <> 'failed'")
         ),

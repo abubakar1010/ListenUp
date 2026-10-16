@@ -144,7 +144,13 @@ describe('useLiveEvents', () => {
     act(() => FakeEventSource.latest.open());
 
     act(() => {
-      for (const type of ['job.progress', 'grade.ready', 'attempt.voided']) {
+      for (const type of [
+        'job.progress',
+        'transcript.ready',
+        'transcript.failed',
+        'grade.ready',
+        'attempt.voided',
+      ]) {
         FakeEventSource.latest.emit(type, { type, resource_id: type });
       }
       FakeEventSource.latest.emit('grade.ready', { type: 'grade.ready' });
@@ -152,6 +158,8 @@ describe('useLiveEvents', () => {
 
     expect(invalidated).toEqual([
       ['resource', 'job.progress'],
+      ['resource', 'transcript.ready'],
+      ['resource', 'transcript.failed'],
       ['resource', 'grade.ready'],
       ['resource', 'attempt.voided'],
     ]);

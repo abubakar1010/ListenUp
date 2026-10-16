@@ -588,3 +588,177 @@ async def test_privileged_caller_still_cannot_read_another_learner(migrated_url,
             assert error.value.code == "session_not_found"
     finally:
         await database.dispose()
+
+
+@pytest.mark.anyio
+async def test_slow_provider_does_not_hold_an_idle_transaction(
+    migrated_url, learner, clip, boundary, monkeypatch
+):
+    from listenup.modules.transcript import jobs
+
+    async def slow_provider(*args, **kwargs):
+        # Deliberate provider latency beyond the test connection's idle budget.
+        # Production workers use the same short-transaction pattern with a 30 s budget.
+        async with await psycopg.AsyncConnection.connect(migrated_url) as conn:
+            await conn.execute("SELECT pg_sleep(0.2)")
+        return result()
+
+    database = Database(
+        conninfo_to_url(migrated_url)
+        + "?options=-crole%3Dlistenup_worker%20-cidle_in_transaction_session_timeout%3D100ms"
+    )
+    monkeypatch.setattr(jobs, "get_gateway", lambda: SimpleNamespace(transcribe=slow_provider))
+    try:
+        session = await start(database, learner, clip[1])
+        await jobs.transcribe_passage(JobDeps(database, None, 1), str(session.id), str(learner))
+        with psycopg.connect(migrated_url) as conn:
+            assert conn.execute(
+                "SELECT status FROM content.passage_transcripts WHERE media_object_id=%s", [clip[0]]
+            ).fetchall() == [("ready",)]
+    finally:
+        await database.dispose()
+
+
+@pytest.mark.anyio
+async def test_session_deleted_during_provider_call_discards_result(
+    migrated_url, learner, clip, boundary, monkeypatch
+):
+    from listenup.modules.transcript import jobs
+
+    database = Database(conninfo_to_url(migrated_url))
+    try:
+        session = await start(database, learner, clip[1])
+
+        async def remove(*args, **kwargs):
+            with psycopg.connect(migrated_url) as conn:
+                conn.execute("DELETE FROM practice.sessions WHERE id=%s", [session.id])
+            return result()
+
+        monkeypatch.setattr(jobs, "get_gateway", lambda: SimpleNamespace(transcribe=remove))
+        await jobs.transcribe_passage(JobDeps(database, None, 1), str(session.id), str(learner))
+        with psycopg.connect(migrated_url) as conn:
+            assert conn.execute(
+                "SELECT count(*) FROM content.passage_transcripts WHERE media_object_id=%s",
+                [clip[0]],
+            ).fetchone() == (0,)
+    finally:
+        await database.dispose()
+
+
+@pytest.mark.anyio
+async def test_real_intake_worker_retries_provider_failure(
+    migrated_url, learner, clip, boundary, monkeypatch
+):
+    import procrastinate
+
+    from listenup.modules.transcript import jobs
+    from listenup.platform.jobs import Lane, app, configure_runtime, set_gate
+
+    with psycopg.connect(migrated_url) as conn:
+        conn.execute("DELETE FROM procrastinate.procrastinate_jobs")
+    database = Database(conninfo_to_url(migrated_url))
+    configure_runtime(database)
+    set_gate(Lane.INTAKE, None)
+    calls = 0
+
+    async def fail_once(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ConnectionError("provider unavailable")
+        return result()
+
+    monkeypatch.setattr(jobs, "get_gateway", lambda: SimpleNamespace(transcribe=fail_once))
+    try:
+        session = await start(database, learner, clip[1])
+        with app.replace_connector(procrastinate.PsycopgConnector(conninfo=migrated_url)):
+            async with app.open_async():
+                await app.run_worker_async(
+                    queues=["intake"], wait=False, install_signal_handlers=False
+                )
+                with psycopg.connect(migrated_url) as conn:
+                    assert conn.execute(
+                        """SELECT status::text,attempts
+                        FROM procrastinate.procrastinate_jobs WHERE args->>'session_id'=%s""",
+                        [str(session.id)],
+                    ).fetchone() == ("todo", 1)
+                    assert conn.execute(
+                        """SELECT count(*) FROM content.passage_transcripts
+                        WHERE media_object_id=%s""",
+                        [clip[0]],
+                    ).fetchone() == (0,)
+                    conn.execute(
+                        "UPDATE procrastinate.procrastinate_jobs SET scheduled_at=now() "
+                        "WHERE args->>'session_id'=%s",
+                        [str(session.id)],
+                    )
+                await app.run_worker_async(
+                    queues=["intake"], wait=False, install_signal_handlers=False
+                )
+                with psycopg.connect(migrated_url) as conn:
+                    assert conn.execute(
+                        """SELECT status::text,attempts
+                        FROM procrastinate.procrastinate_jobs WHERE args->>'session_id'=%s""",
+                        [str(session.id)],
+                    ).fetchone() == ("succeeded", 2)
+                    assert conn.execute(
+                        """SELECT status FROM content.passage_transcripts
+                        WHERE media_object_id=%s""",
+                        [clip[0]],
+                    ).fetchall() == [("ready",)]
+        assert calls == 2
+    finally:
+        await database.dispose()
+
+
+@pytest.mark.anyio
+async def test_cached_spans_do_not_split_a_continuing_sentence(migrated_url, learner, clip):
+    from listenup.ai.ports import TranscriptSegment
+    from listenup.modules.transcript import repository, service
+    from listenup.modules.transcript.packing import pack
+
+    def transcript(words):
+        return result().model_copy(
+            update={
+                "segments": (
+                    TranscriptSegment(
+                        start=0,
+                        end=2,
+                        text="",
+                        words=tuple(
+                            result()
+                            .words[0]
+                            .model_copy(
+                                update={
+                                    "text": word,
+                                    "start": index * 0.3,
+                                    "end": index * 0.3 + 0.2,
+                                }
+                            )
+                            for index, word in enumerate(words)
+                        ),
+                    ),
+                )
+            }
+        )
+
+    database = Database(conninfo_to_url(migrated_url))
+    try:
+        session = await start(database, learner, clip[1], 0, 60000)
+        async with database.transaction(learner) as db:
+            await repository.store(db, clip[0], (0, 30000), pack(transcript(["A"]), (0, 30000)))
+            await repository.store(
+                db,
+                clip[0],
+                (30000, 60000),
+                pack(transcript(["sentence.", "Next."]), (30000, 60000)),
+            )
+            await practice.complete_step(
+                db, await practice.get_session(db, session.id), practice.Step.BLIND
+            )
+        async with database.transaction(learner) as db:
+            data = await service.read_passage(db, database, learner, session.id)
+        assert data.words == ["A", "sentence.", "Next."]
+        assert data.sentence_starts == [0, 2]
+    finally:
+        await database.dispose()
