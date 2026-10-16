@@ -10,6 +10,9 @@ x-backend-env: &backend-env
   LISTENUP_S3_BUCKET: listenup
   LISTENUP_SMTP_HOST: mailpit
   LISTENUP_SMTP_PORT: "1025"
+  LISTENUP_GOOGLE_CLIENT_ID: ${LISTENUP_GOOGLE_CLIENT_ID:-}
+  LISTENUP_GOOGLE_CLIENT_SECRET: ${LISTENUP_GOOGLE_CLIENT_SECRET:-}
+  LISTENUP_GOOGLE_REDIRECT_URI: ${LISTENUP_GOOGLE_REDIRECT_URI:-http://localhost:5173/api/v1/auth/oidc/google/callback}
   # Traces and metrics stay off unless started with LISTENUP_OTEL_ENABLED=true and the
   # observability profile (ADR 0031): Jaeger at :16686, Prometheus at :9090.
   LISTENUP_OTEL_ENABLED: ${LISTENUP_OTEL_ENABLED:-false}

@@ -43,6 +43,58 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/auth/oidc/google/callback': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Callback */
+    get: operations['callback_api_v1_auth_oidc_google_callback_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/auth/oidc/google/restore': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Pending Restore */
+    get: operations['pending_restore_api_v1_auth_oidc_google_restore_get'];
+    put?: never;
+    /** Restore */
+    post: operations['restore_api_v1_auth_oidc_google_restore_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/auth/oidc/google/start': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Start */
+    get: operations['start_api_v1_auth_oidc_google_start_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/auth/password-reset': {
     parameters: {
       query?: never;
@@ -1039,7 +1091,8 @@ export interface components {
       confirm: true;
       /**
        * Password
-       * @description The current password, asked again.
+       * @description Current password, or a fresh Google confirmation cookie.
+       * @default
        */
       password: string;
     };
@@ -1295,12 +1348,24 @@ export interface components {
       /** Detail */
       detail: string;
     };
+    /** PendingRestore */
+    PendingRestore: {
+      /** Deletion Scheduled At */
+      deletion_scheduled_at: string;
+      /** Next Path */
+      next_path: string;
+    };
     /**
      * PlayerState
      * @description What the player says it is doing when it sends a beat.
      * @enum {string}
      */
     PlayerState: 'playing' | 'buffering' | 'interrupted' | 'resuming' | 'ended';
+    /** RestoreGoogle */
+    RestoreGoogle: {
+      /** Restore */
+      restore: boolean;
+    };
     /** SaveDraft */
     SaveDraft: {
       /**
@@ -1608,6 +1673,127 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  callback_api_v1_auth_oidc_google_callback_get: {
+    parameters: {
+      query?: {
+        state?: string;
+        code?: string;
+        error?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      303: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pending_restore_api_v1_auth_oidc_google_restore_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PendingRestore'];
+        };
+      };
+    };
+  };
+  restore_api_v1_auth_oidc_google_restore_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RestoreGoogle'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Me'] | null;
+        };
+      };
+      /** @description Kept deleted; signed out. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  start_api_v1_auth_oidc_google_start_get: {
+    parameters: {
+      query?: {
+        next?: string;
+        purpose?: 'login' | 'reauth';
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      303: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
       };
     };
   };

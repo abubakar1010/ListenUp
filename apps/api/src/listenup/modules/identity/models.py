@@ -123,3 +123,35 @@ class DeletionRequest(Base):
     cancelled_at: Mapped[datetime | None] = mapped_column(Timestamp)
     completed_at: Mapped[datetime | None] = mapped_column(Timestamp)
     failed_at: Mapped[datetime | None] = mapped_column(Timestamp)
+
+
+class OAuthAccount(Base):
+    __tablename__ = "oauth_accounts"
+    __table_args__ = (
+        CheckConstraint("provider IN ('google')"),
+        CheckConstraint("char_length(subject) BETWEEN 1 AND 255"),
+        Index("oauth_accounts_user_idx", "user_id"),
+        {"schema": "identity"},
+    )
+    provider: Mapped[str] = mapped_column(Text, primary_key=True)
+    subject: Mapped[str] = mapped_column(Text, primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("identity.users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+
+
+class OIDCFlow(Base):
+    __tablename__ = "oidc_flows"
+    __table_args__ = (
+        CheckConstraint("purpose IN ('login', 'reauth', 'restore', 'delete')"),
+        Index("oidc_flows_expires_idx", "expires_at"),
+        {"schema": "identity"},
+    )
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary, primary_key=True)
+    browser_hash: Mapped[bytes] = mapped_column(LargeBinary)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("identity.users.id", ondelete="CASCADE")
+    )
+    purpose: Mapped[str] = mapped_column(Text)
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    expires_at: Mapped[datetime] = mapped_column(Timestamp)
+    created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())

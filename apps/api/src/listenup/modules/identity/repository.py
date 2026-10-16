@@ -9,6 +9,9 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.platform.database import set_learner
+from listenup.platform.ids import uuid7
+
 
 @dataclass(frozen=True)
 class Account:
@@ -567,3 +570,57 @@ async def delete_user(session: AsyncSession, user_id: uuid.UUID) -> bool:
         {"id": user_id},
     )
     return deleted is not None
+
+
+async def google_account(session: AsyncSession, subject: str, email: str) -> Account:
+    """Serialize subject and email decisions; the verified provider email is authoritative.
+
+    Existing links always win over email changes. Gone linked identities are retained
+    until cascade purge; their subject cannot resurrect or migrate an expired account.
+    """
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 32))"),
+        {"key": "google:" + subject},
+    )
+    linked = await google_user_id(session, subject)
+    if linked:
+        account = await get_account(session, linked)
+        assert account is not None
+        return account
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 32))"),
+        {"key": "google-email:" + email.casefold()},
+    )
+    await release_email_of_gone_account(session, email)
+    await session.execute(
+        text("""
+        INSERT INTO identity.users (id, email, email_verified_at)
+        VALUES (:id, :email, now()) ON CONFLICT (email) DO NOTHING
+    """),
+        {"id": uuid7(), "email": email},
+    )
+    account = await find_account(session, email)
+    assert account is not None
+    await set_learner(session, account.id)
+    await session.execute(
+        text("""
+        INSERT INTO identity.oauth_accounts (provider, subject, user_id)
+        VALUES ('google', :sub, :id)
+    """),
+        {"sub": subject, "id": account.id},
+    )
+    await session.execute(
+        text("""
+        UPDATE identity.users SET email_verified_at = coalesce(email_verified_at, now())
+         WHERE id = :id
+    """),
+        {"id": account.id},
+    )
+    return account
+
+
+async def google_user_id(session: AsyncSession, subject: str) -> uuid.UUID | None:
+    value: uuid.UUID | None = await session.scalar(
+        text("SELECT identity.google_account(:sub)"), {"sub": subject}
+    )
+    return value

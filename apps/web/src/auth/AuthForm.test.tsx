@@ -174,3 +174,88 @@ describe('signing in to a deleted account (#120)', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
+
+test.each(['/sign-in', '/register'])(
+  'Google sign-in has an accessible link on %s',
+  async (route) => {
+    mockApi({ '/me': SIGNED_OUT });
+    renderWithProviders(<App />, { route: route + '?next=%2Fsettings' });
+    expect(await screen.findByRole('link', { name: 'Continue with Google' })).toHaveAttribute(
+      'href',
+      '/api/v1/auth/oidc/google/start?next=%2Fsettings',
+    );
+  },
+);
+
+test('Google restoration asks explicitly and keeping deleted sends no restore', async () => {
+  const calls: boolean[] = [];
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    if (String(input).endsWith('/me')) return SIGNED_OUT();
+    if (init?.method === 'POST') {
+      calls.push(JSON.parse(String(init.body)).restore);
+      return new Response(null, { status: 204 });
+    }
+    return jsonResponse(200, { deletion_scheduled_at: '2026-10-23T12:00:00Z' });
+  });
+  renderWithProviders(<App />, { route: '/sign-in?google=restore' });
+  expect(await screen.findByRole('dialog', { name: 'Restore your account?' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Keep it deleted' }));
+  expect(await screen.findByRole('status')).toHaveTextContent('Your account stays deleted');
+  expect(calls).toEqual([false]);
+});
+
+test('Google restoration publishes the new session only after explicit Restore', async () => {
+  let restored = false;
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    if (String(input).endsWith('/me')) return restored ? jsonResponse(200, LEARNER) : SIGNED_OUT();
+    if (String(input).includes('/oidc/google/restore')) {
+      if (init?.method === 'POST') {
+        expect(JSON.parse(String(init.body))).toEqual({ restore: true });
+        restored = true;
+        return jsonResponse(200, LEARNER);
+      }
+      return jsonResponse(200, { deletion_scheduled_at: '2026-10-23T12:00:00Z' });
+    }
+    return jsonResponse(200, { items: [] });
+  });
+  renderWithProviders(<App />, { route: '/sign-in?google=restore' });
+  expect(await screen.findByRole('dialog', { name: 'Restore your account?' })).toBeInTheDocument();
+  expect(restored).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Restore my account' }));
+  expect(await screen.findByRole('heading', { name: 'Library', level: 1 })).toBeInTheDocument();
+});
+
+test('Google cancellation is announced and permits retry', async () => {
+  mockApi({ '/me': SIGNED_OUT });
+  renderWithProviders(<App />, { route: '/sign-in?google=cancelled' });
+  expect(await screen.findByRole('status')).toHaveTextContent('Google sign-in was cancelled');
+  expect(screen.getByRole('link', { name: 'Continue with Google' })).toBeInTheDocument();
+});
+
+test('an expired Google restoration is explained without unlocking the account', async () => {
+  mockApi({
+    '/me': SIGNED_OUT,
+    '/auth/oidc/google/restore': () =>
+      problem(400, 'google_auth_failed', 'Start Google sign-in again.'),
+  });
+  renderWithProviders(<App />, { route: '/sign-in?google=restore' });
+  expect(await screen.findByText('Start Google sign-in again.')).toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+test('a restore refusal closes the dialog so Google authentication can start again', async () => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    if (String(input).endsWith('/me')) return SIGNED_OUT();
+    if (init?.method === 'POST')
+      return problem(400, 'google_auth_failed', 'Google confirmation expired. Try again.');
+    return jsonResponse(200, {
+      deletion_scheduled_at: '2026-10-23T12:00:00Z',
+      next_path: '/library',
+    });
+  });
+  renderWithProviders(<App />, { route: '/sign-in?google=restore' });
+  fireEvent.click(await screen.findByRole('button', { name: 'Restore my account' }));
+  expect(await screen.findByText('Google confirmation expired. Try again.')).toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Continue with Google' })).toBeVisible();
+});

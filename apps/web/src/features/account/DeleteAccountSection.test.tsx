@@ -202,3 +202,37 @@ test('its own account.disabled event does not send the deleting tab to sign in',
     vi.unstubAllGlobals();
   }
 });
+
+test('Google deletion confirmation still requires the checkbox and explicit delete', async () => {
+  const deletes = mockAccount(() => jsonResponse(202, { deletion_scheduled_at: UNTIL }));
+  renderWithProviders(<App />, { route: '/settings/delete-account?google=confirmed' });
+  expect(await screen.findByText('Google account confirmed.')).toBeInTheDocument();
+  expect(screen.queryByLabelText('Your password')).not.toBeInTheDocument();
+  expect(deletes).toEqual([]);
+  fireEvent.click(screen.getByRole('button', { name: 'Delete my account' }));
+  expect(deletes).toEqual([]);
+  acknowledgeAndDelete();
+  await waitFor(() => expect(deletes).toEqual([{ password: '', confirm: true }]));
+});
+
+test('deletion offers Google reauthentication without submitting the password form', async () => {
+  mockAccount(() => jsonResponse(500, {}));
+  renderWithProviders(<App />, { route: '/settings/delete-account' });
+  await openConfirmation();
+  expect(screen.getByRole('link', { name: 'Continue with Google' })).toHaveAttribute(
+    'href',
+    '/api/v1/auth/oidc/google/start?purpose=reauth',
+  );
+});
+
+test('an expired Google deletion proof offers Google confirmation again', async () => {
+  mockAccount(() => problem(400, 'google_auth_failed', 'Google confirmation expired. Try again.'));
+  renderWithProviders(<App />, { route: '/settings/delete-account?google=confirmed' });
+  await screen.findByText('Google account confirmed.');
+  acknowledgeAndDelete();
+  expect(await screen.findByText('Google confirmation expired. Try again.')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Continue with Google' })).toHaveAttribute(
+    'href',
+    '/api/v1/auth/oidc/google/start?purpose=reauth',
+  );
+});

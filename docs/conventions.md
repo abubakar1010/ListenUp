@@ -75,3 +75,18 @@ Read the section for the area you are changing before you change it. The rules e
 - Drafts and marks save through `src/lib/autosave` (`useAutosave`, `SaveStatus`): a local copy at once, a server save 2 s after the last edit on the server's version, `SaveConflict` on a stale version (ADR 0025). The Dictation player's control policy is `src/features/dictation/policy.ts`; Blind's playback policy and heartbeat protocol are in `src/features/blind/listen.ts`, and it reports a leave with `api(..., {keepalive: true})` because sendBeacon cannot send the CSRF header.
 - Clip notices (`src/features/content/ClipNotices.tsx`) turn `content.ready` into a polite live-region notice that never takes focus and waits while a `/sessions/` page is open. Upload refusals map to messages in `src/features/library/refusals.ts`.
 - Account settings live at `/settings` (`src/features/account/SettingsPage.tsx`); each section is its own component (`DataExportSection.tsx`, `DeleteAccountSection.tsx`).
+
+## Google authentication (ADR 0039)
+
+- Google callbacks use Authlib and finish through `Accounts.complete_sign_in`.
+  Resolve `(provider, subject)` before a verified-email link; a known subject must
+  never move between users because its email changed. Google-verified email may
+  link a locally unverified password account (owner-approved policy).
+- OIDC callbacks, restoration continuations and deletion proofs use expiring,
+  browser-bound database flows. Consume before external calls/account changes;
+  never put provider tokens, restore proofs or deletion proofs in URLs, logs,
+  exports or browser storage. Reauthentication must match the current linked
+  subject and session, and deletion still needs the final explicit confirmation.
+- Supply `LISTENUP_GOOGLE_CLIENT_ID`, `LISTENUP_GOOGLE_CLIENT_SECRET` and the exact
+  registered `LISTENUP_GOOGLE_REDIRECT_URI` through the API environment. Google
+  sign-in bypasses password lockout, retains IP limits and never silently restores.

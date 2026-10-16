@@ -136,6 +136,18 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         "test_access_cross_learner.py::test_events_of_a_never_reach_b"
     ),
     # -- identity ----------------------------------------------------------------------
+    ("GET", "/api/v1/auth/oidc/google/start"): Public(
+        "begins browser-bound Google authentication; reauth intent separately requires login"
+    ),
+    ("GET", "/api/v1/auth/oidc/google/callback"): Public(
+        "authorized by single-use state, browser binding and validated Google ID token"
+    ),
+    ("GET", "/api/v1/auth/oidc/google/restore"): Public(
+        "requires the expiring browser-bound restoration continuation"
+    ),
+    ("POST", "/api/v1/auth/oidc/google/restore"): Public(
+        "requires CSRF plus the single-use browser-bound restoration continuation"
+    ),
     ("POST", "/api/v1/auth/register"): Public("creates an account; nobody is signed in yet"),
     ("POST", "/api/v1/auth/login"): Public("signs in; nobody is signed in yet"),
     ("POST", "/api/v1/auth/logout"): Public(

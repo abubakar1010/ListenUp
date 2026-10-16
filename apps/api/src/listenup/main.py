@@ -13,6 +13,8 @@ from listenup.modules.dictation import api as dictation_api
 from listenup.modules.export import api as export_api
 from listenup.modules.export.service import build_exports
 from listenup.modules.identity import api as identity_api
+from listenup.modules.identity import google_api
+from listenup.modules.identity.oidc import GoogleOIDC
 from listenup.modules.identity.service import build_accounts, current_learner
 from listenup.modules.library import api as library_api
 from listenup.modules.practice import api as practice_api
@@ -48,6 +50,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.accounts = build_accounts(app.state.database, app.state.rate_limiter, settings)
         app.state.uploads = build_uploads(settings, app.state.storage, app.state.rate_limiter)
         app.state.exports = build_exports(settings, app.state.storage, app.state.rate_limiter)
+        app.state.google = GoogleOIDC(settings, app.state.database)
         app.state.events = EventHub()
         app.state.event_listener = EventListener(settings.database_url, app.state.events)
         app.state.event_listener.start()
@@ -71,6 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api = APIRouter(prefix="/api/v1")
     api.add_api_route("/health", health, methods=["GET"])
     api.include_router(identity_api.router)
+    api.include_router(google_api.router)
     api.include_router(content_api.router)
     api.include_router(library_api.router)
     api.include_router(practice_api.router)

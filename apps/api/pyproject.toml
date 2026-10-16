@@ -18,6 +18,8 @@ dependencies = [
     "opentelemetry-sdk>=1.30",
     "opentelemetry-exporter-otlp-proto-http>=1.30",
     "pyyaml>=6.0",
+    "authlib>=1.6.5",
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
@@ -39,6 +41,7 @@ dev = [
     "types-pyyaml>=6.0",
     "pytest-cov>=7.1.0",
     "diff-cover>=10.6.0",
+    "types-authlib>=1.8.0.20260911",
 ]
 
 [build-system]
@@ -54,6 +57,9 @@ addopts = "-ra"
 markers = ["performance: wall-clock budgets; run without coverage instrumentation"]
 
 [tool.coverage.run]
+# SQLAlchemy's async database calls switch greenlets inside TestClient threads.
+# Trace both so post-await security decisions are measured accurately.
+concurrency = ["thread", "greenlet"]
 branch = true
 # Include modules that no test imports, not just files executed by the suite.
 source = ["src/listenup"]

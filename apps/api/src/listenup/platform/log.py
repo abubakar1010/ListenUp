@@ -74,11 +74,14 @@ def request_id_bound(request_id: str | None) -> Iterator[None]:
 # long token with no "@" is scanned once, not once per character.
 _EMAIL = re.compile(r"(?<![\w.%+-])[\w.%+-]+@[\w-]+(?:\.[\w-]+)+")
 REDACTED_EMAIL = "[email]"
+_OIDC_SECRET = re.compile(
+    r"([?&](?:code|state|nonce|code_verifier|id_token|access_token)=)[^&\s\"']+", re.IGNORECASE
+)
 
 
 def redact(text: str) -> str:
     """Replace email addresses, so a log line never identifies a learner by address."""
-    return _EMAIL.sub(REDACTED_EMAIL, text)
+    return _EMAIL.sub(REDACTED_EMAIL, _OIDC_SECRET.sub(r"\1[redacted]", text))
 
 
 def _redact_value(value: Any) -> Any:
