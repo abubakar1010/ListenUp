@@ -28,6 +28,8 @@ version: 1
 roles:
   transcription:
     - provider: fake
+      local: true
+      trains_on_inputs: false
       model: fake-transcript
 """
 
@@ -83,7 +85,15 @@ def scripted_gateway(
         update={
             "roles": {
                 Role.TRANSCRIPTION: (
-                    ProviderEntry.model_validate({"provider": "scripted", "model": "m", **entry}),
+                    ProviderEntry.model_validate(
+                        {
+                            "provider": "scripted",
+                            "model": "m",
+                            "local": True,
+                            "trains_on_inputs": False,
+                            **entry,
+                        }
+                    ),
                 )
             }
         }
@@ -151,7 +161,7 @@ async def test_transient_errors_are_retried_until_attempts_run_out() -> None:
 @pytest.mark.anyio
 async def test_other_errors_are_not_retried() -> None:
     gateway, adapters, _ = scripted_gateway([ValueError("cannot decode")], retries=3)
-    with pytest.raises(AIUnavailable, match="cannot decode"):
+    with pytest.raises(AIUnavailable, match="no eligible provider"):
         await gateway.transcribe(AUDIO)
     assert adapters[0].calls == 1
 

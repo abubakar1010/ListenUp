@@ -159,3 +159,41 @@ async def test_fake_providers_return_their_ports_schemas(tmp_path: Path) -> None
     assert_schema(generated, TextGeneration[Gist])
     assert generated.value == Gist(summary="a fox jumps", score=3)
     assert generated.provenance.provider == "fake"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "record", recordings("transcription") + recordings("alignment"), ids=lambda r: r["provider"]
+)
+async def test_recorded_speech_outputs_pass_gateway_validation(record):
+    from listenup.ai.config import AIConfig
+    from listenup.ai.gateway import AIGateway
+    from listenup.ai.ports import Role
+    from listenup.ai.registry import Registry
+    from tests.unit.ai.accounting_fake import FakeAccounting
+
+    role = Role(record["port"])
+    entry = ProviderEntry(
+        provider=record["provider"], model=record["model"], local=True, trains_on_inputs=False
+    )
+    registry = Registry(
+        transcription={
+            entry.provider: lambda e: FasterWhisperTranscription(
+                e, engine_factory=lambda _: ReplayWhisper(record)
+            )
+        },
+        alignment={
+            entry.provider: lambda e: Wav2Vec2CtcAlignment(
+                e, engine_factory=lambda _: ReplayCtc(record)
+            )
+        },
+    )
+    gateway = AIGateway(
+        AIConfig(version=1, roles={role: (entry,)}), registry=registry, accounting=FakeAccounting()
+    )
+    audio = Path(record["input"]["audio"])
+    if role == Role.TRANSCRIPTION:
+        result = await gateway.transcribe(audio)
+    else:
+        result = await gateway.align(audio, record["input"]["text"])
+    assert result.provenance.version == record["version"]

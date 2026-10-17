@@ -72,7 +72,7 @@ Locally, Alertmanager emails every alert to Mailpit. On the stage 0 server (#112
 
 ## AiQuotaLow
 
-**Meaning.** A provider has less than 20% of its free quota left for the current period (NFR-AI-8). When it runs out, the gateway moves to the next provider, then to template feedback, then to "feedback delayed" (System Design 7.2, 11.1).
+**Meaning.** A provider has at most 25% of any capped daily/monthly free allowance left (ADR 0037/0041) for the current period (NFR-AI-8). When it runs out, the gateway moves to the next provider, then to template feedback, then to "feedback delayed" (System Design 7.2, 11.1).
 
 **Data.** The AI gateway (#64) reports `record_ai_quota(provider, remaining_ratio)` from its quota counters. It is not built yet, so until then this alert has no data and stays quiet.
 
@@ -104,3 +104,5 @@ Locally, Alertmanager emails every alert to Mailpit. On the stage 0 server (#112
 1. Container down: `docker compose up -d backup`. On start it reports the newest backup in storage, which clears the alert if that one is recent.
 2. Dump failing: the log names the cause. Common ones: the database URL or password changed (`LISTENUP_BACKUP_DATABASE_URL`), the storage credentials or bucket changed (`LISTENUP_S3_*`, `LISTENUP_BACKUP_BUCKET`), or the disk under `/tmp` in the container is full.
 3. Once fixed, take a backup now: `docker compose run --rm backup python -m listenup.ops.backup dump`, and check it with `restore-test` (see `backups.md`).
+
+For gateway accounting outages, verify migration `0064_ai_gateway` and worker access. Run `SELECT ai.maintain_partitions()` as the owner/worker after an extended outage. Pending or failed attempts retain conservative usage reservations; do not refund them without evidence the provider did not run. `ai.calls` carries no payloads or learner IDs. Review task counts, fallback depth, queue delay and projected cost without joining learner data.

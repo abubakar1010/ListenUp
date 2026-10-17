@@ -74,7 +74,7 @@ One 4-core server gives 240 core-minutes per hour, or 168 at 70% use. With 15% o
 | Compute needed | 1 free 4-core server | about 10 cores or 1 small GPU | a GPU pool that scales with queue depth |
 | New media per month (audio only) | about 7 GB | about 70 GB | about 700 GB |
 | Database growth per month | about 40 MB | about 400 MB | about 4 GB |
-| AI text calls per day (standard / quota-saving mode) | about 825 / 375 | about 8,250 / 3,750 | about 82,500 / 37,500 |
+| AI text calls per day (standard / quota-saving mode) | about 825 / 525 | about 8,250 / 5,250 | about 82,500 / 52,500 |
 | AI tokens per day | about 2 million | about 20 million | about 200 million |
 
 **Per learner per month (est.):** 10 new clips at 64 kbit/s AAC (about 29 MB after deduplication), 60 Shadow recordings at 24 kbit/s Opus (about 14 MB), and about 0.25 MB of database rows. Video at 360p would add about 375 MB, which is why video is opt-in (section 6).
@@ -197,7 +197,7 @@ Media is served straight from object storage with signed URLs and HTTP range req
 
 ## 7. AI quota and cost efficiency
 
-A session needs at most about 5 text-AI calls and 14,000 tokens, and a quota-saving mode cuts that by more than half, so free tiers last as long as possible and a paid switch stays cheap.
+A session needs about 5.5 text-AI calls before retries and 14,000 tokens, and a quota-saving mode removes two round-feedback calls, so free tiers last as long as possible and a paid switch stays cheap.
 
 ### 7.1 Calls per session
 
@@ -211,12 +211,12 @@ A session needs at most about 5 text-AI calls and 14,000 tokens, and a quota-sav
 
 ### 7.2 Quota-saving mode
 
-When a provider's remaining daily quota drops below 25%, the gateway switches round feedback for rounds 1 and 2 to **template feedback**: deterministic sentences generated from the measures (for example "Your timing lagged the speaker by about 0.4 s on average; the biggest gaps were on 'could have' and 'a lot of'"). Round 3 and the suggestions still use AI. This drops a session from about 5.5 to about 2.5 calls. The learner always gets feedback; only the wording style changes.
+Quota-saving mode starts on at Stage 0 (ADR 0037). When explicitly disabled, it resumes when any capped daily or monthly allowance reaches 75% consumption. In saving mode, the gateway signals grading to switch round feedback for rounds 1 and 2 to **template feedback**: deterministic sentences generated from the measures (for example "Your timing lagged the speaker by about 0.4 s on average; the biggest gaps were on 'could have' and 'a lot of'"). Round 3 and the suggestions still use AI. Retaining round 3 and suggestions drops a session from about 5.5 to about 3.5 calls (525 per 150 sessions/day), correcting the previous 2.5 estimate; actual per-task calls, retries and fallbacks are metered (ADR 0041). The learner always gets feedback; only the wording style changes.
 
 ### 7.3 Other savings
 
 - **Structured output** (JSON schema mode where the provider supports it) and temperature 0, so outputs are valid and stable on the first try.
-- **Token budgets per task**: input is trimmed to the budget before sending, and the output length is capped.
+- **Token budgets per task**: oversized input is refused before sending, and the output length is capped.
 - **Request coalescing**: if two learners trigger key points for the same shared passage at once, a job lock makes the second wait for the first result instead of calling again.
 - **Provider choice by task**: key points and gist grading need a stronger model; round feedback works with the smallest one. The gateway configuration sets the provider per task, not only per role.
 - **Quota telemetry**: calls and tokens per provider per day are counted, with an alert at 75% use.
