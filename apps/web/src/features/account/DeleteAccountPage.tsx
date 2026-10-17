@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import { ApiError } from '../../api/client';
 import { usePageTitle } from '../../app/usePageTitle';
@@ -61,7 +61,9 @@ export default function DeleteAccountPage() {
   const me = useMe();
   const graceDays = me.data?.deletion_grace_days ?? 7;
   const permanentDate = deletionDay(graceDays);
-  const [step, setStep] = useState<1 | 2>(1);
+  const [params] = useSearchParams();
+  const googleConfirmed = params.get('google') === 'confirmed';
+  const [step, setStep] = useState<1 | 2>(googleConfirmed ? 2 : 1);
   const [password, setPassword] = useState('');
   const [understood, setUnderstood] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -78,8 +80,11 @@ export default function DeleteAccountPage() {
   });
 
   useEffect(() => {
-    if (step === 2) passwordRef.current?.focus();
-  }, [step]);
+    if (step === 2) {
+      if (googleConfirmed) checkboxRef.current?.focus();
+      else passwordRef.current?.focus();
+    }
+  }, [step, googleConfirmed]);
 
   const remove = useMutation({
     mutationKey: DELETE_ACCOUNT_KEY,
@@ -102,8 +107,9 @@ export default function DeleteAccountPage() {
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (remove.isPending) return;
     remove.reset();
-    if (!password) {
+    if (!password && !googleConfirmed) {
       setFieldError('Enter your password to delete your account.');
       passwordRef.current?.focus();
       return;
@@ -178,32 +184,51 @@ export default function DeleteAccountPage() {
         >
           <div className="flex flex-col gap-2">
             <h2 className="font-display text-heading-compact md:text-heading">Confirm deletion</h2>
-            <p>Re-enter your password and confirm that you understand what happens next.</p>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label htmlFor={passwordId} className="font-bold">
-              Your password
-            </label>
-            <input
-              ref={passwordRef}
-              id={passwordId}
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(event) => {
-                setPassword(event.target.value);
-                setFieldError(null);
-              }}
-              aria-invalid={fieldError ? true : undefined}
-              aria-describedby={passwordErrorId}
-              className={`${inputClass} max-w-sm`}
-            />
-            <p id={passwordErrorId} role="alert" className="min-h-6 text-danger">
-              {fieldError}
+            <p>
+              Confirm with your password or Google, then confirm that you understand what happens
+              next.
             </p>
           </div>
+
+          {googleConfirmed ? (
+            <p role="status">Google account confirmed.</p>
+          ) : (
+            <>
+              {params.get('google') === 'cancelled' && (
+                <p role="status">Google confirmation was cancelled. You can try again.</p>
+              )}
+              <div className="flex flex-col gap-1">
+                <label htmlFor={passwordId} className="font-bold">
+                  Your password
+                </label>
+                <input
+                  ref={passwordRef}
+                  id={passwordId}
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    setFieldError(null);
+                  }}
+                  aria-invalid={fieldError ? true : undefined}
+                  aria-describedby={passwordErrorId}
+                  className={`${inputClass} max-w-sm`}
+                />
+                <p id={passwordErrorId} role="alert" className="min-h-6 text-danger">
+                  {fieldError}
+                </p>
+              </div>
+            </>
+          )}
+
+          <a
+            className={buttonClass('secondary')}
+            href="/api/v1/auth/oidc/google/start?purpose=reauth"
+          >
+            Continue with Google
+          </a>
 
           <label htmlFor={checkboxId} className="flex min-h-11 items-start gap-3">
             <input

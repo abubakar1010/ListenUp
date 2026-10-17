@@ -89,6 +89,16 @@ class Accounts:
         )
         self.reset_by_ip = Limit("password_reset_confirm", settings.password_reset_ip_limit, hour)
 
+    async def enforce_google_limit(self, request: Request) -> None:
+        ip = _client_ip(request)
+        if ip:
+            limit = Limit(
+                "google",
+                self.settings.login_ip_limit,
+                timedelta(minutes=self.settings.login_ip_window_minutes),
+            )
+            await self.limiter.enforce(limit, ip_key(limit, ip))
+
     async def register(
         self,
         session: AsyncSession,
@@ -223,6 +233,8 @@ class Accounts:
         response: Response,
         learner: uuid.UUID,
         password: str,
+        *,
+        google_verified: bool = False,
     ) -> datetime:
         """Delete the signed-in learner's account (FR-ACC-4, DR-1, D9; ADR 0029).
 
@@ -234,7 +246,8 @@ class Accounts:
         account = await repository.get_account(session, learner)
         if account is None or account.status != "active":
             raise _not_signed_in()
-        await self._reauthenticate(account, password)
+        if not google_verified:
+            await self._reauthenticate(account, password)
 
         grace = timedelta(days=self.settings.account_deletion_grace_days)
         # Password reset takes the token row before the users row. Use the same order
@@ -261,10 +274,9 @@ class Accounts:
         """
         if account.password_hash is None:
             raise ProblemError(
-                409,
-                "reauthentication_unavailable",
-                "This account signs in with Google, and confirming with Google is not "
-                "available yet. Contact support to delete the account.",
+                403,
+                "google_reauthentication_required",
+                "Confirm with Google before deleting your account.",
             )
         if not await self._check_password(account, password):
             raise ProblemError(
@@ -471,6 +483,14 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
     """
     return ExportPart(
         tables=(
+            await learner_rows(session, "identity.oauth_accounts", learner, order_by="created_at"),
+            await learner_rows(
+                session,
+                "identity.oidc_flows",
+                learner,
+                omit=("token_hash", "browser_hash", "data"),
+                order_by="created_at",
+            ),
             await learner_rows(
                 session, "identity.users", learner, column="id", omit=("password_hash",)
             ),

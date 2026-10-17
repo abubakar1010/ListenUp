@@ -116,3 +116,12 @@ def test_redaction_is_linear_on_a_long_token_without_an_at_sign() -> None:
 )
 def test_addresses_are_still_redacted(text: str, expected: str) -> None:
     assert redact(text) == expected
+
+
+def test_oidc_callback_secrets_never_reach_logs() -> None:
+    value = redact(
+        "GET /api/v1/auth/oidc/google/callback?state=private-state&code=private-code HTTP/1.1"
+    )
+    assert "private-state" not in value
+    assert "private-code" not in value
+    assert "/api/v1/auth/oidc/google/callback" in value

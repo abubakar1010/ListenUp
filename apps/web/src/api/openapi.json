@@ -601,13 +601,14 @@
             "type": "boolean"
           },
           "password": {
-            "description": "The current password, asked again.",
+            "default": "",
+            "description": "Current password, or a fresh Google confirmation cookie.",
             "maxLength": 1000,
             "title": "Password",
             "type": "string"
           }
         },
-        "required": ["password", "confirm"],
+        "required": ["confirm"],
         "title": "DeleteAccount",
         "type": "object"
       },
@@ -1100,11 +1101,37 @@
         "title": "PasswordResetRequested",
         "type": "object"
       },
+      "PendingRestore": {
+        "properties": {
+          "deletion_scheduled_at": {
+            "title": "Deletion Scheduled At",
+            "type": "string"
+          },
+          "next_path": {
+            "title": "Next Path",
+            "type": "string"
+          }
+        },
+        "required": ["deletion_scheduled_at", "next_path"],
+        "title": "PendingRestore",
+        "type": "object"
+      },
       "PlayerState": {
         "description": "What the player says it is doing when it sends a beat.",
         "enum": ["playing", "buffering", "interrupted", "resuming", "ended"],
         "title": "PlayerState",
         "type": "string"
+      },
+      "RestoreGoogle": {
+        "properties": {
+          "restore": {
+            "title": "Restore",
+            "type": "boolean"
+          }
+        },
+        "required": ["restore"],
+        "title": "RestoreGoogle",
+        "type": "object"
       },
       "SaveDraft": {
         "properties": {
@@ -1604,6 +1631,172 @@
           }
         },
         "summary": "Logout",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/auth/oidc/google/callback": {
+      "get": {
+        "operationId": "callback_api_v1_auth_oidc_google_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Error",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Callback",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/auth/oidc/google/restore": {
+      "get": {
+        "operationId": "pending_restore_api_v1_auth_oidc_google_restore_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingRestore"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Pending Restore",
+        "tags": ["identity"]
+      },
+      "post": {
+        "operationId": "restore_api_v1_auth_oidc_google_restore_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreGoogle"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Me"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Restore Api V1 Auth Oidc Google Restore Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "204": {
+            "description": "Kept deleted; signed out."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/auth/oidc/google/start": {
+      "get": {
+        "operationId": "start_api_v1_auth_oidc_google_start_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "next",
+            "required": false,
+            "schema": {
+              "default": "/library",
+              "title": "Next",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "purpose",
+            "required": false,
+            "schema": {
+              "default": "login",
+              "enum": ["login", "reauth"],
+              "title": "Purpose",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start",
         "tags": ["identity"]
       }
     },

@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     # Sign-in (Architecture 9.1, D17). Cookies are Secure everywhere except local runs
     # over plain http; set LISTENUP_COOKIE_SECURE to override.
     cookie_secure: bool | None = None
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
+    google_redirect_uri: str = "http://localhost:5173/api/v1/auth/oidc/google/callback"
+    oidc_lifetime_seconds: int = Field(default=600, ge=60, le=900)
     session_days: int = 30
     login_lock_threshold: int = 5  # failed attempts on one account ...
     login_lock_minutes: int = 15  # ... within this many minutes lock it for as long

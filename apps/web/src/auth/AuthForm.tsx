@@ -6,6 +6,7 @@ import { api, ApiError, type Me } from '../api/client';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { formatDeletionDate } from '../features/account/deletionApi';
 import { errorMessage } from './errorMessage';
+import { GoogleRestore } from './GoogleRestore';
 import { nextPath } from './next';
 import { changeSession } from './session';
 
@@ -80,6 +81,16 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
   return (
     <main className="mx-auto max-w-sm p-6">
       <h1 className="text-2xl font-semibold">{copy.title}</h1>
+      <a
+        className="mt-4 inline-flex min-h-11 items-center rounded border px-4 py-2 font-bold focus:outline-2 focus:outline-offset-2"
+        href={`/api/v1/auth/oidc/google/start?next=${encodeURIComponent(nextPath(searchParams))}`}
+      >
+        Continue with Google
+      </a>
+      {searchParams.get('google') === 'cancelled' && (
+        <p role="status">Google sign-in was cancelled. You can try again.</p>
+      )}
+      {searchParams.get('google') === 'restore' && <GoogleRestore />}
       <form
         className="mt-6 flex flex-col gap-4"
         onSubmit={onSubmit}

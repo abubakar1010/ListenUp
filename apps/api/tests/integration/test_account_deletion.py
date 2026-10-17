@@ -336,10 +336,10 @@ def test_deleting_needs_a_signed_in_learner(client: TestClient) -> None:
     assert (response.status_code, response.json()["code"]) == (401, "not_signed_in")
 
 
-def test_an_account_without_a_password_cannot_confirm_yet(
+def test_an_account_without_a_password_requires_google_confirmation(
     client: TestClient, migrated_url: str
 ) -> None:
-    """Google sign-in (#32) is not built: such accounts get a clear refusal."""
+    """Passwordless accounts must prove their linked Google identity again."""
     user_id = uuid.uuid4()
     token = new_token()
     with psycopg.connect(migrated_url, autocommit=True) as conn:
@@ -356,7 +356,10 @@ def test_an_account_without_a_password_cannot_confirm_yet(
 
     response = delete_me(client, password="")
 
-    assert (response.status_code, response.json()["code"]) == (409, "reauthentication_unavailable")
+    assert (response.status_code, response.json()["code"]) == (
+        403,
+        "google_reauthentication_required",
+    )
     assert user_row(migrated_url, user_id) == ("active", None)
 
 
@@ -795,6 +798,17 @@ def test_the_purge_removes_everything_after_the_grace_period(
     export_id = uuid.uuid4()
     archive = f"users/{user_id}/exports/{export_id}.zip"
     with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO identity.oauth_accounts (provider, subject, user_id) "
+            "VALUES ('google', %s, %s)",
+            [str(uuid.uuid4()), user_id],
+        )
+        conn.execute(
+            "INSERT INTO identity.oidc_flows "
+            "(token_hash, browser_hash, user_id, purpose, data, expires_at) "
+            "VALUES (%s, %s, %s, 'delete', '{}', now() + interval '10 minutes')",
+            [token_hash(new_token()), token_hash(new_token()), user_id],
+        )
         conn.execute(
             "INSERT INTO ops.data_exports (id, user_id, status, archive_key, ready_at, "
             "expires_at) VALUES (%s, %s, 'ready', %s, now(), now() + interval '7 days')",

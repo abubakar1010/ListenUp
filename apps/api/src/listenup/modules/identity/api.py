@@ -95,7 +95,11 @@ async def deletion_summary(
 
 
 class DeleteAccount(BaseModel):
-    password: str = Field(max_length=1000, description="The current password, asked again.")
+    password: str = Field(
+        default="",
+        max_length=1000,
+        description="Current password, or a fresh Google confirmation cookie.",
+    )
     confirm: Literal[True] = Field(description="Must be true: the learner confirmed.")
 
 
@@ -107,6 +111,7 @@ class DeletionScheduled(BaseModel):
 @router.delete("/me", status_code=202)
 async def delete_me(
     body: DeleteAccount,
+    request: Request,
     learner: CurrentLearner,
     response: Response,
     session: DbSession,
@@ -118,7 +123,14 @@ async def delete_me(
     deleted when the grace period ends, unless the learner signs in and restores the
     account before then.
     """
-    until = await accounts.delete_account(session, response, learner, body.password)
+    verified = (
+        await request.app.state.google.deletion_proof(request, learner)
+        if not body.password
+        else False
+    )
+    until = await accounts.delete_account(
+        session, response, learner, body.password, google_verified=verified
+    )
     return DeletionScheduled(
         deletion_scheduled_at=until,
         detail=(

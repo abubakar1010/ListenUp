@@ -12,6 +12,7 @@ import { RegisterPage, SignInPage } from './auth/pages';
 // Route-based code splitting: each page below downloads when it is first opened.
 // The sign-in and register pages stay in the first bundle, because signed-out
 // visitors land on them.
+const GoogleErrorPage = lazy(() => import('./auth/GoogleErrorPage'));
 const LibraryPage = lazy(() => import('./features/library/LibraryPage'));
 const AddClipPage = lazy(() => import('./features/library/AddClipPage'));
 const ContentPage = lazy(() => import('./features/content/ContentPage'));
@@ -57,6 +58,7 @@ export function App() {
               }
             />
           </Route>
+          <Route path="/auth/google-error" element={<GoogleErrorPage />} />
           {/* Outside RedirectIfSignedIn: a reset link must also work while signed in. */}
           <Route
             path="/forgot-password"
