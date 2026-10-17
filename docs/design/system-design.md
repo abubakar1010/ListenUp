@@ -340,7 +340,7 @@ Every failure degrades a feature rather than the practice session: a learner can
 
 ## 12. Benchmarks and architecture changes
 
-The estimates above become commitments only after six benchmarks, run on the actual stage 0 server in the first build milestone.
+The estimates above become commitments only after six benchmarks, run on the actual stage 0 server before public launch. Development may complete with local and GitHub Actions checks while actual-server performance criteria remain explicitly deferred and unverified ([ADR 0039](../adr/0039-performance-validation-before-launch.md), launch gate #155). GitHub-hosted runner results are preliminary; Actions can orchestrate qualifying measurements when they execute on the actual deployment. This changes validation timing, not the targets or model-quality requirements.
 
 ### 12.1 Benchmarks to run
 
