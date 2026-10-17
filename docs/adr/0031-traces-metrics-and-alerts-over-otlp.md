@@ -52,11 +52,11 @@ For local runs and the stage 0 server, the `observability` Compose profile runs 
 | JobWaitTooLong | the oldest due job waited over 60 s (speech-interactive), 30 s (ai), 15 min (intake) or 30 min (background), for 5 minutes |
 | JobFailureRateHigh | over 5% of a lane's runs in 30 minutes failed for good, and at least 3 did |
 | GradingFailureRateHigh | over 5% of gradings in 30 minutes failed, with at least 20 gradings |
-| AiQuotaLow | a provider has under 20% of its free quota left, for 2 minutes |
+| AiQuotaLow | a provider has at most 25% of its free quota left, for 2 minutes (ADRs 0037/0041) |
 | ApiErrorRateSpike | over 5% of API requests in 5 minutes answered 5xx, with at least 20 requests, for 5 minutes |
 | BackupMissing | no dump reached storage in 26 hours, or the backup service stopped reporting |
 
-The quota threshold follows Architecture 12.3 and the issue (20% left). System Design 7.3 mentions an alert at 75% use and 7.2 a quota-saving mode below 25% left; that mode belongs to the gateway (#64), and the alert stays at 20%.
+ADRs 0037/0041 refine the original 20% alert: alert at 75% usage (25% remaining) for two minutes, while gateway saving/admission responds immediately.
 
 ### Learner data stays out
 

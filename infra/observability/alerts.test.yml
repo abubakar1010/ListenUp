@@ -7,13 +7,13 @@ rule_files:
 evaluation_interval: 1m
 
 tests:
-  # Simulated quota at 15% fires; 25% and 100% do not (#96 acceptance criterion).
+  # Simulated quota at 15% fires; 26% and 100% do not (#96 acceptance criterion).
   - interval: 1m
     input_series:
       - series: 'listenup_ai_quota_remaining_ratio{provider="groq"}'
         values: '0.15x10'
       - series: 'listenup_ai_quota_remaining_ratio{provider="gemini"}'
-        values: '0.25x10'
+        values: '0.26x10'
       - series: 'listenup_ai_quota_remaining_ratio{provider="whisper-local"}'
         values: '1x10'
     alert_rule_test:
@@ -209,3 +209,21 @@ tests:
       - eval_time: 45m
         alertname: BackupMissing
         exp_alerts: []
+
+  # ADR 0037: 75% usage alerts; just below 75% remains quiet.
+  - interval: 1m
+    input_series:
+      - series: 'listenup_ai_quota_remaining_ratio{provider="boundary"}'
+        values: '0.25x10'
+      - series: 'listenup_ai_quota_remaining_ratio{provider="below"}'
+        values: '0.251x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: AiQuotaLow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              provider: boundary
+            exp_annotations:
+              summary: "boundary has 25% of its free quota left"
+              runbook_url: "docs/runbooks/alerts.md#aiquotalow"

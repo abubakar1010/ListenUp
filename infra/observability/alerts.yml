@@ -93,8 +93,8 @@ groups:
   - name: listenup-ai
     rules:
       - alert: AiQuotaLow
-        # A provider has less than 20% of its free quota left for the period (NFR-AI-8).
-        expr: min by (provider) (listenup_ai_quota_remaining_ratio) < 0.20
+        # A provider has at most 25% of its free quota left for the period (NFR-AI-8).
+        expr: min by (provider) (listenup_ai_quota_remaining_ratio) <= 0.25
         for: 2m
         labels:
           severity: warning

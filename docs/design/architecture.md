@@ -237,7 +237,7 @@ Configuration is versioned at `listenup/ai/ai.yaml`, with an ordered provider li
 
 The deterministic fakes are model-free and selectable by configuration. Adapter contract tests replay recorded engine outputs through the schema mapping; the initial recordings are synthetic, so they validate mapping rather than real speech-model accuracy and must be replaced after the model spikes ([ADR 0028](../adr/0028-ai-ports-gateway-and-self-hosted-speech-adapters.md)).
 
-ADR 0028 records the first implementation phase: `get_gateway()` builds adapters once per process, enforces timeouts and retries transient failures with doubling backoff, then raises `AIUnavailable`. Local CPU speech adapters have zero retries. Quotas, eligibility, provider fallback and the `ai.calls` log above remain the full gateway design, completed separately from that initial phase ([ADR 0028](../adr/0028-ai-ports-gateway-and-self-hosted-speech-adapters.md)).
+ADR 0041 completes the gateway with atomic persistent minute/day/month admission, per-task order, fail-closed eligibility, schema/range validation and content-free monthly call logs. Existing port signatures remain unchanged; gateway calls accept optional content-free context and results may report usage. Each retry reserves capacity independently; uncertain failures retain their reservation. Grading owns templates, caller jobs own durable retries, and hosted adapters/prompts remain #66 work. Quota-saving starts on under ADR 0037 and signals at 75% consumption when disabled. See [ADR 0041](../adr/0041-ai-gateway-admission-and-fallback.md) for accounting, privacy and integration details.
 
 ### 7.3 Prompts and outputs
 
@@ -454,7 +454,7 @@ The largest risks are learner voice data, untrusted uploads and untrusted text s
 
 - Structured JSON logs with a request id that follows a request into the jobs it creates.
 - OpenTelemetry traces across API, queue and workers; metrics for job wait time, job duration, failure rate, AI latency and remaining free quota per provider.
-- Alerts on: job backlog growing, a provider quota under 20%, grading failure rate over 5%, error rate spikes.
+- Alerts on: job backlog growing, a provider quota at or below 25% remaining (ADR 0037/0041), grading failure rate over 5%, error rate spikes.
 - Errors go to an error tracker through its open SDK, swappable like any other adapter.
 
 ### 12.4 Testing

@@ -577,32 +577,39 @@ CREATE SCHEMA ai;
 
 -- One row per provider call. No user id: the AI log never identifies learners.
 CREATE TABLE ai.calls (
-  id             uuid NOT NULL,
-  created_at     timestamptz NOT NULL DEFAULT now(),
-  role           text NOT NULL CHECK (role IN ('transcription', 'alignment', 'speech_assessment', 'text')),
-  task           text NOT NULL,     -- 'grade_gist', 'shadow_feedback', ...
-  provider       text NOT NULL,
-  model          text NOT NULL,
-  prompt_version text,
-  latency_ms     int4 NOT NULL,
-  input_units    int4,              -- tokens or audio seconds
-  output_units   int4,
-  outcome        text NOT NULL CHECK (outcome IN ('ok', 'invalid_output', 'timeout', 'error', 'quota', 'ineligible')),
-  job_id         int8,
-  PRIMARY KEY (id, created_at)
+ id uuid NOT NULL, created_at timestamptz NOT NULL,
+ role text NOT NULL CHECK (role IN ('transcription','alignment','speech_assessment','text_ai')),
+ task text NOT NULL, provider text NOT NULL, model text NOT NULL,
+ version text, prompt_version text,
+ latency_ms integer NOT NULL DEFAULT 0 CHECK (latency_ms >= 0),
+ input_units bigint NOT NULL DEFAULT 0 CHECK (input_units >= 0),
+ output_units bigint NOT NULL DEFAULT 0 CHECK (output_units >= 0),
+ reasoning_tokens bigint NOT NULL DEFAULT 0 CHECK (reasoning_tokens >= 0),
+ cache_tokens bigint NOT NULL DEFAULT 0 CHECK (cache_tokens >= 0),
+ audio_seconds double precision NOT NULL DEFAULT 0 CHECK (audio_seconds >= 0 AND audio_seconds
+< 'Infinity'::float8),
+ fallback_depth integer NOT NULL DEFAULT 0 CHECK (fallback_depth >= 0),
+ queue_delay_ms bigint NOT NULL DEFAULT 0 CHECK (queue_delay_ms >= 0),
+ projected_cost_usd double precision NOT NULL DEFAULT 0 CHECK (projected_cost_usd >= 0 AND
+projected_cost_usd < 'Infinity'::float8),
+ usage_estimated boolean NOT NULL DEFAULT true,
+ outcome text NOT NULL CHECK (outcome IN
+('pending','ok','invalid_output','timeout','error','quota','ineligible','cancelled')),
+ PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
--- Monthly partitions created ahead by a scheduled job, e.g.:
-CREATE TABLE ai.calls_2026_10 PARTITION OF ai.calls
-  FOR VALUES FROM ('2026-10-01') TO ('2026-11-01');
-
 CREATE TABLE ai.quota_usage (
-  provider     text NOT NULL,
-  period       text NOT NULL CHECK (period IN ('day', 'month')),
-  period_start date NOT NULL,
-  calls        int4 NOT NULL DEFAULT 0,
-  units        int8 NOT NULL DEFAULT 0,
-  PRIMARY KEY (provider, period, period_start)
+ provider text NOT NULL,
+ period text NOT NULL CHECK (period IN ('minute','day','month')),
+ period_start timestamptz NOT NULL,
+ calls bigint NOT NULL DEFAULT 0 CHECK (calls >= 0),
+ units bigint NOT NULL DEFAULT 0 CHECK (units >= 0),
+ audio_seconds double precision NOT NULL DEFAULT 0 CHECK (audio_seconds >= 0 AND audio_seconds
+< 'Infinity'::float8),
+ PRIMARY KEY (provider, period, period_start)
 );
+-- ADR 0041: ai.maintain creates monthly partitions three months ahead;
+-- drops complete partitions older than 90 days and old quota buckets.
+-- API/read-only SELECT; worker writes. No learner/job/request/trace identifiers.
 
 CREATE SCHEMA ops;
 
@@ -1016,7 +1023,7 @@ This is higher than the system design's 0.25 MB because word labels and referenc
 | --- | --- |
 | Monitoring | `pg_stat_statements` enabled; alerts on slow queries, connection count near the limit, table bloat |
 | Autovacuum | Lower scale factors on `blind_attempts`, `ops.rate_counters` and `ops.idempotency_keys`, which change constantly |
-| Partitions | A monthly job creates `ai.calls` partitions three months ahead and drops those older than 90 days |
+| Partitions | `ai.maintain` checks every five minutes, creates `ai.calls` partitions three months ahead and drops complete partitions whose upper bound is older than 90 days (ADR 0041) |
 | Time zone | Server and sessions set to UTC |
 | Timeouts | `statement_timeout` 5 s for the API role, 60 s for workers; `idle_in_transaction_session_timeout` 30 s |
 | Backups | Managed backups plus a nightly `pg_dump` to object storage kept 14 days; a restore is tested monthly |
