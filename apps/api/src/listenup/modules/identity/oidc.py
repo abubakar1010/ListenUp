@@ -112,10 +112,19 @@ class GoogleOIDC:
                 state=state,
                 nonce=nonce,
                 code_verifier=verifier,
-                **({"prompt": "login", "max_age": 0} if user_id else {}),
+                **(
+                    {
+                        "prompt": "select_account",
+                        "claims": json.dumps({"id_token": {"auth_time": {"essential": True}}}),
+                    }
+                    if user_id
+                    else {}
+                ),
             )
         response = RedirectResponse(url, status_code=303, headers={"Cache-Control": "no-store"})
         self.cookie(response, browser)
+        # Recovery hint only: never authorizes a callback or deletion.
+        self.cookie(response, "reauth" if user_id else "login", "_intent")
         return response
 
     async def take(
@@ -179,11 +188,18 @@ class GoogleOIDC:
                 auth_time = claims.get("auth_time")
                 if (
                     not isinstance(auth_time, int)
+                    or isinstance(auth_time, bool)
                     or auth_time < flow["started"] - 5
                     or auth_time > int(time.time()) + 5
                 ):
-                    raise ValueError("fresh authentication required")
+                    raise ProblemError(
+                        400,
+                        "google_fresh_auth_required",
+                        "Google did not confirm a new account sign-in.",
+                    )
             return dict(claims)
+        except ProblemError:
+            raise
         except Exception:
             # Provider errors may contain codes or tokens; never expose their text.
             raise ProblemError(

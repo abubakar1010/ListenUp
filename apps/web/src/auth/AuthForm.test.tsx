@@ -259,3 +259,34 @@ test('a restore refusal closes the dialog so Google authentication can start aga
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Continue with Google' })).toBeVisible();
 });
+
+test.each([
+  ['/auth/google-error?reason=failed&intent=login', '/api/v1/auth/oidc/google/start'],
+  [
+    '/auth/google-error?reason=fresh_auth&intent=reauth',
+    '/api/v1/auth/oidc/google/start?purpose=reauth',
+  ],
+])('Google callback recovery at %s offers a new flow', async (route, target) => {
+  mockApi({ '/me': SIGNED_OUT });
+  renderWithProviders(<App />, { route });
+  expect(
+    await screen.findByRole('heading', { name: 'Google confirmation was not completed' }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Continue with Google' })).toHaveAttribute(
+    'href',
+    target,
+  );
+  expect(screen.getByRole('alert')).toHaveTextContent('Your account has not been deleted');
+});
+
+test('stale Google authentication explains signing out separately without logging out ListenUp', async () => {
+  mockApi({ '/me': () => jsonResponse(200, LEARNER) });
+  renderWithProviders(<App />, { route: '/auth/google-error?reason=fresh_auth&intent=reauth' });
+  expect(
+    await screen.findByText(/Sign out of your Google Account in another tab/),
+  ).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Continue with Google' })).toHaveAttribute(
+    'href',
+    '/api/v1/auth/oidc/google/start?purpose=reauth',
+  );
+});

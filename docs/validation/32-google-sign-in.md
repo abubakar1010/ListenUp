@@ -70,7 +70,7 @@ generated client output need regeneration/format checks rather than artificial R
 
 Security assertions expose plausible defects: removing nonce/signature checks
 would allow the invalid-token tests to create an account; replaying a consumed
-state would return a session instead of 400; accepting a different Google subject
+state would return a session instead of a refusal (now a safe browser redirect); accepting a different Google subject
 or rotated session would permit deletion; ignoring restore/deadline checks would
 unlock `/me` or change the account status in the boundary tests. These checks
 assert refusals and absence of unauthorized account/session side effects.
@@ -114,3 +114,58 @@ Automated tests use fixed provider endpoints and mocked responses, not live Goog
 Fresh-session independent review and required CI remain owner merge gates. This
 session does not merge the PR. ADR 0039 records the approved linking and lockout
 policies; #45 transcription and #64 AI gateway code are outside this change.
+
+
+## Independent-review corrections (P1/P2, 2026-10-17)
+
+[ADR 0040](../adr/0040-google-session-age-and-callback-recovery.md) corrects the
+provider request contract and documents the remaining live merge gate. Google
+explicitly does not support forced Google Account reauthentication. Deletion now
+requests the documented essential signed `auth_time` claim and uses only the
+supported `select_account` prompt. Selection/consent never count as fresh login;
+the original freshness, identity, session and single-use checks remain enforced.
+Google Session age claims require a published, verified app and the console setting
+enabled. A stale-session recovery explains signing out of Google separately,
+keeping ListenUp open, then starting a new flow and actually signing into Google.
+No credentials or console access were available: **P1 is not live-validated and
+must remain a merge gate**, using ADR 0040's operator checklist.
+
+Expected callback refusals now return a fixed, non-sensitive 303 URL to a public
+accessible recovery page. It works while signed in or out and starts a new flow
+with a keyboard-operable Continue with Google control. Business changes roll back
+inside a savepoint on refusal; independently consumed state remains consumed.
+Provider errors, state, codes and tokens are not reflected on the error page.
+The intent cookie is only a recovery hint, never an authorization mechanism.
+
+Actual regression cycle before production edits:
+
+- From `apps/api`, `LISTENUP_REQUIRE_DB=1 uv run pytest tests/integration/test_google_oidc.py -k 'documented_session_age or recovers_without_proof or safe_retry_page' -q`: **10 failed, 26 deselected**. An earlier database-startup failure was not counted as Red.
+- From `apps/web`, `pnpm vitest run src/auth/AuthForm.test.tsx -t 'callback recovery|stale Google authentication'`: **3 failed, 14 skipped** (the filter intentionally deselects unrelated tests).
+- After implementation, `LISTENUP_REQUIRE_DB=1 uv run pytest tests/integration/test_google_oidc.py -q`: **39 passed** before the additional rollback regression; the same focused web command: **3 passed, 14 skipped**.
+- Additional regression/characterization cases cover stale selection across retries, disabled session-age settings, expired reauthentication, and rollback after account creation without undoing state consumption. These were added after the initial fix and are not claimed as original Red cycles.
+- `LISTENUP_REQUIRE_DB=1 uv run pytest tests/integration/test_google_oidc.py tests/integration/test_google_data.py tests/integration/test_account_deletion.py tests/integration/test_auth.py tests/integration/test_access_cross_learner.py -q`: **98 passed**.
+
+Provider mocks now omit `auth_time` unless the actual outgoing authorization
+request asks for the essential claim and simulated Google settings enable it.
+`test_reauth_requests_google_documented_session_age_claim` rejects unsupported
+prompt/max-age usage. `test_stale_google_session_needs_actual_new_google_sign_in`
+rejects repeated account selection before accepting genuinely fresh signed time.
+`test_callback_refusal_rolls_back_account_changes_but_not_state_consumption`
+asserts no account, linked identity or session is committed on refusal, no private
+error is exposed, and replay still fails. Browser recovery tests follow document
+redirects, reload safely, then retry with Enter; provider/API responses are mocked.
+
+Correction validation:
+
+- Backend formatting/lint, strict mypy (137 files), six import contracts: passed.
+- `PATH="/workspace/ListenUp/work/pgclient/bin:$PATH" LISTENUP_REQUIRE_DB=1 LISTENUP_REQUIRE_S3=1 uv run pytest -m 'not performance' --cov --cov-report=term-missing:skip-covered --cov-report=xml --cov-report=html`: **1,136 passed**, one performance test deselected, three dependency deprecation warnings; no skipped tests or errors. Combined reported coverage: 96%.
+- `uv run pytest -m performance --no-cov`: **1 passed**. Backend coverage completeness and `uv run diff-cover coverage/coverage.xml --compare-branch origin/main --fail-under 90`: **214/215 changed executable lines (99.53%)**. The remaining uncovered defensive pending-restore branch refuses an already-reactivated account; the previous unexpected sign-in refusal branch is now covered by the rollback regression. No exclusions or thresholds changed.
+- `uv run alembic heads` and `uv run alembic check`: one head, `32_google_oidc`; no new upgrade operations. Upgrade/downgrade was not repeated because these corrections change no schema or migrations.
+- Web lint/format/types and coverage: **313 passed across 32 files**, 94.04% lines and 85.03% branches. Coverage completeness passed; **36/36 changed executable lines** against main covered.
+- Production build, bundle budget (**120.7 KB gzip / 200 KB**), and Chromium browser tests: **33 passed**.
+- OpenAPI export and client regeneration: passed with no generated diff. No new server route or schema change in this correction; existing registry entries and single migration head `32_google_oidc` are retained.
+- Current main fetched and incorporated: already up to date at `f2220fb`. Branch-name validation passed.
+
+Live Google consent/code exchange, actual fresh-session claims, deployed routing
+and production cookies remain unverified. Fresh independent re-review and required
+CI must pass, and the operator must close P1's live gate before owner merge.

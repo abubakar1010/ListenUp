@@ -76,7 +76,7 @@ Read the section for the area you are changing before you change it. The rules e
 - Clip notices (`src/features/content/ClipNotices.tsx`) turn `content.ready` into a polite live-region notice that never takes focus and waits while a `/sessions/` page is open. Upload refusals map to messages in `src/features/library/refusals.ts`.
 - Account settings live at `/settings` (`src/features/account/SettingsPage.tsx`); each section is its own component (`DataExportSection.tsx`, `DeleteAccountSection.tsx`).
 
-## Google authentication (ADR 0039)
+## Google authentication (ADRs 0039, 0040)
 
 - Google callbacks use Authlib and finish through `Accounts.complete_sign_in`.
   Resolve `(provider, subject)` before a verified-email link; a known subject must
@@ -90,3 +90,13 @@ Read the section for the area you are changing before you change it. The rules e
 - Supply `LISTENUP_GOOGLE_CLIENT_ID`, `LISTENUP_GOOGLE_CLIENT_SECRET` and the exact
   registered `LISTENUP_GOOGLE_REDIRECT_URI` through the API environment. Google
   sign-in bypasses password lockout, retains IP limits and never silently restores.
+
+- Google cannot be instructed to reauthenticate. Deletion confirmation requests
+  the essential signed `auth_time` claim and requires the existing fresh-time
+  boundary; `select_account`, consent and token issue time are never evidence of
+  freshness. Operators must enable Google's Session age claims for a published,
+  verified app. Stale sessions require separate Google sign-out followed by a new
+  flow and Google sign-in; never weaken the check to make an old session pass.
+- Expected full-page callback refusals redirect to `/auth/google-error` using only
+  fixed reason/intent codes. Keep consumption single-use, roll back business
+  writes on refusal, and expose an accessible control that starts a new flow.

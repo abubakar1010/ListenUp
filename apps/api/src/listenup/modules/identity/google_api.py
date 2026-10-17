@@ -1,7 +1,7 @@
 """Google sign-in, explicit restoration, and fresh deletion confirmation (FR-ACC-1/4)."""
 
 import uuid
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel
@@ -43,15 +43,37 @@ async def callback(
     error: str = "",
 ) -> Response:
     google: GoogleOIDC = request.app.state.google
-    flow = await google.take(request, state, "login")
-    if error:
-        path = (
-            "/settings/delete-account?google=cancelled"
-            if flow.get("user")
-            else "/sign-in?google=cancelled"
+    intent = "reauth" if request.cookies.get(google.cookie_name("_intent")) == "reauth" else "login"
+    try:
+        flow = await google.take(request, state, "login")
+        intent = "reauth" if flow.get("user") else "login"
+        if error:
+            path = (
+                "/settings/delete-account?google=cancelled"
+                if intent == "reauth"
+                else "/sign-in?google=cancelled"
+            )
+            return RedirectResponse(path, status_code=303, headers=HEADERS)
+        claims = await google.claims(code, flow)
+        # Refusals roll back business changes; consumed state stays consumed in its
+        # independent transaction. Never convert an error into a partial commit.
+        async with session.begin_nested():
+            return await complete_callback(request, session, accounts, google, flow, claims)
+    except ProblemError as problem:
+        reason = "fresh_auth" if problem.code == "google_fresh_auth_required" else "failed"
+        return RedirectResponse(
+            f"/auth/google-error?reason={reason}&intent={intent}", status_code=303, headers=HEADERS
         )
-        return RedirectResponse(path, status_code=303, headers=HEADERS)
-    claims = await google.claims(code, flow)
+
+
+async def complete_callback(
+    request: Request,
+    session: DbSession,
+    accounts: AccountsDep,
+    google: GoogleOIDC,
+    flow: dict[str, Any],
+    claims: dict[str, Any],
+) -> Response:
     if flow.get("user"):
         learner = await current_learner(request, session)
         linked = await repository.google_user_id(session, claims["sub"])

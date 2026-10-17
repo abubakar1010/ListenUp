@@ -1,6 +1,6 @@
 # ADR 0039: Google OIDC, verified-email linking and deletion confirmation
 
-- Status: Accepted
+- Status: Accepted; Google request mechanism corrected by [ADR 0040](0040-google-session-age-and-callback-recovery.md)
 - Date: 2026-10-16
 - Sources: #32; FR-ACC-1, FR-ACC-2, FR-ACC-4, DR-1; ADRs 0006, 0029 and 0033
 - Owner approved the implementation plan and the policies below on 2026-10-16.
