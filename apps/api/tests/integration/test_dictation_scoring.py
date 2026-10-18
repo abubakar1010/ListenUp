@@ -243,3 +243,24 @@ async def test_transcription_finishing_queues_scoring_of_a_waiting_submission(
         assert queued(migrated_url, attempt) == [("speech-interactive",)]
     finally:
         await database.dispose()
+
+
+@pytest.mark.anyio
+async def test_a_concurrent_second_scorer_cannot_overwrite_the_first_score(
+    migrated_url, learner, clip, database
+):
+    """Both scorers read `waiting`; only the first update may win (idempotent upsert)."""
+    from listenup.modules.dictation import repository
+
+    try:
+        attempt, _ = await submitted(database, learner, clip)
+        async with database.transaction(learner) as db:
+            first = await repository.store_score(db, attempt, {"words": ["first"]}, 100)
+        async with database.transaction(learner) as db:
+            second = await repository.store_score(db, attempt, {"words": ["second"]}, 0)
+
+        assert (first, second) == (True, False)
+        status, diff, accuracy, _ = stored(migrated_url, attempt)
+        assert (status, diff, float(accuracy)) == ("scored", {"words": ["first"]}, 100.0)
+    finally:
+        await database.dispose()
