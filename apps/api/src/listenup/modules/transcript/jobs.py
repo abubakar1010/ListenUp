@@ -90,6 +90,10 @@ async def _give_up(deps: JobDeps, session_id: str, user_id: str) -> None:
         await repository.mark_failed(db, source.media_id, gaps)
         if gaps:
             await publish(db, learner, EventType.TRANSCRIPT_FAILED, identifier)
+    if gaps:
+        # Separate from the announcement, and scoped to the learner like their own requests.
+        async with deps.database.transaction(learner) as db:
+            await transcript.announce_failed(db, learner, identifier)
 
 
 @job(Lane.INTAKE, TRANSCRIBE, on_give_up=_give_up)
@@ -131,8 +135,11 @@ async def _transcribe(deps: JobDeps, identifier: uuid.UUID, learner: uuid.UUID) 
                         return
                     async with deps.database.transaction() as db:
                         await repository.store(db, source.media_id, gap, packed)
-        async with deps.database.transaction() as db:
-            if await identity.account_is_active(db, learner):
-                await publish(db, learner, EventType.TRANSCRIPT_READY, identifier)
-                # Modes waiting for the words (Dictation scoring, #54) continue now.
-                await transcript.announce_ready(db, learner, identifier)
+        async with deps.database.transaction(learner) as db:
+            if not await identity.account_is_active(db, learner):
+                return
+            await publish(db, learner, EventType.TRANSCRIPT_READY, identifier)
+        # Modes waiting for the words (Dictation scoring, #54) continue now. A hook that
+        # fails raises, the job retries, and the committed announcement stays published.
+        async with deps.database.transaction(learner) as db:
+            await transcript.announce_ready(db, learner, identifier)

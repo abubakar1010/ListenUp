@@ -135,7 +135,7 @@ async def submit(
         out = schemas.DictationSubmission(
             attempt_id=done.attempt.id,
             status=done.attempt.status,
-            scoring_status=done.scoring_status,  # type: ignore[arg-type]
+            scoring_status=done.scoring_status,
         )
         return 202, out.model_dump(mode="json")
 
@@ -149,13 +149,16 @@ def _view_response(view: service.AttemptView) -> JSONResponse:
         id=view.attempt.id,
         session_id=view.attempt.session_id,
         status=view.attempt.status,
-        scoring_status=view.scoring_status,  # type: ignore[arg-type]
+        scoring_status=view.scoring_status,
         result=None
         if view.result is None
         else schemas.DictationResult(
             accuracy=view.result.accuracy,
             counts=schemas.DiffCounts(**view.result.counts),
-            items=[schemas.DiffItem(**vars(item)) for item in view.result.items],
+            items=[
+                schemas.DiffItem.model_validate(item, from_attributes=True)
+                for item in view.result.items
+            ],
         ),
     )
     return JSONResponse(

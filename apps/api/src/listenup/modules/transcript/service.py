@@ -31,6 +31,7 @@ ReadyHook = Callable[[AsyncSession, uuid.UUID, uuid.UUID], Awaitable[None]]
 """Called with (transaction, learner, session id) when a session's passage is ready."""
 
 _ready_hooks: list[ReadyHook] = []
+_failed_hooks: list[ReadyHook] = []
 
 
 def on_passage_ready(hook: ReadyHook) -> None:
@@ -43,9 +44,23 @@ def on_passage_ready(hook: ReadyHook) -> None:
         _ready_hooks.append(hook)
 
 
+def on_passage_failed(hook: ReadyHook) -> None:
+    """Register work for a passage whose transcription gave up (like `on_passage_ready`)."""
+    if hook not in _failed_hooks:
+        _failed_hooks.append(hook)
+
+
 async def announce_ready(db: AsyncSession, learner: uuid.UUID, session_id: uuid.UUID) -> None:
-    """Run the registered hooks in the transaction that announces `transcript.ready`."""
+    """Run the ready hooks. The caller passes a transaction scoped to `learner` and separate
+    from the one that published `transcript.ready`, so a failing hook is retried with the job
+    and never takes the announcement with it."""
     for hook in _ready_hooks:
+        await hook(db, learner, session_id)
+
+
+async def announce_failed(db: AsyncSession, learner: uuid.UUID, session_id: uuid.UUID) -> None:
+    """Run the failure hooks, in a learner-scoped transaction like `announce_ready`."""
+    for hook in _failed_hooks:
         await hook(db, learner, session_id)
 
 

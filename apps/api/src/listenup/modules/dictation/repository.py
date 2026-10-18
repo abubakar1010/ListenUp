@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -73,8 +73,14 @@ async def save_draft(
     return DraftRow(*row) if row else None
 
 
-WAITING = "waiting_transcript"
-SCORED = "scored"
+ScoringStatus = Literal["waiting_transcript", "scoring_unavailable", "scored"]
+DiffStatus = Literal["correct", "spelling_slip", "wrong", "missing", "extra", "not_scored"]
+"""The stored vocabularies; the API schemas use the same types, so a new one cannot
+reach a response without a decision (and a failing type check) here."""
+
+WAITING: ScoringStatus = "waiting_transcript"
+UNAVAILABLE: ScoringStatus = "scoring_unavailable"
+SCORED: ScoringStatus = "scored"
 
 
 async def store_submission(session: AsyncSession, attempt_id: uuid.UUID, submitted: str) -> None:
@@ -100,12 +106,16 @@ class WaitingRow:
 _WAITING = """
 SELECT d.attempt_id, a.session_id, d.submitted_text
   FROM practice.dictation_attempts d JOIN practice.attempts a ON a.id = d.attempt_id
- WHERE d.scoring_status = 'waiting_transcript'
+ WHERE d.scoring_status IN ('waiting_transcript', 'scoring_unavailable')
 """
 
 
 async def get_waiting(session: AsyncSession, attempt_id: uuid.UUID) -> WaitingRow | None:
-    """The submission still waiting for its score, or None (scored, or not submitted)."""
+    """The submission still without a score, or None (scored, or not submitted).
+
+    A submission whose transcript failed (`scoring_unavailable`) counts: a later
+    successful transcription scores it.
+    """
     row = (
         await session.execute(text(_WAITING + " AND d.attempt_id = :id"), {"id": attempt_id})
     ).first()
@@ -117,10 +127,28 @@ async def waiting_in_session(session: AsyncSession, session_id: uuid.UUID) -> li
     return [WaitingRow(*row) for row in rows]
 
 
+async def mark_unavailable(session: AsyncSession, attempt_id: uuid.UUID) -> bool:
+    """Record that the transcript failed; False unless the submission was waiting.
+
+    Conditional like `store_score`, so a repeat announces nothing and a score is never undone.
+    """
+    row = (
+        await session.execute(
+            text("""
+            UPDATE practice.dictation_attempts SET scoring_status = 'scoring_unavailable'
+             WHERE attempt_id = :id AND scoring_status = 'waiting_transcript'
+            RETURNING 1
+            """),
+            {"id": attempt_id},
+        )
+    ).first()
+    return row is not None
+
+
 async def store_score(
     session: AsyncSession, attempt_id: uuid.UUID, diff: dict[str, object], accuracy: object
 ) -> bool:
-    """Write the score if the submission is still waiting; False when it already is scored.
+    """Write the score unless the submission is already scored; False then.
 
     One conditional update, so two runs of the job store one score and announce once.
     """
@@ -129,7 +157,8 @@ async def store_score(
             text("""
             UPDATE practice.dictation_attempts
                SET scoring_status = 'scored', diff = :diff, accuracy = :accuracy, scored_at = now()
-             WHERE attempt_id = :id AND scoring_status = 'waiting_transcript'
+             WHERE attempt_id = :id
+               AND scoring_status IN ('waiting_transcript', 'scoring_unavailable')
             RETURNING 1
             """).bindparams(bindparam("diff", type_=JSONB)),
             {"id": attempt_id, "diff": diff, "accuracy": accuracy},
@@ -140,7 +169,7 @@ async def store_score(
 
 @dataclass(frozen=True)
 class SubmissionRow:
-    scoring_status: str | None
+    scoring_status: ScoringStatus | None
     diff: dict[str, Any] | None
     accuracy: Decimal | None
 

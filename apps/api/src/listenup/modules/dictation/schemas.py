@@ -6,10 +6,10 @@ None of them has a field for reference text: Dictation hides the transcript
 
 import uuid
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from listenup.modules.dictation.repository import DiffStatus, ScoringStatus
 from listenup.modules.practice.service import AttemptStatus
 
 
@@ -66,7 +66,7 @@ class DictationSubmission(BaseModel):
 
     attempt_id: uuid.UUID
     status: AttemptStatus
-    scoring_status: Literal["waiting_transcript", "scored"]
+    scoring_status: ScoringStatus
 
 
 class DiffItem(BaseModel):
@@ -75,7 +75,7 @@ class DiffItem(BaseModel):
     index: int | None = Field(
         description="Position in the passage word sequence; null for an extra word"
     )
-    status: Literal["correct", "spelling_slip", "wrong", "missing", "extra", "not_scored"]
+    status: DiffStatus
     word: str = Field(description="The reference word; empty for an extra word")
     typed: str = Field(description="What the learner typed for it; empty when missing")
 
@@ -102,7 +102,5 @@ class DictationAttemptView(BaseModel):
     id: uuid.UUID
     session_id: uuid.UUID
     status: AttemptStatus
-    scoring_status: Literal["waiting_transcript", "scored"] | None = Field(
-        description="Null until the attempt is submitted"
-    )
+    scoring_status: ScoringStatus | None = Field(description="Null until the attempt is submitted")
     result: DictationResult | None = Field(description="Null until `scoring_status` is scored")

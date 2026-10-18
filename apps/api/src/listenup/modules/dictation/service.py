@@ -30,6 +30,7 @@ from listenup.modules.content import service as content
 from listenup.modules.dictation import repository
 from listenup.modules.dictation.domain.scoring import (
     ReferenceWord,
+    WordStatus,
     reference_from_arrays,
     score_dictation,
 )
@@ -42,12 +43,15 @@ from listenup.platform.jobs import enqueue
 
 __all__ = [
     "MAX_DRAFT_CHARS",
+    "SCORE_ATTEMPT",
     "AttemptView",
     "DictationWork",
     "Draft",
+    "TranscriptUnavailable",
     "export_data",
     "get_attempt",
     "latest_attempt",
+    "on_transcript_failed",
     "on_transcript_ready",
     "open_attempt",
     "record_listen_started",
@@ -58,6 +62,9 @@ __all__ = [
 
 MAX_DRAFT_CHARS = 20_000
 """The longest draft, in characters; the table's CHECK has the same limit."""
+
+SCORE_ATTEMPT = "dictation.score_attempt"
+"""The scoring job's name; `jobs.py` declares it, and queueing needs only the name."""
 
 
 @dataclass(frozen=True)
@@ -70,7 +77,7 @@ class Draft:
 @dataclass(frozen=True)
 class DiffWord:
     index: int | None
-    status: str
+    status: repository.DiffStatus
     word: str
     typed: str
 
@@ -85,8 +92,12 @@ class Result:
 @dataclass(frozen=True)
 class AttemptView:
     attempt: Attempt
-    scoring_status: str | None
+    scoring_status: repository.ScoringStatus | None
     result: Result | None
+
+
+class TranscriptUnavailable(Exception):
+    """The passage transcript failed for good, so a submission cannot be scored now."""
 
 
 ReferenceFor = Callable[[uuid.UUID], Awaitable[tuple[list[str], list[int], list[int]] | None]]
@@ -97,7 +108,7 @@ class Submission:
     """A stored submission; `scoring_status` is `waiting_transcript` until the job scores it."""
 
     attempt: Attempt
-    scoring_status: str
+    scoring_status: repository.ScoringStatus
 
 
 @dataclass(frozen=True)
@@ -227,9 +238,11 @@ async def submit(
             f"Your text is longer than {MAX_DRAFT_CHARS:,} characters. Shorten it to submit it.",
             max_chars=MAX_DRAFT_CHARS,
         )
+    # The conditional close comes first: of two concurrent submits only one passes it, and
+    # the other is refused before it can touch the stored text or record anything.
+    submitted = await practice.finish_attempt(db, attempt.id, AttemptStatus.SUBMITTED)
     await repository.ensure_draft(db, attempt.id, attempt.user_id)
     await repository.store_submission(db, attempt.id, text)
-    submitted = await practice.finish_attempt(db, attempt.id, AttemptStatus.SUBMITTED)
     await practice.complete_step(db, session, Step.DICTATION)
     await analytics.record_dictation_replays(
         db, attempt.user_id, attempt.session_id, attempt.id, replay_count=replay_count
@@ -241,22 +254,35 @@ async def submit(
 async def _queue_scoring(db: AsyncSession, attempt_id: uuid.UUID, learner: uuid.UUID) -> None:
     """Queue the scoring job in the caller's transaction.
 
-    No `unique_key`: a second job is harmless (the score is one conditional update), and
-    a key would swallow the queueing of a transcript that arrives while a job that found
-    none is still running (ADR 0041).
+    No `unique_key`: it would also match a job that is running, and swallow the queueing
+    for a transcript that arrives while that job is finding none. A repeat is cheap: it
+    reads the submission first and stops there once it is scored (ADR 0041).
     """
-    from listenup.modules.dictation.jobs import SCORE_ATTEMPT
-
     await enqueue(db, SCORE_ATTEMPT, attempt_id=str(attempt_id), user_id=str(learner))
 
 
 async def on_transcript_ready(db: AsyncSession, learner: uuid.UUID, session_id: uuid.UUID) -> None:
-    """The passage transcript is ready: score the session's waiting submission (FR-TX-5).
+    """The passage transcript is ready: score the session's unscored submission (FR-TX-5).
 
-    Called by the transcript job in the transaction that announces `transcript.ready`.
+    Called by the transcript job for the learner, after `transcript.ready` is published.
+    Also picks up a submission that was `scoring_unavailable` after an earlier failure.
     """
     for waiting in await repository.waiting_in_session(db, session_id):
         await _queue_scoring(db, waiting.attempt_id, learner)
+
+
+async def on_transcript_failed(db: AsyncSession, learner: uuid.UUID, session_id: uuid.UUID) -> None:
+    """Transcription gave up: tell the session's waiting submission, so it never waits on."""
+    for waiting in await repository.waiting_in_session(db, session_id):
+        await _mark_unavailable(db, learner, waiting.attempt_id)
+
+
+async def _mark_unavailable(db: AsyncSession, learner: uuid.UUID, attempt_id: uuid.UUID) -> bool:
+    """`scoring_unavailable` plus `dictation.scored`: the screen refetches and shows it."""
+    if not await repository.mark_unavailable(db, attempt_id):
+        return False
+    await publish(db, learner, EventType.DICTATION_SCORED, attempt_id)
+    return True
 
 
 def reference_words(
@@ -277,12 +303,18 @@ async def score_submission(
     """Score a waiting submission and announce it; False when there was nothing to score.
 
     `reference_for(session_id)` returns the passage words, or None while the transcript
-    is not ready. The score and `dictation.scored` commit together (FR-DI-5).
+    is not ready, and raises `TranscriptUnavailable` once it has failed: the submission is
+    then `scoring_unavailable` (announced once) until a later transcript scores it.
+    The score and `dictation.scored` commit together (FR-DI-5).
     """
     waiting = await repository.get_waiting(db, attempt_id)
     if waiting is None:
         return False
-    passage = await reference_for(waiting.session_id)
+    try:
+        passage = await reference_for(waiting.session_id)
+    except TranscriptUnavailable:
+        await _mark_unavailable(db, learner, attempt_id)
+        return False
     if passage is None:
         return False
     score = score_dictation(reference_words(*passage), waiting.submitted_text)
@@ -306,10 +338,11 @@ def _result(diff: dict[str, Any], accuracy: Decimal) -> Result:
     # Extra words after the last reference word, or in a passage with no words.
     for key in sorted(before):
         items += [DiffWord(None, "extra", "", e["typed"]) for e in before[key]]
-    counts = {status: 0 for status in ("correct", "spelling_slip", "wrong", "missing", "extra")}
+    counts = {s.value: 0 for s in WordStatus if s is not WordStatus.NOT_SCORED}
+    counts["extra"] = 0
     for item in items:
-        if item.status in counts:
-            counts[item.status] += 1
+        if item.status != "not_scored":
+            counts[item.status] += 1  # an unknown status is a KeyError, never a silent drop
     return Result(float(accuracy), counts, items)
 
 
