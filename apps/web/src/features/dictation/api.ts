@@ -1,12 +1,16 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, ApiError } from '../../api/client';
 import type { components } from '../../api/schema';
 import { SaveConflict, type SaveResult } from '../../lib/autosave';
-import { SESSIONS_KEY } from '../session/api';
+import { SESSIONS_KEY, SESSIONS_LIST_KEY, sessionKey } from '../session/api';
 
 export type DictationAttempt = components['schemas']['DictationAttempt'];
 type SavedDraft = components['schemas']['SavedDraft'];
+export type DictationResult = components['schemas']['DictationResult'];
+export type DictationAttemptView = components['schemas']['DictationAttemptView'];
+export type DictationSubmission = components['schemas']['DictationSubmission'];
+export type DiffItem = components['schemas']['DiffItem'];
 
 export const dictationKey = (sessionId: string) =>
   [...SESSIONS_KEY, 'dictation', sessionId] as const;
@@ -63,3 +67,44 @@ export async function saveDraft(
 export const draftStorageKey = (attemptId: string) => `listenup:dictation-draft:${attemptId}`;
 
 export const MAX_DRAFT_CHARS = 20_000;
+
+/**
+ * Every Dictation result, for the `dictation.scored` event, which names only the attempt.
+ * Separate from `dictationKey` so the event never refetches the attempt-opening request.
+ */
+export const DICTATION_RESULT_KEY = [...SESSIONS_KEY, 'dictation-result'] as const;
+export const dictationResultKey = (sessionId: string) =>
+  [...DICTATION_RESULT_KEY, sessionId] as const;
+
+/**
+ * The session's Dictation attempt with its score once scored (FR-DI-5). 404
+ * `attempt_not_found` when Dictation was never started: nothing to show.
+ */
+export function useDictationResult(sessionId: string) {
+  return useQuery({
+    queryKey: dictationResultKey(sessionId),
+    queryFn: () =>
+      api<DictationAttemptView>(`/sessions/${encodeURIComponent(sessionId)}/dictation/attempt`),
+    retry: false,
+  });
+}
+
+/**
+ * Submit the text (FR-DI-5). One Idempotency-Key per attempt, so a retry after a lost
+ * answer returns the first answer. The session refetches: the Dictation step is complete.
+ */
+export function useSubmitDictation(sessionId: string, attemptId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { text: string; version: number; replayCount: number }) =>
+      api<DictationSubmission>(`/dictation/attempts/${encodeURIComponent(attemptId)}/submit`, {
+        method: 'POST',
+        body: { text: input.text, version: input.version, replay_count: input.replayCount },
+        headers: { 'Idempotency-Key': `dictation-${attemptId}` },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: sessionKey(sessionId) });
+      void queryClient.invalidateQueries({ queryKey: SESSIONS_LIST_KEY });
+    },
+  });
+}

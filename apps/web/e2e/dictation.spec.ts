@@ -245,3 +245,79 @@ test('the player plays only the passage and stops at its end', async ({ page }) 
   await expect(player.getByText(/^1 replay$/)).toBeVisible();
   await expect(player.getByRole('button', { name: 'Pause' })).toBeVisible();
 });
+
+test('submitting shows the waiting message, then the diff with labels, at 360 px', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  const server = newServer();
+  await fakeApi(page, server);
+  let state: 'open' | 'waiting' | 'scored' = 'open';
+  const view = (scoring: string, result: unknown) => ({
+    id: 'attempt-1',
+    session_id: 's-1',
+    status: 'submitted',
+    scoring_status: scoring,
+    result,
+  });
+  // Later routes win: the submit moves the plan on to Transcript, and the score lands later.
+  await page.route('**/api/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname.replace('/api/v1', '');
+    if (path === '/sessions/s-1' && state !== 'open') {
+      return route.fulfill({
+        json: {
+          ...SESSION,
+          version: 1,
+          open_step: 'transcript',
+          open_position: 2,
+          steps: SESSION.steps.map((s, i) => ({
+            ...s,
+            status: i === 0 ? 'done' : i === 1 ? 'open' : 'locked',
+          })),
+        },
+      });
+    }
+    if (path === '/dictation/attempts/attempt-1/submit') {
+      state = 'waiting';
+      return route.fulfill({
+        status: 202,
+        json: {
+          attempt_id: 'attempt-1',
+          status: 'submitted',
+          scoring_status: 'waiting_transcript',
+        },
+      });
+    }
+    if (path === '/sessions/s-1/dictation/attempt') {
+      return route.fulfill({
+        json:
+          state === 'scored'
+            ? view('scored', {
+                accuracy: 50,
+                counts: { correct: 1, spelling_slip: 0, wrong: 1, missing: 0, extra: 0 },
+                items: [
+                  { index: 0, status: 'correct', word: 'Cities', typed: 'Cities' },
+                  { index: 1, status: 'wrong', word: 'plant', typed: 'plan' },
+                ],
+              })
+            : view('waiting_transcript', null),
+      });
+    }
+    return route.fallback();
+  });
+  await page.goto('/sessions/s-1');
+
+  await page.getByRole('button', { name: 'Submit for scoring' }).click();
+
+  await expect(page.getByText(/Scoring when the transcript is ready/)).toBeVisible();
+  // No diff, so no reference text, before the score.
+  await expect(page.getByRole('list', { name: 'Word by word' })).toHaveCount(0);
+  state = 'scored';
+  await page.reload();
+  await expect(page.getByText('50%')).toBeVisible();
+  const diff = page.getByRole('list', { name: 'Word by word' });
+  await expect(diff).toContainText('Wrong');
+  await expect(diff).toContainText('you typed plan');
+  const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(scrollWidth).toBeLessThanOrEqual(360);
+});

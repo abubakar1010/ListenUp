@@ -13,6 +13,7 @@ import {
   recordListenStarted,
   saveDraft,
   useDictationAttempt,
+  useSubmitDictation,
   type DictationAttempt,
 } from './api';
 import { DictationPlayer } from './DictationPlayer';
@@ -29,7 +30,7 @@ interface DictationScreenProps {
  * The Dictation step (#51, #52; design E01): the passage player, one text area with an
  * autosaved draft, and no transcript, hints or suggestions anywhere (FR-DI-1 to
  * FR-DI-4, FR-TX-5). Coming back resumes the attempt and its draft (FR-PL-6).
- * Submitting for scoring comes with #53.
+ * Submitting (#54) completes the step; the diff follows on the session page.
  */
 export function DictationScreen({ session, progress }: DictationScreenProps) {
   const attempt = useDictationAttempt(session.id);
@@ -129,6 +130,7 @@ function DictationWork({
     attempt.passage.end_ms,
     recordFirstPlay,
   );
+  const submit = useSubmitDictation(session.id, attempt.id);
   const textArea = useRef<HTMLTextAreaElement>(null);
   const [announcement, setAnnouncement] = useState('');
 
@@ -198,10 +200,27 @@ function DictationWork({
           <SaveStatus status={draft.status} />
         </div>
       </div>
-      <p className="text-body-s text-ink-muted">
-        Scoring opens in a later update. Keep typing: your text is saved as you go, here and on any
-        browser you sign in on.
-      </p>
+      <div className="flex flex-col items-start gap-2">
+        <button
+          type="button"
+          className={buttonClass('primary')}
+          disabled={words === 0 || submit.isPending}
+          onClick={() =>
+            submit.mutate({
+              text: draft.value,
+              version: session.version,
+              replayCount: player.replays,
+            })
+          }
+        >
+          {submit.isPending ? 'Submitting…' : 'Submit for scoring'}
+        </button>
+        <p className="text-body-s text-ink-muted">
+          Submitting ends this step and shows what you missed. Your text is saved as you go, here
+          and on any browser you sign in on.
+        </p>
+        {submit.isError && <ErrorPanel error={submit.error} />}
+      </div>
       <p role="status" aria-live="polite" className="sr-only">
         {problemText || announcement}
       </p>
