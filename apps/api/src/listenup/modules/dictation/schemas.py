@@ -67,3 +67,42 @@ class DictationSubmission(BaseModel):
     attempt_id: uuid.UUID
     status: AttemptStatus
     scoring_status: Literal["waiting_transcript", "scored"]
+
+
+class DiffItem(BaseModel):
+    """One word of the diff, in passage order; extra words sit where they were typed."""
+
+    index: int | None = Field(
+        description="Position in the passage word sequence; null for an extra word"
+    )
+    status: Literal["correct", "spelling_slip", "wrong", "missing", "extra", "not_scored"]
+    word: str = Field(description="The reference word; empty for an extra word")
+    typed: str = Field(description="What the learner typed for it; empty when missing")
+
+
+class DiffCounts(BaseModel):
+    correct: int
+    spelling_slip: int
+    wrong: int
+    missing: int
+    extra: int
+
+
+class DictationResult(BaseModel):
+    """The score. The only place the reference text appears, and only after scoring."""
+
+    accuracy: float = Field(description="Percent with two decimals; spelling slips count")
+    counts: DiffCounts
+    items: list[DiffItem]
+
+
+class DictationAttemptView(BaseModel):
+    """The attempt after the draft stage: its state and, once scored, the result."""
+
+    id: uuid.UUID
+    session_id: uuid.UUID
+    status: AttemptStatus
+    scoring_status: Literal["waiting_transcript", "scored"] | None = Field(
+        description="Null until the attempt is submitted"
+    )
+    result: DictationResult | None = Field(description="Null until `scoring_status` is scored")

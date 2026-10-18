@@ -20,6 +20,8 @@ import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,9 +42,11 @@ from listenup.platform.jobs import enqueue
 
 __all__ = [
     "MAX_DRAFT_CHARS",
+    "AttemptView",
     "DictationWork",
     "Draft",
     "export_data",
+    "get_attempt",
     "on_transcript_ready",
     "open_attempt",
     "record_listen_started",
@@ -60,6 +64,28 @@ class Draft:
     text: str
     version: int
     updated_at: datetime
+
+
+@dataclass(frozen=True)
+class DiffWord:
+    index: int | None
+    status: str
+    word: str
+    typed: str
+
+
+@dataclass(frozen=True)
+class Result:
+    accuracy: float
+    counts: dict[str, int]
+    items: list[DiffWord]
+
+
+@dataclass(frozen=True)
+class AttemptView:
+    attempt: Attempt
+    scoring_status: str | None
+    result: Result | None
 
 
 ReferenceFor = Callable[[uuid.UUID], Awaitable[tuple[list[str], list[int], list[int]] | None]]
@@ -263,6 +289,51 @@ async def score_submission(
         return False
     await publish(db, learner, EventType.DICTATION_SCORED, attempt_id)
     return True
+
+
+def _result(diff: dict[str, Any], accuracy: Decimal) -> Result:
+    """The stored diff as one ordered list: extra words sit before the word they precede."""
+    words: list[dict[str, Any]] = diff["words"]
+    extras: list[dict[str, Any]] = diff["extras"]
+    before: dict[int, list[dict[str, Any]]] = {}
+    for extra in extras:
+        before.setdefault(extra["before_index"], []).append(extra)
+    items: list[DiffWord] = []
+    for word in words:
+        items += [DiffWord(None, "extra", "", e["typed"]) for e in before.pop(word["index"], [])]
+        items.append(DiffWord(word["index"], word["status"], word["word"], word["typed"]))
+    # Extra words after the last reference word, or in a passage with no words.
+    for key in sorted(before):
+        items += [DiffWord(None, "extra", "", e["typed"]) for e in before[key]]
+    counts = {status: 0 for status in ("correct", "spelling_slip", "wrong", "missing", "extra")}
+    for item in items:
+        if item.status in counts:
+            counts[item.status] += 1
+    return Result(float(accuracy), counts, items)
+
+
+async def get_attempt(db: AsyncSession, attempt_id: uuid.UUID) -> AttemptView:
+    """The Dictation attempt with its score once scored (FR-DI-5).
+
+    The reference text is in `result` only. 404 `attempt_not_found` for another
+    learner's attempt, or one that is not Dictation.
+    """
+    try:
+        attempt = await practice.get_attempt(db, attempt_id)
+    except ProblemError:
+        raise _not_found() from None
+    if attempt.mode is not Step.DICTATION:
+        raise _not_found()
+    row = await repository.get_submission(db, attempt.id)
+    if row is None or row.scoring_status is None:
+        return AttemptView(attempt, None, None)
+    if (
+        row.scoring_status == repository.SCORED
+        and row.diff is not None
+        and row.accuracy is not None
+    ):
+        return AttemptView(attempt, row.scoring_status, _result(row.diff, row.accuracy))
+    return AttemptView(attempt, row.scoring_status, None)
 
 
 async def record_listen_started(db: AsyncSession, attempt_id: uuid.UUID) -> None:

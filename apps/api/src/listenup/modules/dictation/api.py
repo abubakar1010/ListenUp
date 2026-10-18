@@ -142,3 +142,36 @@ async def submit(
     response = await run_once(db, learner, idempotency_key, await request_fingerprint(request), run)
     response.headers["Cache-Control"] = "private, no-store"
     return response
+
+
+@router.get(
+    "/dictation/attempts/{attempt_id}",
+    response_model=schemas.DictationAttemptView,
+    responses={404: {"description": "`attempt_not_found`"}},
+)
+async def get_attempt(
+    attempt_id: uuid.UUID, learner: CurrentLearner, db: DbSession
+) -> JSONResponse:
+    """The attempt's state and, once scored, the diff and accuracy (FR-DI-5).
+
+    The reference text is in `result.items` only. Before scoring it is in no answer
+    of the Dictation routes (FR-DI-3, FR-TX-5). Refetch it when `dictation.scored`
+    arrives on the event stream.
+    """
+    view = await service.get_attempt(db, attempt_id)
+    body = schemas.DictationAttemptView(
+        id=view.attempt.id,
+        session_id=view.attempt.session_id,
+        status=view.attempt.status,
+        scoring_status=view.scoring_status,  # type: ignore[arg-type]
+        result=None
+        if view.result is None
+        else schemas.DictationResult(
+            accuracy=view.result.accuracy,
+            counts=schemas.DiffCounts(**view.result.counts),
+            items=[schemas.DiffItem(**vars(item)) for item in view.result.items],
+        ),
+    )
+    return JSONResponse(
+        body.model_dump(mode="json"), headers={"Cache-Control": "private, no-store"}
+    )

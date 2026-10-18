@@ -9,6 +9,8 @@ reference text belongs to the transcript module and Dictation never shows it
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -134,3 +136,23 @@ async def store_score(
         )
     ).first()
     return row is not None
+
+
+@dataclass(frozen=True)
+class SubmissionRow:
+    scoring_status: str | None
+    diff: dict[str, Any] | None
+    accuracy: Decimal | None
+
+
+async def get_submission(session: AsyncSession, attempt_id: uuid.UUID) -> SubmissionRow | None:
+    row = (
+        await session.execute(
+            text(
+                "SELECT scoring_status, diff, accuracy FROM practice.dictation_attempts "
+                "WHERE attempt_id = :id"
+            ),
+            {"id": attempt_id},
+        )
+    ).first()
+    return SubmissionRow(*row) if row else None
