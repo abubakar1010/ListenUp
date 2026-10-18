@@ -16,14 +16,20 @@ async def read_transcript(
     db: AsyncSession, worker_database: Database, learner: uuid.UUID, session_id: uuid.UUID
 ) -> schemas.TranscriptReview:
     # FR-TX-5: this boundary authorizes ownership and step before privileged reads.
-    # Correction seam (#56): apply learner overlays inside read_passage, while the
-    # cache-row/local-word identities are available. Review consumes that result
-    # unchanged; it never queries corrections or changes the shared reference.
+    # read_passage applies the learner's overlay using cache-row/local-word identity.
+    # Review never queries corrections or changes the shared reference (#57).
     passage = await transcript.read_passage(db, worker_database, learner, session_id)
     session = await practice.get_session(db, session_id)
     item = await content.get_content(db, learner, session.content_id)
+    edited = set(passage.edited_word_indices)
     words = [
-        schemas.TranscriptWord(index=i, text=word, start_ms=start, end_ms=end)
+        schemas.TranscriptWord(
+            index=i,
+            text=word,
+            start_ms=start,
+            end_ms=end,
+            edited=i in edited,
+        )
         for i, (word, start, end) in enumerate(
             zip(passage.words, passage.start_ms, passage.end_ms, strict=True)
         )

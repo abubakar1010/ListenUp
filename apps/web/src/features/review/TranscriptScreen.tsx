@@ -150,12 +150,13 @@ function TranscriptWork({
                   <span key={word.index}>
                     <button
                       type="button"
-                      aria-label={`Jump to ${word.text}`}
+                      aria-label={`Jump to ${word.text || 'removed word'}${word.edited ? ' (edited)' : ''}`}
                       disabled={player.status !== 'ready'}
                       className="min-h-11 max-w-full rounded-sm px-1 text-left underline decoration-dotted underline-offset-4 [overflow-wrap:anywhere] hover:bg-surface-raised"
                       onClick={() => jump(word.start_ms)}
                     >
-                      {word.text}
+                      {word.text || '(removed word)'}
+                      {word.edited && <span className="ml-1 text-body-s font-bold">Edited</span>}
                     </button>{' '}
                   </span>
                 ))}

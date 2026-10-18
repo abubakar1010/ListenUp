@@ -1,5 +1,6 @@
 """Transcript review uses the API role and the existing authorized read boundary (#57)."""
 
+import asyncio
 import uuid
 from collections.abc import Iterator
 
@@ -8,6 +9,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from listenup.modules.practice.service import Step
+from listenup.modules.review import service as review
+from listenup.platform.database import Database
 from tests.integration.conftest import conninfo_to_url
 from tests.integration.intake_helpers import (
     ClientFactory,
@@ -111,15 +114,35 @@ def test_transcript_returns_sentence_lines_with_absolute_word_timings(
                 "start_ms": 11000,
                 "end_ms": 13000,
                 "words": [
-                    {"index": 0, "text": "Hello", "start_ms": 11000, "end_ms": 11500},
-                    {"index": 1, "text": "world.", "start_ms": 12000, "end_ms": 13000},
+                    {
+                        "index": 0,
+                        "text": "Hello",
+                        "start_ms": 11000,
+                        "end_ms": 11500,
+                        "edited": False,
+                    },
+                    {
+                        "index": 1,
+                        "text": "world.",
+                        "start_ms": 12000,
+                        "end_ms": 13000,
+                        "edited": False,
+                    },
                 ],
             },
             {
                 "index": 1,
                 "start_ms": 30000,
                 "end_ms": 31000,
-                "words": [{"index": 2, "text": "Again.", "start_ms": 30000, "end_ms": 31000}],
+                "words": [
+                    {
+                        "index": 2,
+                        "text": "Again.",
+                        "start_ms": 30000,
+                        "end_ms": 31000,
+                        "edited": False,
+                    }
+                ],
             },
         ],
     }
@@ -174,3 +197,153 @@ def test_transcript_denials_do_not_open_worker_transaction(client, clip, make_cl
     assert client.get("/api/v1/sessions/invalid/transcript").json()["code"] == "validation_failed"
     client.cookies.clear()
     assert client.get(path).json()["code"] == "not_signed_in"
+
+
+def correction(url, user, media, index=1, value="Greetings"):
+    with psycopg.connect(url) as conn:
+        transcript_id = conn.execute(
+            "SELECT id FROM content.passage_transcripts WHERE media_object_id=%s", [media]
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO content.transcript_corrections "
+            "(user_id, passage_transcript_id, word_index, corrected_text) VALUES (%s,%s,%s,%s)",
+            [user, transcript_id, index, value],
+        )
+    return transcript_id
+
+
+@pytest.mark.parametrize("index,value", [(-1, "x"), (1, "x" * 61)])
+def test_correction_storage_rejects_invalid_values(client, clip, migrated_url, index, value):
+    media = cache(migrated_url, clip)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        correction(migrated_url, learner_id(client), media, index, value)
+
+
+@pytest.mark.parametrize("parent", ["identity.users", "content.passage_transcripts"])
+def test_correction_rows_are_private_and_cascade(
+    client, clip, make_client, migrated_url, api_role_url, parent
+):
+    other = make_client()
+    user, other_user = learner_id(client), learner_id(other)
+    media = cache(migrated_url, clip)
+    transcript_id = correction(migrated_url, user, media)
+    correction(migrated_url, other_user, media, value="Other learner")
+    with psycopg.connect(api_role_url) as conn:
+        assert (
+            conn.execute("SELECT corrected_text FROM content.transcript_corrections").fetchall()
+            == []
+        )
+        conn.execute("SELECT set_config('app.user_id', %s, true)", [user])
+        assert conn.execute(
+            "SELECT corrected_text FROM content.transcript_corrections"
+        ).fetchall() == [("Greetings",)]
+    with psycopg.connect(migrated_url) as conn:
+        conn.execute(
+            f"DELETE FROM {parent} WHERE id=%s",
+            [user if parent == "identity.users" else transcript_id],
+        )
+        assert conn.execute(
+            "SELECT count(*) FROM content.transcript_corrections WHERE user_id=%s", [user]
+        ).fetchone() == (0,)
+
+
+def test_transcript_overlays_only_own_corrections_without_changing_word_identity(
+    client, clip, make_client, api_role_url, migrated_url
+):
+    user = learner_id(client)
+    media = cache(migrated_url, clip)
+    correction(migrated_url, user, media, index=0, value="Outside edit")
+    correction(migrated_url, user, media, index=1, value="Greetings")
+    correction(migrated_url, user, media, index=2, value="")
+    other = make_client(
+        transcript_read_database_url=conninfo_to_url(migrated_url)
+        + "?options=-c%20role%3Dlistenup_worker"
+    )
+    correction(migrated_url, learner_id(other), media, index=3, value="Foreign edit")
+    other_clip = str(uuid.uuid4())
+    with psycopg.connect(migrated_url) as conn:
+        conn.execute(
+            "UPDATE content.media_objects SET source='youtube', uploaded_by=NULL WHERE id=%s",
+            [media],
+        )
+        conn.execute(
+            "INSERT INTO content.contents (id,user_id,media_object_id,title) "
+            "VALUES (%s,%s,%s,'Shared')",
+            [other_clip, learner_id(other), media],
+        )
+    for caller, content_id, expected in [
+        (client, clip, [(0, "Greetings", True), (1, "", True), (2, "Again.", False)]),
+        (other, other_clip, [(0, "Hello", False), (1, "world.", False), (2, "Foreign edit", True)]),
+    ]:
+        session = start(
+            caller, content_id, "dictation", passage={"start_ms": 10000, "end_ms": 40000}
+        )
+        path = f"/api/v1/sessions/{session['id']}/transcript"
+        assert caller.get(path).json()["code"] == "step_locked"
+        finish(api_role_url, caller, session["id"], Step.DICTATION)
+        response = caller.get(path)
+        assert response.status_code == 200, response.text
+        words = [word for line in response.json()["lines"] for word in line["words"]]
+        assert [(word["index"], word["text"], word["edited"]) for word in words] == expected
+        assert [(word["start_ms"], word["end_ms"]) for word in words] == [
+            (11000, 11500),
+            (12000, 13000),
+            (30000, 31000),
+        ]
+
+        # The same service can be called with a privileged DB connection; its
+        # explicit learner filter must still prevent another learner's overlay.
+        async def privileged_read(reader, session_id):
+            database = Database(conninfo_to_url(migrated_url))
+            try:
+                async with database.transaction() as db:
+                    return await review.read_transcript(
+                        db, database, uuid.UUID(reader), uuid.UUID(session_id)
+                    )
+            finally:
+                await database.dispose()
+
+        privileged = asyncio.run(privileged_read(learner_id(caller), session["id"]))
+        assert [
+            (w.index, w.text, w.edited) for line in privileged.lines for w in line.words
+        ] == expected
+    with psycopg.connect(migrated_url) as conn:
+        assert conn.execute(
+            "SELECT words FROM content.passage_transcripts WHERE media_object_id=%s", [media]
+        ).fetchone()[0] == ["Outside.", "Hello", "world.", "Again."]
+
+
+def test_correction_identity_and_sentence_boundaries_survive_cache_composition(
+    client, clip, api_role_url, migrated_url
+):
+    user = learner_id(client)
+    ids = [uuid.uuid4(), uuid.uuid4()]
+    with psycopg.connect(migrated_url) as conn:
+        media = conn.execute(
+            "SELECT media_object_id FROM content.contents WHERE id=%s", [clip]
+        ).fetchone()[0]
+        for row_id, span, word, at in zip(
+            ids, ["[0,20000)", "[20000,40000)"], ["First.", "Second."], [11000, 30000], strict=True
+        ):
+            conn.execute(
+                "INSERT INTO content.passage_transcripts "
+                "(id,media_object_id,span,origin,status,words,start_ms,end_ms,"
+                "confidence,sentence_starts,provider_info) "
+                "VALUES (%s,%s,%s,'generated','ready',%s,%s,%s,ARRAY[900]::int2[],ARRAY[0],"
+                '\'{"provider":"test","model":"fixture","version":"1"}\')',
+                [row_id, media, span, [word], [at], [at + 500]],
+            )
+        for row_id, value in zip(ids, ["", "New second"], strict=True):
+            conn.execute(
+                "INSERT INTO content.transcript_corrections "
+                "(user_id,passage_transcript_id,word_index,corrected_text) VALUES (%s,%s,0,%s)",
+                [user, row_id, value],
+            )
+    session = start(client, clip, "dictation", passage={"start_ms": 10000, "end_ms": 40000})
+    finish(api_role_url, client, session["id"], Step.DICTATION)
+    response = client.get(f"/api/v1/sessions/{session['id']}/transcript")
+    assert response.status_code == 200, response.text
+    assert [
+        [(w["index"], w["text"], w["edited"]) for w in line["words"]]
+        for line in response.json()["lines"]
+    ] == [[(0, "", True)], [(1, "New second", True)]]

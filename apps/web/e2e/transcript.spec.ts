@@ -70,7 +70,7 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
               index: 0,
               start_ms: 0,
               end_ms: 1000,
-              words: [{ index: 0, text: 'Hello.', start_ms: 0, end_ms: 1000 }],
+              words: [{ index: 0, text: 'Hello.', start_ms: 0, end_ms: 1000, edited: true }],
             },
             {
               index: 1,
@@ -102,6 +102,9 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await page.goto('/sessions/s-57');
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeEnabled();
   await expect(page.getByText('Entry locked')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Jump to Hello. (edited)' })).toContainText(
+    'Edited',
+  );
   const second = page.getByRole('button', { name: 'Jump to Again.' });
   // Reach the word through keyboard traversal and activate its native button.
   await page.getByRole('combobox', { name: 'Speed' }).focus();

@@ -15,6 +15,7 @@ class TranscriptWord(BaseModel):
     text: str
     start_ms: int
     end_ms: int
+    edited: bool = False
 
 
 class TranscriptLine(BaseModel):

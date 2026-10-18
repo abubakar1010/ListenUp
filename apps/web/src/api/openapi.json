@@ -1530,6 +1530,11 @@
       },
       "TranscriptWord": {
         "properties": {
+          "edited": {
+            "default": false,
+            "title": "Edited",
+            "type": "boolean"
+          },
           "end_ms": {
             "title": "End Ms",
             "type": "integer"

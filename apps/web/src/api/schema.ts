@@ -1600,6 +1600,11 @@ export interface components {
     };
     /** TranscriptWord */
     TranscriptWord: {
+      /**
+       * Edited
+       * @default false
+       */
+      edited: boolean;
       /** End Ms */
       end_ms: number;
       /** Index */

@@ -128,6 +128,39 @@ test('replays_current_line_changes_speed_and_word_activation_jumps', async () =>
   expect(pause).toHaveBeenCalled();
 });
 
+test('shows_learner_edits_and_removed_words_with_original_audio_targets', async () => {
+  renderReview({
+    [`GET ${PATH}`]: jsonResponse(200, {
+      ...DATA,
+      lines: [
+        {
+          ...DATA.lines[0],
+          words: [
+            { ...DATA.lines[0].words[0], text: 'Greetings', edited: true },
+            { ...DATA.lines[0].words[1], text: '', edited: true },
+          ],
+        },
+        DATA.lines[1],
+      ],
+    }),
+  });
+  const changed = await screen.findByRole('button', { name: 'Jump to Greetings (edited)' });
+  const audio = document.querySelector('audio')!;
+  fireEvent.loadedMetadata(audio);
+  expect(within(changed).getByText('Edited')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Jump to Hello' })).not.toBeInTheDocument();
+  fireEvent.click(changed);
+  expect(audioTime).toBe(131);
+  const removed = screen.getByRole('button', { name: 'Jump to removed word (edited)' });
+  expect(removed).toHaveTextContent('(removed word)');
+  expect(within(removed).getByText('Edited')).toBeVisible();
+  fireEvent.click(removed);
+  expect(audioTime).toBe(132);
+  expect(
+    within(screen.getByRole('button', { name: 'Jump to Again.' })).queryByText('Edited'),
+  ).toBeNull();
+});
+
 test('seek_sets_exact_target_without_debounce_and_preserves_playback_state', async () => {
   renderReview();
   const audio = await ready();

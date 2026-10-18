@@ -54,9 +54,10 @@ spies fail if denied requests reach the cache. Ready reads use a worker-role
 connection, while the HTTP request database uses api_role_url. The shared-cache
 privilege-denial tests remain part of the complete suite.
 
-No migration or new learner data is introduced. Correction persistence/editor and
-autosave are deferred to #56; marks/completion are outside this story. No forbidden
-backend Dictation, transcript jobs, marks, or AI gateway files are changed.
+The initial screen implementation introduced no migration. The final overlay work
+below adds the designed correction table and read-only composition; the editor,
+dispute/re-scoring and autosave remain #56. Marks/completion are separate stories.
+Backend Dictation, transcript jobs, marks and AI gateway files remain unchanged.
 
 
 ## Additional regression/characterization evidence
@@ -190,7 +191,7 @@ no-store`. This characterizes the existing privacy header; no production behavio
 changed. `LISTENUP_REQUIRE_DB=1 uv run --directory apps/api pytest
 tests/integration/test_review_api.py -q` passed all 8 tests after that assertion.
 
-### Current validation
+### Validation before the overlay addition
 
 - Backend: Ruff format/lint, strict mypy (145 source files), all 6 import contracts,
   Alembic upgrade and drift check passed. No schema changed, so a new migration
@@ -216,23 +217,95 @@ tests/integration/test_review_api.py -q` passed all 8 tests after that assertion
 - OpenAPI export and client generation passed and produced no final diff.
   Branch-name validation and `git diff --check` passed.
 
-### Remaining scope and release gates
+### Final scope and release gates
 
-**Learner correction overlays remain unimplemented.** #57's scope includes showing
-the learner's corrections, but main and this PR have neither the designed
-`content.transcript_corrections` table nor an overlay reader. The service seam alone
-does not satisfy that scope. #56 owns the correction editor/dispute flow, and is not
-a declared dependency of #57. The owner was asked whether to add the designed table
-and read-only overlay here or explicitly retain the deferral; that choice remains
-pending. This record does not treat an unanswered question as approval to defer a
-functional requirement. Do not close #57 as fully implemented on this evidence.
-
-Marks are separately scoped in #58–#60; #57 explicitly excludes mark creation.
-Card, Shadow and Blind gist implementation remain outside this story. No production
-code changed during this resumption audit.
+The learner-correction scope gap identified during this audit is resolved by the
+read-only overlay implementation below. The editor and dispute/re-scoring remain
+#56. Marks are separately scoped in #58–#60; #57 explicitly excludes mark creation.
+Card, Shadow and Blind gist implementation remain outside this story.
 
 Actual-server NFR-PERF-4 remains **deferred until staging — unverified** under #155.
-CI run 39108167312 passed on the prior head `6a1f96a`; that is not CI evidence for
-the new audit commit. Check the new head's CI before merge. A fresh-session
-independent review remains outstanding; no sub-agents were spawned and this
-builder's audit does not replace that review. Do not merge automatically.
+A fresh-session independent review remains outstanding; no sub-agents were spawned
+and this builder's audit does not replace that review. Do not merge automatically.
+
+## Learner correction overlay implementation
+
+The approved continuation plan included resolving the correction-overlay gap
+against #57's scope. The final implementation uses the table already specified in
+Database Design §4, rather than deferring the read behavior to #56. Migration
+`57_transcript_corrections` follows `0064_ai_gateway` and introduces own_rows RLS,
+bounded correction text and cascading account/cache-row deletion. API grants are
+SELECT only; workers retain CRUD. No correction editor or write endpoint is added.
+
+`transcript.service.read_passage` checks ownership, the Transcript step and complete
+cache coverage before reading the learner's overlays in its request transaction.
+An explicit learner filter protects privileged callers as well as API-role RLS.
+Overlay keys use cache-row identity and local word index, before passage-global
+indices are composed. Shared cache text, original sentence boundaries, word indices
+and timings are preserved, including empty corrections. Review emits `edited` and
+the screen shows a textual Edited label; a removed word retains an accessible audio
+jump target. The learner's export includes only their own correction rows.
+
+### Actual Red / Green cycles
+
+| Cycle | Observed Red before implementation | Green / refactor |
+| --- | --- | --- |
+| Correction storage, privacy and cascade | Root: `LISTENUP_REQUIRE_DB=1 uv run --directory apps/api pytest tests/integration/test_review_api.py -k 'correction_storage or correction_rows' -q`: **4 failed**, all UndefinedTable for the missing designed correction table. This is a missing behavior/schema failure, not unavailable infrastructure. | After migration/model: same four cases passed in the expanded run, while overlay behavior still failed. Negative index and 61-character text are rejected; missing learner sees no rows, learner A sees only their row, account/cache deletion cascades. |
+| Overlay API | Root: same file with `-k 'correction_storage or correction_rows or overlays'`: **1 failed, 4 passed**, KeyError `edited` before the overlay reader/response metadata. | `test_transcript_overlays_only_own_corrections_without_changing_word_identity` now checks two learners sharing one media cache, out-of-passage corrections, unchanged shared reference, original indices/times and empty replacements. API-role and privileged-service reads agree. Full review file after the supplemental cache-composition example: **14 passed**. |
+| Correction export | Root: `LISTENUP_REQUIRE_DB=1 uv run --directory apps/api pytest tests/integration/test_export.py -k test_export_holds_every_learner_table -q`: **1 failed**, correction table absent from export. | Adding `transcript.service.export_data` to contributors made review/export suites pass **34 tests**. The export test was then strengthened with populated own/foreign correction rows. The neighboring review/export/passage/migration/architecture run passed **64 tests** before the final privileged-reader assertion was added; the review file subsequently passed all 14 cases. |
+| Edited/removed-word UI | Web: `npx --yes pnpm@10.28.0 exec vitest run src/features/review/TranscriptScreen.test.tsx -t shows_learner_edits`: **1 failed, 10 skipped**, missing `Jump to Greetings (edited)` before the UI labels. | Same command: **1 passed, 10 skipped** after the display change. Edited and removed-word controls preserve their original audio targets; unedited words have no Edited label. Neighboring review/Dictation run: **44 passed**. |
+
+The cache-composition example and strengthened populated-export/privileged-reader
+assertions supplement the original cycle; they are not separately claimed as
+new test-first implementation cycles. Refactoring converts edited-index lookup to
+a set and preserves all observable results. No threshold or assertion was weakened.
+
+For security regression detection, an isolated source copy under
+`work/correction-mutation` removed only the explicit learner filter from the
+correction query. Running `test_transcript_overlays_only_own_corrections_without_changing_word_identity`
+failed on its privileged read: expected `(2, "Again.", False)`, received
+`(2, "Foreign edit", True)`. The normal implementation passes; it was never mutated.
+This is supplemental mutation evidence, not a replacement for the Red cycles above.
+
+### Additional scope-to-test mapping
+
+| Scope | Named tests |
+| --- | --- |
+| Learner-only correction overlay, original timing/index identity, unchanged shared reference, gate still enforced | `test_transcript_overlays_only_own_corrections_without_changing_word_identity` |
+| Cache-local correction identity and unchanged sentence boundaries across cached spans | `test_correction_identity_and_sentence_boundaries_survive_cache_composition` |
+| RLS, fail-closed missing identity, account/cache cascade | `test_correction_rows_are_private_and_cascade` |
+| Correction text/index constraints | `test_correction_storage_rejects_invalid_values` |
+| Data export contains own corrections only | `test_export_holds_every_learner_table_and_only_the_learners_data` |
+| Non-colour edited label, removed-word accessibility and audio activation | `shows_learner_edits_and_removed_words_with_original_audio_targets` |
+
+### Final overlay validation
+
+- Backend format/lint, strict mypy, all six import contracts passed. The new
+  migration passed downgrade/re-upgrade and Alembic drift check locally; full
+  migration integration tests also passed in the coverage run.
+- With PostgreSQL and S3 required and PostgreSQL 16 client tools on PATH, the
+  final backend coverage command passed **1,256 tests**, one performance test
+  deselected, **no skips**, 219.18 s. The separate uninstrumented performance
+  command passed **one test** (the existing scoring budget, not media latency).
+- Web lint/format/types, coverage **326 passed**, production build and size
+  **120.8 kB gzip / 200 kB**, and full Playwright **34 passed** all passed after
+  the overlay implementation. The component-first edited-word cycle above also
+  covers removed-word audio activation. The browser fixture additionally checks
+  the Edited label at 360 px: `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium
+  npx --yes pnpm@10.28.0 exec playwright test e2e/transcript.spec.ts` passed
+  **one test** after that fixture assertion, with lint/types rechecked.
+- Runtime coverage inventories passed. Changed-line coverage against
+  `origin/main`: API **84/84**, web **189/189**, both **100%**. Review and transcript
+  read-service lines/branches are fully covered; the Transcript screen also has
+  full line/branch coverage. The cache repository's uncovered advisory-lock
+  cleanup exception (lines 129–131) is pre-existing and unchanged. Reused transport
+  branch gaps remain disclosed above. No exclusions or thresholds changed.
+- OpenAPI export and client generation ran again after the response change.
+  Generated files are committed rather than hand-edited. Branch validation and
+  `git diff --check` pass. Remote main remains `a74e930`.
+
+The correction editor and dispute/re-scoring flow are intentionally left to #56;
+there is no public correction write endpoint in #57. The migration must be applied
+before deploying this API version. Actual-server NFR-PERF-4 and independent review
+remain the outstanding validation/release gates described above. CI must validate
+the final pushed head; earlier-head CI is not evidence for this addition.

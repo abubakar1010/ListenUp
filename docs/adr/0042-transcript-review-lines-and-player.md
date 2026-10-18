@@ -35,11 +35,21 @@ existing 422 validation_failed handler. Transcript remains readable after comple
 Reading does not start a step or write entry_locked_at: the existing practice
 transition sets it when Transcript opens (ADR 0021).
 
-The correction seam is the existing authorized read_passage result. #56 must apply
-learner corrections inside that service while cache-row and local-word indices
-remain available, before returning the passage. Review groups that result unchanged.
-No speculative correction schema, fake corrections or editing/autosave path is added.
-Marks and Transcript completion remain in #58 and later review work.
+Migration `57_transcript_corrections` creates the correction table already specified
+in Database Design §4. Each row is keyed by learner, cache-row ID and local word
+index, with own_rows RLS, bounded text and cascading account/cache deletion. The
+API receives SELECT only; the worker can persist corrections. The editor, dispute
+endpoint and re-scoring remain #56, which will supply the write boundary.
+
+After the existing ownership/step gate and complete cache coverage check,
+read_passage reads overlays through the learner's request transaction, with an
+explicit learner filter as well as RLS. Corrections never modify the shared cache.
+Composition preserves passage-global word indices, audio times and original
+sentence boundaries even when a replacement removes punctuation or is empty.
+The response marks corrected words with `edited`; the screen labels them Edited.
+An empty replacement retains an accessible removed-word jump target. Corrections
+are included in the learner's export. Review consumes the service result without
+querying corrections itself. Marks and completion remain in #58 and later work.
 
 The shared web passage player retains Dictation's transport and control policy.
 Compatibility exports preserve its imports; Transcript supplies sentence replay.
