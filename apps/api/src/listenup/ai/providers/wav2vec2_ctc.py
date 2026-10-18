@@ -32,6 +32,20 @@ from listenup.ai.providers.audio import decode_pcm
 PROVIDER = "wav2vec2-ctc"
 
 
+def _version(window_seconds: float, int8: bool) -> str:
+    return (
+        f"torchaudio {metadata.version('torchaudio')}; torch {metadata.version('torch')}"
+        f"; window_seconds={window_seconds:g}; int8={str(int8).lower()}"
+    )
+
+
+def version_for(entry: ProviderEntry) -> str:
+    """Deployment metadata, independent of learner inputs and engine responses."""
+    return _version(
+        float(entry.options.get("window_seconds", 0)), bool(entry.options.get("int8", False))
+    )
+
+
 class RawSpan(BaseModel):
     """One token's span in emission frames, with its mean posterior (torchaudio TokenSpan)."""
 
@@ -167,10 +181,7 @@ class TorchaudioCtcEngine:
     @property
     def version(self) -> str:
         # NFR-AI-5: windowing and quantisation change both boundaries and posteriors.
-        return (
-            f"torchaudio {metadata.version('torchaudio')}; torch {metadata.version('torch')}"
-            f"; window_seconds={self._window_seconds:g}; int8={str(self._int8).lower()}"
-        )
+        return _version(self._window_seconds, self._int8)
 
     def run(self, audio: Path, words: list[str]) -> RawAlignment:
         torch = self._torch

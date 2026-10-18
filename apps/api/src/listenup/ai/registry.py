@@ -11,11 +11,16 @@ from listenup.ai.config import ProviderEntry
 from listenup.ai.ports import AlignmentPort, SpeechAssessmentPort, TextAIPort, TranscriptionPort
 from listenup.ai.providers import fake
 from listenup.ai.providers.faster_whisper import FasterWhisperTranscription
+from listenup.ai.providers.faster_whisper import version_for as whisper_version
 from listenup.ai.providers.wav2vec2_ctc import Wav2Vec2CtcAlignment
+from listenup.ai.providers.wav2vec2_ctc import version_for as alignment_version
 
 
 @dataclass(frozen=True)
 class Registry:
+    # Trusted code/configuration only: never derive these from an inference response.
+    # Unregistered versions stay NULL in operational logs, not response-supplied prose.
+    versions: dict[str, Callable[[ProviderEntry], str]] = field(default_factory=dict)
     transcription: dict[str, Callable[[ProviderEntry], TranscriptionPort]] = field(
         default_factory=dict
     )
@@ -27,6 +32,11 @@ class Registry:
 
 
 DEFAULT_REGISTRY = Registry(
+    versions={
+        fake.PROVIDER: lambda _: fake.VERSION,
+        "faster-whisper": whisper_version,
+        "wav2vec2-ctc": alignment_version,
+    },
     transcription={
         fake.PROVIDER: fake.FakeTranscription,
         "faster-whisper": FasterWhisperTranscription,

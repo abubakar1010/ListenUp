@@ -6,11 +6,13 @@ live traffic fails fast instead of stalling the app. The URL is taken from
 LISTENUP_DATABASE_URL.
 """
 
+import re
 from typing import Any
 
 from alembic import context
 from sqlalchemy import create_engine, text
 
+from listenup.ai import models as _ai_models  # noqa: F401
 from listenup.modules.analytics import models as _analytics_models  # noqa: F401
 from listenup.modules.blind import models as _blind_models  # noqa: F401
 from listenup.modules.content import models as _content_models  # noqa: F401
@@ -36,6 +38,13 @@ def database_url() -> str:
 def include_name(name: str | None, type_: str, parent_names: dict[str, Any]) -> bool:
     # Compare only the application schemas; `public` holds alembic_version and the
     # job queue, which Procrastinate manages.
+    if (
+        type_ == "table"
+        and parent_names.get("schema_name") == "ai"
+        and name
+        and re.fullmatch(r"calls_[0-9]{4}_[0-9]{2}", name)
+    ):
+        return False  # monthly children are managed by ai.maintain_partitions
     if type_ == "schema":
         return name in APP_SCHEMAS
     return True

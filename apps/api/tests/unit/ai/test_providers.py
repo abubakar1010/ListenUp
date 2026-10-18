@@ -175,3 +175,36 @@ def test_alignment_versions_distinguish_inference_settings(monkeypatch: pytest.M
             assert f"int8={str(int8).lower()}" in engine.version
             assert engine.version.startswith("torchaudio 2.8.0; torch 2.8.0;")
     assert len(versions) == 6
+
+
+def test_registered_versions_match_deployed_speech_settings(monkeypatch):
+    from listenup.ai.providers.faster_whisper import FasterWhisperEngine
+    from listenup.ai.providers.faster_whisper import version_for as whisper_version
+    from listenup.ai.providers.wav2vec2_ctc import version_for as alignment_version
+    from listenup.ai.registry import DEFAULT_REGISTRY
+
+    monkeypatch.setattr(
+        "importlib.metadata.version",
+        lambda name: {
+            "faster-whisper": "1.2.3",
+            "ctranslate2": "4.5.6",
+            "torchaudio": "2.8.0",
+            "torch": "2.8.0",
+        }[name],
+    )
+    whisper = ProviderEntry(provider="faster-whisper", options={"compute_type": "float32"})
+    alignment = ProviderEntry(provider="wav2vec2-ctc", options={"window_seconds": 15, "int8": True})
+    assert (
+        DEFAULT_REGISTRY.versions["faster-whisper"](whisper)
+        == whisper_version(whisper)
+        == "faster-whisper 1.2.3; ctranslate2 4.5.6; float32"
+    )
+    assert (
+        DEFAULT_REGISTRY.versions["wav2vec2-ctc"](alignment)
+        == alignment_version(alignment)
+        == "torchaudio 2.8.0; torch 2.8.0; window_seconds=15; int8=true"
+    )
+    assert DEFAULT_REGISTRY.versions["fake"](ProviderEntry(provider="fake")) == "1"
+    engine = object.__new__(FasterWhisperEngine)
+    engine._compute_type = "float32"
+    assert engine.version == whisper_version(whisper)
