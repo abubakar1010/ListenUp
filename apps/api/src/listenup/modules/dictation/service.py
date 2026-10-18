@@ -17,6 +17,7 @@ step; the scoring job (`jobs.py`, ADR 0041) fills the score columns of the same 
 """
 
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -25,19 +26,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from listenup.modules.analytics import service as analytics
 from listenup.modules.content import service as content
 from listenup.modules.dictation import repository
+from listenup.modules.dictation.domain.scoring import (
+    ReferenceWord,
+    reference_from_arrays,
+    score_dictation,
+)
 from listenup.modules.practice import service as practice
 from listenup.modules.practice.service import Attempt, AttemptStatus, Passage, Step
 from listenup.platform.errors import ProblemError
+from listenup.platform.events import EventType, publish
 from listenup.platform.export import ExportPart, learner_rows
+from listenup.platform.jobs import enqueue
 
 __all__ = [
     "MAX_DRAFT_CHARS",
     "DictationWork",
     "Draft",
     "export_data",
+    "on_transcript_ready",
     "open_attempt",
     "record_listen_started",
     "save_draft",
+    "score_submission",
     "submit",
 ]
 
@@ -50,6 +60,9 @@ class Draft:
     text: str
     version: int
     updated_at: datetime
+
+
+ReferenceFor = Callable[[uuid.UUID], Awaitable[tuple[list[str], list[int], list[int]] | None]]
 
 
 @dataclass(frozen=True)
@@ -194,7 +207,62 @@ async def submit(
     await analytics.record_dictation_replays(
         db, attempt.user_id, attempt.session_id, attempt.id, replay_count=replay_count
     )
+    await _queue_scoring(db, attempt.id, attempt.user_id)
     return Submission(submitted, repository.WAITING)
+
+
+async def _queue_scoring(db: AsyncSession, attempt_id: uuid.UUID, learner: uuid.UUID) -> None:
+    """Queue the scoring job in the caller's transaction.
+
+    No `unique_key`: a second job is harmless (the score is one conditional update), and
+    a key would swallow the queueing of a transcript that arrives while a job that found
+    none is still running (ADR 0041).
+    """
+    from listenup.modules.dictation.jobs import SCORE_ATTEMPT
+
+    await enqueue(db, SCORE_ATTEMPT, attempt_id=str(attempt_id), user_id=str(learner))
+
+
+async def on_transcript_ready(db: AsyncSession, learner: uuid.UUID, session_id: uuid.UUID) -> None:
+    """The passage transcript is ready: score the session's waiting submission (FR-TX-5).
+
+    Called by the transcript job in the transaction that announces `transcript.ready`.
+    """
+    for waiting in await repository.waiting_in_session(db, session_id):
+        await _queue_scoring(db, waiting.attempt_id, learner)
+
+
+def reference_words(
+    words: list[str], start_ms: list[int], end_ms: list[int]
+) -> tuple[ReferenceWord, ...]:
+    """The reference the submission is scored against: the passage transcript.
+
+    The one seam where the learner's own corrections will apply (FR-TX-4, #56): that
+    story replaces words here, and re-scoring after a dispute calls `score_submission`
+    again with the corrected reference.
+    """
+    return reference_from_arrays(words, start_ms, end_ms)
+
+
+async def score_submission(
+    db: AsyncSession, learner: uuid.UUID, attempt_id: uuid.UUID, reference_for: "ReferenceFor"
+) -> bool:
+    """Score a waiting submission and announce it; False when there was nothing to score.
+
+    `reference_for(session_id)` returns the passage words, or None while the transcript
+    is not ready. The score and `dictation.scored` commit together (FR-DI-5).
+    """
+    waiting = await repository.get_waiting(db, attempt_id)
+    if waiting is None:
+        return False
+    passage = await reference_for(waiting.session_id)
+    if passage is None:
+        return False
+    score = score_dictation(reference_words(*passage), waiting.submitted_text)
+    if not await repository.store_score(db, attempt_id, score.diff_json(), score.accuracy):
+        return False
+    await publish(db, learner, EventType.DICTATION_SCORED, attempt_id)
+    return True
 
 
 async def record_listen_started(db: AsyncSession, attempt_id: uuid.UUID) -> None:

@@ -1,6 +1,7 @@
 """Transcript public boundary: queue work; authorize before privileged cache reads."""
 
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +25,28 @@ class PassageTranscript:
     sentence_starts: list[int]
     # Preserve provenance for every contributing cache row, never invent a merged provider.
     provenance: list[dict[str, str]]
+
+
+ReadyHook = Callable[[AsyncSession, uuid.UUID, uuid.UUID], Awaitable[None]]
+"""Called with (transaction, learner, session id) when a session's passage is ready."""
+
+_ready_hooks: list[ReadyHook] = []
+
+
+def on_passage_ready(hook: ReadyHook) -> None:
+    """Register work that waits for the passage words, for example Dictation scoring.
+
+    Modes register from their own `jobs.py`, so the transcript module imports no mode
+    and `practice` never reaches one through it (import-linter, Architecture 4.3).
+    """
+    if hook not in _ready_hooks:
+        _ready_hooks.append(hook)
+
+
+async def announce_ready(db: AsyncSession, learner: uuid.UUID, session_id: uuid.UUID) -> None:
+    """Run the registered hooks in the transaction that announces `transcript.ready`."""
+    for hook in _ready_hooks:
+        await hook(db, learner, session_id)
 
 
 async def queue_passage(db: AsyncSession, session: practice.PracticeSession) -> None:

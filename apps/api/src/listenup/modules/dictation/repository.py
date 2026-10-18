@@ -10,7 +10,8 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -85,3 +86,51 @@ async def store_submission(session: AsyncSession, attempt_id: uuid.UUID, submitt
         """),
         {"id": attempt_id, "submitted": submitted, "waiting": WAITING},
     )
+
+
+@dataclass(frozen=True)
+class WaitingRow:
+    attempt_id: uuid.UUID
+    session_id: uuid.UUID
+    submitted_text: str
+
+
+_WAITING = """
+SELECT d.attempt_id, a.session_id, d.submitted_text
+  FROM practice.dictation_attempts d JOIN practice.attempts a ON a.id = d.attempt_id
+ WHERE d.scoring_status = 'waiting_transcript'
+"""
+
+
+async def get_waiting(session: AsyncSession, attempt_id: uuid.UUID) -> WaitingRow | None:
+    """The submission still waiting for its score, or None (scored, or not submitted)."""
+    row = (
+        await session.execute(text(_WAITING + " AND d.attempt_id = :id"), {"id": attempt_id})
+    ).first()
+    return WaitingRow(*row) if row else None
+
+
+async def waiting_in_session(session: AsyncSession, session_id: uuid.UUID) -> list[WaitingRow]:
+    rows = await session.execute(text(_WAITING + " AND a.session_id = :sid"), {"sid": session_id})
+    return [WaitingRow(*row) for row in rows]
+
+
+async def store_score(
+    session: AsyncSession, attempt_id: uuid.UUID, diff: dict[str, object], accuracy: object
+) -> bool:
+    """Write the score if the submission is still waiting; False when it already is scored.
+
+    One conditional update, so two runs of the job store one score and announce once.
+    """
+    row = (
+        await session.execute(
+            text("""
+            UPDATE practice.dictation_attempts
+               SET scoring_status = 'scored', diff = :diff, accuracy = :accuracy, scored_at = now()
+             WHERE attempt_id = :id AND scoring_status = 'waiting_transcript'
+            RETURNING 1
+            """).bindparams(bindparam("diff", type_=JSONB)),
+            {"id": attempt_id, "diff": diff, "accuracy": accuracy},
+        )
+    ).first()
+    return row is not None

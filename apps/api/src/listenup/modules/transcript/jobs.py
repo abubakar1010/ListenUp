@@ -10,6 +10,7 @@ from listenup.modules.content import service as content
 from listenup.modules.identity import service as identity
 from listenup.modules.practice import service as practice
 from listenup.modules.transcript import repository
+from listenup.modules.transcript import service as transcript
 from listenup.modules.transcript.domain.spans import Span, missing_spans, padded_span
 from listenup.modules.transcript.packing import pack
 from listenup.platform.config import get_settings
@@ -133,3 +134,5 @@ async def _transcribe(deps: JobDeps, identifier: uuid.UUID, learner: uuid.UUID) 
         async with deps.database.transaction() as db:
             if await identity.account_is_active(db, learner):
                 await publish(db, learner, EventType.TRANSCRIPT_READY, identifier)
+                # Modes waiting for the words (Dictation scoring, #54) continue now.
+                await transcript.announce_ready(db, learner, identifier)
