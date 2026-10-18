@@ -17,6 +17,102 @@ class Score(BaseModel):
     score: float = Field(ge=0, le=1)
 
 
+@pytest.mark.anyio
+async def test_response_prose_is_never_logged_as_version(fake_accounting):
+    private = "My name is John Smith. I live in Dhaka."
+    response = Transcript(
+        provenance=Provenance(provider="a", model="m", version=private),
+        language="en",
+        duration_seconds=1,
+        segments=(),
+    )
+    gateway, _ = make_gateway([{"provider": "a"}], {"a": response})
+    await gateway.transcribe(Path("private.wav"))
+    assert private not in repr(fake_accounting.calls)
+    assert fake_accounting.calls[0]["version"] is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("bad_version", ["v2", "My name is John Smith."])
+async def test_registered_version_mismatch_falls_back(bad_version, fake_accounting):
+    response = Transcript(
+        provenance=Provenance(provider="a", model="m", version=bad_version),
+        language="en",
+        duration_seconds=1,
+        segments=(),
+    )
+    gateway, calls = make_gateway([{"provider": "a"}, {"provider": "b"}], {"a": response})
+    gateway._registry.versions.update(a=lambda _: "v1", b=lambda _: "v1")
+    assert (await gateway.transcribe(Path("private.wav"))).provenance.provider == "b"
+    assert calls == ["a", "b"]
+    assert [r["version"] for r in fake_accounting.calls] == [None, "v1"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "failure",
+    ["index", "text", "duplicate", "overlap", "sound_start", "sound_end", "sound_overlap"],
+)
+async def test_invalid_assessment_falls_back(failure, fake_accounting):
+    from listenup.ai.ports import Role, SpeechAssessment
+
+    calls = []
+    entries = tuple(
+        ProviderEntry(
+            provider=p, model="m", local=True, trains_on_inputs=False, accepted=True, retries=0
+        )
+        for p in ("a", "b")
+    )
+
+    class Assessment:
+        def __init__(self, entry):
+            self.entry = entry
+
+        async def assess(self, *args):
+            calls.append(self.entry.provider)
+            words = [
+                dict(
+                    index=0,
+                    text="Hello",
+                    start=0,
+                    end=1,
+                    accuracy=0.5,
+                    sounds=[dict(label="h", start=0, end=0.5, score=0.5)],
+                )
+            ]
+            if self.entry.provider == "a":
+                if failure == "index":
+                    words[0]["index"] = 99
+                elif failure == "text":
+                    words[0]["text"] = "unrelated"
+                elif failure == "duplicate":
+                    words.append(dict(words[0], start=1, end=2, sounds=[]))
+                elif failure == "overlap":
+                    words.append(dict(words[0], index=1, text="there", start=0.5, sounds=[]))
+                elif failure == "sound_start":
+                    words[0]["start"] = 0.25
+                elif failure == "sound_end":
+                    words[0]["sounds"][0]["end"] = 2
+                elif failure == "sound_overlap":
+                    words[0]["sounds"].append(dict(label="e", start=0.25, end=0.75, score=0.5))
+            return SpeechAssessment(
+                provenance=Provenance(provider=self.entry.provider, model="m", version="v1"),
+                words=words,
+                pauses=(),
+                fillers=(),
+                pitch=(),
+            )
+
+    gateway = AIGateway(
+        AIConfig(version=1, roles={Role.SPEECH_ASSESSMENT: entries}),
+        registry=Registry(speech_assessment={p: Assessment for p in ("a", "b")}),
+    )
+    result = await gateway.assess(Path("private.wav"), "Hello there", Path("reference.wav"))
+    assert result.provenance.provider == "b"
+    assert calls == ["a", "b"]
+    assert [r["outcome"] for r in fake_accounting.calls] == ["invalid_output", "ok"]
+
+
 class Adapter:
     def __init__(self, entry, events, response=None):
         self.entry, self.events, self.response = entry, events, response
@@ -163,6 +259,7 @@ async def test_logs_exclude_input_paths_and_error_messages(fake_accounting):
     gateway, _ = make_gateway(
         [{"provider": "a"}, {"provider": "b"}], {"a": ValueError("learner@example.com secret")}
     )
+    gateway._registry.versions.update(a=lambda _: "v1", b=lambda _: "v1")
     await gateway.transcribe(Path("users/learner@example.com/private.wav"))
     assert [r["outcome"] for r in fake_accounting.calls] == ["error", "ok"]
     assert "private" not in repr(fake_accounting.calls)

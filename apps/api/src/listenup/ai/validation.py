@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from listenup.ai.ports import Alignment, Transcript
+from listenup.ai.ports import Alignment, SpeechAssessment, Transcript
 
 
 def revalidate[T: BaseModel](schema: type[T], raw: Any) -> T:
@@ -60,4 +60,25 @@ def validate_alignment(raw: Any, text: str) -> Alignment:
             if unit.start < unit_end or unit.end > word.end:
                 raise ValueError("unit outside word")
             unit_end = unit.end
+    return result
+
+
+def validate_assessment(raw: Any, text: str) -> SpeechAssessment:
+    result = revalidate(SpeechAssessment, raw)
+    words = text.split()
+    index, end = -1, 0.0
+    for word in result.words:
+        if (
+            word.index <= index
+            or word.index >= len(words)
+            or word.text != words[word.index]
+            or word.start < end
+        ):
+            raise ValueError("invalid assessment word index or timing")
+        index, end = word.index, word.end
+        sound_end = word.start
+        for sound in word.sounds:
+            if sound.start < sound_end or sound.end > word.end:
+                raise ValueError("sound outside assessment word")
+            sound_end = sound.end
     return result

@@ -247,13 +247,96 @@ async def test_projected_cost_is_metered_without_paid_routing(migrated_url):
 
 
 @pytest.mark.anyio
-async def test_scheduled_maintenance_updates_quota_metrics_and_partitions(migrated_url):
-    from listenup.ai.jobs import maintain
-    from listenup.platform.jobs import JobDeps
+async def test_scheduled_maintenance_updates_quota_metrics_and_partitions(
+    migrated_url, monkeypatch, tmp_path
+):
+    from psycopg import sql
 
+    from listenup.ai.jobs import maintain
+    from listenup.platform.config import get_settings
+    from listenup.platform.jobs import JobDeps
+    from tests.telemetry_helpers import capture
+
+    provider = "p" + uuid4().hex
+    config = tmp_path / "ai.yaml"
+    config.write_text(f"""version: 1
+roles:
+  transcription:
+    - &provider
+      provider: {provider}
+      limits: {{day: {{calls: 4}}}}
+  alignment:
+    - *provider
+""")
+    monkeypatch.setenv("LISTENUP_AI_CONFIG", str(config))
+    get_settings.cache_clear()
     db = Database(conninfo_to_url(migrated_url))
     try:
-        await maintain(JobDeps(db, None, 1))
+        assert await PostgresAccounting(db).admit(
+            ProviderEntry(provider=provider), Role.TRANSCRIPTION, "transcribe", None, Usage(), False
+        )
+        with psycopg.connect(migrated_url, autocommit=True) as conn:
+            child = conn.execute(
+                "SELECT c.relname FROM pg_inherits i JOIN pg_class c ON c.oid=i.inhrelid "
+                "WHERE i.inhparent='ai.calls'::regclass ORDER BY c.relname DESC LIMIT 1"
+            ).fetchone()[0]
+            conn.execute(sql.SQL("DROP TABLE ai.{}").format(sql.Identifier(child)))
+        with capture() as telemetry:
+            await maintain(JobDeps(db, None, 1))
+            assert telemetry.points("listenup.ai.quota_remaining_ratio") == [
+                ({"provider": provider}, 0.75)
+            ]
+        with psycopg.connect(migrated_url) as conn:
+            assert conn.execute("SELECT to_regclass(%s)", [f"ai.{child}"]).fetchone() == (
+                f"ai.{child}",
+            )
+    finally:
+        await db.dispose()
+        get_settings.cache_clear()
+
+
+@pytest.mark.anyio
+async def test_gateway_does_not_persist_response_prose_in_version(migrated_url):
+    from pathlib import Path
+
+    from listenup.ai.config import AIConfig
+    from listenup.ai.gateway import AIGateway
+    from listenup.ai.ports import Provenance, Transcript
+    from listenup.ai.registry import Registry
+
+    provider = "p" + uuid4().hex
+    private = "My name is John Smith. I live in Dhaka."
+
+    class Adapter:
+        async def transcribe(self, *args):
+            return Transcript(
+                provenance=Provenance(provider=provider, model="m", version=private),
+                language="en",
+                duration_seconds=1,
+                segments=(),
+            )
+
+    db = Database(conninfo_to_url(migrated_url))
+    gateway = AIGateway(
+        AIConfig(
+            version=1,
+            roles={
+                Role.TRANSCRIPTION: (
+                    ProviderEntry(provider=provider, model="m", local=True, trains_on_inputs=False),
+                )
+            },
+        ),
+        registry=Registry(transcription={provider: lambda _: Adapter()}),
+        accounting=PostgresAccounting(db),
+    )
+    try:
+        await gateway.transcribe(Path("private.wav"))
+        with psycopg.connect(migrated_url) as conn:
+            row = conn.execute(
+                "SELECT version, row_to_json(c)::text FROM ai.calls c WHERE provider=%s", [provider]
+            ).fetchone()
+            assert row[0] is None
+            assert private not in row[1]
     finally:
         await db.dispose()
 

@@ -29,7 +29,12 @@ from listenup.ai.ports import (
 )
 from listenup.ai.providers import fake
 from listenup.ai.registry import DEFAULT_REGISTRY, Registry
-from listenup.ai.validation import revalidate, validate_alignment, validate_transcript
+from listenup.ai.validation import (
+    revalidate,
+    validate_alignment,
+    validate_assessment,
+    validate_transcript,
+)
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database
 from listenup.platform.telemetry import record_ai_call
@@ -203,9 +208,12 @@ class AIGateway:
                 outcome: Outcome = "error"
                 result = None
                 retry = False
+                trusted_version = None
                 try:
                     if key not in self._adapters:
                         self._adapters[key] = self._factories(role)[entry.provider](entry)
+                    resolver = self._registry.versions.get(entry.provider)
+                    trusted_version = resolver(entry) if resolver is not None else None
                     raw = await asyncio.wait_for(call(self._adapters[key]), entry.timeout_seconds)
                     outcome = "invalid_output"
                     result = validate(raw)
@@ -239,6 +247,8 @@ class AIGateway:
                             raise ValueError("usage exceeds reserved audio budget")
                     if not re.fullmatch(r"[A-Za-z0-9_.+;= :()-]{1,256}", result.provenance.version):
                         raise ValueError("unsafe version metadata")
+                    if trusted_version is not None and result.provenance.version != trusted_version:
+                        raise ValueError("version provenance mismatch")
                     outcome = "ok"
                 except asyncio.CancelledError:
                     # A durable pending reservation remains charged if settlement fails.
@@ -257,10 +267,9 @@ class AIGateway:
                 except Exception:
                     result = None
                 elapsed = time.monotonic() - started
-                # Version metadata comes from validated results, never exception text.
-                version = (
-                    result.provenance.version if outcome == "ok" and result is not None else None
-                )
+                # Response metadata can contain learner content even when it matches
+                # a character allowlist. Persist only registered deployment metadata.
+                version = trusted_version if outcome == "ok" else None
                 usage = result.usage if outcome == "ok" and result is not None else None
                 if usage is None and outcome == "ok" and isinstance(result, Transcript):
                     usage = Usage(audio_seconds=result.duration_seconds)
@@ -308,7 +317,7 @@ class AIGateway:
             Role.SPEECH_ASSESSMENT,
             "assess",
             lambda a: a.assess(recording, reference_text, reference_audio),
-            lambda r: revalidate(SpeechAssessment, r),
+            lambda r: validate_assessment(r, reference_text),
             context,
         )
 

@@ -93,3 +93,56 @@ exactly three successes and persisted `(calls, units) == (3, 30)` for 12 contend
   establish model accuracy. Existing deployment-host speech benchmarks retain their
   recorded gates, including launch tracker #155 under ADR 0039 where applicable.
 - Independent review and passing required CI remain merge gates. The owner merges.
+
+## Review remediation (2026-10-18)
+
+The owner approved the remediation plan, including aligning System Design 5.2
+with ADR 0037's local-first round 3/suggestions routing. Work continues on the
+same PR branch. Claude Code was unavailable; the independent review and these
+fixes used Codex. The material fixes still need fresh-session re-review.
+
+| Finding | Regression and result |
+| --- | --- |
+| Response prose could enter `ai.calls.version` | `test_response_prose_is_never_logged_as_version` reproduced the leak. `Registry.versions` now resolves deployment metadata before inference; known mismatches fall back, and unregistered adapters log NULL. `test_registered_version_mismatch_falls_back` covers wrong versions and prose, and `test_gateway_does_not_persist_response_prose_in_version` checks the actual persisted row. |
+| Valid Whisper timestamp jitter was refused | `test_whisper_timestamp_jitter_is_normalized_at_adapter_boundary` first failed on all five word/segment boundary cases. The existing adapter now clamps at most 100 ms per timestamp; explicit expected timings preserve words and duration. `test_whisper_large_timestamp_errors_are_not_hidden` confirms that larger errors remain invalid. The gateway retains strict containment. |
+| Assessment indexes/text and sound containment were unchecked | `test_invalid_assessment_falls_back` first failed on index, text, duplicate, overlap and both sound-containment cases. Reference indexes/text, word order and sound order/containment now reject malformed output and invoke the fallback. |
+| Maintenance test did not prove effects | `test_scheduled_maintenance_updates_quota_metrics_and_partitions` now removes a future partition, verifies its recreation and asserts the exact 0.75 quota gauge. A repeated provider across roles also exercises deduplication. This strengthens characterization of existing production behavior; no maintenance implementation changed. |
+
+Actual Red command from `apps/api`:
+
+```sh
+uv run pytest tests/unit/ai/test_safeguards.py tests/contract/test_ai_adapters.py -q -k 'response_prose or registered_version or invalid_assessment or timestamp'
+```
+
+Observed **14 failed, 1 passed, 59 deselected** before production changes. Two
+failures were the intentionally absent `Registry.versions` interface; the other
+12 exposed the reported behaviors. The already-passing large-error case is
+characterization, not a new Red. After implementation, `uv run pytest
+tests/unit/ai tests/contract -q` reported **133 passed**. Additional passing
+characterization for sound ordering and trusted built-in version resolution brought
+that suite to **135 passed**. Database privacy/maintenance assertions were added
+after the unit-level fixes and are not claimed as test-first observations.
+The final assessment fixtures isolate duplicate indexes and overlapping words
+from sound errors; their focused rerun passed **7 tests**.
+
+Assertion checks used a separate source snapshot under `work/`, with the working
+branch untouched. Omitting partition maintenance failed the recreation assertion;
+omitting quota refresh failed the gauge assertion. Reintroducing response-derived
+versions failed the persisted-row privacy test. Bypassing assessment validation
+was also checked against the malformed-output regressions. These mutations are
+assertion-quality checks, not fabricated test-first evidence.
+
+No schema migration, prompt, model, hosted-provider activation, HTTP schema or
+web change is introduced by remediation. Real-model quality and deployment-host
+latency remain unverified under the existing gates; deterministic boundary tests
+do not establish them. ADR 0041 and the AI conventions document trusted log
+versions, bounded timestamp normalization and assessment containment.
+
+Remediation verification:
+
+- `PATH=/workspace/work/pg16:$PATH LISTENUP_REQUIRE_DB=1 LISTENUP_REQUIRE_S3=1 uv run pytest -m 'not performance' --cov --cov-report=term-missing:skip-covered --cov-report=xml --cov-report=html`: **1241 passed, 1 deselected**, no skips, 293.95 seconds. PostgreSQL 16, SeaweedFS, ffmpeg and PostgreSQL 16 client tools were available.
+- `uv run pytest -m performance --no-cov`: **1 passed**. `uv run pytest -q` from `spikes`: **47 passed**.
+- Final AI/contract coverage append (`uv run pytest tests/unit/ai tests/contract -q --cov --cov-append --cov-report=xml --cov-report=term-missing:skip-covered`): **135 passed**, including strengthened fixtures and the actual Whisper engine version property. Runtime source did not change between the full run and this append.
+- `uv run python ../../.github/scripts/check-coverage.py api coverage/coverage.xml`: every runtime file resolves. `uv run diff-cover coverage/coverage.xml --compare-branch 799005a5390239b52523f74f44e4309b968ad453 --fail-under 90`: **437/438 changed executable lines (99.77%)**. The remaining line is the pre-existing empty `entry()` refusal. Gateway cached/preload paths and the bounded retry loop's normal-exhaustion edge remain uncovered; existing real alignment-engine loading gaps are unchanged. All new version, timestamp-correction and assessment decisions are exercised. Maintenance's duplicate-provider branch is now covered. No threshold or exclusion changed.
+- Ruff check/format, strict mypy (**142 source files**) and import-linter (**six contracts**): passed. Alembic upgrade, drift check, downgrade and upgrade: passed; the full suite also passed migration, permissions, partition, backup/restore and passage-transcription checks.
+- No API or web changes: generation, access-registry additions and web checks are not applicable. No alert change: the previously passing Promtool evidence remains applicable. Image builds and vulnerability scans were not rerun locally and remain required CI checks on the pushed revision. Fresh-session re-review of these fixes remains a merge gate.

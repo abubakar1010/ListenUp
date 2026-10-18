@@ -33,6 +33,8 @@ Read the section for the area you are changing before you change it. The rules e
 
 - Gateway safeguards (ADR 0041): every attempt reserves persistent quotas before inference and logs content-free provenance. Use `CallContext` for eligibility, audio budgets, round and queue delay, never learner identity; optional `Usage` counts cache/reasoning inside input/output totals. Keep adapter output caps consistent with `ProviderEntry`. Text task overrides reference role provider IDs. `AIUnavailable.reason == "template_feedback"` asks grading to use deterministic templates; other unavailable results retain data for retry. `ai.maintain` refreshes quota metrics and monthly partitions. Accounting failure never permits unmetered calls.
 
+- Register content-free deployment version resolvers in `Registry.versions`; never use an inference response as the source of a log version. Unregistered adapters log NULL versions, and registered versions must match result provenance. Normalize Whisper timestamp jitter only inside its adapter (at most 100 ms per timestamp); the gateway keeps strict containment checks. Assessment words must match reference indexes/text, and sounds must remain ordered inside their word (ADR 0041).
+
 ## Transcripts (ADR 0038)
 
 - Queue passage transcription through `transcript.service.queue_passage` in the plan-start transaction. Jobs use intake, a per-session unique key and per-media lock; all AI calls remain inside `transcript` through the existing gateway.

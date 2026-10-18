@@ -61,13 +61,25 @@ of input tokens; reasoning tokens are a subset of output tokens, counted once.
 Revalidate even preconstructed models through the requested schema. Reject non-finite
 numbers, invalid score/time ranges, inconsistent transcript containment, invalid
 alignment indexes/text/timing and mismatched provider/model/task/prompt provenance.
+Speech assessment also validates reference word indexes/text, ordering and sound
+containment. The Whisper adapter normalizes boundary jitter by at most 100 ms per
+timestamp before strict gateway validation, preserving every nonblank word and
+the audio duration. Larger corrections are refused rather than inventing timing.
 Invalid output advances to the next provider; transient errors/timeouts use bounded
 exponential backoff first. Exhausting candidates raises `AIUnavailable` with a
 fixed reason, without the provider exception or its cause.
 
-Logs contain configured role/task/provider/model, validated version, prompt version,
+Logs contain configured role/task/provider/model, trusted deployment version, prompt version,
 latency, input/output/reasoning/cache units, audio seconds, fallback depth, queue delay,
 projected cost and outcome. Unknown version on a failed call is NULL, never invented.
+`Registry.versions` resolves versions from trusted adapter code, installed package
+metadata and deployment configuration, before inference and without learner inputs.
+Registered versions must match the result's provenance; mismatches fall back.
+An adapter without a registered resolver logs NULL even on success, never the
+response's version string: a character allowlist cannot distinguish prose from
+metadata. The result still carries its port-required provenance. Built-in adapters
+all register a resolver; new adapters must register one to provide operational
+version provenance. No inference response or exception supplies a log version.
 No learner, job, request or trace ID, path, payload or exception message is stored.
 `input_units`/`output_units` are token totals; audio seconds are separate. Unknown
 usage in failed/pending calls is the reservation, not claimed actual consumption.
