@@ -144,21 +144,7 @@ async def submit(
     return response
 
 
-@router.get(
-    "/dictation/attempts/{attempt_id}",
-    response_model=schemas.DictationAttemptView,
-    responses={404: {"description": "`attempt_not_found`"}},
-)
-async def get_attempt(
-    attempt_id: uuid.UUID, learner: CurrentLearner, db: DbSession
-) -> JSONResponse:
-    """The attempt's state and, once scored, the diff and accuracy (FR-DI-5).
-
-    The reference text is in `result.items` only. Before scoring it is in no answer
-    of the Dictation routes (FR-DI-3, FR-TX-5). Refetch it when `dictation.scored`
-    arrives on the event stream.
-    """
-    view = await service.get_attempt(db, attempt_id)
+def _view_response(view: service.AttemptView) -> JSONResponse:
     body = schemas.DictationAttemptView(
         id=view.attempt.id,
         session_id=view.attempt.session_id,
@@ -175,3 +161,35 @@ async def get_attempt(
     return JSONResponse(
         body.model_dump(mode="json"), headers={"Cache-Control": "private, no-store"}
     )
+
+
+@router.get(
+    "/dictation/attempts/{attempt_id}",
+    response_model=schemas.DictationAttemptView,
+    responses={404: {"description": "`attempt_not_found`"}},
+)
+async def get_attempt(
+    attempt_id: uuid.UUID, learner: CurrentLearner, db: DbSession
+) -> JSONResponse:
+    """The attempt's state and, once scored, the diff and accuracy (FR-DI-5).
+
+    The reference text is in `result.items` only. Before scoring it is in no answer
+    of the Dictation routes (FR-DI-3, FR-TX-5). Refetch it when `dictation.scored`
+    arrives on the event stream.
+    """
+    return _view_response(await service.get_attempt(db, attempt_id))
+
+
+@router.get(
+    "/sessions/{session_id}/dictation/attempt",
+    response_model=schemas.DictationAttemptView,
+    responses={404: {"description": "`session_not_found` or `attempt_not_found`"}},
+)
+async def get_session_attempt(
+    session_id: uuid.UUID, learner: CurrentLearner, db: DbSession
+) -> JSONResponse:
+    """The session's newest Dictation attempt with its score, after the step is complete.
+
+    The Dictation result stays on the session page while the plan moves on to Transcript.
+    """
+    return _view_response(await service.latest_attempt(db, session_id))

@@ -47,6 +47,7 @@ __all__ = [
     "Draft",
     "export_data",
     "get_attempt",
+    "latest_attempt",
     "on_transcript_ready",
     "open_attempt",
     "record_listen_started",
@@ -324,6 +325,23 @@ async def get_attempt(db: AsyncSession, attempt_id: uuid.UUID) -> AttemptView:
         raise _not_found() from None
     if attempt.mode is not Step.DICTATION:
         raise _not_found()
+    return await _view(db, attempt)
+
+
+async def latest_attempt(db: AsyncSession, session_id: uuid.UUID) -> AttemptView:
+    """The session's newest Dictation attempt, also once the step is complete.
+
+    404 `session_not_found` for another learner's session; 404 `attempt_not_found`
+    when Dictation was never started. The result screen uses it after the plan moved on.
+    """
+    session = await practice.get_session(db, session_id)
+    attempt = await practice.latest_attempt(db, session.id, Step.DICTATION)
+    if attempt is None:
+        raise _not_found()
+    return await _view(db, attempt)
+
+
+async def _view(db: AsyncSession, attempt: Attempt) -> AttemptView:
     row = await repository.get_submission(db, attempt.id)
     if row is None or row.scoring_status is None:
         return AttemptView(attempt, None, None)

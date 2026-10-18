@@ -685,6 +685,28 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sessions/{session_id}/dictation/attempt': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Session Attempt
+     * @description The session's newest Dictation attempt with its score, after the step is complete.
+     *
+     *     The Dictation result stays on the session page while the plan moves on to Transcript.
+     */
+    get: operations['get_session_attempt_api_v1_sessions__session_id__dictation_attempt_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sessions/{session_id}/dictation/attempts': {
     parameters: {
       query?: never;
@@ -3100,6 +3122,44 @@ export interface operations {
       };
       /** @description `step_locked`, or `attempt_active` with `attempt_id` */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_session_attempt_api_v1_sessions__session_id__dictation_attempt_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationAttemptView'];
+        };
+      };
+      /** @description `session_not_found` or `attempt_not_found` */
+      404: {
         headers: {
           [name: string]: unknown;
         };

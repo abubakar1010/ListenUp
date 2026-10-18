@@ -194,3 +194,35 @@ def test_an_unknown_attempt_is_not_found(client: TestClient) -> None:
     response = client.get(f"/api/v1/dictation/attempts/{uuid.uuid4()}")
 
     assert response.status_code == 404
+
+
+def test_the_latest_attempt_of_a_session_is_found_after_the_step_is_complete(
+    client: TestClient, session: dict[str, object], clip: str, migrated_url: str
+) -> None:
+    seed_transcript(migrated_url, media_of(migrated_url, clip))
+    attempt = attempt_of(client, session)
+    submit(client, attempt["id"], session, TYPED)
+    run_scoring(migrated_url, client, attempt["id"])
+
+    response = client.get(f"/api/v1/sessions/{session['id']}/dictation/attempt")
+
+    assert response.status_code == 200
+    assert response.json() == read(client, attempt["id"])
+
+
+def test_a_session_without_a_dictation_attempt_has_none_to_read(
+    client: TestClient, session: dict[str, object]
+) -> None:
+    response = client.get(f"/api/v1/sessions/{session['id']}/dictation/attempt")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "attempt_not_found"
+
+
+def test_another_learners_session_is_not_found(
+    make_client: ClientFactory, session: dict[str, object]
+) -> None:
+    response = make_client().get(f"/api/v1/sessions/{session['id']}/dictation/attempt")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "session_not_found"

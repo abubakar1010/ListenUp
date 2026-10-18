@@ -244,6 +244,9 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ("GET", "/api/v1/dictation/attempts/{attempt_id}"): Owned(
         "attempt_not_found", params=lambda w: {"attempt_id": w.a.dictation_attempt_id}
     ),
+    ("GET", "/api/v1/sessions/{session_id}/dictation/attempt"): Owned(
+        "session_not_found", params=lambda w: {"session_id": w.a.sessions["dictation"]}
+    ),
     ("POST", "/api/v1/dictation/attempts/{attempt_id}/submit"): Owned(
         "attempt_not_found",
         params=lambda w: {"attempt_id": w.a.dictation_attempt_id},
