@@ -48,10 +48,33 @@ async def read_passage(
     No unrestricted read-by-media API is exposed. The step gate and explicit owner
     check precede opening the privileged transaction (FR-TX-5, NFR-SEC-2).
     """
+    return await _read(db, worker_database, learner, session_id, practice.Step.TRANSCRIPT)
+
+
+async def reference_for_scoring(
+    db: AsyncSession, worker_database: Database, learner: uuid.UUID, session_id: uuid.UUID
+) -> PassageTranscript:
+    """The passage words for scoring a Dictation submission (FR-DI-5, FR-TX-5).
+
+    Only the Dictation scoring job calls it. Dictation hides the transcript, so the
+    words go into the stored diff and never into a response before submission; the gate
+    is that the learner has reached Dictation rather than Transcript. The seam where
+    the learner's own corrections will apply (#56) is the caller, `dictation.service`.
+    """
+    return await _read(db, worker_database, learner, session_id, practice.Step.DICTATION)
+
+
+async def _read(
+    db: AsyncSession,
+    worker_database: Database,
+    learner: uuid.UUID,
+    session_id: uuid.UUID,
+    reached: practice.Step,
+) -> PassageTranscript:
     session = await practice.get_session(db, session_id)
     if session.user_id != learner:
         raise ProblemError(404, "session_not_found", "There is no such session.")
-    await practice.require_reached(db, session_id, practice.Step.TRANSCRIPT)
+    await practice.require_reached(db, session_id, reached)
     item = await content.get_content(db, learner, session.content_id)
     span = (session.passage.start_ms, session.passage.end_ms)
     async with worker_database.transaction() as worker:
