@@ -24,8 +24,8 @@ Commands below run from the repository root unless stated otherwise.
 ## Performance
 
 NFR-PERF-4: passage seeking/looping must be frame-accurate to the segment and
-resume strictly under 300 ms. Component checks use a controlled media boundary
-and prove application scheduling, not deployed storage latency. Actual-server
+resume strictly under 300 ms. Component checks assert synchronous target assignment
+and playback state, not media resume latency. Actual-server
 browser-to-media seek latency is **deferred until staging — unverified** under
 [tracker #155](https://github.com/abubakar1010/ListenUp/issues/155). Before launch,
 record release commit/image, host, browser/device, network conditions, passage and
@@ -42,7 +42,7 @@ checks improve boundaries/coverage; they are not retroactive evidence of TDD.
 | --- | --- |
 | FR-TX-5: Dictation returns 409 step_locked | `test_transcript_before_unlock_returns_step_locked[dictation]` and `[blind]`; `test_transcript_denials_do_not_open_worker_transaction` verifies early denials, missing/foreign session, signed-out and malformed IDs. `test_every_route_is_registered` and `test_learner_b_reaches_nothing_of_learner_a` enforce Owned/404 and no side effects. |
 | FR-TR-1: synced transcript/full controls | `test_transcript_returns_sentence_lines_with_absolute_word_timings` (nonzero passage, padding omitted, sentence grouping, completed-session read); `highlights_current_line_at_boundaries_without_colour_or_focus_changes`; `replays_current_line_changes_speed_and_word_activation_jumps`; `replay_in_leading_silence_starts_first_line_and_paused_seek_stays_paused`. Silence/empty and media-error cases are covered separately. |
-| NFR-PERF-4: seek resume <300 ms | `seek_resumes_within_300ms_at_the_controlled_media_boundary`: immediate exact target assignment, preserved playing state, playing event at 299 ms, and rejection of a 300 ms sample. `transcript_keyboard_controls_at_360px` additionally exercises actual browser media seek/replay target positions. Actual-server measurement is deferred to #155, not passed. |
+| NFR-PERF-4: seek resume <300 ms | `seek_sets_exact_target_without_debounce_and_preserves_playback_state`: immediate fractional-second target assignment without advancing timers, retained playing state and no autoplay on a paused seek. This does not establish resume latency. `transcript_keyboard_controls_at_360px` exercises actual browser media seek/replay target positions. Actual-server measurement is deferred to #155, not passed. |
 | FR-PL-5: opening Transcript locks entry | `test_opening_transcript_persists_entry_lock`: timestamp persisted by the existing completion transition, fresh version receives entry_locked, timestamp stays stable. Screen test asserts Entry locked and no Change entry action. |
 | UI-3, UI-4: keyboard, 360 px, non-colour highlight | `supports_player_shortcuts_without_hijacking_controls`; `highlights_current_line_at_boundaries_without_colour_or_focus_changes`; `transcript_keyboard_controls_at_360px` (native Enter/Space, focus retention, slider arrows, speed selection, structural border, Current line label, no horizontal overflow). |
 | Readiness/failure/recovery | `test_transcript_reports_readiness_refusals`, `test_silent_transcript_has_no_lines`; `shows_loading_and_empty_transcript`; `shows transcript_not_ready and refetches on retry`; `shows transcript_failed and refetches on retry`; `generic_API_errors_use_ErrorPanel`; `TranscriptEvents.test.tsx` ready/failed invalidation and reconnect coverage. |
@@ -152,3 +152,87 @@ Integrated-head local checks: `LISTENUP_REQUIRE_DB=1 uv run --directory apps/api
 passed **21 tests**. Ruff lint/format, mypy (145 source files), import-linter
 (6 contracts), Alembic upgrade to main's new gateway migration and drift check
 all passed. OpenAPI export and `pnpm api:generate` produced no additional diff.
+
+## Resumption audit, 2026-10-18
+
+Continued the existing PR #165 on `feat/57-transcript-step-sync`, based on current
+main `a74e930`, after owner approval of the continuation plan. No duplicate branch
+or PR was created. Dependency #45 is merged, with stage-0 latency still unverified.
+#48's implementation is on main; its issue remains open for the first-time-learner
+usability test in #118. That uncompleted usability validation was not rerun here.
+
+### Evidence corrections and characterization
+
+The earlier `seek_resumes_within_300ms_at_the_controlled_media_boundary` test
+injected a `playing` event after 299 ms, then after 300 ms. That measured its own
+injected clock, not media latency. It has been replaced by
+`seek_sets_exact_target_without_debounce_and_preserves_playback_state`, which
+asserts an immediate 140.125-second target before advancing timers, retains playing
+state, and then checks that seeking to 141.25 seconds while paused does not autoplay.
+The actual-server performance target is unchanged and remains unverified under #155.
+
+This is a test-quality correction of retained behavior, not a new production
+behavior or a test-first implementation cycle. The initial focused command from
+`apps/web`, `npx --yes pnpm@10.28.0 exec vitest run
+src/features/review/TranscriptScreen.test.tsx -t seek_sets_exact_target`, passed
+1 test with 9 deselected. In an isolated `git archive` copy under `work/seek-mutation`
+(not a worktree), the same test failed on two separate temporary mutations:
+
+- Whole-second rounding: expected 140.125, received 140.
+- Deferring target assignment by 1 ms: expected 140.125, received 130.
+
+These are mutation results, not retroactive Red evidence. The real implementation
+was not mutated. The original story's recorded implementation cycles remain above,
+including the disclosed event-mapping chronology deviation.
+
+The successful transcript response test now also asserts `Cache-Control: private,
+no-store`. This characterizes the existing privacy header; no production behavior
+changed. `LISTENUP_REQUIRE_DB=1 uv run --directory apps/api pytest
+tests/integration/test_review_api.py -q` passed all 8 tests after that assertion.
+
+### Current validation
+
+- Backend: Ruff format/lint, strict mypy (145 source files), all 6 import contracts,
+  Alembic upgrade and drift check passed. No schema changed, so a new migration
+  round trip is not applicable; migration integration tests ran in the full suite.
+- Full backend coverage with PostgreSQL 16 and SeaweedFS, both service flags
+  required: **1,250 passed, 1 performance test deselected, no skips**, 258.81 s.
+  PostgreSQL 16.15 client tools were supplied from the PostgreSQL 16 Bookworm image
+  under `work/pg16`, on PATH for the run. The separate uninstrumented performance
+  command passed **1 test**; that existing Dictation-scoring check is not a seek
+  latency measurement. The added header assertion also passed in the focused
+  8-test rerun noted above.
+- Web: pinned pnpm 10.28.0, lint/format/types, final coverage **325 passed**,
+  build and size **120.8 kB gzip / 200 kB** passed. The initial coverage attempt
+  was blocked by a missing installed `@vitest/coverage-v8`; a frozen-lockfile
+  install repaired the environment without changing dependency files.
+- Playwright: **34 passed**, system Chromium at `/usr/bin/chromium`, including
+  real WAV playback and keyboard use at 360 px. HTTP API responses are mocked;
+  this is not a live-stack or stage-0 performance result.
+- Complete runtime coverage inventories passed. Diff-cover from each application's
+  directory against `origin/main`: API **56/56** and web **189/189** changed
+  executable lines covered (**100%**). Web whole-application lines are 94.26%,
+  branches 85.63%; the reused transport's branch gaps remain disclosed above.
+- OpenAPI export and client generation passed and produced no final diff.
+  Branch-name validation and `git diff --check` passed.
+
+### Remaining scope and release gates
+
+**Learner correction overlays remain unimplemented.** #57's scope includes showing
+the learner's corrections, but main and this PR have neither the designed
+`content.transcript_corrections` table nor an overlay reader. The service seam alone
+does not satisfy that scope. #56 owns the correction editor/dispute flow, and is not
+a declared dependency of #57. The owner was asked whether to add the designed table
+and read-only overlay here or explicitly retain the deferral; that choice remains
+pending. This record does not treat an unanswered question as approval to defer a
+functional requirement. Do not close #57 as fully implemented on this evidence.
+
+Marks are separately scoped in #58–#60; #57 explicitly excludes mark creation.
+Card, Shadow and Blind gist implementation remain outside this story. No production
+code changed during this resumption audit.
+
+Actual-server NFR-PERF-4 remains **deferred until staging — unverified** under #155.
+CI run 39108167312 passed on the prior head `6a1f96a`; that is not CI evidence for
+the new audit commit. Check the new head's CI before merge. A fresh-session
+independent review remains outstanding; no sub-agents were spawned and this
+builder's audit does not replace that review. Do not merge automatically.

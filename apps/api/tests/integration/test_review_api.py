@@ -100,6 +100,7 @@ def test_transcript_returns_sentence_lines_with_absolute_word_timings(
     finish(api_role_url, client, session["id"], Step.DICTATION)
     response = client.get(f"/api/v1/sessions/{session['id']}/transcript")
     assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "private, no-store"
     assert response.json() == {
         "session_id": session["id"],
         "passage": {"start_ms": 10000, "end_ms": 40000},

@@ -56,8 +56,9 @@ accompany colour. The layout wraps at 360 px; highlight updates never move focus
 
 ## Validation limits
 
-Component seek tests measure application scheduling against a controlled media
-boundary, including strict rejection of a 300 ms measurement. Chromium tests exercise
+Component seek tests assert immediate target assignment, fractional-second precision
+and preservation of paused/playing state. They do not measure media resume latency;
+injecting a timed media event would only test the injected clock. Chromium tests exercise
 real WAV playback and keyboard seeking against mocked HTTP responses. These are not
 measurements of deployed storage/network latency. Actual-server NFR-PERF-4 remains
 **deferred until staging — unverified**, linked to launch tracker #155 and the story

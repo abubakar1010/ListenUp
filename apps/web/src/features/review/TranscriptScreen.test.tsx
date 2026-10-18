@@ -128,35 +128,24 @@ test('replays_current_line_changes_speed_and_word_activation_jumps', async () =>
   expect(pause).toHaveBeenCalled();
 });
 
-test('seek_resumes_within_300ms_at_the_controlled_media_boundary', async () => {
+test('seek_sets_exact_target_without_debounce_and_preserves_playback_state', async () => {
   renderReview();
   const audio = await ready();
   fireEvent.click(screen.getByRole('button', { name: 'Play' }));
   vi.useFakeTimers();
-  let resumedAt = -1;
-  audio.addEventListener('playing', () => {
-    resumedAt = performance.now();
-  });
-  audio.addEventListener('seeked', () => {
-    if (!audio.paused) audio.dispatchEvent(new Event('playing'));
-  });
-  const start = performance.now();
-  fireEvent.change(screen.getByRole('slider', { name: 'Seek' }), { target: { value: '10000' } });
-  expect(audioTime).toBe(140); // target is set immediately, without debounce
-  act(() => {
-    vi.advanceTimersByTime(299);
-    fireEvent.seeked(audio);
-  });
-  expect(resumedAt - start).toBeGreaterThanOrEqual(0);
-  expect(resumedAt - start).toBeLessThan(300);
+  const seek = screen.getByRole('slider', { name: 'Seek' });
+  fireEvent.change(seek, { target: { value: '10125' } });
+  // Assert before advancing timers: application code must not debounce the seek
+  // or round away fractional-second targets. Real media latency is a browser check.
+  expect(audioTime).toBe(140.125);
   expect(audio.paused).toBe(false);
-  // A boundary at 300 ms must not qualify as passing evidence.
-  const delayed = performance.now();
-  act(() => {
-    vi.advanceTimersByTime(300);
-    fireEvent.seeked(audio);
-  });
-  expect(resumedAt - delayed).not.toBeLessThan(300);
+  expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+  fireEvent.change(seek, { target: { value: '11250' } });
+  expect(audioTime).toBe(141.25);
+  expect(audio.paused).toBe(true);
+  expect(play).toHaveBeenCalledOnce();
+  expect(screen.getByRole('button', { name: 'Play' })).toBeEnabled();
 });
 
 test('supports_player_shortcuts_without_hijacking_controls', async () => {
