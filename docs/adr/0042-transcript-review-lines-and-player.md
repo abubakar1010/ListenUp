@@ -1,4 +1,4 @@
-# ADR 0041: Transcript review lines and shared passage playback
+# ADR 0042: Transcript review lines and shared passage playback
 
 - Status: Accepted by the owner in the #57 plan
 - Date: 2026-10-18

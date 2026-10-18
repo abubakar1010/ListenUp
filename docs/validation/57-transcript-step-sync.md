@@ -132,3 +132,23 @@ exit timing and restarting from the end are not exhaustively combined in jsdom.
 Passage boundary correction, pause/play, replay, speed and real-browser seek are
 covered. These gaps are disclosed rather than excluded; the required changed-line
 gate remains 100%. The shared control component is fully branch-covered.
+
+
+## Main integration after PR creation
+
+After the first PR CI run passed all jobs, main advanced to a74e930 with merged
+PR #159. #54 had not merged. GitHub marked #165 behind, so current main was merged
+without editing any gateway source. Its ADR occupied 0041; this story's ADR was
+renumbered to 0042, with links updated. Protected paths have no diff against main.
+The full local counts above describe validation before this integration, not a
+new whole-repository baseline for main's additional gateway implementation.
+OpenAPI export and client generation were repeated on the integrated branch.
+The focused review/access/architecture/lifecycle checks and the final PR CI run
+validate the integrated head; final CI also inventories complete runtime coverage
+before enforcing the 90% changed-line gate.
+
+
+Integrated-head local checks: `LISTENUP_REQUIRE_DB=1 uv run --directory apps/api pytest tests/integration/test_review_api.py tests/integration/test_access_cross_learner.py tests/architecture tests/unit/test_lifespan_shutdown.py -q`
+passed **21 tests**. Ruff lint/format, mypy (145 source files), import-linter
+(6 contracts), Alembic upgrade to main's new gateway migration and drift check
+all passed. OpenAPI export and `pnpm api:generate` produced no additional diff.

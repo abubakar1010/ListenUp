@@ -105,11 +105,11 @@ Read the section for the area you are changing before you change it. The rules e
   fixed reason/intent codes. Keep consumption single-use, roll back business
   writes on refusal, and expose an accessible control that starts a new flow.
 
-## Transcript review (ADR 0041)
+## Transcript review (ADR 0042)
 
 - Review composes `transcript.service.read_passage`; its worker-role database comes
   from `LISTENUP_TRANSCRIPT_READ_DATABASE_URL`. Keep the request connection on the
-  API role and never grant it cache access. See ADR 0041 for the local/Compose setup.
+  API role and never grant it cache access. See ADR 0042 for the local/Compose setup.
 - Transcript lines are sentences with absolute word timings and passage-global
   indices. Correction overlays belong inside the authorized transcript service (#56),
   before review groups words; review does not own correction persistence or autosave.
