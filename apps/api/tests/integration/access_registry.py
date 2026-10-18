@@ -241,6 +241,11 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         params=lambda w: {"attempt_id": w.a.dictation_attempt_id},
         body=lambda w: {"draft_text": "B was here", "draft_version": 1},
     ),
+    ("POST", "/api/v1/dictation/attempts/{attempt_id}/submit"): Owned(
+        "attempt_not_found",
+        params=lambda w: {"attempt_id": w.a.dictation_attempt_id},
+        body=lambda w: {"text": "B was here", "version": 0, "replay_count": 0},
+    ),
     # -- media -------------------------------------------------------------------------
     ("GET", "/api/v1/media/{media_object_id}"): Owned(
         "media_not_found",

@@ -1,17 +1,19 @@
 """HTTP routes of the dictation module (Architecture 9.2: Dictation; #51, #52, ADR 0025).
 
-The rules live in `service.py`; these routes only translate. Submission and scoring
-(`POST /dictation/attempts/{id}/submit`, #53 and #54) are not built yet.
+The rules live in `service.py`; these routes only translate. Submission is
+`POST /dictation/attempts/{id}/submit` (#54); the score arrives later (ADR 0041).
 """
 
 import uuid
+from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from listenup.modules.dictation import schemas, service
 from listenup.modules.identity.service import CurrentLearner
 from listenup.platform.database import DbSession
+from listenup.platform.idempotency import IdempotencyKeyHeader, request_fingerprint, run_once
 
 router = APIRouter(tags=["dictation"])
 
@@ -96,3 +98,47 @@ async def save_draft(
     """
     draft = await service.save_draft(db, attempt_id, body.draft_text, body.draft_version)
     return schemas.SavedDraft(draft_version=draft.version, updated_at=draft.updated_at)
+
+
+@router.post(
+    "/dictation/attempts/{attempt_id}/submit",
+    status_code=202,
+    response_model=schemas.DictationSubmission,
+    responses={
+        404: {"description": "`attempt_not_found`"},
+        409: {
+            "description": "`step_locked`, `session_closed`, `session_changed` or `attempt_closed`"
+        },
+        422: {
+            "description": "`empty_submission`, `submission_too_long` (with `max_chars`) "
+            "or `idempotency_key_reused`"
+        },
+    },
+)
+async def submit(
+    attempt_id: uuid.UUID,
+    body: schemas.SubmitDictation,
+    request: Request,
+    learner: CurrentLearner,
+    db: DbSession,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> JSONResponse:
+    """Submit the text, finish the attempt and complete the Dictation step (FR-DI-5).
+
+    The score is not in this answer: it is computed when the transcript is ready and
+    announced by the `dictation.scored` event. An `Idempotency-Key` makes a retry
+    return the first answer.
+    """
+
+    async def run() -> tuple[int, Any]:
+        done = await service.submit(db, attempt_id, body.text, body.version, body.replay_count)
+        out = schemas.DictationSubmission(
+            attempt_id=done.attempt.id,
+            status=done.attempt.status,
+            scoring_status=done.scoring_status,  # type: ignore[arg-type]
+        )
+        return 202, out.model_dump(mode="json")
+
+    response = await run_once(db, learner, idempotency_key, await request_fingerprint(request), run)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response

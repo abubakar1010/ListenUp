@@ -11,10 +11,9 @@
   so two tabs never silently overwrite each other (#50). Resending a save whose answer
   was lost is not a conflict: the server already holds that text.
 
-Nothing here reads or returns reference text: Dictation hides the transcript
-(FR-DI-3, FR-TX-5). Submission and scoring (#53, #54) are not built yet; they will
-fill the submission columns of the same row and call `practice.finish_attempt` and
-`practice.complete_step`.
+Nothing here returns reference text before submission: Dictation hides the transcript
+(FR-DI-3, FR-TX-5). `submit` (#54) stores the text, finishes the attempt and completes the
+step; the scoring job (`jobs.py`, ADR 0041) fills the score columns of the same row.
 """
 
 import uuid
@@ -39,6 +38,7 @@ __all__ = [
     "open_attempt",
     "record_listen_started",
     "save_draft",
+    "submit",
 ]
 
 MAX_DRAFT_CHARS = 20_000
@@ -50,6 +50,14 @@ class Draft:
     text: str
     version: int
     updated_at: datetime
+
+
+@dataclass(frozen=True)
+class Submission:
+    """A stored submission; `scoring_status` is `waiting_transcript` until the job scores it."""
+
+    attempt: Attempt
+    scoring_status: str
 
 
 @dataclass(frozen=True)
@@ -144,6 +152,49 @@ async def save_draft(
         draft_version=current.draft_version,
         updated_at=current.updated_at.isoformat(),
     )
+
+
+async def submit(
+    db: AsyncSession,
+    attempt_id: uuid.UUID,
+    text: str,
+    session_version: int,
+    replay_count: int,
+) -> Submission:
+    """Submit the Dictation text and complete the step (FR-DI-5, ADR 0021, ADR 0041).
+
+    The text is stored as `waiting_transcript` and scored by a job (#54), so the step
+    never waits for the transcript. Refusals: 404 `attempt_not_found`; 409 `step_locked`,
+    `session_closed` (from `require_step`), `session_changed` (stale `session_version`)
+    and `attempt_closed`; 422 `empty_submission` and `submission_too_long`.
+    """
+    try:
+        attempt = await practice.get_attempt(db, attempt_id)
+    except ProblemError:
+        raise _not_found() from None
+    if attempt.mode is not Step.DICTATION:
+        raise _not_found()
+    session = await practice.require_step(db, attempt.session_id, Step.DICTATION)
+    practice.require_version(session, session_version)
+    if attempt.status is not AttemptStatus.ACTIVE:
+        raise ProblemError(409, "attempt_closed", "This attempt has already ended.")
+    if not text.strip():
+        raise ProblemError(422, "empty_submission", "Type what you heard before you submit.")
+    if len(text) > MAX_DRAFT_CHARS:
+        raise ProblemError(
+            422,
+            "submission_too_long",
+            f"Your text is longer than {MAX_DRAFT_CHARS:,} characters. Shorten it to submit it.",
+            max_chars=MAX_DRAFT_CHARS,
+        )
+    await repository.ensure_draft(db, attempt.id, attempt.user_id)
+    await repository.store_submission(db, attempt.id, text)
+    submitted = await practice.finish_attempt(db, attempt.id, AttemptStatus.SUBMITTED)
+    await practice.complete_step(db, session, Step.DICTATION)
+    await analytics.record_dictation_replays(
+        db, attempt.user_id, attempt.session_id, attempt.id, replay_count=replay_count
+    )
+    return Submission(submitted, repository.WAITING)
 
 
 async def record_listen_started(db: AsyncSession, attempt_id: uuid.UUID) -> None:

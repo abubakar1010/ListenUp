@@ -6,6 +6,7 @@ None of them has a field for reference text: Dictation hides the transcript
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -45,3 +46,24 @@ class SaveDraft(BaseModel):
 class SavedDraft(BaseModel):
     draft_version: int = Field(description="The new version; base the next save on it")
     updated_at: datetime
+
+
+class SubmitDictation(BaseModel):
+    text: str = Field(
+        description="The whole text as the learner sees it, at most 20,000 characters"
+    )
+    version: int = Field(ge=0, description="The `version` of the session this page last saw")
+    replay_count: int = Field(
+        ge=0, le=100_000, description="How often the learner replayed the passage"
+    )
+
+
+class DictationSubmission(BaseModel):
+    """The submission was accepted; the score follows (FR-DI-5, ADR 0041).
+
+    Never carries the diff or any reference text, whatever the state of scoring.
+    """
+
+    attempt_id: uuid.UUID
+    status: AttemptStatus
+    scoring_status: Literal["waiting_transcript", "scored"]

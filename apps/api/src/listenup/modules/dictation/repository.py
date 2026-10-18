@@ -68,3 +68,20 @@ async def save_draft(
         )
     ).first()
     return DraftRow(*row) if row else None
+
+
+WAITING = "waiting_transcript"
+SCORED = "scored"
+
+
+async def store_submission(session: AsyncSession, attempt_id: uuid.UUID, submitted: str) -> None:
+    """Keep the submitted text; it waits for scoring (`waiting_transcript`, ADR 0041)."""
+    await session.execute(
+        text("""
+        UPDATE practice.dictation_attempts
+           SET submitted_text = :submitted, scoring_status = :waiting,
+               diff = NULL, accuracy = NULL, scored_at = NULL
+         WHERE attempt_id = :id
+        """),
+        {"id": attempt_id, "submitted": submitted, "waiting": WAITING},
+    )
