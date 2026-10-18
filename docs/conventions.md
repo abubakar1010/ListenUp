@@ -25,11 +25,15 @@ Read the section for the area you are changing before you change it. The rules e
 
 - Blind's first network recovery must arrive before five minutes after its last accepted heartbeat (ADR 0024). `Listen.abandonment_deadline()` is shared by heartbeat validation and worker expiry. Granting a resume queues the shorter expiry check; a completed listen is preserved. Dictation's analytics callback runs on media `playing`, not `play`.
 
-## AI layer (ADR 0028)
+## AI layer (ADRs 0028, 0037, 0041)
 
 - B2 alignment benchmarks import the production pure text helper from `ai/providers/alignment_text.py`; never expand contractions or normalize accents differently in the harness. Boundary validation matches text before measuring timestamps, reports unmatched coverage, and cannot pass incomplete hand labels. Alignment provenance includes window size and quantization, since both can change output for the same model (ADR 0034, NFR-AI-5).
 
 - AI (ADR 0028): callers use `get_gateway()` from `listenup.ai.gateway` and the types in `listenup/ai/ports.py`. Only `grading` and `transcript` may import `listenup.ai`, and vendor libraries only `ai/providers/` (import-linter and `tests/architecture/test_ai_boundaries.py`). Providers per role are listed in `listenup/ai/ai.yaml` (`LISTENUP_AI_CONFIG` overrides it; `ai.fake.yaml` selects the fakes, which production refuses). A new provider is one adapter in `ai/providers/` plus one line in `ai/registry.py`; contract tests replay `tests/contract/recordings/*.json`, recorded with `scripts/record_ai_contract.py`. Speech adapters decode audio with ffmpeg (`ai/providers/audio.py`) and hand samples to the library, never a file path to the library's own decoder (ADR 0034). Model sizes and settings are chosen by the spikes in `spikes/` and recorded in an ADR; a recording is made with the models and options in `ai.yaml`.
+
+- Gateway safeguards (ADR 0041): every attempt reserves persistent quotas before inference and logs content-free provenance. Use `CallContext` for eligibility, audio budgets, round and queue delay, never learner identity; optional `Usage` counts cache/reasoning inside input/output totals. Keep adapter output caps consistent with `ProviderEntry`. Text task overrides reference role provider IDs. `AIUnavailable.reason == "template_feedback"` asks grading to use deterministic templates; other unavailable results retain data for retry. `ai.maintain` refreshes quota metrics and monthly partitions. Accounting failure never permits unmetered calls.
+
+- Register content-free deployment version resolvers in `Registry.versions`; never use an inference response as the source of a log version. Unregistered adapters log NULL versions, and registered versions must match result provenance. Normalize Whisper timestamp jitter only inside its adapter (at most 100 ms per timestamp); the gateway keeps strict containment checks. Assessment words must match reference indexes/text, and sounds must remain ordered inside their word (ADR 0041).
 
 ## Transcripts (ADR 0038)
 

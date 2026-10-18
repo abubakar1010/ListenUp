@@ -4,17 +4,29 @@ version: 1
 roles:
   transcription:
     - provider: fake
+      accepted: true  # deterministic test adapter only
+      local: true
+      trains_on_inputs: false
       model: fake-transcript
       timeout_seconds: 5
   alignment:
     - provider: fake
+      accepted: true  # deterministic test adapter only
+      local: true
+      trains_on_inputs: false
       model: fake-alignment
       timeout_seconds: 5
   speech_assessment:
     - provider: fake
+      accepted: true  # deterministic test adapter only
+      local: true
+      trains_on_inputs: false
       model: fake-assessment
       timeout_seconds: 5
   text_ai:
     - provider: fake
+      accepted: true  # deterministic test adapter only
+      local: true
+      trains_on_inputs: false
       model: fake-text
       timeout_seconds: 5

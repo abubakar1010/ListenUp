@@ -25,7 +25,7 @@ class Role(StrEnum):
 
 
 class _Strict(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
 
 class Provenance(_Strict):
@@ -37,8 +37,29 @@ class Provenance(_Strict):
     version: str = Field(min_length=1)
 
 
+class Usage(_Strict):
+    """Tokens include cache in input and reasoning in output, never double counted."""
+
+    input_tokens: int = Field(default=0, ge=0, strict=True)
+    output_tokens: int = Field(default=0, ge=0, strict=True)
+    reasoning_tokens: int = Field(default=0, ge=0, strict=True)
+    cache_tokens: int = Field(default=0, ge=0, strict=True)
+    audio_seconds: float = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def _subsets(self) -> Self:
+        if self.reasoning_tokens > self.output_tokens or self.cache_tokens > self.input_tokens:
+            raise ValueError("token subsets exceed totals")
+        return self
+
+    @property
+    def tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+
 class AIResult(_Strict):
     provenance: Provenance
+    usage: Usage | None = None
 
 
 class Span(_Strict):

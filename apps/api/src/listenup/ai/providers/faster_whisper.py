@@ -56,6 +56,18 @@ class WhisperEngine(Protocol):
     def run(self, audio: Path, language: str) -> RawTranscription: ...
 
 
+def _version(compute_type: str) -> str:
+    return (
+        f"faster-whisper {metadata.version('faster-whisper')}"
+        f"; ctranslate2 {metadata.version('ctranslate2')}; {compute_type}"
+    )
+
+
+def version_for(entry: ProviderEntry) -> str:
+    """Deployment metadata, independent of learner inputs and engine responses."""
+    return _version(str(entry.options.get("compute_type", "int8")))
+
+
 class FasterWhisperEngine:
     def __init__(self, entry: ProviderEntry) -> None:
         import faster_whisper  # lazy: only the media worker installs it
@@ -75,10 +87,7 @@ class FasterWhisperEngine:
 
     @property
     def version(self) -> str:
-        return (
-            f"faster-whisper {metadata.version('faster-whisper')}"
-            f"; ctranslate2 {metadata.version('ctranslate2')}; {self._compute_type}"
-        )
+        return _version(self._compute_type)
 
     def run(self, audio: Path, language: str) -> RawTranscription:
         import numpy as np  # installed with faster-whisper
@@ -117,32 +126,45 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
 def to_transcript(raw: RawTranscription, provenance: Provenance) -> Transcript:
     """Map the engine's output to the port's schema. Whisper's word times can overlap a
     segment edge or run backwards by a few milliseconds; they are clamped, never dropped."""
+
+    # Correct at most 100 ms of boundary jitter. Larger errors remain invalid;
+    # never repair a broken response by moving words arbitrarily far in the audio.
+    def snap(value: float, low: float, high: float) -> float:
+        fixed = min(max(value, low), high)
+        if abs(fixed - value) > 0.1 + 1e-9:
+            raise ValueError("transcription timestamp correction exceeds 100 ms")
+        return fixed
+
+    duration = max(raw.duration, 0.0)
     segments = []
+    previous_end = 0.0
     for seg in raw.segments:
+        start = snap(seg.start, previous_end, duration)
+        end = snap(seg.end, start, duration)
         words = []
+        word_end = start
         for w in seg.words:
             text = w.word.strip()
             if not text:
                 continue
-            start = max(w.start, 0.0)
+            word_start = snap(w.start, word_end, end)
+            word_end = snap(w.end, word_start, end)
             words.append(
                 TimedWord(
                     text=text,
-                    start=start,
-                    end=max(w.end, start),
+                    start=word_start,
+                    end=word_end,
                     confidence=_clamp(w.probability),
                 )
             )
-        start = max(seg.start, 0.0)
         segments.append(
-            TranscriptSegment(
-                text=seg.text.strip(), start=start, end=max(seg.end, start), words=tuple(words)
-            )
+            TranscriptSegment(text=seg.text.strip(), start=start, end=end, words=tuple(words))
         )
+        previous_end = end
     return Transcript(
         provenance=provenance,
         language=raw.language,
-        duration_seconds=max(raw.duration, 0.0),
+        duration_seconds=duration,
         segments=tuple(segments),
     )
 

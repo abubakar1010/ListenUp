@@ -24,6 +24,8 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
     default pool (background lane)."""
     from listenup.modules.identity import jobs as identity_jobs
 
+    importlib.import_module("listenup.ai.jobs")
+
     installed: list[tuple[str, str]] = []
 
     def periodic(*, cron: str, periodic_id: str) -> Callable[[Any], Any]:
@@ -36,14 +38,15 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
 
     media = [lane for spec in POOLS["media"] for lane in spec.lanes]
     default = [lane for spec in POOLS["default"] for lane in spec.lanes]
-    scheduled = [jobs.RECOVER_STALLED_JOBS, identity_jobs.PURGE_DUE_ACCOUNTS]
+    scheduled = [jobs.RECOVER_STALLED_JOBS, identity_jobs.PURGE_DUE_ACCOUNTS, "ai.maintain"]
 
     assert jobs.install_schedules(media) == []
-    assert jobs.install_schedules(default) == scheduled
-    assert installed == [
+    assert set(jobs.install_schedules(default)) == set(scheduled)
+    assert set(installed) == {
         (jobs.RECOVER_SCHEDULE, jobs.RECOVER_STALLED_JOBS),
         (identity_jobs.PURGE_SCHEDULE, identity_jobs.PURGE_DUE_ACCOUNTS),
-    ]
+        ("*/5 * * * *", "ai.maintain"),
+    }
     # Installing again (a second worker of the pool) registers nothing twice.
-    assert jobs.install_schedules(default) == scheduled
-    assert len(installed) == 2
+    assert set(jobs.install_schedules(default)) == set(scheduled)
+    assert len(installed) == 3
