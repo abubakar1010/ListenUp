@@ -9,6 +9,7 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { BlindStep } from '../blind/BlindStep';
 import { CheckIcon, LockIcon } from '../../components/icons';
 import { DictationScreen } from '../dictation/DictationScreen';
+import { TranscriptScreen } from '../review/TranscriptScreen';
 import { useSession, useSkipStep, type Session } from './api';
 import { ChangeEntryPanel } from './ChangeEntryPanel';
 import { PracticeLayout } from './PracticeLayout';
@@ -54,6 +55,9 @@ function SessionView({ session }: { session: Session }) {
   // The session opens at its current step (#50); each mode fills its own screen.
   if (open === 'dictation') {
     return <DictationScreen session={session} progress={<Progress session={session} />} />;
+  }
+  if (open === 'transcript') {
+    return <TranscriptScreen session={session} progress={<Progress session={session} />} />;
   }
   const passage = `Passage ${formatClock(session.passage.start_ms)} to ${formatClock(session.passage.end_ms)}`;
   return (
@@ -177,9 +181,6 @@ function OpenStep({ session }: { session: Session }) {
       </p>
       <p>{STEP_DESCRIPTIONS[open]}</p>
       <p className="text-body-s text-ink-muted">This step's exercise will open here.</p>
-      {open === 'transcript' && (
-        <p className="text-body-s">Transcript can't be skipped: it shows what you missed.</p>
-      )}
       {(open === 'card' || open === 'shadow') && <SkipControl session={session} step={open} />}
     </div>
   );

@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     environment: str = "local"
     database_url: str = "postgresql://listenup:listenup@localhost:5432/listenup"
     database_pool_size: int = 5
+    # Separate worker-role connection used only after the transcript service gate.
+    # Production must supply its worker login; never grant the API role cache access.
+    transcript_read_database_url: str = (
+        "postgresql://listenup:listenup@localhost:5432/listenup?options=-c%20role%3Dlistenup_worker"
+    )
 
     s3_endpoint_url: str = "http://localhost:9000"
     # Endpoint used in signed URLs handed to the browser. Inside Docker Compose the

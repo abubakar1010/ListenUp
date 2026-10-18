@@ -12,6 +12,7 @@ import { ClipNotices } from '../features/content/ClipNotices';
 import { useClipNotices } from '../features/content/useClipNotices';
 import { CONTENTS_KEY, contentKey } from '../features/content/useContent';
 import { LIBRARY_KEY, UPLOAD_USAGE_KEY } from '../features/library/useLibrary';
+import { REVIEW_KEY, transcriptKey } from '../features/review/api';
 import { ErrorPage } from './ErrorPage';
 import { PageLoading } from './PageLoading';
 import { RouteBoundary } from './RouteBoundary';
@@ -62,7 +63,7 @@ function SignedInRoot() {
 }
 
 const NO_KEYS: readonly QueryKey[] = [];
-const PENDING_KEYS: readonly QueryKey[] = [LIBRARY_KEY, CONTENTS_KEY];
+const PENDING_KEYS: readonly QueryKey[] = [LIBRARY_KEY, CONTENTS_KEY, REVIEW_KEY];
 
 /**
  * Which cached queries each live event makes stale (ADR 0016). Feature stories add their
@@ -73,6 +74,9 @@ function queryKeysForEvent(event: LiveEvent, queryClient: QueryClient): readonly
     case 'content.ready':
       // A converted clip also changes storage use and today's new audio.
       return [LIBRARY_KEY, contentKey(event.resourceId), UPLOAD_USAGE_KEY];
+    case 'transcript.ready':
+    case 'transcript.failed':
+      return [transcriptKey(event.resourceId)];
     case 'job.progress':
       return [LIBRARY_KEY, contentKey(event.resourceId)];
     case 'attempt.voided':

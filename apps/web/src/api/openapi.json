@@ -1461,6 +1461,96 @@
         "title": "StorageUse",
         "type": "object"
       },
+      "TranscriptLine": {
+        "properties": {
+          "end_ms": {
+            "title": "End Ms",
+            "type": "integer"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "start_ms": {
+            "title": "Start Ms",
+            "type": "integer"
+          },
+          "words": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptWord"
+            },
+            "title": "Words",
+            "type": "array"
+          }
+        },
+        "required": ["index", "start_ms", "end_ms", "words"],
+        "title": "TranscriptLine",
+        "type": "object"
+      },
+      "TranscriptPassage": {
+        "properties": {
+          "end_ms": {
+            "title": "End Ms",
+            "type": "integer"
+          },
+          "start_ms": {
+            "title": "Start Ms",
+            "type": "integer"
+          }
+        },
+        "required": ["start_ms", "end_ms"],
+        "title": "TranscriptPassage",
+        "type": "object"
+      },
+      "TranscriptReview": {
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptLine"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "media_url": {
+            "title": "Media Url",
+            "type": "string"
+          },
+          "passage": {
+            "$ref": "#/components/schemas/TranscriptPassage"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": ["session_id", "passage", "media_url", "lines"],
+        "title": "TranscriptReview",
+        "type": "object"
+      },
+      "TranscriptWord": {
+        "properties": {
+          "end_ms": {
+            "title": "End Ms",
+            "type": "integer"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "start_ms": {
+            "title": "Start Ms",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": ["index", "text", "start_ms", "end_ms"],
+        "title": "TranscriptWord",
+        "type": "object"
+      },
       "UploadRequest": {
         "properties": {
           "content_type": {
@@ -3260,6 +3350,56 @@
         },
         "summary": "Skip Step",
         "tags": ["sessions"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/transcript": {
+      "get": {
+        "operationId": "read_transcript_api_v1_sessions__session_id__transcript_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "`not_signed_in`"
+          },
+          "404": {
+            "description": "`session_not_found` or `content_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`, `transcript_not_ready` or `transcript_failed`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Transcript",
+        "tags": ["review"]
       }
     },
     "/api/v1/uploads": {
