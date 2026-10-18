@@ -719,6 +719,51 @@
         "title": "DictationAttempt",
         "type": "object"
       },
+      "DictationAttemptView": {
+        "description": "The attempt after the draft stage: its state and, once scored, the result.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DictationResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until `scoring_status` is scored"
+          },
+          "scoring_status": {
+            "anyOf": [
+              {
+                "enum": ["waiting_transcript", "scored"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the attempt is submitted",
+            "title": "Scoring Status"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AttemptStatus"
+          }
+        },
+        "required": ["id", "session_id", "status", "scoring_status", "result"],
+        "title": "DictationAttemptView",
+        "type": "object"
+      },
       "DictationPassage": {
         "description": "The part of the clip the player may play, in milliseconds, [start_ms, end_ms).",
         "properties": {
@@ -733,6 +778,112 @@
         },
         "required": ["start_ms", "end_ms"],
         "title": "DictationPassage",
+        "type": "object"
+      },
+      "DictationResult": {
+        "description": "The score. The only place the reference text appears, and only after scoring.",
+        "properties": {
+          "accuracy": {
+            "description": "Percent with two decimals; spelling slips count",
+            "title": "Accuracy",
+            "type": "number"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/DiffCounts"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DiffItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["accuracy", "counts", "items"],
+        "title": "DictationResult",
+        "type": "object"
+      },
+      "DictationSubmission": {
+        "description": "The submission was accepted; the score follows (FR-DI-5, ADR 0041).\n\nNever carries the diff or any reference text, whatever the state of scoring.",
+        "properties": {
+          "attempt_id": {
+            "format": "uuid",
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "scoring_status": {
+            "enum": ["waiting_transcript", "scored"],
+            "title": "Scoring Status",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AttemptStatus"
+          }
+        },
+        "required": ["attempt_id", "status", "scoring_status"],
+        "title": "DictationSubmission",
+        "type": "object"
+      },
+      "DiffCounts": {
+        "properties": {
+          "correct": {
+            "title": "Correct",
+            "type": "integer"
+          },
+          "extra": {
+            "title": "Extra",
+            "type": "integer"
+          },
+          "missing": {
+            "title": "Missing",
+            "type": "integer"
+          },
+          "spelling_slip": {
+            "title": "Spelling Slip",
+            "type": "integer"
+          },
+          "wrong": {
+            "title": "Wrong",
+            "type": "integer"
+          }
+        },
+        "required": ["correct", "spelling_slip", "wrong", "missing", "extra"],
+        "title": "DiffCounts",
+        "type": "object"
+      },
+      "DiffItem": {
+        "description": "One word of the diff, in passage order; extra words sit where they were typed.",
+        "properties": {
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Position in the passage word sequence; null for an extra word",
+            "title": "Index"
+          },
+          "status": {
+            "enum": ["correct", "spelling_slip", "wrong", "missing", "extra", "not_scored"],
+            "title": "Status",
+            "type": "string"
+          },
+          "typed": {
+            "description": "What the learner typed for it; empty when missing",
+            "title": "Typed",
+            "type": "string"
+          },
+          "word": {
+            "description": "The reference word; empty for an extra word",
+            "title": "Word",
+            "type": "string"
+          }
+        },
+        "required": ["index", "status", "word", "typed"],
+        "title": "DiffItem",
         "type": "object"
       },
       "Entry": {
@@ -1459,6 +1610,31 @@
         },
         "required": ["used_bytes", "quota_bytes", "max_file_bytes", "daily_audio"],
         "title": "StorageUse",
+        "type": "object"
+      },
+      "SubmitDictation": {
+        "properties": {
+          "replay_count": {
+            "description": "How often the learner replayed the passage",
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Replay Count",
+            "type": "integer"
+          },
+          "text": {
+            "description": "The whole text as the learner sees it, at most 20,000 characters",
+            "title": "Text",
+            "type": "string"
+          },
+          "version": {
+            "description": "The `version` of the session this page last saw",
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": ["text", "version", "replay_count"],
+        "title": "SubmitDictation",
         "type": "object"
       },
       "UploadRequest": {
@@ -2322,6 +2498,51 @@
         "tags": ["content"]
       }
     },
+    "/api/v1/dictation/attempts/{attempt_id}": {
+      "get": {
+        "description": "The attempt's state and, once scored, the diff and accuracy (FR-DI-5).\n\nThe reference text is in `result.items` only. Before scoring it is in no answer\nof the Dictation routes (FR-DI-3, FR-TX-5). Refetch it when `dictation.scored`\narrives on the event stream.",
+        "operationId": "get_attempt_api_v1_dictation_attempts__attempt_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictationAttemptView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Attempt",
+        "tags": ["dictation"]
+      }
+    },
     "/api/v1/dictation/attempts/{attempt_id}/draft": {
       "put": {
         "description": "Save the Dictation draft if it is still at `draft_version` (FR-DI-4, #50).\n\nA save based on an older version gets 409 `draft_conflict`, so two tabs never\nsilently overwrite each other; resending a save that already landed succeeds.",
@@ -2414,6 +2635,75 @@
         "tags": ["dictation"]
       }
     },
+    "/api/v1/dictation/attempts/{attempt_id}/submit": {
+      "post": {
+        "description": "Submit the text, finish the attempt and complete the Dictation step (FR-DI-5).\n\nThe score is not in this answer: it is computed when the transcript is ready and\nannounced by the `dictation.scored` event. An `Idempotency-Key` makes a retry\nreturn the first answer.",
+        "operationId": "submit_api_v1_dictation_attempts__attempt_id__submit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitDictation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictationSubmission"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`, `session_closed`, `session_changed` or `attempt_closed`"
+          },
+          "422": {
+            "description": "`empty_submission`, `submission_too_long` (with `max_chars`) or `idempotency_key_reused`"
+          }
+        },
+        "summary": "Submit",
+        "tags": ["dictation"]
+      }
+    },
     "/api/v1/events": {
       "get": {
         "description": "Stream the learner's live events (System Design 9.1).\n\nEach event carries only its type and the id of the resource to refetch.",
@@ -2446,7 +2736,7 @@
                 }
               }
             },
-            "description": "A Server-Sent Events stream of the learner's events: job.progress, content.ready, transcript.ready, transcript.failed, grade.ready, attempt.voided, export.ready, account.disabled (the stream then ends) and resync."
+            "description": "A Server-Sent Events stream of the learner's events: job.progress, content.ready, transcript.ready, transcript.failed, grade.ready, dictation.scored, attempt.voided, export.ready, account.disabled (the stream then ends) and resync."
           },
           "422": {
             "content": {
