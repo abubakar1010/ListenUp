@@ -508,4 +508,25 @@ describe('submitting (#54)', () => {
     expect(text).toHaveValue('So the first thing');
     expect(screen.getByRole('button', { name: 'Submit for scoring' })).toBeEnabled();
   });
+
+  test('once submitted, the text and Submit are locked and no draft save follows', async () => {
+    // The session refetch is slow to change: the screen is still up after the answer.
+    const { calls } = renderSubmitting({
+      [`GET /sessions/${SESSION.id}`]: () => jsonResponse(200, SESSION),
+    });
+    const text = await textArea();
+    fireEvent.change(text, { target: { value: 'So the first thing was' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit for scoring' }));
+
+    await waitFor(() => expect(calls.some((c) => c.path === SUBMIT_PATH)).toBe(true));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Submitted/ })).toBeDisabled());
+    expect(text).toHaveAttribute('readonly');
+    // The unsent copy is gone from this device, and the pending autosave never runs.
+    expect(localStorage.getItem(draftStorageKey('attempt-1'))).toBeNull();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 2300));
+    });
+    expect(calls.filter((c) => c.path === DRAFT_PATH)).toHaveLength(0);
+  });
 });

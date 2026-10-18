@@ -85,6 +85,23 @@ test('a submission waiting for the transcript says it will be scored when it is 
   expect(screen.queryByRole('list', { name: 'Word by word' })).not.toBeInTheDocument();
 });
 
+test('a failed transcript says scoring is unavailable, and a later score replaces it', async () => {
+  let scored = false;
+  mockRoutes({
+    [`GET ${PATH}`]: () =>
+      jsonResponse(200, scored ? view('scored', RESULT) : view('scoring_unavailable')),
+  });
+  renderPanel();
+
+  const status = await screen.findByRole('status');
+  expect(status).toHaveTextContent('We could not score this Dictation');
+  expect(screen.queryByText(WAITING)).not.toBeInTheDocument();
+
+  scored = true;
+  await act(async () => FakeEventSource.latest!.emit('dictation.scored', 'attempt-1'));
+  expect(await screen.findByText('90%')).toBeInTheDocument();
+});
+
 test('the result replaces the waiting message when dictation.scored arrives, without a reload', async () => {
   let scored = false;
   const { calls } = mockRoutes({

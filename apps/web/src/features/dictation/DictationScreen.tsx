@@ -131,6 +131,12 @@ function DictationWork({
     recordFirstPlay,
   );
   const submit = useSubmitDictation(session.id, attempt.id);
+  const submitted = submit.isSuccess;
+  const { discard } = draft;
+  // The answer is final: no autosave may follow the submit, and the device copy is spent.
+  useEffect(() => {
+    if (submitted) discard();
+  }, [submitted, discard]);
   const textArea = useRef<HTMLTextAreaElement>(null);
   const [announcement, setAnnouncement] = useState('');
 
@@ -175,6 +181,7 @@ function DictationWork({
           name="dictation-text"
           className="min-h-72 w-full rounded-md border border-line-strong bg-surface-raised p-3 text-body-l"
           value={draft.value}
+          readOnly={submitted}
           maxLength={MAX_DRAFT_CHARS}
           spellCheck={false}
           autoComplete="off"
@@ -204,7 +211,7 @@ function DictationWork({
         <button
           type="button"
           className={buttonClass('primary')}
-          disabled={words === 0 || submit.isPending}
+          disabled={words === 0 || submit.isPending || submitted}
           onClick={() =>
             submit.mutate({
               text: draft.value,
@@ -213,7 +220,7 @@ function DictationWork({
             })
           }
         >
-          {submit.isPending ? 'Submitting…' : 'Submit for scoring'}
+          {submit.isPending ? 'Submitting…' : submitted ? 'Submitted' : 'Submit for scoring'}
         </button>
         <p className="text-body-s text-ink-muted">
           Submitting ends this step and shows what you missed. Your text is saved as you go, here

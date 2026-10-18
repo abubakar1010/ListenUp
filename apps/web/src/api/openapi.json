@@ -741,7 +741,7 @@
           "scoring_status": {
             "anyOf": [
               {
-                "enum": ["waiting_transcript", "scored"],
+                "enum": ["waiting_transcript", "scoring_unavailable", "scored"],
                 "type": "string"
               },
               {
@@ -812,7 +812,7 @@
             "type": "string"
           },
           "scoring_status": {
-            "enum": ["waiting_transcript", "scored"],
+            "enum": ["waiting_transcript", "scoring_unavailable", "scored"],
             "title": "Scoring Status",
             "type": "string"
           },

@@ -244,6 +244,16 @@ export class Autosave<T> {
     void this.send();
   }
 
+  /**
+   * The value was delivered another way (for example submitted): drop unsent edits and the
+   * local copy, so nothing is saved afterwards, not even when the component unmounts.
+   */
+  discard(): void {
+    this.clearTimer();
+    this.dirty = false;
+    this.removeLocal();
+  }
+
   /** Resolve a conflict by saving this tab's value over the other one. */
   keepMine(): void {
     if (this.status.kind !== 'conflict') return;

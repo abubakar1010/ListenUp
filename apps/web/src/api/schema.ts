@@ -1248,7 +1248,7 @@ export interface components {
        * Scoring Status
        * @description Null until the attempt is submitted
        */
-      scoring_status: ('waiting_transcript' | 'scored') | null;
+      scoring_status: ('waiting_transcript' | 'scoring_unavailable' | 'scored') | null;
       /**
        * Session Id
        * Format: uuid
@@ -1296,7 +1296,7 @@ export interface components {
        * Scoring Status
        * @enum {string}
        */
-      scoring_status: 'waiting_transcript' | 'scored';
+      scoring_status: 'waiting_transcript' | 'scoring_unavailable' | 'scored';
       status: components['schemas']['AttemptStatus'];
     };
     /** DiffCounts */
