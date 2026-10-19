@@ -9,7 +9,7 @@ import pytest
 
 from listenup.ai import prompt_files
 from listenup.ai.prompt_files import PromptError, load_prompt, load_task
-from listenup.ai.tasks import TASK_MODELS
+from listenup.ai.tasks import TASK_INPUTS, TASK_MODELS
 
 FRONT = """---
 task: {task}
@@ -101,6 +101,8 @@ def test_shipped_task_has_one_active_prompt_and_matching_schema(task):
     assert spec.status == "active"
     assert spec.output_schema == TASK_MODELS[task].model_json_schema()
     assert "{{DELIM}}" in spec.body
+    # The prompt file lists exactly the fields of the task's input model.
+    assert spec.field_names == set(TASK_INPUTS[task].model_fields)
 
 
 def test_every_task_model_has_a_prompt_folder_and_the_other_way_round():

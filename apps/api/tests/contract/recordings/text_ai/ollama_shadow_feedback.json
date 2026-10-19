@@ -6,7 +6,7 @@
   "input": {
     "round": 2,
     "measures": {
-      "rhythm": 72,
+      "timing": 72,
       "articulation": 64
     },
     "flagged_words": [
