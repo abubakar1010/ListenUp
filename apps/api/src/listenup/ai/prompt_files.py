@@ -38,7 +38,7 @@ class InputField(BaseModel):
 
     name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     # Reference text that may be shortened to fit the budget. Learner text is never
-    # trimmable: it is refused when too long instead (ADR 0043).
+    # trimmable: it is refused when too long instead (ADR 0045).
     trim: bool = False
 
 

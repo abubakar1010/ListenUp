@@ -1,10 +1,10 @@
-"""Contract tests for the Text AI adapter (#66, ADR 0043).
+"""Contract tests for the Text AI adapter (#66, ADR 0045).
 
 Every recording in `recordings/text_ai/` is replayed through the whole adapter over
 httpx.MockTransport: the request must have the expected shape and the reply must become the
 task's validated Pydantic object. CI makes no network call and holds no API key. The first
 recordings are synthetic (documented response shapes): they prove the mapping, not the
-models (NFR-AI-6); `scripts/record_ai_contract.py --text` replaces them with real ones.
+models (NFR-AI-6); `scripts/record_ai_contract.py text_ai` replaces them with real ones.
 """
 
 import json
