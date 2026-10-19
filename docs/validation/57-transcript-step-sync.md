@@ -309,3 +309,37 @@ there is no public correction write endpoint in #57. The migration must be appli
 before deploying this API version. Actual-server NFR-PERF-4 and independent review
 remain the outstanding validation/release gates described above. CI must validate
 the final pushed head; earlier-head CI is not evidence for this addition.
+
+## Independent review and dependency resolution, 2026-10-20
+
+Independent review inspected head `2de662f` against current main `a74e930` and
+found no confirmed PR-introduced correctness or security defects. Local checks
+passed: 92 focused backend tests (review, access, exports, passage transcription,
+migrations, architecture and shutdown), all 326 web tests with coverage, the
+Transcript Chromium test at 360 px, backend/web lint, formatting and types, all
+six import contracts, production build and the 120.8 kB gzip bundle-size check.
+Web runtime inventory and changed-line coverage passed: 189/189 lines covered.
+Review screen/query/line branches are fully covered; reused transport and policy
+branches retain gaps. Final-head CI logs independently confirmed 1,256 backend
+tests, 326 web tests and passing changed-line gates. The reviewer did not rerun
+the full backend suite, full browser suite, image/security checks or recorded
+mutations, and did not independently establish historical Red/Green chronology.
+
+An initial focused backend ordering produced 91 passes and one export-expiry
+failure. Running access tests before export tests leaves queued exports that
+invalidate `test_early_expiry_keeps_a_future_job`'s global no-archives assertion.
+The reviewer reproduced the same failure on main `a74e930`; running export tests
+first passed all 92 selected tests. This pre-existing isolation issue is separate
+from #57 and was not fixed in this documentation change.
+
+The owner resolved the open dependency question through
+[ADR 0043](../adr/0043-transcript-dependency-readiness.md): #48's merged
+implementation satisfies #57's implementation dependency. #48 and #118 stay open
+for the unchanged, unverified NFR-USE-1 usability criterion. This resolution is
+specific to #57, not a general usability deferral or a claim that #48 is complete.
+Actual-server NFR-PERF-4 remains deferred until staging and unverified under #155.
+
+This follow-up changes documentation only; TDD does not apply. Markdown links,
+requirement IDs, branch naming and diff whitespace are checked. The review above
+applies to the runtime head `2de662f`; required CI must pass on the documentation
+follow-up head before merge. No merge is authorized by this record.
