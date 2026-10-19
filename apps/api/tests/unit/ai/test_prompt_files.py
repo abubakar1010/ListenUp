@@ -120,3 +120,30 @@ def test_released_prompt_hash_lock():
     }
     assert actual == locked
     assert prompt_files.manifest() == locked
+
+
+def test_a_file_without_front_matter_is_refused(tmp_path):
+    write_prompt(tmp_path, "v1")
+    (tmp_path / "grade_gist" / "v1.md").write_text("Just text, no front matter.")
+    with pytest.raises(PromptError, match="front matter"):
+        load_prompt("grade_gist", root=tmp_path)
+
+
+def test_a_version_that_does_not_exist_is_refused(tmp_path):
+    write_prompt(tmp_path, "v1")
+    with pytest.raises(PromptError, match="no prompt version"):
+        load_prompt("grade_gist", "v2", root=tmp_path)
+
+
+def test_missing_schema_is_refused(tmp_path):
+    write_prompt(tmp_path, "v1")
+    (tmp_path / "grade_gist" / "schema.json").unlink()
+    with pytest.raises(PromptError, match="schema"):
+        load_prompt("grade_gist", root=tmp_path)
+
+
+def test_write_manifest_records_the_current_hashes(tmp_path):
+    write_prompt(tmp_path, "v1")
+    prompt_files.write_manifest(tmp_path)
+    assert json.loads((tmp_path / "manifest.json").read_text()) == prompt_files.manifest(tmp_path)
+    assert set(prompt_files.manifest(tmp_path)) == {"grade_gist/schema.json", "grade_gist/v1.md"}
