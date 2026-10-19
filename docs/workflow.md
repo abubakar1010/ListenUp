@@ -15,6 +15,12 @@ either tool can build or review a story using the prompts below.
 5. **Review.** A fresh session in Claude Code or Codex reviews the pull request using the review prompt below. In Claude Code, `/code-review <number> medium` is available when that command is installed. Its findings and the owner's answers to policy questions are fixed in the same pull request, followed by the affected checks. Re-review material changes; required CI checks must pass before merge. Review actual red/green evidence, assertion quality, uncovered branches and relevant failure cases per `docs/testing.md`; CI cannot establish test-first chronology.
 6. **Merge (owner).** Merge, close the session, and start the next story from `main`.
 
+For #57 only, the owner has resolved the open #48 dependency as satisfied by its
+merged implementation, while #48 remains open for NFR-USE-1 validation under #118
+([ADR 0043](adr/0043-transcript-dependency-readiness.md)). This does not mark the
+usability criterion passed, waive it, or extend the actual-server performance
+deferral to usability. Other unresolved dependencies retain the Ready rule above.
+
 Run two or three sessions at once on stories that touch different areas. Each has its own branch and pull request, so nothing needs merging by hand.
 
 Each cloud task already has an isolated checkout; use it without creating a

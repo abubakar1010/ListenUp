@@ -1,4 +1,4 @@
-"""Shared worker-only transcript cache (Database Design 4, migration 0017)."""
+"""Shared transcript cache and learner-owned overlays (Database Design 4)."""
 
 import uuid
 from datetime import datetime
@@ -79,3 +79,24 @@ class PassageTranscript(Base):
         # The migration rejects infinite and empty ranges.
         assert self.span.lower is not None and self.span.upper is not None
         return self.span.lower, self.span.upper
+
+
+class TranscriptCorrection(Base):
+    __tablename__ = "transcript_corrections"
+    __table_args__ = (
+        CheckConstraint("word_index >= 0"),
+        CheckConstraint("char_length(corrected_text) BETWEEN 0 AND 60"),
+        {"schema": "content"},
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("identity.users.id", ondelete="CASCADE"), primary_key=True
+    )
+    passage_transcript_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("content.passage_transcripts.id", ondelete="CASCADE"), primary_key=True
+    )
+    word_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    corrected_text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )

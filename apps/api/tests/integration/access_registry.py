@@ -216,6 +216,12 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         params=lambda w: {"session_id": w.a.sessions["card"], "step": "card"},
         body=lambda w: {"confirmed": True, "version": 0},
     ),
+    ("GET", "/api/v1/sessions/{session_id}/transcript"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["dictation"]},
+        owner_status=409,
+        owner_code="step_locked",
+    ),
     # -- blind -------------------------------------------------------------------------
     ("GET", "/api/v1/sessions/{session_id}/blind"): Owned(
         "session_not_found", params=lambda w: {"session_id": w.a.sessions["blind"]}

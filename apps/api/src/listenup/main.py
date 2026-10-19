@@ -19,6 +19,7 @@ from listenup.modules.identity.oidc import GoogleOIDC
 from listenup.modules.identity.service import build_accounts, current_learner
 from listenup.modules.library import api as library_api
 from listenup.modules.practice import api as practice_api
+from listenup.modules.review import api as review_api
 from listenup.platform.config import Settings, get_settings
 from listenup.platform.csrf import CsrfMiddleware
 from listenup.platform.database import Database
@@ -46,6 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configure_telemetry(settings, "api")
         app.state.database = Database(settings.database_url, settings.database_pool_size)
+        app.state.transcript_database = Database(settings.transcript_read_database_url, 2)
         app.state.storage = S3Storage(settings)
         app.state.rate_limiter = RateLimiter(app.state.database)
         app.state.accounts = build_accounts(app.state.database, app.state.rate_limiter, settings)
@@ -64,7 +66,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await app.state.event_listener.stop()
                 await app.state.database.dispose()
             finally:
-                shutdown_telemetry()
+                try:
+                    await app.state.transcript_database.dispose()
+                finally:
+                    shutdown_telemetry()
 
     app = FastAPI(title="ListenUp API", version=__version__, lifespan=lifespan)
     app.state.settings = settings
@@ -79,6 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(content_api.router)
     api.include_router(library_api.router)
     api.include_router(practice_api.router)
+    api.include_router(review_api.router)
     api.include_router(blind_api.router)
     api.include_router(dictation_api.router)
     api.include_router(export_api.router)
