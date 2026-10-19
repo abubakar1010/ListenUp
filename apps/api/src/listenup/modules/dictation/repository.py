@@ -185,3 +185,21 @@ async def get_submission(session: AsyncSession, attempt_id: uuid.UUID) -> Submis
         )
     ).first()
     return SubmissionRow(*row) if row else None
+
+
+async def latest_submitted_attempt(
+    session: AsyncSession, session_id: uuid.UUID
+) -> uuid.UUID | None:
+    """The session's newest attempt that has a submission, or None."""
+    row = (
+        await session.execute(
+            text("""
+            SELECT d.attempt_id FROM practice.dictation_attempts d
+              JOIN practice.attempts a ON a.id = d.attempt_id
+             WHERE a.session_id = :sid AND d.scoring_status IS NOT NULL
+             ORDER BY a.started_at DESC, a.id DESC LIMIT 1
+            """),
+            {"sid": session_id},
+        )
+    ).first()
+    return row[0] if row else None

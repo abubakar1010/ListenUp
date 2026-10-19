@@ -362,12 +362,17 @@ async def get_attempt(db: AsyncSession, attempt_id: uuid.UUID) -> AttemptView:
 
 
 async def latest_attempt(db: AsyncSession, session_id: uuid.UUID) -> AttemptView:
-    """The session's newest Dictation attempt, also once the step is complete.
+    """The session's newest submitted Dictation attempt, else its newest attempt.
+
+    A newer attempt that was never submitted must not hide an earlier score.
 
     404 `session_not_found` for another learner's session; 404 `attempt_not_found`
     when Dictation was never started. The result screen uses it after the plan moved on.
     """
     session = await practice.get_session(db, session_id)
+    submitted = await repository.latest_submitted_attempt(db, session.id)
+    if submitted is not None:
+        return await _view(db, await practice.get_attempt(db, submitted))
     attempt = await practice.latest_attempt(db, session.id, Step.DICTATION)
     if attempt is None:
         raise _not_found()

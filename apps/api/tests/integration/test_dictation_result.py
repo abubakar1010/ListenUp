@@ -210,6 +210,29 @@ def test_the_latest_attempt_of_a_session_is_found_after_the_step_is_complete(
     assert response.json() == read(client, attempt["id"])
 
 
+def test_a_newer_unsubmitted_attempt_does_not_hide_the_scored_one(
+    client: TestClient, session: dict[str, object], clip: str, migrated_url: str
+) -> None:
+    seed_transcript(migrated_url, media_of(migrated_url, clip))
+    attempt = attempt_of(client, session)
+    submit(client, attempt["id"], session, TYPED)
+    run_scoring(migrated_url, client, attempt["id"])
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO practice.attempts (id, session_id, user_id, mode, status, started_at) "
+            "SELECT gen_random_uuid(), session_id, user_id, mode, 'active', "
+            "now() + interval '1 minute' "
+            "FROM practice.attempts WHERE id = %s",
+            [attempt["id"]],
+        )
+
+    response = client.get(f"/api/v1/sessions/{session['id']}/dictation/attempt")
+
+    assert response.status_code == 200
+    assert response.json() == read(client, attempt["id"])
+    assert response.json()["scoring_status"] == "scored"
+
+
 def test_a_session_without_a_dictation_attempt_has_none_to_read(
     client: TestClient, session: dict[str, object]
 ) -> None:
