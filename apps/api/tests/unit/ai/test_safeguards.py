@@ -232,6 +232,47 @@ async def test_ineligible_provider_never_receives_data():
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("training", [True, None])
+@pytest.mark.parametrize("role", [Role.TRANSCRIPTION, Role.TEXT_AI])
+async def test_ineligible_fallback_is_skipped_after_primary_retries(
+    training, role, fake_accounting
+):
+    gateway, calls = make_gateway(
+        [
+            {"provider": "a", "retries": 1},
+            {"provider": "b", "trains_on_inputs": training, "retries": 5},
+            {"provider": "c"},
+        ],
+        {"a": ConnectionError("private learner content")},
+    )
+
+    async def no_wait(_):
+        pass
+
+    gateway._sleep = no_wait
+    if role is Role.TEXT_AI:
+
+        async def fail(task, input, schema):
+            calls.append("a")
+            raise ConnectionError("private learner gist")
+
+        gateway._registry.text_ai["a"] = lambda _: type(
+            "Unavailable", (), {"generate": staticmethod(fail)}
+        )()
+        result = await gateway.generate(TextTask("grade_gist", "v1"), {"gist": "private"}, Score)
+    else:
+        result = await gateway.transcribe(Path("private.wav"))
+    assert result.provenance.provider == "c"
+    assert calls == ["a", "a", "c"]
+    assert [row["outcome"] for row in fake_accounting.calls] == [
+        "error",
+        "error",
+        "ineligible",
+        "ok",
+    ]
+
+
+@pytest.mark.anyio
 async def test_role_and_task_configuration_order():
     gateway, calls = make_gateway(
         [
@@ -742,6 +783,40 @@ def test_invalid_quota_configuration_is_rejected(limits):
 
     with pytest.raises(ValidationError):
         ProviderEntry(provider="a", limits=limits)
+
+
+@pytest.mark.parametrize("role", [Role.TRANSCRIPTION, Role.ALIGNMENT, Role.SPEECH_ASSESSMENT])
+@pytest.mark.parametrize("period", ["minute", "day", "month"])
+@pytest.mark.parametrize("limit", [0, 1])
+def test_speech_token_quotas_are_rejected_before_adapter_creation(
+    role, period, limit, fake_accounting
+):
+    from listenup.ai.errors import AIConfigError
+
+    created = []
+
+    def factory(entry):
+        created.append(entry.provider)
+        raise AssertionError("unsupported quota must fail before adapter creation")
+
+    entry = ProviderEntry(
+        provider="a",
+        local=True,
+        trains_on_inputs=False,
+        accepted=True,
+        limits={period: {"tokens": limit}},
+    )
+    with pytest.raises(AIConfigError, match="token quotas require text_ai"):
+        AIGateway(
+            AIConfig(version=1, roles={role: (entry,)}),
+            registry=Registry(
+                transcription={"a": factory},
+                alignment={"a": factory},
+                speech_assessment={"a": factory},
+            ),
+        )
+    assert created == []
+    assert fake_accounting.calls == []
 
 
 def test_duplicate_and_unknown_task_routes_are_rejected():
