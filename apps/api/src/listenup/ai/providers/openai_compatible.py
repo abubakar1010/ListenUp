@@ -5,7 +5,8 @@ vLLM); `ai.yaml` registers it under several provider ids so each keeps its own q
 counters. It talks plain HTTP with httpx, so no vendor SDK is imported. Everything that
 varies is an option: `base_url`, `api_key_env` (the NAME of an environment variable; the
 key never appears in a file), `structured_output`, `reasoning_effort`, `seed` and
-`deployment_version` (for example a model digest, logged as the version).
+`deployment_version` (for example a model digest); the logged version names all but the
+URL and key.
 
 The adapter sends temperature 0 and caps the reply at the entry's `output_token_limit`,
 asks for schema-constrained JSON where the server supports it, and validates every reply
@@ -49,7 +50,7 @@ class _Options(BaseModel):
     )
     structured_output: Literal["json_schema", "json_object", "none"] = "json_schema"
     reasoning_effort: Literal["low", "medium", "high"] | None = None
-    seed: int | None = None
+    seed: int | None = Field(default=None, ge=-(2**63), le=2**63 - 1)  # fits the version
     deployment_version: str | None = Field(default=None, pattern=f"^{_VERSION_CHARS}$")
 
 
@@ -71,9 +72,14 @@ def parse_options(entry: ProviderEntry) -> _Options:
 
 def version_for(entry: ProviderEntry) -> str:
     """The deployment version logged and compared with the result (ADR 0041): trusted
-    configuration only, never taken from the server's reply."""
+    configuration only, never taken from the server's reply. It names every option that
+    changes the output, so changing one changes what is recorded (NFR-AI-5)."""
     options = parse_options(entry)
     version = f"openai-chat-v1; structured={options.structured_output}"
+    if options.reasoning_effort is not None:
+        version += f"; reasoning={options.reasoning_effort}"
+    if options.seed is not None:
+        version += f"; seed={options.seed}"
     if options.deployment_version:
         version += f"; deployment={options.deployment_version}"
     return version

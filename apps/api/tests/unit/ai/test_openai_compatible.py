@@ -138,6 +138,25 @@ async def test_optional_seed_and_reasoning_effort_are_passed():
     assert (server.sent["seed"], server.sent["reasoning_effort"]) == (7, "low")
 
 
+def test_settings_that_change_the_output_change_the_recorded_version():
+    """NFR-AI-5: the version stored with a result names every option that changes it."""
+    versions = {
+        version_for(entry_for(options=options))
+        for options in (
+            {},
+            {"reasoning_effort": "low"},
+            {"reasoning_effort": "high"},
+            {"seed": 7},
+            {"seed": 8},
+            {"structured_output": "json_object"},
+        )
+    }
+    assert len(versions) == 6
+    assert version_for(entry_for(options={"reasoning_effort": "low", "seed": -1})) == (
+        "openai-chat-v1; structured=json_schema; reasoning=low; seed=-1"
+    )
+
+
 @pytest.mark.anyio
 async def test_no_authorization_header_without_an_api_key_option():
     entry = ProviderEntry(
@@ -298,6 +317,7 @@ def test_every_task_has_a_model(task):
         entry_for(options={"api_key_env": "LISTENUP_SESSION_SECRET"}),
         entry_for(options={"api_key_env": "LISTENUP_AI_API_KEY"}),
         entry_for(options={"structured_output": "grammar"}),
+        entry_for(options={"seed": 2**64}),  # would overflow the logged version
         entry_for(options={"deployment_version": "a b/c"}),
         entry_for(options={"surprise": 1}),
         ProviderEntry(provider="groq", options={}),
