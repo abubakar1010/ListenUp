@@ -143,7 +143,7 @@ class Settings(BaseSettings):
     # YouTube intake stays off until the legal review (OQ-6) clears it.
     youtube_intake_enabled: bool = False
 
-    # Administrators (#100, ADR 0043): accounts with one of these emails and a verified
+    # Administrators (#100, ADR 0045): accounts with one of these emails and a verified
     # address. A comma-separated list in LISTENUP_ADMIN_EMAILS; empty means no admins.
     admin_emails: Annotated[tuple[str, ...], NoDecode] = ()
 

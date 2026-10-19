@@ -15,7 +15,7 @@ export function isNotAdmin(error: unknown): boolean {
   return error instanceof ApiError && error.code === 'not_found';
 }
 
-/** Backlog per lane and failed jobs (#100, ADR 0043). */
+/** Backlog per lane and failed jobs (#100, ADR 0045). */
 export function useJobsOverview() {
   return useQuery({
     queryKey: JOBS_KEY,

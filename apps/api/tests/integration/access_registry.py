@@ -26,7 +26,7 @@ Registering a route takes one entry. Pick the kind that says what B must get:
     ("GET", "/api/v1/sessions"): Scoped(a_sees=lambda w: w.a.sessions.values()),
     # No sign-in needed: say why.
     ("GET", "/api/v1/health"): Public("liveness probe; returns no learner data"),
-    # Administrators only (ADR 0043): A and B, both learners, get 404 `not_found`.
+    # Administrators only (ADR 0045): A and B, both learners, get 404 `not_found`.
     ("GET", "/api/v1/admin/jobs"): Admin(),
 
 `w` is the `World`: `w.a` is learner A's `SeededLearner` and `w.owner_url` reaches
@@ -115,7 +115,7 @@ class Stream:
 
 @dataclass(frozen=True)
 class Admin:
-    """For administrators only (ADR 0043). Every learner, A as well as B, gets 404
+    """For administrators only (ADR 0045). Every learner, A as well as B, gets 404
     `not_found`, the answer of a path that does not exist; what an admin gets is
     tested in test_admin.py."""
 
