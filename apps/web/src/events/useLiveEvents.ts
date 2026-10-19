@@ -8,6 +8,7 @@ export const LIVE_EVENT_TYPES = [
   'transcript.ready',
   'transcript.failed',
   'grade.ready',
+  'dictation.scored',
   'attempt.voided',
   'export.ready',
   'account.disabled',

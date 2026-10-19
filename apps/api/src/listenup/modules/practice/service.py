@@ -302,6 +302,11 @@ def _check_version(practice: PracticeSession, expected_version: int | None) -> N
         raise _changed()
 
 
+def require_version(practice: PracticeSession, expected_version: int) -> None:
+    """409 `session_changed` unless the session is still at the version the client saw."""
+    _check_version(practice, expected_version)
+
+
 def _statuses(plan: Plan) -> dict[str, str]:
     """The plan as {step: status}, as the analytics events describe it (#101)."""
     return {state.step.value: state.status.value for state in plan.steps}
