@@ -59,6 +59,26 @@ def test_refused_when_even_a_little_reference_text_does_not_fit():
         fit(SPEC, data, serialized_size(task_input(transcript="")) + 5)
 
 
+def test_refused_when_only_the_truncation_marker_would_remain():
+    """ADR 0045: a passage cut to nothing is refused, never sent as a bare marker."""
+    data = task_input(transcript="Sleeping well matters a great deal")
+    with pytest.raises(InputTooLarge):
+        fit(SPEC, data, serialized_size(task_input(transcript="[truncated]")))
+
+
+def test_a_trimmable_field_that_is_not_text_is_never_changed():
+    fields = tuple(
+        f.model_copy(update={"trim": True}) if f.name == "key_points" else f
+        for f in SPEC.input_fields
+    )
+    spec = SPEC.model_copy(update={"input_fields": fields})  # key_points listed first
+    data = task_input(transcript="word " * 40)
+    fitted = fit(spec, data, serialized_size(data) - 30)
+    assert fitted.input["key_points"] == KEY_POINTS and fitted.trimmed == ("transcript",)
+    with pytest.raises(InputTooLarge):  # it is skipped, never shortened, so this is refused
+        fit(spec, task_input(transcript=""), serialized_size(task_input(transcript="")) - 1)
+
+
 def test_unknown_or_missing_fields_are_refused():
     with pytest.raises(ValueError, match="fields"):
         fit(SPEC, {**task_input(), "email": "a@b.c"}, 10_000)

@@ -283,6 +283,36 @@ async def test_text_input_budget_matches_the_gateways_own_refusal_boundary(fake_
     assert gateway.text_input_budget("extract_key_points") == 400  # the entry's own limits
 
 
+def test_text_input_budget_is_the_smallest_across_the_tasks_providers(fake_accounting):
+    entries = (
+        hosted(input_token_limit=3000, prompt_token_budget=500),
+        local(input_token_limit=1200, prompt_token_budget=400),
+    )
+    gateway = build(Servers(), entries)
+    assert gateway.text_input_budget("grade_gist") == 800
+    only_hosted = build(Servers(), entries, tasks={"grade_gist": ("groq",)})
+    assert only_hosted.text_input_budget("grade_gist") == 2500
+
+
+@pytest.mark.anyio
+async def test_input_of_exactly_the_budget_is_sent_and_one_byte_more_is_refused(
+    fake_accounting,
+):
+    servers = Servers()
+    gateway = build(servers, [local(input_token_limit=900, prompt_token_budget=300)])
+    budget = gateway.text_input_budget("grade_gist")
+
+    def sized(size):
+        data = {**GRADE_INPUT, "transcript": ""}
+        return {**data, "transcript": "x" * (size - serialized_size(data))}
+
+    with pytest.raises(AIUnavailable):
+        await grade(gateway, sized(budget + 1))
+    assert servers.requests == []
+    await grade(gateway, sized(budget))
+    assert len(servers.requests) == 1
+
+
 def test_text_input_budget_with_no_provider_is_unavailable(fake_accounting):
     gateway = AIGateway(AIConfig(version=1, roles={}), registry=Registry())
     with pytest.raises(AIUnavailable):

@@ -181,6 +181,16 @@ async def test_result_carries_provenance_and_the_prompt_version_of_the_file():
 
 
 @pytest.mark.anyio
+async def test_provenance_never_comes_from_the_reply():
+    body = completion(
+        json.dumps(EXAMPLES["grade_gist"]), model="other-model", system_fingerprint="fp_x"
+    )
+    adapter, _ = make(Server(body))
+    result = await grade(adapter)
+    assert (result.provenance.model, result.provenance.version) == ("m-1", version_for(entry_for()))
+
+
+@pytest.mark.anyio
 async def test_reported_usage_is_mapped_and_invalid_usage_is_ignored():
     body = completion(
         json.dumps(EXAMPLES["grade_gist"]),
