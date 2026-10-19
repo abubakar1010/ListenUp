@@ -1,0 +1,70 @@
+{
+  "$defs": {
+    "DimensionScores": {
+      "additionalProperties": false,
+      "properties": {
+        "main_idea": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Main Idea",
+          "type": "integer"
+        },
+        "key_details": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Key Details",
+          "type": "integer"
+        },
+        "accuracy": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Accuracy",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "main_idea",
+        "key_details",
+        "accuracy"
+      ],
+      "title": "DimensionScores",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "dimension_scores": {
+      "$ref": "#/$defs/DimensionScores"
+    },
+    "covered_points": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 6,
+      "title": "Covered Points",
+      "type": "array"
+    },
+    "wrong_claims": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 5,
+      "title": "Wrong Claims",
+      "type": "array"
+    },
+    "feedback": {
+      "maxLength": 1500,
+      "minLength": 1,
+      "title": "Feedback",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dimension_scores",
+    "covered_points",
+    "wrong_claims",
+    "feedback"
+  ],
+  "title": "GistGrade",
+  "type": "object"
+}
