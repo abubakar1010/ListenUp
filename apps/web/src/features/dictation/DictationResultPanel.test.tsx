@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router';
 
@@ -7,6 +7,7 @@ import { queryKeysForEvent } from '../../app/eventKeys';
 import { useLiveEvents, type LiveEvent } from '../../events/useLiveEvents';
 import { jsonResponse, problem } from '../../test-utils';
 import { mockRoutes } from '../session/testApi';
+import { DICTATION_RESULT_KEY, useDictationResult } from './api';
 import { DictationResultPanel } from './DictationResultPanel';
 import { RESULT } from './fixtures';
 
@@ -137,4 +138,21 @@ test('a failed read shows the problem with a retry', async () => {
 
   expect(await screen.findByRole('alert')).toHaveTextContent('Something broke.');
   expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+});
+
+test('a result nobody is looking at is dropped, so a live event never refetches it', async () => {
+  mockRoutes({ [`GET ${PATH}`]: jsonResponse(200, view('scored', RESULT)) });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  const { result, unmount } = renderHook(() => useDictationResult('session-1'), { wrapper });
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+  vi.useFakeTimers();
+  unmount();
+  await vi.advanceTimersByTimeAsync(60_000);
+  vi.useRealTimers();
+
+  expect(client.getQueryCache().findAll({ queryKey: DICTATION_RESULT_KEY })).toHaveLength(0);
 });

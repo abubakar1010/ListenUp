@@ -86,6 +86,9 @@ export function useDictationResult(sessionId: string) {
     queryFn: () =>
       api<DictationAttemptView>(`/sessions/${encodeURIComponent(sessionId)}/dictation/attempt`),
     retry: false,
+    // Results of sessions no longer on screen are dropped soon, so `dictation.scored` and a
+    // resync refetch only what is shown, not every session the learner has visited.
+    gcTime: 30_000,
   });
 }
 
