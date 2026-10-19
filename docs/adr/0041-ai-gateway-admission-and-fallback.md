@@ -56,6 +56,13 @@ limits require a caller-supplied duration; existing uncapped local transcription
 can omit it and meters the returned duration. Reported cache tokens are a subset
 of input tokens; reasoning tokens are a subset of output tokens, counted once.
 
+Speech roles reserve audio duration and calls, not tokens. Configuring a `tokens`
+cap for transcription, alignment or speech assessment is therefore a configuration
+error, including a zero cap. Reject it before creating adapters or making calls;
+token-metered speech requires a bounded reservation contract before enablement.
+This also applies when the provider ID is shared with a text role. Existing
+call/audio-limited speech routes and token-limited text routes remain supported.
+
 ## Validation and privacy
 
 Revalidate even preconstructed models through the requested schema. Reject non-finite
