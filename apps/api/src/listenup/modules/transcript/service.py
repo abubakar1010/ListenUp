@@ -2,7 +2,7 @@
 
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,7 @@ from listenup.modules.transcript.domain.sentences import ends_sentence
 from listenup.modules.transcript.domain.spans import missing_spans
 from listenup.platform.database import Database
 from listenup.platform.errors import ProblemError
+from listenup.platform.export import ExportPart, learner_rows
 from listenup.platform.jobs import enqueue
 
 
@@ -25,6 +26,7 @@ class PassageTranscript:
     sentence_starts: list[int]
     # Preserve provenance for every contributing cache row, never invent a merged provider.
     provenance: list[dict[str, str]]
+    edited_word_indices: list[int] = field(default_factory=list)
 
 
 ReadyHook = Callable[[AsyncSession, uuid.UUID, uuid.UUID], Awaitable[None]]
@@ -86,7 +88,9 @@ async def read_passage(
     No unrestricted read-by-media API is exposed. The step gate and explicit owner
     check precede opening the privileged transaction (FR-TX-5, NFR-SEC-2).
     """
-    return await _read(db, worker_database, learner, session_id, practice.Step.TRANSCRIPT)
+    return await _read(
+        db, worker_database, learner, session_id, practice.Step.TRANSCRIPT, apply_corrections=True
+    )
 
 
 async def reference_for_scoring(
@@ -108,6 +112,8 @@ async def _read(
     learner: uuid.UUID,
     session_id: uuid.UUID,
     reached: practice.Step,
+    *,
+    apply_corrections: bool = False,
 ) -> PassageTranscript:
     session = await practice.get_session(db, session_id)
     if session.user_id != learner:
@@ -127,12 +133,19 @@ async def _read(
         if failed:
             raise ProblemError(409, "transcript_failed", "Transcription failed. Try again later.")
         raise ProblemError(409, "transcript_not_ready", "The passage transcript is not ready yet.")
+    overlays = (
+        await repository.corrections(db, learner, [row.id for row in rows])
+        if apply_corrections
+        else {}
+    )
     words: list[str] = []
     starts: list[int] = []
     ends: list[int] = []
     confidence: list[int] = []
     sentences: list[int] = []
     provenance: list[dict[str, str]] = []
+    edited: list[int] = []
+    previous_reference = ""
     for row in rows:
         provenance.append({"origin": row.origin, **row.provider_info})
         for i, word in enumerate(row.words):
@@ -140,10 +153,20 @@ async def _read(
                 continue
             # Index zero is implicit at the start of each independently cached span.
             # It starts a new sentence here only if the preceding span ended one.
-            if not words or (i in row.sentence_starts and (i > 0 or ends_sentence(words[-1]))):
+            if not words or (
+                i in row.sentence_starts and (i > 0 or ends_sentence(previous_reference))
+            ):
                 sentences.append(len(words))
-            words.append(word)
+            identity = (row.id, i)
+            if identity in overlays:
+                edited.append(len(words))
+            words.append(overlays.get(identity, word))
+            previous_reference = word
             starts.append(row.start_ms[i])
             ends.append(min(row.end_ms[i], span[1]))
             confidence.append(row.confidence[i])
-    return PassageTranscript(words, starts, ends, confidence, sentences, provenance)
+    return PassageTranscript(words, starts, ends, confidence, sentences, provenance, edited)
+
+
+async def export_data(db: AsyncSession, learner: uuid.UUID) -> ExportPart:
+    return ExportPart(tables=(await learner_rows(db, "content.transcript_corrections", learner),))

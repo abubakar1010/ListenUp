@@ -266,6 +266,20 @@ def test_export_holds_every_learner_table_and_only_the_learners_data(
     client_a, client_b = make_client(), make_client()
     a = seeded(migrated_url, client_a, storage)
     b = seeded(migrated_url, client_b, storage)
+    # Corrections are private even when both learners reference the same cache row.
+    transcript_id = uuid.uuid4()
+    with psycopg.connect(migrated_url) as conn:
+        conn.execute(
+            "INSERT INTO content.passage_transcripts (id,media_object_id,span,origin) "
+            "VALUES (%s,%s,'[0,120000)','generated')",
+            [transcript_id, a.media_id],
+        )
+        for user_id, value in [(a.user_id, "Own correction"), (b.user_id, "Private correction")]:
+            conn.execute(
+                "INSERT INTO content.transcript_corrections "
+                "(user_id,passage_transcript_id,word_index,corrected_text) VALUES (%s,%s,0,%s)",
+                [user_id, transcript_id, value],
+            )
     youtube_content = add_youtube_item(migrated_url, a.user_id, storage)
     add_youtube_item(migrated_url, b.user_id, storage)
 
@@ -287,6 +301,9 @@ def test_export_holds_every_learner_table_and_only_the_learners_data(
 
     # Every learner-owned table, the account itself and the media the items use.
     assert learner_tables(migrated_url) <= set(tables)
+    assert [
+        (row["user_id"], row["corrected_text"]) for row in tables["content.transcript_corrections"]
+    ] == [(str(a.user_id), "Own correction")]
     assert {"identity.users", "content.media_objects"} <= set(tables)
     assert [row["id"] for row in tables["identity.users"]] == [str(a.user_id)]
     assert {row["id"] for row in tables["practice.sessions"]} == {

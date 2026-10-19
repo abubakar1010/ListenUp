@@ -28,3 +28,19 @@ def test_shutdown_flushes_telemetry_when_a_step_fails(monkeypatch: pytest.Monkey
         pass
 
     assert flushed == [True]
+
+
+def test_shutdown_disposes_transcript_pool_when_listener_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    disposed: list[object] = []
+
+    async def dispose(database: main.Database) -> None:
+        disposed.append(database)
+
+    monkeypatch.setattr(main, "EventListener", FailingListener)
+    monkeypatch.setattr(main.Database, "dispose", dispose)
+    app = main.create_app(Settings())
+    with pytest.raises(RuntimeError, match="would not stop"), TestClient(app):
+        pass
+    assert app.state.transcript_database in disposed

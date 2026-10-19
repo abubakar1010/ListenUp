@@ -8,10 +8,16 @@ import { BLIND_KEY } from '../features/blind/api';
 import { CONTENTS_KEY, contentKey } from '../features/content/useContent';
 import { DICTATION_RESULT_KEY } from '../features/dictation/api';
 import { LIBRARY_KEY, UPLOAD_USAGE_KEY } from '../features/library/useLibrary';
+import { REVIEW_KEY, transcriptKey } from '../features/review/api';
 
 const NO_KEYS: readonly QueryKey[] = [];
 
-export const PENDING_KEYS: readonly QueryKey[] = [LIBRARY_KEY, CONTENTS_KEY, DICTATION_RESULT_KEY];
+export const PENDING_KEYS: readonly QueryKey[] = [
+  LIBRARY_KEY,
+  CONTENTS_KEY,
+  DICTATION_RESULT_KEY,
+  REVIEW_KEY,
+];
 
 /**
  * Which cached queries each live event makes stale (ADR 0016). Feature stories add their
@@ -24,6 +30,9 @@ export function queryKeysForEvent(event: LiveEvent, queryClient: QueryClient): r
       return [LIBRARY_KEY, contentKey(event.resourceId), UPLOAD_USAGE_KEY];
     case 'job.progress':
       return [LIBRARY_KEY, contentKey(event.resourceId)];
+    case 'transcript.ready':
+    case 'transcript.failed':
+      return [transcriptKey(event.resourceId)];
     case 'dictation.scored':
       // The event names the attempt only; refresh every Dictation result shown (ADR 0042).
       return [DICTATION_RESULT_KEY];

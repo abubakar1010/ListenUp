@@ -43,6 +43,7 @@ Read the section for the area you are changing before you change it. The rules e
 - Queue passage transcription through `transcript.service.queue_passage` in the plan-start transaction. Jobs use intake, a per-session unique key and per-media lock; all AI calls remain inside `transcript` through the existing gateway.
 - Cache spans and word timings are absolute, half-open milliseconds. Only ready spans cover audio; process missing windows, preserve committed gaps on retry, and retain each span's provenance. Never weaken the database exclusion constraint to resolve a race.
 - Transcript reads go through `transcript.service.read_passage` with the learner's RLS session and an explicit worker-role database. Ownership and `require_reached(TRANSCRIPT)` precede privileged reads. No direct API-role grant on the cache.
+- Learner correction overlays use `(user_id, passage_transcript_id, word_index)` in `content.transcript_corrections` (ADR 0044). Read them in the learner's RLS transaction with an explicit learner filter after the gate; never mutate the cache. Preserve original sentence boundaries, word indices and timings, including empty replacements. The API has SELECT only; the editor/dispute write boundary remains #56. Export corrections through `transcript.service.export_data`.
 - `sentence_starts` follows sentence-ending punctuation across provider chunks; do not equate acoustic segments with sentences. Ready cache rows require provider/model/version provenance and valid confidence/sentence-index arrays.
 - `transcript.ready` and `transcript.failed` carry session IDs only. They are invalidation signals and may repeat after retries. Do not expose text through progress events.
 
@@ -77,7 +78,7 @@ Read the section for the area you are changing before you change it. The rules e
 - Account transitions use `auth/session.changeSession`: cancel outstanding reads before publishing sign-in, sign-out or a completed password reset. The query client clears private queries and mutation results whenever `/me` identifies a different learner or signs out (NFR-SEC-2). The protected subtree is keyed by learner id so account replacement also drops private notices and closes the previous live-events connection. Do not replace `me` directly from an authentication mutation; an older `/me` response could otherwise undo the transition.
 - Only authentication mutations that synchronously publish their own session use `meta: { changesSession: true }`. Other mutations keep their originating account generation through completion; stale success, error and settlement callbacks are suppressed. Keep cache writes in the synchronous part of callbacks; a callback that awaits additional work must independently check its account scope before later writes. Regression tests cover response ordering, callback settlement and reuse of mutation options.
 - Confirmations use `ConfirmDialog` (`src/components/ConfirmDialog.tsx`): focus starts on the safe action, stays inside, and Escape cancels. Session data lives under the `['sessions']` query key (`src/features/session/api.ts`).
-- Routes live in `src/App.tsx` (lazy pages; guards `RequireAuth` and `RedirectIfSignedIn` in `src/app/guards.tsx`). Design tokens are Tailwind theme variables in `src/index.css` (`bg-surface-raised`, `text-ink-muted`, `text-title`). Show API errors with `ErrorPanel` (ADR 0018). Live events map to query keys in `queryKeysForEvent` in `src/app/guards.tsx`. A live event that ends the stream (`account.disabled`) is listed in `STREAM_ENDING_EVENTS` on the server, so a replay ends it too.
+- Routes live in `src/App.tsx` (lazy pages; guards `RequireAuth` and `RedirectIfSignedIn` in `src/app/guards.tsx`). Design tokens are Tailwind theme variables in `src/index.css` (`bg-surface-raised`, `text-ink-muted`, `text-title`). Show API errors with `ErrorPanel` (ADR 0018). Live events map to query keys in `queryKeysForEvent` in `src/app/eventKeys.ts`. A live event that ends the stream (`account.disabled`) is listed in `STREAM_ENDING_EVENTS` on the server, so a replay ends it too.
 - The passage picker (#42, ADR 0026) draws the server's peaks without wavesurfer.js: the rules are pure functions in `src/features/session/passage.ts`, the state is the reducer in `passageState.ts`, and the handles are `role="slider"` elements in `Waveform.tsx`. Playwright does not follow redirects for routed requests, so e2e fakes answer `/api/v1/media/{id}` and `/peaks` directly.
 - Drafts and marks save through `src/lib/autosave` (`useAutosave`, `SaveStatus`): a local copy at once, a server save 2 s after the last edit on the server's version, `SaveConflict` on a stale version (ADR 0025). The Dictation player's control policy is `src/features/dictation/policy.ts`; Blind's playback policy and heartbeat protocol are in `src/features/blind/listen.ts`, and it reports a leave with `api(..., {keepalive: true})` because sendBeacon cannot send the CSRF header.
 - Clip notices (`src/features/content/ClipNotices.tsx`) turn `content.ready` into a polite live-region notice that never takes focus and waits while a `/sessions/` page is open. Upload refusals map to messages in `src/features/library/refusals.ts`.
@@ -107,3 +108,15 @@ Read the section for the area you are changing before you change it. The rules e
 - Expected full-page callback refusals redirect to `/auth/google-error` using only
   fixed reason/intent codes. Keep consumption single-use, roll back business
   writes on refusal, and expose an accessible control that starts a new flow.
+
+## Transcript review (ADR 0044)
+
+- Review composes `transcript.service.read_passage`; its worker-role database comes
+  from `LISTENUP_TRANSCRIPT_READ_DATABASE_URL`. Keep the request connection on the
+  API role and never grant it cache access. See ADR 0044 for the local/Compose setup.
+- Transcript lines are sentences with absolute word timings and passage-global
+  indices. Correction overlays belong inside the authorized transcript service (#56),
+  before review groups words; review does not own correction persistence or autosave.
+- Passage transport, controls and policy live in `features/media`; Dictation keeps
+  compatibility exports. Transcript supplies sentence replay and keyboard handling.
+  Readiness/failure events invalidate the named review query; pending reads also poll.
