@@ -86,3 +86,64 @@ test('waits read in seconds, minutes or hours', () => {
   expect(formatWait(95)).toBe('1 min');
   expect(formatWait(3 * 3600 + 120)).toBe('3 h 2 min');
 });
+
+test('a job that is no longer failed says so and the list is reloaded', async () => {
+  let failed = [FAILED];
+  mockRoutes({
+    'GET /admin/jobs': () => jsonResponse(200, { lanes: LANES, failed }),
+    'POST /admin/jobs/12/retry': () => {
+      failed = [];
+      return problem(404, 'job_not_found', 'Not failed.');
+    },
+  });
+  renderWithProviders(<JobsPage />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Retry job 12/ }));
+
+  expect(await screen.findByText(/no longer waiting for a retry/)).toBeInTheDocument();
+  expect(await screen.findByText('No failed jobs.')).toBeInTheDocument();
+});
+
+test('any other refusal of a retry is shown with what to do next', async () => {
+  mockRoutes({
+    'GET /admin/jobs': () => jsonResponse(200, { lanes: LANES, failed: [FAILED] }),
+    'POST /admin/jobs/12/retry': () => problem(500, 'internal_error', 'Boom.'),
+  });
+  renderWithProviders(<JobsPage />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Retry job 12/ }));
+
+  expect(await screen.findByText(/^Job 12 was not retried\./)).toBeInTheDocument();
+  expect(screen.getByRole('table', { name: /failed jobs/i })).toBeInTheDocument();
+});
+
+test('Refresh loads the jobs again', async () => {
+  const { calls } = mockRoutes({
+    'GET /admin/jobs': () => jsonResponse(200, { lanes: LANES, failed: [] }),
+  });
+  renderWithProviders(<JobsPage />);
+  await screen.findByRole('table', { name: /jobs per lane/i });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+  await vi.waitFor(() => expect(calls.filter((c) => c.method === 'GET')).toHaveLength(2));
+});
+
+test('a list that cannot load offers to try again', async () => {
+  let attempts = 0;
+  mockRoutes({
+    'GET /admin/jobs': () => {
+      attempts += 1;
+      // The page retries a failing load twice before it shows the error.
+      return attempts <= 3
+        ? problem(503, 'service_unavailable', 'The service is busy.')
+        : jsonResponse(200, { lanes: LANES, failed: [] });
+    },
+  });
+  renderWithProviders(<JobsPage />);
+
+  const alert = await screen.findByRole('alert', {}, { timeout: 8000 });
+  fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+
+  expect(await screen.findByRole('table', { name: /jobs per lane/i })).toBeInTheDocument();
+}, 15_000);
