@@ -9,7 +9,7 @@ change, so the event and the change commit or roll back together:
   every step transition); they derive `step_started` and `step_completed`.
 - `record_listen_started`: practice (`start_attempt`, Blind and Dictation).
 - `record_blind_abandoned`: blind (an attempt voided).
-- `record_dictation_replays`: Dictation submission (#53), not built yet.
+- `record_dictation_replays`: dictation (`submit`, #54).
 - `record_mark_created`, `record_card_created`, `record_shadow_round_completed`: the
   marks, Card and Shadow features, not built yet.
 

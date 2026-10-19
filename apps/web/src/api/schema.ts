@@ -294,6 +294,30 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/dictation/attempts/{attempt_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Attempt
+     * @description The attempt's state and, once scored, the diff and accuracy (FR-DI-5).
+     *
+     *     The reference text is in `result.items` only. Before scoring it is in no answer
+     *     of the Dictation routes (FR-DI-3, FR-TX-5). Refetch it when `dictation.scored`
+     *     arrives on the event stream.
+     */
+    get: operations['get_attempt_api_v1_dictation_attempts__attempt_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/dictation/attempts/{attempt_id}/draft': {
     parameters: {
       query?: never;
@@ -333,6 +357,30 @@ export interface paths {
      *     Repeated calls are idempotent. Opening the Dictation screen alone records nothing.
      */
     post: operations['record_listen_started_api_v1_dictation_attempts__attempt_id__listen_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/dictation/attempts/{attempt_id}/submit': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Submit
+     * @description Submit the text, finish the attempt and complete the Dictation step (FR-DI-5).
+     *
+     *     The score is not in this answer: it is computed when the transcript is ready and
+     *     announced by the `dictation.scored` event. An `Idempotency-Key` makes a retry
+     *     return the first answer.
+     */
+    post: operations['submit_api_v1_dictation_attempts__attempt_id__submit_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -631,6 +679,28 @@ export interface paths {
      *     `heartbeat_interval_ms` from now on.
      */
     post: operations['start_attempt_api_v1_sessions__session_id__blind_attempts_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/dictation/attempt': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Session Attempt
+     * @description The session's newest Dictation attempt with its score, after the step is complete.
+     *
+     *     The Dictation result stays on the session page while the plan moves on to Transcript.
+     */
+    get: operations['get_session_attempt_api_v1_sessions__session_id__dictation_attempt_get'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1180,6 +1250,30 @@ export interface components {
       status: components['schemas']['AttemptStatus'];
     };
     /**
+     * DictationAttemptView
+     * @description The attempt after the draft stage: its state and, once scored, the result.
+     */
+    DictationAttemptView: {
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** @description Null until `scoring_status` is scored */
+      result: components['schemas']['DictationResult'] | null;
+      /**
+       * Scoring Status
+       * @description Null until the attempt is submitted
+       */
+      scoring_status: ('waiting_transcript' | 'scoring_unavailable' | 'scored') | null;
+      /**
+       * Session Id
+       * Format: uuid
+       */
+      session_id: string;
+      status: components['schemas']['AttemptStatus'];
+    };
+    /**
      * DictationPassage
      * @description The part of the clip the player may play, in milliseconds, [start_ms, end_ms).
      */
@@ -1188,6 +1282,78 @@ export interface components {
       end_ms: number;
       /** Start Ms */
       start_ms: number;
+    };
+    /**
+     * DictationResult
+     * @description The score. The only place the reference text appears, and only after scoring.
+     */
+    DictationResult: {
+      /**
+       * Accuracy
+       * @description Percent with two decimals; spelling slips count
+       */
+      accuracy: number;
+      counts: components['schemas']['DiffCounts'];
+      /** Items */
+      items: components['schemas']['DiffItem'][];
+    };
+    /**
+     * DictationSubmission
+     * @description The submission was accepted; the score follows (FR-DI-5, ADR 0042).
+     *
+     *     Never carries the diff or any reference text, whatever the state of scoring.
+     */
+    DictationSubmission: {
+      /**
+       * Attempt Id
+       * Format: uuid
+       */
+      attempt_id: string;
+      /**
+       * Scoring Status
+       * @enum {string}
+       */
+      scoring_status: 'waiting_transcript' | 'scoring_unavailable' | 'scored';
+      status: components['schemas']['AttemptStatus'];
+    };
+    /** DiffCounts */
+    DiffCounts: {
+      /** Correct */
+      correct: number;
+      /** Extra */
+      extra: number;
+      /** Missing */
+      missing: number;
+      /** Spelling Slip */
+      spelling_slip: number;
+      /** Wrong */
+      wrong: number;
+    };
+    /**
+     * DiffItem
+     * @description One word of the diff, in passage order; extra words sit where they were typed.
+     */
+    DiffItem: {
+      /**
+       * Index
+       * @description Position in the passage word sequence; null for an extra word
+       */
+      index: number | null;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'correct' | 'spelling_slip' | 'wrong' | 'missing' | 'extra' | 'not_scored';
+      /**
+       * Typed
+       * @description What the learner typed for it; empty when missing
+       */
+      typed: string;
+      /**
+       * Word
+       * @description The reference word; empty for an extra word
+       */
+      word: string;
     };
     /**
      * Entry
@@ -1566,6 +1732,24 @@ export interface components {
       quota_bytes: number;
       /** Used Bytes */
       used_bytes: number;
+    };
+    /** SubmitDictation */
+    SubmitDictation: {
+      /**
+       * Replay Count
+       * @description How often the learner replayed the passage
+       */
+      replay_count: number;
+      /**
+       * Text
+       * @description The whole text as the learner sees it, at most 20,000 characters
+       */
+      text: string;
+      /**
+       * Version
+       * @description The `version` of the session this page last saw
+       */
+      version: number;
     };
     /** TranscriptLine */
     TranscriptLine: {
@@ -2265,6 +2449,44 @@ export interface operations {
       };
     };
   };
+  get_attempt_api_v1_dictation_attempts__attempt_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationAttemptView'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   save_draft_api_v1_dictation_attempts__attempt_id__draft_put: {
     parameters: {
       query?: never;
@@ -2355,6 +2577,56 @@ export interface operations {
       };
     };
   };
+  submit_api_v1_dictation_attempts__attempt_id__submit_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SubmitDictation'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationSubmission'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked`, `session_closed`, `session_changed` or `attempt_closed` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `empty_submission`, `submission_too_long` (with `max_chars`) or `idempotency_key_reused` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   events_api_v1_events_get: {
     parameters: {
       query?: never;
@@ -2366,7 +2638,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description A Server-Sent Events stream of the learner's events: job.progress, content.ready, transcript.ready, transcript.failed, grade.ready, attempt.voided, export.ready, account.disabled (the stream then ends) and resync. */
+      /** @description A Server-Sent Events stream of the learner's events: job.progress, content.ready, transcript.ready, transcript.failed, grade.ready, dictation.scored, attempt.voided, export.ready, account.disabled (the stream then ends) and resync. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -2914,6 +3186,44 @@ export interface operations {
       };
       /** @description `step_locked`, or `attempt_active` with `attempt_id` */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_session_attempt_api_v1_sessions__session_id__dictation_attempt_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationAttemptView'];
+        };
+      };
+      /** @description `session_not_found` or `attempt_not_found` */
+      404: {
         headers: {
           [name: string]: unknown;
         };

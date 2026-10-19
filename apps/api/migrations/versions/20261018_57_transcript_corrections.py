@@ -5,7 +5,7 @@ from alembic import op
 from migrations.rls import enable_own_rows
 
 revision = "57_transcript_corrections"
-down_revision = "0064_ai_gateway"
+down_revision = "33_dictation_scoring_unavailable"
 branch_labels = None
 depends_on = None
 

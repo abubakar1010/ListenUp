@@ -2,6 +2,7 @@ import { act, fireEvent, screen, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router';
 
 import { jsonResponse, problem, renderWithProviders } from '../../test-utils';
+import { RESULT } from '../dictation/fixtures';
 import { sessionFixture } from '../session/fixtures';
 import SessionPage from '../session/SessionPage';
 import { mockRoutes } from '../session/testApi';
@@ -65,6 +66,11 @@ function renderReview(routes: Parameters<typeof mockRoutes>[0] = {}) {
   mockRoutes({
     [`GET /sessions/${SESSION.id}`]: jsonResponse(200, SESSION),
     [`GET ${PATH}`]: jsonResponse(200, DATA),
+    [`GET /sessions/${SESSION.id}/dictation/attempt`]: problem(
+      404,
+      'attempt_not_found',
+      'No Dictation attempt.',
+    ),
     ...routes,
   });
   return renderWithProviders(
@@ -83,6 +89,22 @@ async function ready() {
 function current() {
   return document.querySelector('[aria-current="true"]');
 }
+
+test('keeps_the_completed_Dictation_result_beside_the_ready_transcript', async () => {
+  renderReview({
+    [`GET /sessions/${SESSION.id}/dictation/attempt`]: jsonResponse(200, {
+      id: 'attempt-1',
+      session_id: SESSION.id,
+      status: 'submitted',
+      scoring_status: 'scored',
+      result: RESULT,
+    }),
+  });
+  await ready();
+  expect(await screen.findByText('90%')).toBeInTheDocument();
+  expect(screen.getByRole('list', { name: 'Word by word' })).toHaveTextContent('summer.');
+  expect(screen.getByRole('button', { name: 'Jump to Hello' })).toBeEnabled();
+});
 
 test('highlights_current_line_at_boundaries_without_colour_or_focus_changes', async () => {
   renderReview();

@@ -343,3 +343,58 @@ This follow-up changes documentation only; TDD does not apply. Markdown links,
 requirement IDs, branch naming and diff whitespace are checked. The review above
 applies to the runtime head `2de662f`; required CI must pass on the documentation
 follow-up head before merge. No merge is authorized by this record.
+
+## Integration with merged Dictation scoring (#54), 2026-10-20
+
+After CI passed on `2e35bb5`, the owner requested merge. Main had advanced to
+`5ce402c` with #54 and GitHub refused the merge for conflicts. Main was merged
+into the existing #57 branch without rebasing or rewriting pushed history.
+
+The integration preserves #54's passage hooks and separate scoring reference.
+Transcript overlays apply only to `read_passage`; `reference_for_scoring` retains
+the original shared words, leaving correction-aware scoring/re-scoring to #56.
+The Transcript layout retains the completed Dictation result panel during loading,
+errors and ready playback. Transcript invalidations and reconnect coverage moved
+to main's `app/eventKeys.ts` alongside the Dictation result invalidation.
+
+The correction migration now follows `33_dictation_scoring_unavailable`, restoring
+one migration head. Main already uses ADR 0042 for Dictation, so the Transcript
+ADR is now 0044 and current links were updated; earlier numbering in this historical
+record describes the original revisions. ADR 0043's dependency disposition remains
+unchanged. OpenAPI and TypeScript schema conflicts were resolved by regeneration.
+
+Actual regression evidence before the fixes:
+
+- API directory: `LISTENUP_REQUIRE_DB=1 uv run pytest tests/integration/test_migrations.py::test_history_is_linear -q --tb=short`
+  failed: two heads instead of one.
+- Web directory: `node node_modules/vitest/vitest.mjs run src/features/review/TranscriptEvents.test.tsx src/features/dictation/DictationScreen.test.tsx`
+  reported 4 failed, 24 passed: both Transcript events lost their query keys, and
+  the post-submit waiting message and scored accuracy were absent.
+- API directory: `LISTENUP_REQUIRE_DB=1 uv run pytest tests/integration/test_dictation_reference.py::test_transcript_overlay_does_not_change_dictation_scoring_reference -q --tb=short`
+  failed: scoring received `Learner edit` instead of the shared reference `Cities`.
+
+After the fixes, the migration/review/reference run passed 22 tests, including
+downgrade/re-upgrade and schema drift. The neighboring review/Dictation/event/session
+web run passed 70 tests. The ready-Transcript Dictation-result assertion supplements
+the existing post-submit Red cycle; it is not separately claimed as test-first work.
+The browser fixture's missing-attempt response is setup for the newly retained panel.
+No coverage threshold, exclusion or existing assertion was weakened. Final integrated
+checks and current-head CI are recorded below when complete. Actual-server seek
+latency remains unverified under #155; #48/#118 usability remains unverified.
+
+Final integrated local checks passed:
+
+- Backend: 132 focused tests across exports, review/access, Dictation reference,
+  submit/result/scoring, passage transcription, migrations, schema, architecture and
+  shutdown; PostgreSQL required, no skips. Ruff lint/format, strict mypy (146 source
+  files) and all six import contracts passed. The complete backend coverage and
+  uninstrumented performance suites are left to current-head CI for this integration.
+- Web: lint/format/types, all 350 tests with coverage, runtime inventory, production
+  build, 122.9 kB gzip initial JavaScript against 200 kB, and all 35 Chromium tests
+  passed. Browser API responses remain mocked; these are not live-stack latency
+  measurements. Existing transport/policy branch gaps remain, without new exclusions.
+- Documentation links, branch name and diff whitespace passed. Generated OpenAPI
+  and client types include both features and were regenerated rather than hand-edited.
+
+Required CI must validate the integrated pushed head before merge; the earlier
+successful run on `2e35bb5` does not establish that result.

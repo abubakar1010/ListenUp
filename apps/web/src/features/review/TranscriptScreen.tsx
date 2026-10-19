@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError } from '../../api/client';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
+import { DictationResultPanel } from '../dictation/DictationResultPanel';
 import { PassagePlayerControls } from '../media/PassagePlayerControls';
 import { actionFor, stepSpeed } from '../media/playerPolicy';
 import { usePassagePlayer, type PassagePlayer } from '../media/usePassagePlayer';
@@ -74,6 +75,9 @@ function Layout({
       workLabel="Transcript"
     >
       <p className="text-body-s">Transcript can't be skipped: it shows what you missed.</p>
+      {session.steps.some((step) => step.step === 'dictation' && step.status === 'done') && (
+        <DictationResultPanel sessionId={session.id} />
+      )}
       {children}
     </PracticeLayout>
   );

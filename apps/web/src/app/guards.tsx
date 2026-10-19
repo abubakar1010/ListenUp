@@ -1,18 +1,13 @@
-import { useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { Navigate, Outlet, useLocation, useSearchParams } from 'react-router';
 
 import { DEFAULT_SIGNED_IN_PATH, nextPath, signInPath } from '../auth/next';
-import { ME_KEY, useMe } from '../auth/useMe';
+import { useMe } from '../auth/useMe';
 import { useLiveEvents, type LiveEvent } from '../events/useLiveEvents';
-import { DELETE_ACCOUNT_KEY } from '../features/account/deletionApi';
-import { EXPORTS_KEY } from '../features/account/exportApi';
-import { BLIND_KEY } from '../features/blind/api';
 import { ClipNotices } from '../features/content/ClipNotices';
 import { useClipNotices } from '../features/content/useClipNotices';
-import { CONTENTS_KEY, contentKey } from '../features/content/useContent';
-import { LIBRARY_KEY, UPLOAD_USAGE_KEY } from '../features/library/useLibrary';
-import { REVIEW_KEY, transcriptKey } from '../features/review/api';
+import { PENDING_KEYS, queryKeysForEvent } from './eventKeys';
 import { ErrorPage } from './ErrorPage';
 import { PageLoading } from './PageLoading';
 import { RouteBoundary } from './RouteBoundary';
@@ -60,41 +55,6 @@ function SignedInRoot() {
       <ClipNotices notices={notices} />
     </>
   );
-}
-
-const NO_KEYS: readonly QueryKey[] = [];
-const PENDING_KEYS: readonly QueryKey[] = [LIBRARY_KEY, CONTENTS_KEY, REVIEW_KEY];
-
-/**
- * Which cached queries each live event makes stale (ADR 0016). Feature stories add their
- * mappings here, for example `content.ready` to the content item and the library list.
- */
-function queryKeysForEvent(event: LiveEvent, queryClient: QueryClient): readonly QueryKey[] {
-  switch (event.type) {
-    case 'content.ready':
-      // A converted clip also changes storage use and today's new audio.
-      return [LIBRARY_KEY, contentKey(event.resourceId), UPLOAD_USAGE_KEY];
-    case 'transcript.ready':
-    case 'transcript.failed':
-      return [transcriptKey(event.resourceId)];
-    case 'job.progress':
-      return [LIBRARY_KEY, contentKey(event.resourceId)];
-    case 'attempt.voided':
-      // The event names the attempt only; refresh every Blind step shown (ADR 0024).
-      return [BLIND_KEY];
-    case 'export.ready':
-      // A data export finished: ready to download, or failed (ADR 0030).
-      return [EXPORTS_KEY];
-    case 'account.disabled':
-      // The account was deleted in another tab or device (ADR 0029): refetching the
-      // learner finds nobody signed in, and the guard goes to sign in. The tab that is
-      // deleting goes to the "account deleted" page itself; refetching here could send
-      // it to sign in first.
-      if (queryClient.isMutating({ mutationKey: DELETE_ACCOUNT_KEY }) > 0) return NO_KEYS;
-      return [ME_KEY];
-    default:
-      return NO_KEYS;
-  }
 }
 
 /** Sign-in and register: a learner who is already signed in goes on to `next`. */

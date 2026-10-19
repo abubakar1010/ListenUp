@@ -8,6 +8,7 @@ import { ErrorPanel } from '../../components/ErrorPanel';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { BlindStep } from '../blind/BlindStep';
 import { CheckIcon, LockIcon } from '../../components/icons';
+import { DictationResultPanel } from '../dictation/DictationResultPanel';
 import { DictationScreen } from '../dictation/DictationScreen';
 import { TranscriptScreen } from '../review/TranscriptScreen';
 import { useSession, useSkipStep, type Session } from './api';
@@ -71,6 +72,9 @@ function SessionView({ session }: { session: Session }) {
       rule={open ? STEP_RULES[open] : 'Plan complete.'}
       workLabel={open ? STEP_NAMES[open] : 'Plan complete'}
     >
+      {session.steps.some((s) => s.step === 'dictation' && s.status === 'done') && (
+        <DictationResultPanel sessionId={session.id} />
+      )}
       {open ? <OpenStep session={session} /> : <Finished session={session} />}
     </PracticeLayout>
   );

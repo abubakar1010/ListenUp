@@ -6,6 +6,7 @@ import { sessionFixture } from '../session/fixtures';
 import SessionPage from '../session/SessionPage';
 import { mockRoutes, type Call } from '../session/testApi';
 import { draftStorageKey, type DictationAttempt } from './api';
+import { RESULT } from './fixtures';
 
 // A plan of both with Blind done: Dictation is open. Passage 02:10 to 04:40 (150 s).
 const SESSION = sessionFixture({ entry: 'both', done: 1 });
@@ -405,5 +406,127 @@ describe('the player', () => {
     expect(play).toHaveBeenCalledTimes(1);
     fireEvent.keyDown(document.body, { key: '[', code: 'BracketLeft' });
     expect(audio().playbackRate).toBe(0.9);
+  });
+});
+
+describe('submitting (#54)', () => {
+  const SUBMIT_PATH = '/dictation/attempts/attempt-1/submit';
+  const RESULT_PATH = `/sessions/${SESSION.id}/dictation/attempt`;
+  // Both entry, Blind and Dictation done: Transcript is open.
+  const AFTER = sessionFixture({ entry: 'both', done: 2 });
+  const waiting = {
+    id: 'attempt-1',
+    session_id: SESSION.id,
+    status: 'submitted',
+    scoring_status: 'waiting_transcript',
+    result: null,
+  };
+  const accepted = {
+    attempt_id: 'attempt-1',
+    status: 'submitted',
+    scoring_status: 'waiting_transcript',
+  };
+
+  /** The session reads as Dictation-open until the submit lands, then as Transcript-open. */
+  function renderSubmitting(overrides: Parameters<typeof mockRoutes>[0] = {}) {
+    let submitted = false;
+    return renderDictation({
+      [`GET /sessions/${SESSION.id}`]: () => jsonResponse(200, submitted ? AFTER : SESSION),
+      [`POST ${SUBMIT_PATH}`]: () => {
+        submitted = true;
+        return jsonResponse(202, accepted);
+      },
+      [`GET ${RESULT_PATH}`]: jsonResponse(200, waiting),
+      ...overrides,
+    });
+  }
+
+  test('Submit is off while there is no text', async () => {
+    renderDictation({ [`POST ${ATTEMPT_PATH}`]: jsonResponse(200, attempt({ draft_text: '' })) });
+    await textArea();
+
+    expect(screen.getByRole('button', { name: 'Submit for scoring' })).toBeDisabled();
+  });
+
+  test('sends the text, the session version and the replay count with an Idempotency-Key', async () => {
+    const { calls } = renderSubmitting();
+    await textArea();
+    loadAudio();
+    for (let i = 0; i < 3; i += 1)
+      fireEvent.click(screen.getByRole('button', { name: 'Replay segment' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit for scoring' }));
+
+    await waitFor(() => expect(calls.some((c) => c.path === SUBMIT_PATH)).toBe(true));
+    const post = calls.find((c) => c.path === SUBMIT_PATH)!;
+    expect(post.method).toBe('POST');
+    expect(post.body).toEqual({
+      text: 'So the first thing',
+      version: SESSION.version,
+      replay_count: 3,
+    });
+    expect(post.headers['Idempotency-Key']).toBe('dictation-attempt-1');
+  });
+
+  test('after a submit before the transcript is ready, the page says it will score when ready', async () => {
+    renderSubmitting();
+    await textArea();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit for scoring' }));
+
+    expect(await screen.findByText(/Scoring when the transcript is ready/)).toBeInTheDocument();
+    // The Dictation step is complete: the work area is gone and the plan moved on.
+    expect(screen.queryByRole('textbox', { name: 'Your text' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Transcript');
+  });
+
+  test('a scored session shows the diff and accuracy under the next step', async () => {
+    renderSubmitting({
+      [`GET ${RESULT_PATH}`]: jsonResponse(200, {
+        ...waiting,
+        scoring_status: 'scored',
+        result: RESULT,
+      }),
+    });
+    await textArea();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit for scoring' }));
+
+    expect(await screen.findByText('90%')).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Word by word' })).toHaveTextContent('summer.');
+  });
+
+  test('a refused submit shows the problem and keeps the text', async () => {
+    renderSubmitting({
+      [`POST ${SUBMIT_PATH}`]: problem(409, 'session_changed', 'The session changed. Reload.'),
+    });
+    const text = await textArea();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit for scoring' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('The session changed. Reload.');
+    expect(text).toHaveValue('So the first thing');
+    expect(screen.getByRole('button', { name: 'Submit for scoring' })).toBeEnabled();
+  });
+
+  test('once submitted, the text and Submit are locked and no draft save follows', async () => {
+    // The session refetch is slow to change: the screen is still up after the answer.
+    const { calls } = renderSubmitting({
+      [`GET /sessions/${SESSION.id}`]: () => jsonResponse(200, SESSION),
+    });
+    const text = await textArea();
+    fireEvent.change(text, { target: { value: 'So the first thing was' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit for scoring' }));
+
+    await waitFor(() => expect(calls.some((c) => c.path === SUBMIT_PATH)).toBe(true));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Submitted/ })).toBeDisabled());
+    expect(text).toHaveAttribute('readonly');
+    // The unsent copy is gone from this device, and the pending autosave never runs.
+    expect(localStorage.getItem(draftStorageKey('attempt-1'))).toBeNull();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 2300));
+    });
+    expect(calls.filter((c) => c.path === DRAFT_PATH)).toHaveLength(0);
   });
 });

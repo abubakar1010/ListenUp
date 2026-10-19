@@ -59,6 +59,8 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
         },
       });
     if (path === '/sessions/s-57') return route.fulfill({ json: SESSION });
+    if (path === '/sessions/s-57/dictation/attempt')
+      return route.fulfill({ status: 404, json: { code: 'attempt_not_found' } });
     if (path === '/sessions/s-57/transcript')
       return route.fulfill({
         json: {

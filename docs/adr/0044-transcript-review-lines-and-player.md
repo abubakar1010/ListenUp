@@ -1,4 +1,4 @@
-# ADR 0042: Transcript review lines and shared passage playback
+# ADR 0044: Transcript review lines and shared passage playback
 
 - Status: Accepted by the owner in the #57 plan
 - Date: 2026-10-18
@@ -12,7 +12,7 @@ Transcript screen. `transcript` owns cache generation and the authorized read
 boundary. Review calls `transcript.service.read_passage` with the RLS request
 transaction and an explicit, separately configured worker-role database. It never
 queries shared cache tables or imports another module's repository. Authentication,
-ownership and the step gate precede every privileged read. No database grants change.
+ownership and the step gate precede every privileged read. The shared-cache grants remain unchanged.
 
 Configure `LISTENUP_TRANSCRIPT_READ_DATABASE_URL` with the worker login in production.
 The development default uses the local database with `role=listenup_worker`; Compose
@@ -51,6 +51,9 @@ An empty replacement retains an accessible removed-word jump target. Corrections
 are included in the learner's export. Review consumes the service result without
 querying corrections itself. Marks and completion remain in #58 and later work.
 
+The separate reference_for_scoring path retains the shared reference without
+Transcript overlays; correction-aware scoring and re-scoring remain #56.
+
 The shared web passage player retains Dictation's transport and control policy.
 Compatibility exports preserve its imports; Transcript supplies sentence replay.
 Leading silence has no current line; replay chooses the first line. Between sentences
@@ -58,6 +61,10 @@ and after the last sentence the preceding line stays current, including at passa
 end. Replay and word activation start playback. Ordinary seek preserves paused or
 playing state. Positions passed to the transport are passage-relative; displayed
 word times stay absolute. Existing speeds are 1x, 0.9x and 0.75x, with pitch preserved.
+
+Transcript also retains the completed Dictation result panel while its text is
+loading, unavailable or ready. Event invalidation lives in app/eventKeys.ts and
+retains both Transcript and Dictation result keys.
 
 Transcript keyboard shortcuts match Dictation (Space/K, J, R, brackets) outside
 interactive controls. Native controls retain keyboard behavior and shortcut handling
