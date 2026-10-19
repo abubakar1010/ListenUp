@@ -388,7 +388,7 @@ def record_ai_call(provider: str, task: str, seconds: float, ok: bool) -> None:
 
 def record_ai_quota(provider: str, remaining_ratio: float) -> None:
     """Share of `provider`'s free quota left (0 to 1). The AI gateway (#64) reports it
-    from its quota counters; the AiQuotaLow alert fires under 0.20."""
+    from its quota counters; the AiQuotaLow alert fires at or below 0.25 (ADR 0037)."""
     instruments().ai_quota_remaining.set(
         min(1.0, max(0.0, remaining_ratio)), {"provider": provider}
     )
