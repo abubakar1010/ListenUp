@@ -45,10 +45,26 @@ Mutation checks (temporary edits, restored): 17 mutants (trim learner text, drop
 - Not applicable: Alembic (no schema change), OpenAPI export and access registry (no route), web checks (no web change).
 - `scripts/record_ai_contract.py text_ai` was exercised once against a mock server by hand; it is not in the test suite.
 
+## Independent review fixes
+
+A fresh-session review found no blocker and seven low-severity findings; all seven are fixed in separate commits. Commands from `apps/api` with `--no-cov`.
+
+| Finding | Named tests | Red | Green |
+| --- | --- | --- | --- |
+| `api_key_env` accepted any variable, so a database URL or session secret could be sent as a key (NFR-AI-7) | `test_unsafe_or_unknown_options_are_refused_at_construction` (3 new cases) | `-k unsafe_or_unknown`: **3 failed, 10 passed** | only `LISTENUP_AI_<NAME>_API_KEY`; `tests/unit/ai` + `tests/contract` **279 passed** |
+| The version left out `reasoning_effort` and `seed`, which change the output (NFR-AI-5) | `test_settings_that_change_the_output_change_the_recorded_version`; an unbounded seed case | `assert 2 == 6`, **1 failed** | **281 passed** |
+| The field allowlist was top-level only; nested values could carry ids or keys (FR-BL-13) | `test_input_that_does_not_match_the_task_input_model_is_refused` (11 cases, refusal never quotes the input), `test_input_that_matches_the_task_input_model_is_sent_unchanged`, prompt fields equal the input model | `test_prompt_render.py`: **11 failed, 12 passed**; `test_prompt_files.py`: collection error (no `TASK_INPUTS`) | `TASK_INPUTS` in `tasks.py`; the recordings' `rhythm` measure became `timing` (the Database Design name); **294 passed** with the integration file |
+| Untested branches: marker-only refusal, non-text trimmable field, smallest budget across providers, admission boundary, provenance from a reply | `test_refused_when_only_the_truncation_marker_would_remain`, `test_a_trimmable_field_that_is_not_text_is_never_changed`, `test_text_input_budget_is_the_smallest_across_the_tasks_providers`, `test_input_of_exactly_the_budget_is_sent_and_one_byte_more_is_refused`, `test_provenance_never_comes_from_the_reply` | Characterization of existing code, so red is shown by mutants that all survived before: drop the marker refusal, stringify a trimmable field, `min` to `max`, budget plus one, version and model from the reply. Each now fails its test (budget plus one fails 4) | **298 passed** |
+| ADR 0043 cited instead of 0045; a `--text` recording flag that does not exist | comments and notes only | not applicable (documentation) | `grep "ADR 0043"` over the PR's files: none |
+
+After the fixes: `ruff format --check`, `ruff check`, `mypy` (153 files) and `lint-imports` (6 kept) pass. The full coverage run with both required-service flags (moto again for S3) gives **1460 passed, 2 failed**: the same two tests named above, which fail identically on a clean `main` with moto (rechecked by the reviewer). Changed-line coverage is **100%** against both the PR base (342 lines) and the pre-fix head (37 lines). `pytest -m performance`: 1 passed.
+
+The review's three owner questions (versioning `schema.json` with each prompt version, how far `local: true` is trusted, and whether `generate` should call `fit` itself) are decisions left to the owner and are not changed here.
+
 ## Not verified
 
 - Recordings are **hand-written** in each server's documented response shape (no key or network). Real recordings, the NFR-AI-6 golden set and model quality are unverified, so both providers stay disabled and unaccepted.
 - Groq strict `json_schema` support for every schema keyword is unverified against the service.
 - The Ollama image is pinned by digest; the **model digest is not**: the Ollama registry was unreachable from this environment.
 - Latency on the deployment host and Groq limits for the actual organization are launch evidence (tracker #155).
-- Fresh-session independent re-review and required CI are still to do.
+- Required CI on the fixed head, and a re-review of the fixes, are still to do.
