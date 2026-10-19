@@ -1,4 +1,4 @@
-"""Who is an administrator (#100, SRS 2.2, ADR 0042)."""
+"""Who is an administrator (#100, SRS 2.2, ADR 0043)."""
 
 from collections.abc import Iterable
 

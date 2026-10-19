@@ -1,4 +1,4 @@
-"""The admin job view and retries (#100, SRS 2.2, ADR 0042).
+"""The admin job view and retries (#100, SRS 2.2, ADR 0043).
 
 The API runs as `api_role_url`, so these tests also prove the API role may read the
 queue and retry a job. Jobs are put in the queue as the owner, standing in for workers.

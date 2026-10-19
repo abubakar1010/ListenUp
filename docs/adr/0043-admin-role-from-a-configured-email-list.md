@@ -1,4 +1,4 @@
-# ADR 0042: Administrators from a configured email list; failed jobs retried as new jobs
+# ADR 0043: Administrators from a configured email list; failed jobs retried as new jobs
 
 - Status: Accepted
 - Date: 2026-10-08

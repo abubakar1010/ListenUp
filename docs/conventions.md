@@ -70,7 +70,7 @@ Read the section for the area you are changing before you change it. The rules e
 - The AI gateway (#64) calls `record_ai_call` and `record_ai_quota`, and grading jobs call `record_grading`; the alert rules already read those metrics. A new alert goes in `infra/observability/alerts.yml` with a case in `alerts.test.yml` (it fires, and stays quiet just below the threshold), a `runbook` entry in `docs/runbooks/alerts.md`, and a row in ADR 0031.
 - Backups are `python -m listenup.ops.backup` (the `backup` image target). A backup is complete only with its `manifest.json`; the restore test is a monthly run recorded in the log at the end of `docs/runbooks/backups.md`. A migration that adds a schema or role must keep a restore into a database with the roles in place working (`tests/integration/test_backup.py`).
 
-## Admin (ADR 0042)
+## Admin (ADR 0043)
 
 - Admin routes live in `modules/admin/api.py` under `/admin` and take `CurrentAdmin` from `modules/admin/service.py`: a learner who is not an admin gets 404 `not_found`, the answer of a path that does not exist. Admins are the verified accounts whose email is in `LISTENUP_ADMIN_EMAILS`. Register admin routes as `Admin(...)` in `tests/integration/access_registry.py`.
 - Admin answers carry counts, ids, names and times only: never job arguments, learner media or text (SRS 2.2). Failed jobs are retried as new jobs with `platform.jobs.retry_failed_job`. The web page is `/admin/jobs` (`src/features/admin/JobsPage.tsx`); on 404 it shows the ordinary "Page not found".

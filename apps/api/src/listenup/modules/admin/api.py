@@ -1,4 +1,4 @@
-"""HTTP routes of the admin module (#100, Architecture 9.2: Admin, ADR 0042).
+"""HTTP routes of the admin module (#100, Architecture 9.2: Admin, ADR 0043).
 
 Every route takes `CurrentAdmin`: a learner who is not an administrator gets 404.
 """

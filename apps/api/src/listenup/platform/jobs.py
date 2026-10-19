@@ -564,7 +564,7 @@ async def retry_failed_job(session: AsyncSession, job_id: int) -> int | None:
     a fresh set of attempts. The failed job stays as it is, with a 'retried' event, so
     it leaves the failed list and cannot be retried twice. (Procrastinate's own retry
     would move the failed job back to 'todo', which needs UPDATE on its table; the API
-    role may only insert there, ADR 0042.) Raises `JobNotRetryable`.
+    role may only insert there, ADR 0043.) Raises `JobNotRetryable`.
     """
     # Two retries of one job at once: the second waits here, then finds it retried.
     await session.execute(

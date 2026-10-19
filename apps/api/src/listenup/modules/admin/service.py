@@ -1,7 +1,7 @@
 """Administration: the job view and retries (#100, SRS 2.2, Architecture 9.2: Admin).
 
 The public face of the admin module. `CurrentAdmin` lets in only administrators
-(ADR 0042); anyone else signed in gets the same 404 as a path that does not exist, so
+(ADR 0043); anyone else signed in gets the same 404 as a path that does not exist, so
 a learner cannot tell that admin routes are there. Admin answers carry counts, job
 ids, lanes and job names only, never job arguments, so no learner id, media or text
 reaches them.
