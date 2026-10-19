@@ -9,8 +9,11 @@ reference text belongs to the transcript module and Dictation never shows it
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
+from typing import Any, Literal
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -68,3 +71,135 @@ async def save_draft(
         )
     ).first()
     return DraftRow(*row) if row else None
+
+
+ScoringStatus = Literal["waiting_transcript", "scoring_unavailable", "scored"]
+DiffStatus = Literal["correct", "spelling_slip", "wrong", "missing", "extra", "not_scored"]
+"""The stored vocabularies; the API schemas use the same types, so a new one cannot
+reach a response without a decision (and a failing type check) here."""
+
+WAITING: ScoringStatus = "waiting_transcript"
+UNAVAILABLE: ScoringStatus = "scoring_unavailable"
+SCORED: ScoringStatus = "scored"
+
+
+async def store_submission(session: AsyncSession, attempt_id: uuid.UUID, submitted: str) -> None:
+    """Keep the submitted text; it waits for scoring (`waiting_transcript`, ADR 0042)."""
+    await session.execute(
+        text("""
+        UPDATE practice.dictation_attempts
+           SET submitted_text = :submitted, scoring_status = :waiting,
+               diff = NULL, accuracy = NULL, scored_at = NULL
+         WHERE attempt_id = :id
+        """),
+        {"id": attempt_id, "submitted": submitted, "waiting": WAITING},
+    )
+
+
+@dataclass(frozen=True)
+class WaitingRow:
+    attempt_id: uuid.UUID
+    session_id: uuid.UUID
+    submitted_text: str
+
+
+_WAITING = """
+SELECT d.attempt_id, a.session_id, d.submitted_text
+  FROM practice.dictation_attempts d JOIN practice.attempts a ON a.id = d.attempt_id
+ WHERE d.scoring_status IN ('waiting_transcript', 'scoring_unavailable')
+"""
+
+
+async def get_waiting(session: AsyncSession, attempt_id: uuid.UUID) -> WaitingRow | None:
+    """The submission still without a score, or None (scored, or not submitted).
+
+    A submission whose transcript failed (`scoring_unavailable`) counts: a later
+    successful transcription scores it.
+    """
+    row = (
+        await session.execute(text(_WAITING + " AND d.attempt_id = :id"), {"id": attempt_id})
+    ).first()
+    return WaitingRow(*row) if row else None
+
+
+async def waiting_in_session(session: AsyncSession, session_id: uuid.UUID) -> list[WaitingRow]:
+    rows = await session.execute(text(_WAITING + " AND a.session_id = :sid"), {"sid": session_id})
+    return [WaitingRow(*row) for row in rows]
+
+
+async def mark_unavailable(session: AsyncSession, attempt_id: uuid.UUID) -> bool:
+    """Record that the transcript failed; False unless the submission was waiting.
+
+    Conditional like `store_score`, so a repeat announces nothing and a score is never undone.
+    """
+    row = (
+        await session.execute(
+            text("""
+            UPDATE practice.dictation_attempts SET scoring_status = 'scoring_unavailable'
+             WHERE attempt_id = :id AND scoring_status = 'waiting_transcript'
+            RETURNING 1
+            """),
+            {"id": attempt_id},
+        )
+    ).first()
+    return row is not None
+
+
+async def store_score(
+    session: AsyncSession, attempt_id: uuid.UUID, diff: dict[str, object], accuracy: object
+) -> bool:
+    """Write the score unless the submission is already scored; False then.
+
+    One conditional update, so two runs of the job store one score and announce once.
+    """
+    row = (
+        await session.execute(
+            text("""
+            UPDATE practice.dictation_attempts
+               SET scoring_status = 'scored', diff = :diff, accuracy = :accuracy, scored_at = now()
+             WHERE attempt_id = :id
+               AND scoring_status IN ('waiting_transcript', 'scoring_unavailable')
+            RETURNING 1
+            """).bindparams(bindparam("diff", type_=JSONB)),
+            {"id": attempt_id, "diff": diff, "accuracy": accuracy},
+        )
+    ).first()
+    return row is not None
+
+
+@dataclass(frozen=True)
+class SubmissionRow:
+    scoring_status: ScoringStatus | None
+    diff: dict[str, Any] | None
+    accuracy: Decimal | None
+
+
+async def get_submission(session: AsyncSession, attempt_id: uuid.UUID) -> SubmissionRow | None:
+    row = (
+        await session.execute(
+            text(
+                "SELECT scoring_status, diff, accuracy FROM practice.dictation_attempts "
+                "WHERE attempt_id = :id"
+            ),
+            {"id": attempt_id},
+        )
+    ).first()
+    return SubmissionRow(*row) if row else None
+
+
+async def latest_submitted_attempt(
+    session: AsyncSession, session_id: uuid.UUID
+) -> uuid.UUID | None:
+    """The session's newest attempt that has a submission, or None."""
+    row = (
+        await session.execute(
+            text("""
+            SELECT d.attempt_id FROM practice.dictation_attempts d
+              JOIN practice.attempts a ON a.id = d.attempt_id
+             WHERE a.session_id = :sid AND d.scoring_status IS NOT NULL
+             ORDER BY a.started_at DESC, a.id DESC LIMIT 1
+            """),
+            {"sid": session_id},
+        )
+    ).first()
+    return row[0] if row else None
