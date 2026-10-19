@@ -24,7 +24,9 @@ class DictationAttempt(Base):
         CheckConstraint("char_length(draft_text) <= 20000"),
         CheckConstraint("draft_version >= 0"),
         CheckConstraint("char_length(submitted_text) <= 20000"),
-        CheckConstraint("scoring_status IN ('waiting_transcript', 'scored')"),
+        CheckConstraint(
+            "scoring_status IN ('waiting_transcript', 'scoring_unavailable', 'scored')"
+        ),
         CheckConstraint("accuracy BETWEEN 0 AND 100"),
         # The attempt together with its learner: never another learner's attempt.
         ForeignKeyConstraint(

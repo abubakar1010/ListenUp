@@ -361,6 +361,21 @@ describe('version conflicts', () => {
   });
 });
 
+describe('discarding', () => {
+  test('drops unsent edits: nothing is saved, not even on stop, and the local copy goes', async () => {
+    const { autosave, save, store } = setup({ value: 'abc', version: 1 });
+    autosave.update('abcd');
+    expect(store.data[KEY]).toBeDefined();
+
+    autosave.discard();
+    await vi.advanceTimersByTimeAsync(10_000);
+    autosave.stop();
+
+    expect(save).not.toHaveBeenCalled();
+    expect(store.data[KEY]).toBeUndefined();
+  });
+});
+
 describe('offline and server errors', () => {
   test('a lost connection keeps the text and sends it when the connection returns', async () => {
     const save = vi

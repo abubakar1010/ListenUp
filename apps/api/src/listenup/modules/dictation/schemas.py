@@ -9,6 +9,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from listenup.modules.dictation.repository import DiffStatus, ScoringStatus
 from listenup.modules.practice.service import AttemptStatus
 
 
@@ -45,3 +46,61 @@ class SaveDraft(BaseModel):
 class SavedDraft(BaseModel):
     draft_version: int = Field(description="The new version; base the next save on it")
     updated_at: datetime
+
+
+class SubmitDictation(BaseModel):
+    text: str = Field(
+        description="The whole text as the learner sees it, at most 20,000 characters"
+    )
+    version: int = Field(ge=0, description="The `version` of the session this page last saw")
+    replay_count: int = Field(
+        ge=0, le=100_000, description="How often the learner replayed the passage"
+    )
+
+
+class DictationSubmission(BaseModel):
+    """The submission was accepted; the score follows (FR-DI-5, ADR 0042).
+
+    Never carries the diff or any reference text, whatever the state of scoring.
+    """
+
+    attempt_id: uuid.UUID
+    status: AttemptStatus
+    scoring_status: ScoringStatus
+
+
+class DiffItem(BaseModel):
+    """One word of the diff, in passage order; extra words sit where they were typed."""
+
+    index: int | None = Field(
+        description="Position in the passage word sequence; null for an extra word"
+    )
+    status: DiffStatus
+    word: str = Field(description="The reference word; empty for an extra word")
+    typed: str = Field(description="What the learner typed for it; empty when missing")
+
+
+class DiffCounts(BaseModel):
+    correct: int
+    spelling_slip: int
+    wrong: int
+    missing: int
+    extra: int
+
+
+class DictationResult(BaseModel):
+    """The score. The only place the reference text appears, and only after scoring."""
+
+    accuracy: float = Field(description="Percent with two decimals; spelling slips count")
+    counts: DiffCounts
+    items: list[DiffItem]
+
+
+class DictationAttemptView(BaseModel):
+    """The attempt after the draft stage: its state and, once scored, the result."""
+
+    id: uuid.UUID
+    session_id: uuid.UUID
+    status: AttemptStatus
+    scoring_status: ScoringStatus | None = Field(description="Null until the attempt is submitted")
+    result: DictationResult | None = Field(description="Null until `scoring_status` is scored")

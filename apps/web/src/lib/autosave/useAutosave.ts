@@ -7,6 +7,8 @@ export interface AutosaveHandle<T> extends AutosaveSnapshot<T> {
   update: (value: T) => void;
   /** Send now, for example when the field loses focus. */
   flush: () => void;
+  /** The value went another way (submitted): drop unsent edits and the device copy. */
+  discard: () => void;
   /** After a conflict: save this tab's value over the other one. */
   keepMine: () => void;
   /** After a conflict: take the other value and drop this tab's edits. */
@@ -28,6 +30,7 @@ export function useAutosave<T>(options: AutosaveOptions<T>): AutosaveHandle<T> {
     ...snapshot,
     update: (value) => autosave.update(value),
     flush: () => autosave.flush(),
+    discard: () => autosave.discard(),
     keepMine: () => autosave.keepMine(),
     takeTheirs: () => autosave.takeTheirs(),
   };
