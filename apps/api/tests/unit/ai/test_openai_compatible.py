@@ -18,7 +18,7 @@ from listenup.ai.providers.openai_compatible import (
 )
 from listenup.ai.tasks import EXAMPLES, TASK_MODELS, GistGrade, KeyPoints
 
-KEY = "LISTENUP_AI_TEST_KEY"
+KEY = "LISTENUP_AI_TEST_API_KEY"
 GRADE_INPUT = {
     "key_points": [{"id": "kp1", "text": "It is about sleep.", "kind": "main"}],
     "transcript": "Sleep matters. Adults need eight hours.",
@@ -293,6 +293,10 @@ def test_every_task_has_a_model(task):
         entry_for(options={"base_url": "ftp://llm.example"}),
         entry_for(options={"base_url": ""}),
         entry_for(options={"api_key_env": "lower-case"}),
+        # Only a LISTENUP_AI_*_API_KEY variable may be sent: never another secret.
+        entry_for(options={"api_key_env": "LISTENUP_DATABASE_URL"}),
+        entry_for(options={"api_key_env": "LISTENUP_SESSION_SECRET"}),
+        entry_for(options={"api_key_env": "LISTENUP_AI_API_KEY"}),
         entry_for(options={"structured_output": "grammar"}),
         entry_for(options={"deployment_version": "a b/c"}),
         entry_for(options={"surprise": 1}),

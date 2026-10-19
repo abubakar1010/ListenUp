@@ -42,7 +42,11 @@ class _Options(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     base_url: str = Field(min_length=1)
-    api_key_env: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
+    # Only a variable named for a Text AI key, so no other secret (database URL, session
+    # secret) can be configured into the Authorization header of a provider request.
+    api_key_env: str | None = Field(
+        default=None, max_length=64, pattern=r"^LISTENUP_AI_[A-Z0-9]+(?:_[A-Z0-9]+)*_API_KEY$"
+    )
     structured_output: Literal["json_schema", "json_object", "none"] = "json_schema"
     reasoning_effort: Literal["low", "medium", "high"] | None = None
     seed: int | None = None

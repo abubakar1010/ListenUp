@@ -67,7 +67,7 @@ def hosted(**change):
         populations=("adult",),
         limits={"day": {"calls": 100}, "month": {"calls": 1000}},
         retries=0,
-        options={"base_url": HOSTED, "api_key_env": "TEST_KEY"},
+        options={"base_url": HOSTED, "api_key_env": "LISTENUP_AI_TEST_API_KEY"},
     )
     return ProviderEntry(**{**base, **change})
 
@@ -86,7 +86,7 @@ def local(**change):
 
 
 def build(servers, entries, *, tasks=None, environ=None, prompts_root=PROMPTS_DIR, **config):
-    environ = {"TEST_KEY": "k"} if environ is None else environ
+    environ = {"LISTENUP_AI_TEST_API_KEY": "k"} if environ is None else environ
 
     def factory(entry):
         return OpenAICompatibleTextAI(
