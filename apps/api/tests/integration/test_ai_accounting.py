@@ -1,6 +1,8 @@
 """Persistent admission across independent gateway processes/connections (#64)."""
 
 import asyncio
+import sys
+from textwrap import dedent
 from uuid import uuid4
 
 import psycopg
@@ -97,6 +99,178 @@ async def test_settlement_is_idempotent_and_counts_actual_usage(migrated_url):
                 3,
             )
     finally:
+        await db.dispose()
+
+
+@pytest.mark.anyio
+async def test_concurrent_duplicate_settlement_refunds_only_once(migrated_url):
+    db = Database(conninfo_to_url(migrated_url))
+    entry = ProviderEntry(provider="p" + uuid4().hex, limits={"day": {"tokens": 100}})
+    try:
+        ticket = await PostgresAccounting(db).admit(
+            entry, Role.TEXT_AI, "grade_gist", "v1", Usage(input_tokens=60), False
+        )
+        assert ticket is not None
+        async with asyncio.timeout(10):
+            await asyncio.gather(
+                *(
+                    PostgresAccounting(db).finish(ticket, "ok", 1, "v1", Usage(input_tokens=15))
+                    for _ in range(8)
+                )
+            )
+        with psycopg.connect(migrated_url) as conn:
+            assert (
+                conn.execute(
+                    "SELECT calls,units FROM ai.quota_usage WHERE provider=%s ORDER BY period",
+                    [entry.provider],
+                ).fetchall()
+                == [(1, 15)] * 3
+            )
+            assert conn.execute(
+                "SELECT outcome,input_units,usage_estimated FROM ai.calls WHERE provider=%s",
+                [entry.provider],
+            ).fetchall() == [("ok", 15, False)]
+    finally:
+        await db.dispose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("first", ["admit", "settle"])
+async def test_admission_racing_settlement_observes_committed_capacity(migrated_url, first):
+    db = Database(conninfo_to_url(migrated_url))
+    entry = ProviderEntry(provider="p" + uuid4().hex, limits={"day": {"tokens": 100}})
+    admit_store, settle_store = PostgresAccounting(db), PostgresAccounting(db)
+    try:
+        ticket = await settle_store.admit(
+            entry, Role.TEXT_AI, "grade_gist", "v1", Usage(input_tokens=60), False
+        )
+        assert ticket is not None
+        locked, competing, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        first_store, second_store = (
+            (admit_store, settle_store) if first == "admit" else (settle_store, admit_store)
+        )
+        first_lock, second_lock = first_store._lock, second_store._lock
+
+        async def hold_lock(session, provider):
+            await first_lock(session, provider)
+            locked.set()
+            await release.wait()
+
+        async def compete_for_lock(session, provider):
+            competing.set()
+            await second_lock(session, provider)
+
+        first_store._lock = hold_lock
+        second_store._lock = compete_for_lock
+
+        async def admit():
+            return await admit_store.admit(
+                entry, Role.TEXT_AI, "grade_gist", "v1", Usage(input_tokens=60), False
+            )
+
+        async def settle():
+            await settle_store.finish(ticket, "ok", 1, "v1", Usage(input_tokens=15))
+
+        async with asyncio.timeout(10), asyncio.TaskGroup() as tasks:
+            first_task = tasks.create_task(admit() if first == "admit" else settle())
+            await locked.wait()
+            second_task = tasks.create_task(settle() if first == "admit" else admit())
+            await competing.wait()
+            release.set()
+        admitted = first_task.result() if first == "admit" else second_task.result()
+        assert (admitted is not None) == (first == "settle")
+        expected = (1, 15) if first == "admit" else (2, 75)
+        with psycopg.connect(migrated_url) as conn:
+            assert (
+                conn.execute(
+                    "SELECT calls,units FROM ai.quota_usage WHERE provider=%s ORDER BY period",
+                    [entry.provider],
+                ).fetchall()
+                == [expected] * 3
+            )
+            assert conn.execute(
+                "SELECT outcome,input_units FROM ai.calls WHERE provider=%s ORDER BY created_at",
+                [entry.provider],
+            ).fetchall() == [("ok", 15), ("quota", 0) if first == "admit" else ("pending", 60)]
+    finally:
+        await db.dispose()
+
+
+@pytest.mark.anyio
+async def test_worker_killed_mid_call_keeps_durable_reservation(migrated_url):
+    provider = "p" + uuid4().hex
+    script = dedent("""
+        import asyncio
+        import sys
+        from pathlib import Path
+        from listenup.ai.accounting import PostgresAccounting
+        from listenup.ai.config import AIConfig, ProviderEntry
+        from listenup.ai.gateway import AIGateway
+        from listenup.ai.policy import CallContext
+        from listenup.ai.ports import Role
+        from listenup.ai.registry import Registry
+        from listenup.platform.database import Database
+
+        class Adapter:
+            async def transcribe(self, *args):
+                print("provider entered", flush=True)
+                await asyncio.Event().wait()
+
+        async def main():
+            db = Database(sys.argv[1])
+            entry = ProviderEntry(provider=sys.argv[2], local=True, trains_on_inputs=False,
+                                  limits={"day": {"calls": 1, "audio_seconds": 5}})
+            gateway = AIGateway(
+                AIConfig(version=1, roles={Role.TRANSCRIPTION: (entry,)}),
+                registry=Registry(transcription={entry.provider: lambda _: Adapter()}),
+                accounting=PostgresAccounting(db))
+            await gateway.transcribe(Path("private.wav"), context=CallContext(audio_seconds=5))
+        asyncio.run(main())
+    """)
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        script,
+        conninfo_to_url(migrated_url),
+        provider,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    db = Database(conninfo_to_url(migrated_url))
+    try:
+        assert process.stdout is not None
+        assert await asyncio.wait_for(process.stdout.readline(), 10) == b"provider entered\n"
+        process.kill()
+        await asyncio.wait_for(process.wait(), 10)
+        assert process.returncode < 0
+        with psycopg.connect(migrated_url) as conn:
+            assert conn.execute(
+                "SELECT outcome,audio_seconds,usage_estimated FROM ai.calls WHERE provider=%s",
+                [provider],
+            ).fetchall() == [("pending", 5, True)]
+            assert (
+                conn.execute(
+                    "SELECT calls,audio_seconds FROM ai.quota_usage "
+                    "WHERE provider=%s ORDER BY period",
+                    [provider],
+                ).fetchall()
+                == [(1, 5)] * 3
+            )
+        assert (
+            await PostgresAccounting(db).admit(
+                ProviderEntry(provider=provider, limits={"day": {"calls": 1, "audio_seconds": 5}}),
+                Role.TRANSCRIPTION,
+                "transcribe",
+                None,
+                Usage(audio_seconds=5),
+                True,
+            )
+            is None
+        )
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await asyncio.wait_for(process.wait(), 10)
         await db.dispose()
 
 

@@ -77,6 +77,10 @@ class AIGateway:
             if len({e.provider for e in providers}) != len(providers):
                 raise AIConfigError("duplicate provider in role")
             for e in providers:
+                # NFR-AI-8: speech admission reserves audio, not tokens. Refuse
+                # unsupported caps rather than admit calls with a zero budget.
+                if role is not Role.TEXT_AI and any("tokens" in cap for cap in e.limits.values()):
+                    raise AIConfigError("token quotas require text_ai")
                 limits = (e.limits, e.grading_reserve)
                 if e.provider in quota_config and quota_config[e.provider] != limits:
                     raise AIConfigError("conflicting limits for shared provider")
