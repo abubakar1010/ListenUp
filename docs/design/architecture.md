@@ -241,10 +241,10 @@ ADR 0041 completes the gateway with atomic persistent minute/day/month admission
 
 ### 7.3 Prompts and outputs
 
-- Prompts live in `ai/prompts/<task>/<version>.md` next to a JSON Schema for the output. Tasks in the MVP: `extract_key_points`, `grade_gist`, `shadow_feedback`.
+- Prompts live in `ai/prompts/<task>/<version>.md` (front matter names the version, status and allowed input fields) next to a `schema.json` for the output; exactly one version per task is active, a manifest of hashes locks released files, and the version recorded with a result is read from the active file ([ADR 0045](../adr/0045-text-ai-adapter-and-versioned-prompts.md)). Tasks in the MVP: `extract_key_points`, `grade_gist`, `shadow_feedback`.
 - Every stored result records the task and prompt version, so old and new results can be told apart.
 - Learner text is always passed inside a delimited data block, and the instructions say to treat it as data. Scores the product shows are computed by our code from the model's dimension scores, never taken as free text.
-- Text AI providers are written against the **OpenAI-compatible chat API** where possible. Many hosted services and local servers (Ollama, llama.cpp, vLLM) speak it, so one adapter covers many vendors.
+- Text AI providers are written against the **OpenAI-compatible chat API** where possible. Many hosted services and local servers (Ollama, llama.cpp, vLLM) speak it, so one adapter covers many vendors (`ai/providers/openai_compatible.py`, registered as `groq`, `ollama` and `openai-compatible`).
 
 ### 7.4 Evaluation before any switch
 

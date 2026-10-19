@@ -1,6 +1,6 @@
 # ADR 0041: Durable AI admission, validation and fallback
 
-- Status: Accepted implementation of the approved #64 plan
+- Status: Accepted implementation of the approved #64 plan; oversized-input handling amended by ADR 0045
 - Date: 2026-10-17
 - Implements: #64; ADRs 0028 and 0037; NFR-AI-1, NFR-AI-2, NFR-AI-4, NFR-AI-5, NFR-AI-7, NFR-AI-8, NFR-AI-9; FR-BL-13
 

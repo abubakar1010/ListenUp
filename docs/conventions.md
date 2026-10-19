@@ -36,6 +36,8 @@ Read the section for the area you are changing before you change it. The rules e
 
 - Register content-free deployment version resolvers in `Registry.versions`; never use an inference response as the source of a log version. Unregistered adapters log NULL versions, and registered versions must match result provenance. Normalize Whisper timestamp jitter only inside its adapter (at most 100 ms per timestamp); the gateway keeps strict containment checks. Assessment words must match reference indexes/text, and sounds must remain ordered inside their word (ADR 0041).
 
+- Text AI (#66, ADR 0045): get the task and version from `prompt_files.load_task(name)`, never a literal; trim reference text with `prompt_render.fit(spec, input, gateway.text_input_budget(task))` before `generate`, and never trim learner text. Prompts are `ai/prompts/<task>/<version>.md` with a `schema.json` per task; changing a released file needs a new version and `write_manifest()`, and `tasks.py` must match `schema.json`. Learner text goes only in the delimited data block, only through fields the prompt file lists. A new OpenAI-compatible server is a provider id in `registry.OPENAI_COMPATIBLE` plus an `ai.yaml` entry (`base_url`, `api_key_env` naming an environment variable, never a key; https unless `local: true`), disabled and unaccepted until its golden set passes. AI tests make no network call (`tests/network_guard.py`); record a real reply with `scripts/record_ai_contract.py text_ai`.
+
 ## Transcripts (ADR 0038)
 
 - Queue passage transcription through `transcript.service.queue_passage` in the plan-start transaction. Jobs use intake, a per-session unique key and per-media lock; all AI calls remain inside `transcript` through the existing gateway.
