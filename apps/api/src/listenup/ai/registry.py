@@ -12,8 +12,14 @@ from listenup.ai.ports import AlignmentPort, SpeechAssessmentPort, TextAIPort, T
 from listenup.ai.providers import fake
 from listenup.ai.providers.faster_whisper import FasterWhisperTranscription
 from listenup.ai.providers.faster_whisper import version_for as whisper_version
+from listenup.ai.providers.openai_compatible import OpenAICompatibleTextAI
+from listenup.ai.providers.openai_compatible import version_for as text_version
 from listenup.ai.providers.wav2vec2_ctc import Wav2Vec2CtcAlignment
 from listenup.ai.providers.wav2vec2_ctc import version_for as alignment_version
+
+# One adapter, several provider ids: each id keeps its own quota counters (ADR 0041), and
+# `openai-compatible` serves any other llama.cpp or vLLM server (ADR 0043).
+OPENAI_COMPATIBLE = ("groq", "ollama", "openai-compatible")
 
 
 @dataclass(frozen=True)
@@ -36,6 +42,7 @@ DEFAULT_REGISTRY = Registry(
         fake.PROVIDER: lambda _: fake.VERSION,
         "faster-whisper": whisper_version,
         "wav2vec2-ctc": alignment_version,
+        **dict.fromkeys(OPENAI_COMPATIBLE, text_version),
     },
     transcription={
         fake.PROVIDER: fake.FakeTranscription,
@@ -46,5 +53,8 @@ DEFAULT_REGISTRY = Registry(
         "wav2vec2-ctc": Wav2Vec2CtcAlignment,
     },
     speech_assessment={fake.PROVIDER: fake.FakeSpeechAssessment},
-    text_ai={fake.PROVIDER: fake.FakeTextAI},
+    text_ai={
+        fake.PROVIDER: fake.FakeTextAI,
+        **dict.fromkeys(OPENAI_COMPATIBLE, OpenAICompatibleTextAI),
+    },
 )
