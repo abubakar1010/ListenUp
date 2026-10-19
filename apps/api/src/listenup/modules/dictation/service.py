@@ -13,7 +13,7 @@
 
 Nothing here returns reference text before submission: Dictation hides the transcript
 (FR-DI-3, FR-TX-5). `submit` (#54) stores the text, finishes the attempt and completes the
-step; the scoring job (`jobs.py`, ADR 0041) fills the score columns of the same row.
+step; the scoring job (`jobs.py`, ADR 0042) fills the score columns of the same row.
 """
 
 import uuid
@@ -212,7 +212,7 @@ async def submit(
     session_version: int,
     replay_count: int,
 ) -> Submission:
-    """Submit the Dictation text and complete the step (FR-DI-5, ADR 0021, ADR 0041).
+    """Submit the Dictation text and complete the step (FR-DI-5, ADR 0021, ADR 0042).
 
     The text is stored as `waiting_transcript` and scored by a job (#54), so the step
     never waits for the transcript. Refusals: 404 `attempt_not_found`; 409 `step_locked`,
@@ -256,7 +256,7 @@ async def _queue_scoring(db: AsyncSession, attempt_id: uuid.UUID, learner: uuid.
 
     No `unique_key`: it would also match a job that is running, and swallow the queueing
     for a transcript that arrives while that job is finding none. A repeat is cheap: it
-    reads the submission first and stops there once it is scored (ADR 0041).
+    reads the submission first and stops there once it is scored (ADR 0042).
     """
     await enqueue(db, SCORE_ATTEMPT, attempt_id=str(attempt_id), user_id=str(learner))
 

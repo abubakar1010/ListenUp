@@ -59,7 +59,7 @@ class SubmitDictation(BaseModel):
 
 
 class DictationSubmission(BaseModel):
-    """The submission was accepted; the score follows (FR-DI-5, ADR 0041).
+    """The submission was accepted; the score follows (FR-DI-5, ADR 0042).
 
     Never carries the diff or any reference text, whatever the state of scoring.
     """

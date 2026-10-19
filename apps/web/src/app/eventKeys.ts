@@ -25,7 +25,7 @@ export function queryKeysForEvent(event: LiveEvent, queryClient: QueryClient): r
     case 'job.progress':
       return [LIBRARY_KEY, contentKey(event.resourceId)];
     case 'dictation.scored':
-      // The event names the attempt only; refresh every Dictation result shown (ADR 0041).
+      // The event names the attempt only; refresh every Dictation result shown (ADR 0042).
       return [DICTATION_RESULT_KEY];
     case 'attempt.voided':
       // The event names the attempt only; refresh every Blind step shown (ADR 0024).

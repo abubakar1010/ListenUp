@@ -2,13 +2,13 @@
 
 Grading never blocks the learner: when transcription gives up, the submission leaves
 `waiting_transcript` for a state the screen can name, and a later successful
-transcription scores it (ADR 0041).
+transcription scores it (ADR 0042).
 """
 
 from alembic import op
 
 revision = "33_dictation_scoring_unavailable"
-down_revision = "32_google_oidc"
+down_revision = "0064_ai_gateway"
 branch_labels = None
 depends_on = None
 

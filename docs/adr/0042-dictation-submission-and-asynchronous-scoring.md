@@ -1,4 +1,4 @@
-# ADR 0041: Dictation submission and asynchronous scoring
+# ADR 0042: Dictation submission and asynchronous scoring
 
 - Status: Accepted
 - Date: 2026-10-18

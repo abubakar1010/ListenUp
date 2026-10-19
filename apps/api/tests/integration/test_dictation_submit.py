@@ -1,4 +1,4 @@
-"""Submitting Dictation (#54; FR-DI-5, FR-TX-5, NFR-USE-2, ADR 0021, ADR 0041).
+"""Submitting Dictation (#54; FR-DI-5, FR-TX-5, NFR-USE-2, ADR 0021, ADR 0042).
 
 The app connects as a role with only the API's rights. Scoring itself runs in a job
 (`test_dictation_scoring.py`); here the submission is stored, the attempt is submitted

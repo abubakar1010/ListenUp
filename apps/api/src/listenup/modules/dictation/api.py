@@ -1,7 +1,7 @@
 """HTTP routes of the dictation module (Architecture 9.2: Dictation; #51, #52, ADR 0025).
 
 The rules live in `service.py`; these routes only translate. Submission is
-`POST /dictation/attempts/{id}/submit` (#54); the score arrives later (ADR 0041).
+`POST /dictation/attempts/{id}/submit` (#54); the score arrives later (ADR 0042).
 """
 
 import uuid

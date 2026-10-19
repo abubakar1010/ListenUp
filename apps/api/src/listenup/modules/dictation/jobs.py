@@ -1,4 +1,4 @@
-"""Scoring a submitted Dictation once the passage transcript is ready (#54, ADR 0041).
+"""Scoring a submitted Dictation once the passage transcript is ready (#54, ADR 0042).
 
 FR-DI-5, FR-TX-5. The job reads the cached passage words, scores with the pure
 `score_dictation` and stores the diff; it is queued at submission and again when

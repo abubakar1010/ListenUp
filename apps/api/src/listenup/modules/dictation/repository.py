@@ -84,7 +84,7 @@ SCORED: ScoringStatus = "scored"
 
 
 async def store_submission(session: AsyncSession, attempt_id: uuid.UUID, submitted: str) -> None:
-    """Keep the submitted text; it waits for scoring (`waiting_transcript`, ADR 0041)."""
+    """Keep the submitted text; it waits for scoring (`waiting_transcript`, ADR 0042)."""
     await session.execute(
         text("""
         UPDATE practice.dictation_attempts

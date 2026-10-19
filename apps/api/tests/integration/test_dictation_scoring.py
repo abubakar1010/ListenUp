@@ -1,4 +1,4 @@
-"""Scoring a submitted Dictation in a job (#54; FR-DI-5, FR-TX-5, AT-3, ADR 0041).
+"""Scoring a submitted Dictation in a job (#54; FR-DI-5, FR-TX-5, AT-3, ADR 0042).
 
 The job reads the cached passage words with `transcript.reference_for_scoring`, scores
 with the pure `score_dictation` and stores the diff in one idempotent update that also

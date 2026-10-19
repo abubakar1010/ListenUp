@@ -58,7 +58,7 @@ class EventType(StrEnum):
     TRANSCRIPT_READY = "transcript.ready"
     TRANSCRIPT_FAILED = "transcript.failed"
     GRADE_READY = "grade.ready"
-    # A submitted Dictation was scored; the resource is the attempt (#54, ADR 0041).
+    # A submitted Dictation was scored; the resource is the attempt (#54, ADR 0042).
     DICTATION_SCORED = "dictation.scored"
     ATTEMPT_VOIDED = "attempt.voided"
     EXPORT_READY = "export.ready"  # a data export finished: ready or failed (#92)
