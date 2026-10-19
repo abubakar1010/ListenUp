@@ -1,4 +1,4 @@
-"""Worker-role persistence of shared, non-overlapping cached ranges."""
+"""Shared cache persistence and RLS-scoped learner correction reads."""
 
 import uuid
 from collections.abc import AsyncIterator
@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.transcript.domain.spans import Span
-from listenup.modules.transcript.models import PassageTranscript
+from listenup.modules.transcript.models import PassageTranscript, TranscriptCorrection
 from listenup.modules.transcript.packing import Packed
 from listenup.platform.database import Database
 from listenup.platform.ids import uuid7
@@ -28,6 +28,18 @@ async def overlapping(db: AsyncSession, media_id: uuid.UUID, span: Span) -> list
         .order_by(PassageTranscript.span)
     )
     return list(rows)
+
+
+async def corrections(
+    db: AsyncSession, learner: uuid.UUID, transcript_ids: list[uuid.UUID]
+) -> dict[tuple[uuid.UUID, int], str]:
+    rows = await db.scalars(
+        select(TranscriptCorrection).where(
+            TranscriptCorrection.user_id == learner,
+            TranscriptCorrection.passage_transcript_id.in_(transcript_ids),
+        )
+    )
+    return {(row.passage_transcript_id, row.word_index): row.corrected_text for row in rows}
 
 
 async def store(db: AsyncSession, media_id: uuid.UUID, span: Span, packed: Packed) -> None:
