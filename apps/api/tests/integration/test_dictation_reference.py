@@ -5,6 +5,7 @@ FR-DI-5, FR-TX-5: the words are for scoring only; no route returns them before s
 
 import uuid
 
+import psycopg
 import pytest
 
 from listenup.modules.practice import service as practice
@@ -59,6 +60,45 @@ async def test_reference_for_scoring_says_not_ready_without_a_cached_passage(mig
             with pytest.raises(ProblemError) as raised:
                 await service.reference_for_scoring(db, database, learner, session.id)
         assert raised.value.code == "transcript_not_ready"
+    finally:
+        await database.dispose()
+
+
+@pytest.mark.anyio
+async def test_transcript_overlay_does_not_change_dictation_scoring_reference(
+    migrated_url, learner
+):
+    from listenup.modules.transcript import service
+
+    _, content, _ = add_clip(migrated_url, learner)
+    media = media_of(migrated_url, str(content))
+    seed_transcript(migrated_url, media)
+    with psycopg.connect(migrated_url) as conn:
+        conn.execute(
+            "INSERT INTO content.transcript_corrections "
+            "(user_id, passage_transcript_id, word_index, corrected_text) "
+            "SELECT %s, id, 0, 'Learner edit' FROM content.passage_transcripts "
+            "WHERE media_object_id=%s",
+            [learner, media],
+        )
+    database = Database(conninfo_to_url(migrated_url))
+    try:
+        session = await start_dictation(database, learner, content)
+        async with database.transaction(learner) as db:
+            reference = await service.reference_for_scoring(db, database, learner, session.id)
+        assert reference.words == REFERENCE_WORDS
+        assert reference.edited_word_indices == []
+        async with database.transaction(learner) as db:
+            await practice.complete_step(
+                db, await practice.get_session(db, session.id), practice.Step.DICTATION
+            )
+        async with database.transaction(learner) as db:
+            review = await service.read_passage(db, database, learner, session.id)
+        assert review.words == ["Learner edit", *REFERENCE_WORDS[1:]]
+        assert review.edited_word_indices == [0]
+        assert review.start_ms == reference.start_ms
+        assert review.end_ms == reference.end_ms
+        assert review.sentence_starts == reference.sentence_starts
     finally:
         await database.dispose()
 

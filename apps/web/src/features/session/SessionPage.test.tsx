@@ -63,7 +63,9 @@ test('finished steps are marked done and the open step is current', async () => 
   ]);
   expect(items[0]).toHaveTextContent('Blind, done');
   expect(items[2]).toHaveAttribute('aria-current', 'step');
-  expect(within(screen.getByRole('region', { name: 'Transcript' })).getByText(/3 · Transcript/));
+  expect(
+    within(screen.getByRole('region', { name: 'Transcript' })).getByText(/Opening your Transcript/),
+  );
 });
 
 test('a completed plan says so and offers another plan on the clip', async () => {
