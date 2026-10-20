@@ -82,7 +82,13 @@ def _invalid_credentials() -> ProblemError:
     )
 
 
-async def current_learner(request: Request, session: DbSession) -> uuid.UUID:
+async def signed_in_learner(request: Request, session: DbSession) -> uuid.UUID:
+    """The learner behind the session cookie, whether or not they owe a consent.
+
+    Only for the routes a learner who declines a new terms or privacy version still
+    needs (ADR 0048): their profile and consents, signing out, the data export, the
+    live events stream and deleting the account. Everything else takes `CurrentLearner`.
+    """
     settings: Settings = request.app.state.settings
     token = request.cookies.get(session_cookie_name(settings.cookies_secure))
     if not token:
@@ -94,6 +100,23 @@ async def current_learner(request: Request, session: DbSession) -> uuid.UUID:
     return learner
 
 
+async def current_learner(request: Request, session: DbSession) -> uuid.UUID:
+    """The signed-in learner, refused with 403 `consent_required` while they have not
+    accepted the current terms or privacy version (#104, ADR 0048)."""
+    learner = await signed_in_learner(request, session)
+    current = consent_versions(request.app.state.settings)
+    owed = outstanding(current, await repository.current_consents(session, learner, current))
+    if owed:
+        raise ProblemError(
+            403,
+            "consent_required",
+            "Accept the updated terms of service or privacy policy to go on.",
+            consents_required=[kind.value for kind in owed],
+        )
+    return learner
+
+
+SignedInLearner = Annotated[uuid.UUID, Depends(signed_in_learner)]
 CurrentLearner = Annotated[uuid.UUID, Depends(current_learner)]
 
 
@@ -492,12 +515,13 @@ class Accounts:
         profile = await repository.get_profile(session, learner)
         if profile is None:
             raise _not_signed_in()
-        held = await repository.list_consents(session, learner)
+        current = consent_versions(self.settings)
+        held = await repository.current_consents(session, learner, current)
         return {
             **profile,
             "deletion_grace_days": self.settings.account_deletion_grace_days,
             # A newer terms or privacy version asks the learner to accept it (#104).
-            "consents_required": outstanding(consent_versions(self.settings), held),
+            "consents_required": outstanding(current, held),
         }
 
     async def deletion_summary(self, session: AsyncSession, learner: uuid.UUID) -> dict[str, int]:
@@ -566,21 +590,21 @@ async def hold_active_account(session: AsyncSession, learner: uuid.UUID) -> bool
 AccountsDep = Annotated[Accounts, Depends(get_accounts)]
 
 
-async def has_voice_consent(
-    session: AsyncSession, learner: uuid.UUID, settings: Settings | None = None
-) -> bool:
+async def has_voice_consent(session: AsyncSession, learner: uuid.UUID, settings: Settings) -> bool:
     """True while the learner holds the current voice-recording consent, not withdrawn.
 
     For the Shadow module (#78, #79): a round can start only when this holds
     (FR-SH-17, Database Design 3). Runs in the learner's row-level-security session.
+    `settings` is the app's own (`request.app.state.settings`), the same labels that
+    `/me/consents` grants, never a fresh read of the environment.
     """
-    current = consent_versions(settings or get_settings())
-    held = await repository.list_consents(session, learner)
+    current = consent_versions(settings)
+    held = await repository.current_consents(session, learner, current)
     return holds(current, held, ConsentKind.VOICE_RECORDING)
 
 
 async def require_voice_consent(
-    session: AsyncSession, learner: uuid.UUID, settings: Settings | None = None
+    session: AsyncSession, learner: uuid.UUID, settings: Settings
 ) -> None:
     """Refuse with 403 `voice_consent_required` unless `has_voice_consent` holds."""
     if not await has_voice_consent(session, learner, settings):

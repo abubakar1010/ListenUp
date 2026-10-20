@@ -71,11 +71,15 @@ def test_current_versions_come_from_configuration(monkeypatch: pytest.MonkeyPatc
     assert consent_versions(Settings()) == CurrentVersions("2026-11", "2026-12", "voice-2")
 
 
-def test_the_default_versions_are_marked_as_placeholders() -> None:
+def test_the_default_versions_are_marked_as_placeholders(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from listenup.platform.config import Settings
 
+    for name in ("TERMS", "PRIVACY", "VOICE_CONSENT"):
+        monkeypatch.delenv(f"LISTENUP_{name}_VERSION", raising=False)
     # #103 has not written the policy text yet (ADR 0048).
-    versions = consent_versions(Settings())
+    versions = consent_versions(Settings(_env_file=None))  # type: ignore[call-arg]
     assert all("placeholder" in v for v in (versions.terms, versions.privacy))
 
 

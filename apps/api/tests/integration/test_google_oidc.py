@@ -615,8 +615,12 @@ def test_google_sign_up_records_the_current_terms_and_privacy_versions(
 
 @pytest.mark.parametrize(
     "params",
-    [{}, {"terms_version": "old-terms", "privacy_version": "placeholder-1"}],
-    ids=["not accepted", "outdated version"],
+    [
+        {},
+        {**accepted_consents(), "terms_version": "old-terms"},
+        {**accepted_consents(), "privacy_version": "old-privacy"},
+    ],
+    ids=["not accepted", "outdated terms", "outdated privacy"],
 )
 def test_google_sign_up_without_the_current_consent_creates_no_account(
     google: Any, migrated_url: str, params: dict[str, str]

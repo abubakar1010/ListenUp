@@ -85,18 +85,38 @@ def test_signing_up_without_accepting_is_refused_and_creates_no_account(
     assert client.get("/api/v1/me").status_code == 401
 
 
+@pytest.mark.parametrize("field", ["terms_version", "privacy_version"])
 def test_signing_up_with_a_version_that_is_no_longer_current_is_refused(
-    make_client: ClientFactory, migrated_url: str
+    make_client: ClientFactory, migrated_url: str, field: str
 ) -> None:
-    client = make_client(terms_version="terms-2")
+    # Only one document changed: the other label the form sends is still current.
+    kind = field.removesuffix("_version")
+    client = make_client(**{field: f"{kind}-2"})
     email = unique_email()
 
-    response = sign_up(client, email, terms_version=DEFAULT.terms_version)
+    response = sign_up(client, email)
 
     assert response.status_code == 409
     problem = response.json()
     assert problem["code"] == "consent_version_changed"
-    assert problem["current"]["terms"] == "terms-2"
+    assert problem["current"][kind] == f"{kind}-2"
+    assert user_count(migrated_url, email) == 0
+
+
+def test_signing_up_with_the_labels_of_the_other_document_is_refused(
+    client: TestClient, migrated_url: str
+) -> None:
+    # Swapped labels: each one is current, but for the other document.
+    email = unique_email()
+
+    response = sign_up(
+        client,
+        email,
+        terms_version=DEFAULT.privacy_version,
+        privacy_version=DEFAULT.terms_version,
+    )
+
+    assert response.status_code == 409
     assert user_count(migrated_url, email) == 0
 
 
@@ -166,6 +186,18 @@ def test_accepting_a_version_that_is_not_current_is_refused(
     assert refused.json()["code"] == "consent_version_changed"
     assert ("terms", "terms-3", False) not in consent_rows(migrated_url, user)
     assert later.get("/api/v1/me").json()["consents_required"] == ["terms"]
+
+
+def test_granting_voice_consent_with_another_documents_label_is_refused(
+    client: TestClient, migrated_url: str
+) -> None:
+    user = sign_up(client, unique_email()).json()["id"]
+
+    refused = grant_voice(client, DEFAULT.terms_version)
+
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "consent_version_changed"
+    assert all(kind != "voice_recording" for kind, _, _ in consent_rows(migrated_url, user))
 
 
 def test_granting_needs_the_csrf_header(client: TestClient, migrated_url: str) -> None:
@@ -316,3 +348,75 @@ def test_withdrawing_touches_only_the_callers_own_consent(
     withdraw(b, "voice_recording")
 
     assert voice_consent(api_role_url, user_a) is True
+
+
+# -- The server refuses other routes while terms or privacy are outstanding (ADR 0048) --
+
+
+def outstanding_learner(make_client: ClientFactory) -> TestClient:
+    """A learner signed in after a new terms version was published."""
+    email = unique_email()
+    sign_up(make_client(), email)
+    later = make_client(terms_version="terms-2")
+    login(later, email)
+    return later
+
+
+def test_a_learner_who_owes_consent_is_refused_until_accepting(
+    make_client: ClientFactory,
+) -> None:
+    later = outstanding_learner(make_client)
+
+    refused = later.get("/api/v1/contents")
+
+    assert refused.status_code == 403
+    assert refused.json()["code"] == "consent_required"
+    assert refused.json()["consents_required"] == ["terms"]
+    later.post("/api/v1/me/consents", json={"kind": "terms", "version": "terms-2"})
+    assert later.get("/api/v1/contents").status_code == 200
+
+
+def test_a_withdrawn_voice_consent_does_not_block_other_routes(client: TestClient) -> None:
+    sign_up(client, unique_email())
+    grant_voice(client)
+    withdraw(client, "voice_recording")
+
+    assert client.get("/api/v1/contents").status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("GET", "/api/v1/me", None),
+        ("GET", "/api/v1/me/consents", None),
+        (
+            "POST",
+            "/api/v1/me/consents",
+            {"kind": "voice_recording", "version": DEFAULT.voice_consent_version},
+        ),
+        ("POST", "/api/v1/me/consents/withdraw", {"kind": "voice_recording"}),
+        ("GET", "/api/v1/me/exports/latest", None),
+        ("POST", "/api/v1/me/exports", None),
+        ("GET", "/api/v1/me/deletion-summary", None),
+    ],
+)
+def test_a_learner_who_owes_consent_can_still_see_export_or_delete_their_data(
+    make_client: ClientFactory, method: str, path: str, body: dict[str, str] | None
+) -> None:
+    # Declining the new terms leaves the account usable for leaving it (ADR 0048).
+    later = outstanding_learner(make_client)
+    headers = {"Idempotency-Key": str(uuid.uuid4())}
+
+    response = later.request(method, path, json=body, headers=headers)
+
+    assert response.status_code < 400, response.text
+
+
+def test_a_learner_who_owes_consent_can_delete_the_account(
+    make_client: ClientFactory,
+) -> None:
+    later = outstanding_learner(make_client)
+
+    response = later.request("DELETE", "/api/v1/me", json={"password": PASSWORD, "confirm": True})
+
+    assert response.status_code == 202

@@ -11,7 +11,7 @@ from listenup.modules.identity import repository
 from listenup.modules.identity.api import Me
 from listenup.modules.identity.domain.credentials import normalize_email
 from listenup.modules.identity.oidc import GoogleOIDC
-from listenup.modules.identity.service import AccountsDep, current_learner
+from listenup.modules.identity.service import AccountsDep, signed_in_learner
 from listenup.platform.database import DbSession
 from listenup.platform.errors import ProblemError
 
@@ -39,7 +39,7 @@ async def start(
     current terms and privacy versions the learner accepted (#104); without them the
     callback refuses with reason `consent` and creates nothing."""
     google: GoogleOIDC = request.app.state.google
-    learner = await current_learner(request, session) if purpose == "reauth" else None
+    learner = await signed_in_learner(request, session) if purpose == "reauth" else None
     await accounts.enforce_google_limit(request)
     consent = {"terms": terms_version, "privacy": privacy_version}
     return await google.start(request, next, learner, consent)
@@ -87,7 +87,7 @@ async def complete_callback(
     claims: dict[str, Any],
 ) -> Response:
     if flow.get("user"):
-        learner = await current_learner(request, session)
+        learner = await signed_in_learner(request, session)
         linked = await repository.google_user_id(session, claims["sub"])
         if (
             str(learner) != flow["user"]

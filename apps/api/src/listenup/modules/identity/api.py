@@ -1,14 +1,15 @@
 """HTTP routes of the identity module (Architecture 9.2: Auth and Account)."""
 
 import uuid
+from dataclasses import asdict
 from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
 
-from listenup.modules.identity.domain.consents import ConsentKind
-from listenup.modules.identity.service import AccountsDep, CurrentLearner, consent_versions
+from listenup.modules.identity.domain.consents import ConsentKind, CurrentVersions
+from listenup.modules.identity.service import AccountsDep, SignedInLearner, consent_versions
 from listenup.platform.database import DbSession
 
 router = APIRouter(tags=["identity"])
@@ -66,14 +67,15 @@ class ConsentVersions(BaseModel):
     privacy: str
     voice_recording: str
 
+    @classmethod
+    def of(cls, current: CurrentVersions) -> "ConsentVersions":
+        return cls.model_validate(asdict(current))
+
 
 @router.get("/auth/consent-versions")
 async def current_consent_versions(request: Request) -> ConsentVersions:
     """The document versions a learner accepts now, for the sign-up form (#104)."""
-    current = consent_versions(request.app.state.settings)
-    return ConsentVersions(
-        terms=current.terms, privacy=current.privacy, voice_recording=current.voice_recording
-    )
+    return ConsentVersions.of(consent_versions(request.app.state.settings))
 
 
 @router.post("/auth/register", status_code=201)
@@ -124,7 +126,7 @@ async def logout(
 
 
 @router.get("/me")
-async def me(learner: CurrentLearner, session: DbSession, accounts: AccountsDep) -> Me:
+async def me(learner: SignedInLearner, session: DbSession, accounts: AccountsDep) -> Me:
     return Me.model_validate(await accounts.profile(session, learner))
 
 
@@ -146,9 +148,7 @@ async def _consents(
 ) -> Consents:
     current = consent_versions(request.app.state.settings)
     return Consents(
-        current=ConsentVersions(
-            terms=current.terms, privacy=current.privacy, voice_recording=current.voice_recording
-        ),
+        current=ConsentVersions.of(current),
         consents=[
             ConsentRecord(
                 kind=c.kind,
@@ -164,7 +164,7 @@ async def _consents(
 
 @router.get("/me/consents")
 async def my_consents(
-    request: Request, learner: CurrentLearner, session: DbSession, accounts: AccountsDep
+    request: Request, learner: SignedInLearner, session: DbSession, accounts: AccountsDep
 ) -> Consents:
     """The learner's consents for the settings page (#104)."""
     return await _consents(request, session, accounts, learner)
@@ -179,7 +179,7 @@ class GrantConsent(BaseModel):
 async def grant_consent(
     body: GrantConsent,
     request: Request,
-    learner: CurrentLearner,
+    learner: SignedInLearner,
     session: DbSession,
     accounts: AccountsDep,
 ) -> Consents:
@@ -198,7 +198,7 @@ class WithdrawConsent(BaseModel):
 async def withdraw_consent(
     body: WithdrawConsent,
     request: Request,
-    learner: CurrentLearner,
+    learner: SignedInLearner,
     session: DbSession,
     accounts: AccountsDep,
 ) -> Consents:
@@ -218,7 +218,7 @@ class DeletionSummary(BaseModel):
 
 @router.get("/me/deletion-summary")
 async def deletion_summary(
-    learner: CurrentLearner, session: DbSession, accounts: AccountsDep
+    learner: SignedInLearner, session: DbSession, accounts: AccountsDep
 ) -> DeletionSummary:
     """Counts for the review step before account deletion (UX-06)."""
     return DeletionSummary.model_validate(await accounts.deletion_summary(session, learner))
@@ -242,7 +242,7 @@ class DeletionScheduled(BaseModel):
 async def delete_me(
     body: DeleteAccount,
     request: Request,
-    learner: CurrentLearner,
+    learner: SignedInLearner,
     response: Response,
     session: DbSession,
     accounts: AccountsDep,

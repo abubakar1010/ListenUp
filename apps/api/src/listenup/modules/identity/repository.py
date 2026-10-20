@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from listenup.modules.identity.domain.consents import Consent, ConsentKind
+from listenup.modules.identity.domain.consents import Consent, ConsentKind, CurrentVersions
 from listenup.platform.database import set_learner
 from listenup.platform.ids import uuid7
 
@@ -637,6 +637,31 @@ async def list_consents(session: AsyncSession, user_id: uuid.UUID) -> list[Conse
          WHERE user_id = :id ORDER BY granted_at DESC, kind
         """),
         {"id": user_id},
+    )
+    return [
+        Consent(ConsentKind(kind), version, granted_at, withdrawn_at)
+        for kind, version, granted_at, withdrawn_at in rows
+    ]
+
+
+async def current_consents(
+    session: AsyncSession, user_id: uuid.UUID, current: CurrentVersions
+) -> list[Consent]:
+    """The learner's rows for the version of each kind that is current now: at most
+    one per kind, so the check on every request stays a primary-key lookup."""
+    rows = await session.execute(
+        text("""
+        SELECT kind, version, granted_at, withdrawn_at FROM identity.consents
+         WHERE user_id = :id
+           AND (kind, version) IN (('terms', :terms), ('privacy', :privacy),
+                                   ('voice_recording', :voice_recording))
+        """),
+        {
+            "id": user_id,
+            "terms": current.terms,
+            "privacy": current.privacy,
+            "voice_recording": current.voice_recording,
+        },
     )
     return [
         Consent(ConsentKind(kind), version, granted_at, withdrawn_at)
