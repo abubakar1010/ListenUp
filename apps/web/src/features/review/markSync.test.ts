@@ -367,3 +367,29 @@ test('blocked_or_damaged_device_storage_never_breaks_marking', async () => {
   await vi.advanceTimersByTimeAsync(2000);
   expect(sync.getSnapshot().marks).toMatchObject([{ id: 'm1', saved: true }]);
 });
+
+test('a_note_change_that_meets_a_lost_connection_waits_for_it', async () => {
+  const { transport } = fakeServer([saved('a', 1)]);
+  const setNote = transport.setNote;
+  transport.setNote = vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch'));
+  transport.setNote.mockImplementation(setNote);
+  const sync = make(transport, memoryStorage(), [saved('a', 1)]);
+  sync.setNote('a', 'linking');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().status.kind).toBe('offline');
+  expect(sync.getSnapshot().marks).toMatchObject([{ id: 'a', note: 'linking', saved: false }]);
+  window.dispatchEvent(new Event('online'));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sync.getSnapshot().marks).toMatchObject([{ id: 'a', note: 'linking', saved: true }]);
+});
+
+test('a_failed_reload_after_words_marked_elsewhere_is_reported', async () => {
+  const { transport } = fakeServer();
+  transport.create = vi.fn().mockRejectedValue(refusal(409, 'mark_exists', { mark_id: 'x' }));
+  transport.list = vi.fn().mockRejectedValue(refusal(403, 'forbidden'));
+  const sync = make(transport);
+  sync.add({ id: 'mine', word_from: 2, word_to: 2, at_ms: 2000, note: null });
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().marks).toEqual([]);
+  expect(sync.getSnapshot().status).toMatchObject({ kind: 'failed' });
+});
