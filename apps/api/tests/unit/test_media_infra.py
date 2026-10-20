@@ -34,3 +34,26 @@ def test_media_compose_has_readonly_root_and_isolated_network() -> None:
         assert "media-data" in config["services"][allowed]["networks"]
     assert media["environment"]["HTTP_PROXY"] == ""
     assert media["environment"]["HTTPS_PROXY"] == ""
+
+
+def test_internal_services_wait_for_tcp_before_media_can_start() -> None:
+    if shutil.which("docker") is None:
+        pytest.skip("Docker Compose required")
+    config = json.loads(
+        subprocess.check_output(["docker", "compose", "config", "--format", "json"], cwd=ROOT)
+    )
+    postgres = config["services"]["postgres"]["healthcheck"]["test"][1]
+    storage = config["services"]["storage"]["healthcheck"]["test"][1]
+    # initdb's temporary server accepts Unix-socket queries before remote TCP.
+    assert "pg_isready -h 127.0.0.1 " in postgres
+    # Cluster readiness can precede the separate S3 listener startup.
+    assert "nc -z 127.0.0.1 9000" in storage
+
+
+def test_storage_listens_on_the_media_interface_as_well_as_default() -> None:
+    if shutil.which("docker") is None:
+        pytest.skip("Docker Compose required")
+    config = json.loads(
+        subprocess.check_output(["docker", "compose", "config", "--format", "json"], cwd=ROOT)
+    )
+    assert "-s3.ip.bind=0.0.0.0" in config["services"]["storage"]["command"]

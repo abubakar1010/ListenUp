@@ -107,3 +107,25 @@ Actual speech latency/capacity after per-job process isolation is **deferred unt
 staging — unverified** under [#155](https://github.com/abubakar1010/ListenUp/issues/155),
 with the existing System Design targets unchanged. Required CI and a fresh-session
 independent review remain owner merge gates. No helper agents were used.
+
+
+## CI network-listener regression
+
+The initial push workflow passed completely, including the full backend suite;
+PR backend and changed-coverage jobs also passed. The PR sandbox job exposed a
+positive-access failure: storage TCP connection refused. Readiness was initially
+suspected. A live reproduction showed SeaweedFS listening on loopback and the
+default-network IP only, with no listener on its media-network IP. Its automatic
+bind-address selection depends on which interface it chooses.
+
+`test_storage_listens_on_the_media_interface_as_well_as_default` was observed
+failing before adding `-s3.ip.bind=0.0.0.0`; the live Docker network probe also
+failed before the change. S3 now listens on both permitted interfaces. The extra
+`test_internal_services_wait_for_tcp_before_media_can_start` was also observed
+red before strengthening PostgreSQL/S3 TCP health checks. These prevent readiness
+from relying on a temporary Unix-only init server or cluster health alone. API
+isolation and network membership are unchanged.
+
+After the fix: configuration suite 3 passed, live Docker probe all groups passed,
+and the real S3 adapter contract against the Compose storage service 3 passed.
+The fix is a listener binding/readiness change, not a retry of a failed assertion.

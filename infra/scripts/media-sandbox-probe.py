@@ -32,8 +32,13 @@ def check_filesystem() -> None:
 
 def check_network() -> None:
     for host, port in (("postgres", 5432), ("storage", 9000)):
-        with socket.create_connection((host, port), timeout=3):
-            pass
+        try:
+            with socket.create_connection((host, port), timeout=3):
+                pass
+        except OSError as error:
+            raise AssertionError(
+                f"required service is not reachable: {host}:{port}"
+            ) from error
     for host in ["api", *json.loads(os.environ["SANDBOX_API_ADDRESSES"])]:
         try:
             connection = socket.create_connection((host, 8000), timeout=1)

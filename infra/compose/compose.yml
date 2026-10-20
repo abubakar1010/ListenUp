@@ -45,7 +45,7 @@ services:
     ports: ["5432:5432"]
     volumes: [postgres-data:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U listenup -d listenup"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U listenup -d listenup"]
       interval: 2s
       retries: 30
 
@@ -54,13 +54,13 @@ services:
   storage:
     image: chrislusf/seaweedfs:latest
     networks: [default, media-data]
-    command: server -dir=/data -s3 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json
+    command: server -dir=/data -s3 -s3.ip.bind=0.0.0.0 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json
     ports: ["9000:9000"]
     volumes:
       - storage-data:/data
       - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
     healthcheck:
-      test: ["CMD-SHELL", "echo cluster.check | weed shell -master=localhost:9333 >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "echo cluster.check | weed shell -master=localhost:9333 >/dev/null 2>&1 && nc -z 127.0.0.1 9000"]
       interval: 3s
       retries: 40
 
