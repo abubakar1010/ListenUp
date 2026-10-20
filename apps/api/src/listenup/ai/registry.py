@@ -18,7 +18,7 @@ from listenup.ai.providers.wav2vec2_ctc import Wav2Vec2CtcAlignment
 from listenup.ai.providers.wav2vec2_ctc import version_for as alignment_version
 
 # One adapter, several provider ids: each id keeps its own quota counters (ADR 0041), and
-# `openai-compatible` serves any other llama.cpp or vLLM server (ADR 0045).
+# `openai-compatible` serves any other llama.cpp or vLLM server (ADR 0046).
 OPENAI_COMPATIBLE = ("groq", "ollama", "openai-compatible")
 
 

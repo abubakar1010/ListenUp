@@ -6,7 +6,7 @@
 # `version` is the file format; history lives in git.
 version: 1
 saving_mode: true  # ADR 0037; rounds 1/2 use grading templates
-# Text AI (#66, ADR 0045): key points and gist grading try the hosted free tier first and
+# Text AI (#66, ADR 0046): key points and gist grading try the hosted free tier first and
 # the self-hosted model only when it is skipped (quota, eligibility, invalid output);
 # round feedback keeps the hosted allowance for grading and goes local first (ADR 0037).
 tasks:

@@ -60,7 +60,7 @@ def test_refused_when_even_a_little_reference_text_does_not_fit():
 
 
 def test_refused_when_only_the_truncation_marker_would_remain():
-    """ADR 0045: a passage cut to nothing is refused, never sent as a bare marker."""
+    """ADR 0046: a passage cut to nothing is refused, never sent as a bare marker."""
     data = task_input(transcript="Sleeping well matters a great deal")
     with pytest.raises(InputTooLarge):
         fit(SPEC, data, serialized_size(task_input(transcript="[truncated]")))
@@ -177,3 +177,19 @@ def test_default_nonce_is_random_per_call():
     first = render_messages(SPEC, task_input())[1]["content"].split("\n")[0]
     second = render_messages(SPEC, task_input())[1]["content"].split("\n")[0]
     assert first != second
+
+
+@pytest.mark.parametrize("leading", ["", "  "])
+def test_refused_when_the_first_complete_reference_word_cannot_fit(leading):
+    data = task_input(transcript=leading + "indivisible" * 20 + " tail")
+    budget = serialized_size(task_input(transcript="")) + 40
+    with pytest.raises(InputTooLarge):
+        fit(SPEC, data, budget)
+
+
+def test_trimming_keeps_a_complete_first_word_at_the_exact_boundary():
+    data = task_input(transcript="  complete " + "indivisible" * 20)
+    budget = serialized_size(task_input(transcript="  complete [truncated]"))
+    fitted = fit(SPEC, data, budget)
+    assert fitted.input["transcript"] == "  complete [truncated]"
+    assert fitted.input["gist"] == data["gist"]

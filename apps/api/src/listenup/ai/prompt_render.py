@@ -1,6 +1,6 @@
 """Turn task input into chat messages: fit it to the token budget, then wrap it as data.
 
-- `fit` runs before the gateway (ADR 0045). Reference text a prompt file marks `trim` is
+- `fit` runs before the gateway (ADR 0046). Reference text a prompt file marks `trim` is
   shortened at a word boundary to fit; learner text is never changed, so an over-long
   learner text is refused instead (ADR 0041). Sizes use the gateway's own measure: the UTF-8
   bytes of the JSON input, one byte per token, which over-counts and so stays safe.
@@ -57,8 +57,7 @@ def _shorten(text: str, keep: int) -> str:
     prefix = text[:keep]
     if keep < len(text) and not text[keep].isspace():
         cut = re.search(r"\s\S*$", prefix)
-        if cut and prefix[: cut.start()].strip():
-            prefix = prefix[: cut.start()]
+        prefix = prefix[: cut.start()] if cut else ""
     prefix = prefix.rstrip()
     return prefix + TRUNCATED if prefix else NOTHING_KEPT
 

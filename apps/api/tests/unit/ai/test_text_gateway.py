@@ -127,7 +127,7 @@ async def test_invalid_output_from_the_first_provider_falls_back_to_the_second(f
     assert [c["outcome"] for c in fake_accounting.calls] == [
         "error",
         "ok",
-    ]  # adapter-side validation failures log as error (ADR 0045)
+    ]  # adapter-side validation failures log as error (ADR 0046)
 
 
 @pytest.mark.anyio

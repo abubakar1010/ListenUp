@@ -118,7 +118,7 @@ class AIGateway:
 
     def text_input_budget(self, task: str) -> int:
         """Bytes of serialized input that every provider of this text task accepts, so
-        callers can `fit` reference text before calling (ADR 0045). It is the admission
+        callers can `fit` reference text before calling (ADR 0046). It is the admission
         rule of `_route` read back: the input limit less the prompt overhead, using the
         task's `task_budgets` when set, and the smallest value across the task's providers."""
         providers = self._config.providers(Role.TEXT_AI)

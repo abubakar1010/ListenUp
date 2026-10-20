@@ -1,4 +1,4 @@
-"""Contract tests for the Text AI adapter (#66, ADR 0045).
+"""Contract tests for the Text AI adapter (#66, ADR 0046).
 
 Every recording in `recordings/text_ai/` is replayed through the whole adapter over
 httpx.MockTransport: the request must have the expected shape and the reply must become the

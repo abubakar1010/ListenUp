@@ -216,7 +216,7 @@ Quota-saving mode starts on at Stage 0 (ADR 0037). When explicitly disabled, it 
 ### 7.3 Other savings
 
 - **Structured output** (JSON schema mode where the provider supports it) and temperature 0, so outputs are valid and stable on the first try.
-- **Token budgets per task**: reference text over the budget is trimmed before sending, learner text is never trimmed (an over-long one is refused), and the output length is capped ([ADR 0045](../adr/0045-text-ai-adapter-and-versioned-prompts.md)).
+- **Token budgets per task**: reference text over the budget is trimmed before sending, learner text is never trimmed (an over-long one is refused), and the output length is capped ([ADR 0046](../adr/0046-text-ai-adapter-and-versioned-prompts.md)).
 - **Request coalescing**: if two learners trigger key points for the same shared passage at once, a job lock makes the second wait for the first result instead of calling again.
 - **Provider choice by task**: key points and gist grading need a stronger model; round feedback works with the smallest one. The gateway configuration sets the provider per task, not only per role.
 - **Quota telemetry**: calls and tokens per provider per day are counted, with an alert at 75% use.

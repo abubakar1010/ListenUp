@@ -1,4 +1,4 @@
-# ADR 0045: OpenAI-compatible Text AI adapter and versioned prompt files
+# ADR 0046: OpenAI-compatible Text AI adapter and versioned prompt files
 
 - Status: Accepted; amends ADR 0041 on oversized input. Providers stay disabled until accepted (below)
 - Date: 2026-10-19
