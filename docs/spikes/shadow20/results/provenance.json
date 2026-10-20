@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-20",
+  "host": "managed cloud container, not stage-0",
+  "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+  "visible_cpus": 3,
+  "cpu_quota": "200000 100000",
+  "memory_kib": "MemTotal:       10207492 kB",
+  "python": "3.12.14",
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+  "torch_threads": 2,
+  "gpu_used": false,
+  "ffmpeg": "ffmpeg version 7.1.5-0+deb13u1 Copyright (c) 2000-2026 the FFmpeg developers",
+  "base_commit": "4efc10132ad668b907f681c04079425daa33b122",
+  "corpus_revision": "b88ad416e092c4dfdffc6071f4b8e2d057a160f9",
+  "phoneme_revision": "ae45363bf3413b374fecd9dc8bc1df0e24c3b7f4",
+  "whisper_revision": "d1d751a5f8271d482d14ca55d9e2deeebbae577f"
+}
