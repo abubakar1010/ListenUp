@@ -1253,6 +1253,103 @@
         "title": "LibraryPage",
         "type": "object"
       },
+      "Mark": {
+        "properties": {
+          "at_ms": {
+            "title": "At Ms",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "source": {
+            "enum": ["dictation", "manual"],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["suggested", "confirmed"],
+            "title": "Status",
+            "type": "string"
+          },
+          "word_from": {
+            "title": "Word From",
+            "type": "integer"
+          },
+          "word_to": {
+            "title": "Word To",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "word_from",
+          "word_to",
+          "at_ms",
+          "note",
+          "source",
+          "status",
+          "created_at"
+        ],
+        "title": "Mark",
+        "type": "object"
+      },
+      "MarkList": {
+        "properties": {
+          "marks": {
+            "items": {
+              "$ref": "#/components/schemas/Mark"
+            },
+            "title": "Marks",
+            "type": "array"
+          }
+        },
+        "required": ["marks"],
+        "title": "MarkList",
+        "type": "object"
+      },
+      "MarkNote": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": ["note"],
+        "title": "MarkNote",
+        "type": "object"
+      },
       "Me": {
         "properties": {
           "deletion_grace_days": {
@@ -1287,6 +1384,42 @@
         },
         "required": ["id", "email", "display_name", "email_verified", "deletion_grace_days"],
         "title": "Me",
+        "type": "object"
+      },
+      "NewMark": {
+        "description": "A mark the learner just made. The browser names it, so a resend is harmless.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "word_from": {
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Word From",
+            "type": "integer"
+          },
+          "word_to": {
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Word To",
+            "type": "integer"
+          }
+        },
+        "required": ["id", "word_from", "word_to"],
+        "title": "NewMark",
         "type": "object"
       },
       "PassageRange": {
@@ -3810,6 +3943,235 @@
         },
         "summary": "Change Entry",
         "tags": ["sessions"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/marks": {
+      "get": {
+        "description": "The session's marks in audio order (NFR-REL-1: they come back after a reload).",
+        "operationId": "list_marks_api_v1_sessions__session_id__marks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "`not_signed_in`"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Marks",
+        "tags": ["review"]
+      },
+      "post": {
+        "description": "Mark a word or phrase (FR-TR-2). The browser names the mark with a new id, so\na create resent after a lost connection answers 200 with the stored mark instead\nof making a second one (ADR 0047). The server sets the audio time from the words.",
+        "operationId": "create_mark_api_v1_sessions__session_id__marks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewMark"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mark"
+                }
+              }
+            },
+            "description": "The same mark, sent again"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mark"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "`not_signed_in`"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`, `transcript_not_ready`, `transcript_failed`, `mark_exists` (with `mark_id`) or `mark_id_taken`"
+          },
+          "422": {
+            "description": "`mark_out_of_range`, `mark_too_long` or `note_too_long`"
+          }
+        },
+        "summary": "Create Mark",
+        "tags": ["review"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/marks/{mark_id}": {
+      "delete": {
+        "description": "Remove the mark. A second removal answers 404 `mark_not_found`.",
+        "operationId": "remove_mark_api_v1_sessions__session_id__marks__mark_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mark_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mark Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "`not_signed_in`"
+          },
+          "404": {
+            "description": "`session_not_found` or `mark_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Mark",
+        "tags": ["review"]
+      },
+      "patch": {
+        "description": "Replace the mark's note; an empty or null note removes it.",
+        "operationId": "change_mark_note_api_v1_sessions__session_id__marks__mark_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mark_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mark Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkNote"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mark"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "`not_signed_in`"
+          },
+          "404": {
+            "description": "`session_not_found` or `mark_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`"
+          },
+          "422": {
+            "description": "`note_too_long`"
+          }
+        },
+        "summary": "Change Mark Note",
+        "tags": ["review"]
       }
     },
     "/api/v1/sessions/{session_id}/steps/{step}/skip": {
