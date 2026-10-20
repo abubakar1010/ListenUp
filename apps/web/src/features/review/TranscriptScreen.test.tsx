@@ -66,6 +66,7 @@ function renderReview(routes: Parameters<typeof mockRoutes>[0] = {}) {
   mockRoutes({
     [`GET /sessions/${SESSION.id}`]: jsonResponse(200, SESSION),
     [`GET ${PATH}`]: jsonResponse(200, DATA),
+    [`GET /sessions/${SESSION.id}/marks`]: jsonResponse(200, { marks: [] }),
     [`GET /sessions/${SESSION.id}/dictation/attempt`]: problem(
       404,
       'attempt_not_found',
