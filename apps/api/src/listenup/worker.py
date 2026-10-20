@@ -15,6 +15,7 @@ import contextlib
 import logging
 import signal
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,7 +37,7 @@ from listenup.platform.telemetry import configure_telemetry, shutdown_telemetry
 
 logger = logging.getLogger(__name__)
 
-READY_FILE = Path("/tmp/listenup-worker-ready")
+READY_FILE = Path(tempfile.gettempdir()) / "listenup-worker-ready"
 
 # Modules whose job handlers this process registers. Each feature story adds its
 # module's jobs package here.
@@ -98,7 +99,7 @@ async def run_pool(pool: str) -> None:
         __import__(module)
 
     database = Database(settings.database_url, pool_size=2)
-    configure_runtime(database)
+    configure_runtime(database, isolate_media=pool == "media")
     if pool == "media":
         set_gate(Lane.INTAKE, SpeechBacklogGate())
     # Scheduled jobs (the account purge sweep, ADR 0029) tick in the pool of their lane.

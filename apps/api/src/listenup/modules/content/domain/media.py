@@ -40,6 +40,8 @@ Stage = Literal["checking", "converting", "saving"]
 # Why a media object failed, as the learner reads it. The code is stored on the media
 # object (`error_code`); the text is chosen when it is shown.
 FAILURE_MESSAGES: dict[str, str] = {
+    "upload_infected": "This file was rejected by the malware scanner. Upload a clean file.",
+    "upload_unreadable": "This file could not be scanned safely. Try another copy of it.",
     "unsupported_media": (
         "This file isn't audio or video we can play, whatever its name says. "
         "Choose an MP3, M4A, WAV, MP4, MOV or WEBM file."

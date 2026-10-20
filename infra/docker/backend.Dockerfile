@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # One Dockerfile, four images (Architecture section 10):
 #   --target api           FastAPI API
 #   --target worker        default worker pool: lanes ai, background
@@ -8,7 +9,10 @@
 # Build from the repository root: docker build -f infra/docker/backend.Dockerfile --target api .
 
 FROM python:3.12-slim AS base
-RUN pip install --no-cache-dir "uv>=0.8,<0.9"
+# Optional session CA for managed builders; ordinary CI uses system trust.
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then export PIP_CERT=/run/secrets/proxy_ca; fi; \
+    pip install --no-cache-dir "uv>=0.8,<0.9"
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
@@ -16,11 +20,16 @@ ENV UV_COMPILE_BYTECODE=1 \
     PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY apps/api/pyproject.toml apps/api/uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then export SSL_CERT_FILE=/run/secrets/proxy_ca; fi; \
+    uv sync --frozen --no-dev --no-install-project
 COPY apps/api/src ./src
 COPY apps/api/alembic.ini ./
 COPY apps/api/migrations ./migrations
-RUN uv sync --frozen --no-dev && useradd --system --uid 10001 app
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then export SSL_CERT_FILE=/run/secrets/proxy_ca; fi; \
+    uv sync --frozen --no-dev && useradd --system --uid 10001 app \
+    && chmod -R a+rX /app/src /app/migrations /app/alembic.ini
 
 FROM base AS api
 USER app
@@ -33,26 +42,48 @@ USER app
 HEALTHCHECK --interval=10s --start-period=30s CMD test -f /tmp/listenup-worker-ready
 CMD ["python", "-m", "listenup.worker", "default"]
 
-FROM base AS worker-media
+# Shared small runtime also used by the sandbox contract check. Signatures and
+# speech weights are provisioned separately and mounted read-only by media jobs.
+FROM base AS media-runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg clamav clamav-freshclam libseccomp2 \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /scratch /models /signatures \
+    && chown app /scratch /models /signatures
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    TMPDIR=/scratch \
+    HOME=/scratch \
+    XDG_CACHE_HOME=/scratch/cache \
+    LISTENUP_MEDIA_SCRATCH_DIR=/scratch \
+    HF_HOME=/models/huggingface \
+    TORCH_HOME=/models/torch
+USER app
+
+FROM media-runtime AS signature-update
+COPY --chmod=0644 infra/docker/freshclam.conf /etc/clamav/listenup-freshclam.conf
+CMD ["freshclam", "--config-file=/etc/clamav/listenup-freshclam.conf", "--daemon", "--foreground", "--stdout"]
+HEALTHCHECK --interval=30s --start-period=300s CMD find /signatures -maxdepth 1 -name 'daily.c?d' -mtime -7 | grep -q .
+
+FROM media-runtime AS worker-media
+USER root
 # Media tools for download, conversion and snippet cutting, and the self-hosted speech
 # libraries (ADR 0028), which stay out of the other images. `uv sync` adds the locked
 # `speech` extra first, because it removes packages the lock does not list; torch and
 # torchaudio then come from the PyTorch CPU index (the PyPI wheels bundle CUDA).
-# Models download on first start into /models; mount a volume there to keep them.
+# The media-models service provisions /models; jobs mount it read-only.
 ENV OMP_NUM_THREADS=2 \
     HF_HOME=/models/huggingface \
     TORCH_HOME=/models/torch
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
-    && rm -rf /var/lib/apt/lists/* \
-    && uv sync --frozen --no-dev --extra speech \
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then export SSL_CERT_FILE=/run/secrets/proxy_ca; fi; \
+    uv sync --frozen --no-dev --extra speech \
     && uv pip install --python /opt/venv/bin/python \
         --index-url https://download.pytorch.org/whl/cpu "torch>=2.4,<2.9" "torchaudio>=2.4,<2.9" \
     && uv pip install --python /opt/venv/bin/python yt-dlp \
     && mkdir -p /models && chown app /models
 USER app
-# The first start downloads the speech models before the pool reports ready.
-HEALTHCHECK --interval=10s --start-period=600s CMD test -f /tmp/listenup-worker-ready
+# Provisioned models are loaded before the pool reports ready.
+HEALTHCHECK --interval=10s --start-period=600s CMD test -f /scratch/listenup-worker-ready
 CMD ["python", "-m", "listenup.worker", "media"]
 
 FROM base AS backup

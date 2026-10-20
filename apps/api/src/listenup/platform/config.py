@@ -99,6 +99,8 @@ class Settings(BaseSettings):
     # Where media workers write source and converted files while a job runs; the
     # system's temporary directory when unset. Each job removes its own files.
     media_scratch_dir: str | None = None
+    media_job_memory_mb: int = Field(default=8192, ge=128)
+    media_job_cpu_seconds: int = Field(default=600, ge=1)
 
     # AI providers per role (ADR 0028): a path to an ai.yaml; the packaged
     # listenup/ai/ai.yaml when unset. listenup/ai/ai.fake.yaml needs no models.

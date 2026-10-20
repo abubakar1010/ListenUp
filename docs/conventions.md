@@ -125,3 +125,22 @@ Read the section for the area you are changing before you change it. The rules e
 - Passage transport, controls and policy live in `features/media`; Dictation keeps
   compatibility exports. Transcript supplies sentence replay and keyboard handling.
   Readiness/failure events invalidate the named review query; pending reads also poll.
+
+## Media sandbox and scanning (ADR 0049)
+
+- Uploads call `content.scanner.Scanner.scan` before fingerprint deduplication or
+  ffprobe/ffmpeg. The default is fail-closed ClamAV with fresh signatures. Caller
+  tests inject a fake; the Docker contract exercises the real engine with a tiny
+  EICAR database and separately checks production freshness refusal.
+- All media-pool jobs, including future jobs, run through the platform process
+  supervisor. Keep CPU work and tools in that job's process group; detaching is
+  denied. `LISTENUP_MEDIA_JOB_MEMORY_MB` and `LISTENUP_MEDIA_JOB_CPU_SECONDS` set
+  budgets; wall time comes from the job's lane spec. A killed job settles through
+  `on_give_up` immediately; transient errors retain normal retries. Temporary
+  files belong under `LISTENUP_MEDIA_SCRATCH_DIR`, which is unique per job.
+- Deploy media with Docker Engine 28+ using the Compose `media-data` isolated
+  internal bridge. Do not attach the API, an egress proxy, or the host network to
+  it. Only scratch is writable; provision model/signature volumes using their
+  separate services and mount them read-only for workers. Run
+  `python infra/scripts/check-media-sandbox.py <media-image>` after infra changes
+  on a disposable/local stack; it starts dev DB/storage and an API canary on :8000.

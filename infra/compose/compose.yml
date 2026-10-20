@@ -37,6 +37,7 @@ x-backend: &backend
 services:
   postgres:
     image: postgres:16-alpine
+    networks: [default, media-data]
     environment:
       POSTGRES_USER: listenup
       POSTGRES_PASSWORD: listenup
@@ -52,6 +53,7 @@ services:
   # longer published on Docker Hub). Production uses any S3-compatible provider.
   storage:
     image: chrislusf/seaweedfs:latest
+    networks: [default, media-data]
     command: server -dir=/data -s3 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json
     ports: ["9000:9000"]
     volumes:
@@ -104,16 +106,76 @@ services:
       dockerfile: infra/docker/backend.Dockerfile
       target: worker
 
+  # The updater alone can reach the signature mirrors. Media jobs never can.
+  media-signatures:
+    build:
+      context: ../..
+      dockerfile: infra/docker/backend.Dockerfile
+      target: signature-update
+    volumes: [clamav-signatures:/signatures]
+    restart: unless-stopped
+
+  # Provision models before the isolated worker starts. No learner data or DB/S3
+  # credentials are given to this network-enabled one-shot service.
+  media-models:
+    build:
+      context: ../..
+      dockerfile: infra/docker/backend.Dockerfile
+      target: worker-media
+    environment:
+      LISTENUP_ENVIRONMENT: local
+    volumes: [ai-models:/models]
+    command: [python, -c, "import asyncio; from listenup.worker import load_models; asyncio.run(load_models('media'))"]
+    healthcheck:
+      disable: true
+
   worker-media:
     <<: *backend
+    user: "10001:10001"
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    cpus: 2
+    mem_limit: 18g
+    memswap_limit: 18g
+    tmpfs:
+      - /scratch:rw,noexec,nosuid,nodev,size=2g,uid=10001,gid=10001,mode=0700
+    networks: [media-data]
+    environment:
+      LISTENUP_ENVIRONMENT: local
+      LISTENUP_DATABASE_URL: postgresql://listenup:listenup@postgres:5432/listenup
+      LISTENUP_S3_ENDPOINT_URL: http://storage:9000
+      LISTENUP_S3_BUCKET: listenup
+      HF_HUB_OFFLINE: "1"
+      # Never inherit a host/CI proxy that could bypass the network boundary.
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      ALL_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      all_proxy: ""
+      NO_PROXY: "*"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      storage-bucket:
+        condition: service_completed_successfully
+      media-signatures:
+        condition: service_healthy
+      media-models:
+        condition: service_completed_successfully
     build:
       context: ../..
       dockerfile: infra/docker/backend.Dockerfile
       target: worker-media
     volumes:
       - ../../apps/api/src:/app/src:ro
-      # Speech models (ADR 0028), downloaded on the first start and kept here.
-      - ai-models:/models
+      - ai-models:/models:ro
+      - clamav-signatures:/signatures:ro
 
   # Nightly pg_dump to object storage, kept 14 days (ADR 0032). Opt in locally with
   # `docker compose --profile backup up backup`; production always runs it.
@@ -158,7 +220,18 @@ services:
     volumes:
       - ../observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
 
+# Docker Engine >= 28: isolated internal bridge has no host-facing gateway.
+# The API/default pool are absent. Only DB and storage join both networks; neither
+# forwards traffic. No default route, published media ports or Docker socket.
+networks:
+  media-data:
+    internal: true
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+
 volumes:
+  clamav-signatures:
   postgres-data:
   storage-data:
   prometheus-data:

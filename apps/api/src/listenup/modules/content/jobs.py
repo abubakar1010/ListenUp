@@ -8,10 +8,11 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from listenup.modules.content import ffmpeg, repository
+from listenup.modules.content import ffmpeg, repository, scanner
 from listenup.modules.content.domain import admission, media
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database
+from listenup.platform.errors import ProblemError
 from listenup.platform.events import EventType, publish
 from listenup.platform.jobs import JobDeps, Lane, PermanentError, enqueue, job
 from listenup.platform.rate_limit import add_to_window
@@ -143,14 +144,14 @@ async def _convert(
             await _fail(database, media_id, "upload_missing")
             raise PermanentError("the uploaded original is not in storage")
 
-        if (
-            await _claim_fingerprint(database, storage, state, downloaded.sha256)
-            is _Claim.DUPLICATE
-        ):
-            await storage.delete(state.source_key)
-            return
-
         try:
+            await scanner.get_scanner().scan(source)
+            if (
+                await _claim_fingerprint(database, storage, state, downloaded.sha256)
+                is _Claim.DUPLICATE
+            ):
+                await storage.delete(state.source_key)
+                return
             probe = await _probe(source)
             problem = media.check_probe(probe)
             if problem is not None:
@@ -163,7 +164,7 @@ async def _convert(
             except ffmpeg.ToolFailed as error:
                 logger.warning("ffmpeg could not convert an upload", extra={"error": str(error)})
                 raise _Refused("conversion_failed", "ffmpeg could not convert the file") from error
-        except _Refused as refused:
+        except (ProblemError, _Refused) as refused:
             await _fail(database, media_id, refused.code)
             await storage.delete(state.source_key)
             raise PermanentError(refused.detail) from refused
