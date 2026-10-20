@@ -1,0 +1,49 @@
+{
+  "provider": "groq",
+  "task": "shadow_feedback",
+  "synthetic": true,
+  "note": "Hand-authored in the server's documented response shape (no key or network was available). It proves request and response mapping, not model quality (NFR-AI-6). Replace with the output of scripts/record_ai_contract.py text_ai.",
+  "input": {
+    "round": 2,
+    "measures": {
+      "timing": 72,
+      "articulation": 64
+    },
+    "flagged_words": [
+      "asked",
+      "months"
+    ]
+  },
+  "expect": {
+    "path": "/openai/v1/chat/completions",
+    "sends_key": true
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "chatcmpl-synthetic-1",
+      "object": "chat.completion",
+      "created": 1760000000,
+      "service_tier": "on_demand",
+      "model": "openai/gpt-oss-20b",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"feedback\": \"Your pace was close to the speaker. Work on the ends of words.\", \"top_fixes\": [\"Say the final sound of 'asked'.\"]}"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 612,
+        "completion_tokens": 118,
+        "total_tokens": 730,
+        "completion_tokens_details": {
+          "reasoning_tokens": 31
+        }
+      }
+    }
+  }
+}

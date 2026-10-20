@@ -116,6 +116,22 @@ class AIGateway:
             self._adapters[key] = self._factories(role)[entry.provider](entry)
         return entry, self._adapters[key]
 
+    def text_input_budget(self, task: str) -> int:
+        """Bytes of serialized input that every provider of this text task accepts, so
+        callers can `fit` reference text before calling (ADR 0046). It is the admission
+        rule of `_route` read back: the input limit less the prompt overhead, using the
+        task's `task_budgets` when set, and the smallest value across the task's providers."""
+        providers = self._config.providers(Role.TEXT_AI)
+        if task in self._config.tasks:
+            by_name = {entry.provider: entry for entry in providers}
+            providers = tuple(by_name[name] for name in self._config.tasks[task])
+        if not providers:
+            raise AIUnavailable(Role.TEXT_AI, "no provider configured")
+        caps = self._config.task_budgets.get(task)
+        if caps is not None:
+            return max(0, caps.input_tokens - caps.prompt_tokens)
+        return max(0, min(e.input_token_limit - e.prompt_token_budget for e in providers))
+
     async def quota_saving(self) -> bool:
         """Grading owns templates; this signal also prevents rounds 1/2 AI calls."""
         if self._config.saving_mode:
