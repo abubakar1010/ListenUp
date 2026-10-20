@@ -25,10 +25,16 @@ async function fillRegistration() {
     target: { value: 'learner@example.com' },
   });
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'correct horse' } });
+  await waitForVersions();
 }
 
 function acceptBox() {
   return screen.getByRole('checkbox', { name: /I agree to the Terms of Service/ });
+}
+
+/** The box can be ticked once the versions it accepts are shown. */
+async function waitForVersions() {
+  await vi.waitFor(() => expect(acceptBox()).toBeEnabled());
 }
 
 function registerCalls(fetchMock: ReturnType<typeof mockApi>) {
@@ -226,4 +232,99 @@ test('the privacy placeholder states the product rule on learner data', async ()
 
   expect(await screen.findByRole('heading', { name: 'Privacy Policy' })).toBeInTheDocument();
   expect(screen.getByText(/never used to train AI models/)).toBeInTheDocument();
+});
+
+test('the register form shows the versions it asks the learner to accept', async () => {
+  mockApi({ '/me': SIGNED_OUT, '/auth/consent-versions': jsonResponse(200, VERSIONS) });
+  renderWithProviders(<App />, { route: '/register' });
+
+  expect(
+    await screen.findByText('Terms of Service version terms-1, Privacy Policy version privacy-1.'),
+  ).toBeInTheDocument();
+  expect(acceptBox()).toBeEnabled();
+});
+
+test('while the versions load, neither sign-up path can be accepted yet', async () => {
+  const never = (() => new Promise<Response>(() => {})) as unknown as () => Response;
+  mockApi({ '/me': SIGNED_OUT, '/auth/consent-versions': never });
+  renderWithProviders(<App />, { route: '/register' });
+
+  expect(
+    await screen.findByText('Loading the current Terms of Service and Privacy Policy…'),
+  ).toHaveRole('status');
+  expect(acceptBox()).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeDisabled();
+});
+
+test('when the versions fail to load, the register page says so and can retry', async () => {
+  let fail = true;
+  mockApi({
+    '/me': SIGNED_OUT,
+    '/auth/consent-versions': () =>
+      fail
+        ? problem(503, 'service_unavailable', 'The service is down.')
+        : jsonResponse(200, VERSIONS),
+  });
+  renderWithProviders(<App />, { route: '/register' });
+  const retry = await screen.findByRole('button', { name: 'Try again' });
+  expect(acceptBox()).toBeDisabled();
+
+  fail = false;
+  fireEvent.click(retry);
+
+  await waitForVersions();
+  fireEvent.click(acceptBox());
+  expect(await screen.findByRole('link', { name: 'Continue with Google' })).toBeInTheDocument();
+});
+
+test('the prompt moves focus to its heading, so the change is announced', async () => {
+  mockApi({
+    '/me': jsonResponse(200, { ...LEARNER, consents_required: ['terms'] }),
+    '/auth/consent-versions': jsonResponse(200, VERSIONS),
+  });
+  renderWithProviders(<App />, { route: '/library' });
+
+  const heading = await screen.findByRole('heading', { name: 'We updated our Terms of Service' });
+
+  expect(heading).toHaveFocus();
+});
+
+test('a learner who has not accepted can still reach settings to export or delete', async () => {
+  mockApi({
+    '/me': jsonResponse(200, { ...LEARNER, consents_required: ['terms'] }),
+    '/auth/consent-versions': jsonResponse(200, VERSIONS),
+    '/me/exports/latest': jsonResponse(200, { export: null }),
+    '/me/consents': jsonResponse(200, { current: VERSIONS, consents: [] }),
+  });
+  const { router } = renderWithProviders(<App />, { route: '/library' });
+
+  await screen.findByRole('heading', { name: 'We updated our Terms of Service' });
+  fireEvent.click(screen.getByRole('link', { name: 'download your data or delete your account' }));
+
+  expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeInTheDocument();
+  expect(router.state.location.pathname).toBe('/settings');
+});
+
+test('on a practice session the prompt waits until the server refuses a request', async () => {
+  const fetchMock = mockApi({
+    '/me': jsonResponse(200, { ...LEARNER, consents_required: ['terms'] }),
+    '/auth/consent-versions': jsonResponse(200, VERSIONS),
+    '/sessions/s1': problem(404, 'session_not_found', 'No such session.'),
+    '/sessions/s2': problem(403, 'consent_required', 'Accept the updated terms.', {
+      consents_required: ['terms'],
+    }),
+  });
+  const { router } = renderWithProviders(<App />, { route: '/sessions/s1' });
+
+  // An open practice page is not swapped out under the learner (a Blind listen).
+  await vi.waitFor(() =>
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/v1/sessions/s1')).toBe(true),
+  );
+  expect(screen.queryByRole('heading', { name: /We updated our/ })).not.toBeInTheDocument();
+
+  await router.navigate('/sessions/s2');
+
+  expect(
+    await screen.findByRole('heading', { name: 'We updated our Terms of Service' }),
+  ).toBeInTheDocument();
 });

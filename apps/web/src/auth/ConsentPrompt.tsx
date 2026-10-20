@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import { Link } from 'react-router';
 
 import { api, type Me } from '../api/client';
@@ -23,6 +24,10 @@ function names(kinds: Required): string {
 export default function ConsentPrompt({ required }: { required: Required }) {
   const title = `We updated our ${names(required)}`;
   usePageTitle(title);
+  const heading = useRef<HTMLHeadingElement>(null);
+  // The prompt can replace a page mid-visit (a refetched /me): move focus to it so
+  // keyboard and screen-reader users learn why the page changed.
+  useEffect(() => heading.current?.focus(), []);
   const versions = useConsentVersions();
   const grant = useGrantConsents();
   const queryClient = useQueryClient();
@@ -40,7 +45,9 @@ export default function ConsentPrompt({ required }: { required: Required }) {
 
   return (
     <main id="main" className="mx-auto flex max-w-reading flex-col gap-5 p-6">
-      <h1 className="font-display text-title-compact">{title}</h1>
+      <h1 ref={heading} tabIndex={-1} className="font-display text-title-compact">
+        {title}
+      </h1>
       <p>Read what changed, then accept to keep using ListenUp.</p>
       <ul className="list-disc pl-6">
         {required.map((kind) => (
@@ -60,6 +67,13 @@ export default function ConsentPrompt({ required }: { required: Required }) {
           {errorMessage(grant.error ?? signOut.error)}
         </p>
       )}
+      <p>
+        If you do not agree, you can{' '}
+        <Link to="/settings" className="font-bold text-accent">
+          download your data or delete your account
+        </Link>
+        , or sign out.
+      </p>
       <div className="flex flex-wrap gap-3">
         <button
           type="button"

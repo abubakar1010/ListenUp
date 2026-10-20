@@ -123,3 +123,34 @@ test('without voice consent there is nothing to withdraw', async () => {
   ).toBeInTheDocument();
   expect(within(agreements).queryByRole('button', { name: /Withdraw/ })).not.toBeInTheDocument();
 });
+
+test('an earlier voice consent that was not withdrawn can still be withdrawn', async () => {
+  mockSettings({
+    current: CURRENT,
+    consents: [record('voice_recording', 'voice-0', false), record('terms', 'terms-2', true)],
+  });
+  renderWithProviders(<App />, { route: '/settings' });
+  const agreements = await section();
+
+  expect(
+    await within(agreements).findByText(/You agreed to an earlier version of voice recording/),
+  ).toBeInTheDocument();
+  expect(
+    within(agreements).getByRole('button', { name: 'Withdraw voice recording consent' }),
+  ).toBeInTheDocument();
+  expect(within(agreements).queryByText(/You have not agreed/)).not.toBeInTheDocument();
+});
+
+test('the withdrawal dialog makes no promise about deleting recordings', async () => {
+  mockSettings(WITH_VOICE);
+  renderWithProviders(<App />, { route: '/settings' });
+  const agreements = await section();
+
+  fireEvent.click(
+    await within(agreements).findByRole('button', { name: 'Withdraw voice recording consent' }),
+  );
+
+  const dialog = await screen.findByRole('dialog');
+  expect(within(dialog).getByText(/New Shadow rounds will not record/)).toBeInTheDocument();
+  expect(within(dialog).queryByText(/deleted/)).not.toBeInTheDocument();
+});

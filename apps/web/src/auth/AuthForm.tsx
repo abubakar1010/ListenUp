@@ -5,7 +5,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import { api, ApiError, type Me } from '../api/client';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { formatDeletionDate } from '../features/account/deletionApi';
-import { CONSENT_VERSIONS_KEY, currentVersions, DOCUMENTS, useConsentVersions } from './consentApi';
+import { ErrorPanel } from '../components/ErrorPanel';
+import { CONSENT_VERSIONS_KEY, DOCUMENTS, useConsentVersions } from './consentApi';
 import { errorMessage } from './errorMessage';
 import { GoogleRestore } from './GoogleRestore';
 import { nextPath } from './next';
@@ -38,12 +39,17 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
     error: useId(),
     hint: useId(),
     consent: useId(),
+    versions: useId(),
   };
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const registering = mode === 'register';
   const versions = useConsentVersions(registering);
-  const [accepted, setAccepted] = useState(false);
+  // The labels the learner ticked the box for: a newer version shown later is not
+  // accepted until the box is ticked again.
+  const shown = versions.data ? `${versions.data.terms}\n${versions.data.privacy}` : null;
+  const [acceptedLabels, setAcceptedLabels] = useState<string | null>(null);
+  const accepted = shown !== null && acceptedLabels === shown;
   const [consentError, setConsentError] = useState<string | null>(null);
   const consentBox = useRef<HTMLInputElement>(null);
   // While the restore question is open: the date the deleted account's data goes.
@@ -56,22 +62,22 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
 
   const submit = useMutation({
     meta: { changesSession: true },
-    mutationFn: async (restore: boolean) => {
-      // The versions the learner was shown; the server refuses older ones (409).
-      const shown = registering ? await currentVersions(queryClient) : null;
+    mutationFn: (restore: boolean) => {
+      // The versions shown next to the box; the server refuses older ones (409).
+      const consent = registering && versions.data;
       return api<Me>(copy.path, {
         method: 'POST',
         body: restore
           ? { email, password, restore: true }
-          : shown
-            ? { email, password, terms_version: shown.terms, privacy_version: shown.privacy }
+          : consent
+            ? { email, password, terms_version: consent.terms, privacy_version: consent.privacy }
             : { email, password },
       });
     },
     onError: (failure, restore) => {
       if (failure instanceof ApiError && failure.code === 'consent_version_changed') {
         // A newer version was published while the form was open: show it, ask again.
-        setAccepted(false);
+        setAcceptedLabels(null);
         void queryClient.invalidateQueries({ queryKey: CONSENT_VERSIONS_KEY });
       }
       const at = scheduledDate(failure);
@@ -132,12 +138,14 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
             id={ids.consent}
             type="checkbox"
             checked={accepted}
+            // Nothing can be accepted before the learner can see which versions.
+            disabled={shown === null}
             onChange={(event) => {
-              setAccepted(event.target.checked);
+              setAcceptedLabels(event.target.checked ? shown : null);
               if (event.target.checked) setConsentError(null);
             }}
             aria-invalid={consentError !== null}
-            aria-describedby={consentError ? ids.error : undefined}
+            aria-describedby={consentError ? `${ids.versions} ${ids.error}` : ids.versions}
             className="mt-1 size-5"
           />
           <label htmlFor={ids.consent}>
@@ -153,9 +161,29 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
           </label>
         </div>
       )}
-      {registering && !(accepted && versions.data) ? (
-        // A Google sign-up accepts the same documents, so it waits for the box.
-        <button type="button" className={googleClass} onClick={requireConsent}>
+      {registering && (
+        <div id={ids.versions} className="mt-2 text-sm text-gray-700">
+          {versions.data ? (
+            <p>
+              {DOCUMENTS.terms.name} version {versions.data.terms}, {DOCUMENTS.privacy.name} version{' '}
+              {versions.data.privacy}.
+            </p>
+          ) : versions.isError ? (
+            <ErrorPanel error={versions.error} onRetry={() => void versions.refetch()} />
+          ) : (
+            <p role="status">Loading the current Terms of Service and Privacy Policy…</p>
+          )}
+        </div>
+      )}
+      {registering && !accepted ? (
+        // A Google sign-up accepts the same documents, so it waits for the box, and
+        // for the versions it would accept.
+        <button
+          type="button"
+          className={`${googleClass} disabled:opacity-60`}
+          onClick={requireConsent}
+          disabled={!versions.data}
+        >
           Continue with Google
         </button>
       ) : (

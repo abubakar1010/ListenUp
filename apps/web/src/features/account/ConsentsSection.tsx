@@ -35,7 +35,8 @@ export function ConsentsSection() {
 
   const records = consents.data?.consents ?? [];
   const voice = records.filter((c) => c.kind === 'voice_recording');
-  const activeVoice = voice.find((c) => c.current && c.withdrawn_at === null);
+  // Any version not yet withdrawn can be withdrawn; the server withdraws them all.
+  const activeVoice = voice.find((c) => c.withdrawn_at === null);
   const withdrawnVoice = voice.find((c) => c.withdrawn_at !== null);
 
   return (
@@ -67,8 +68,9 @@ export function ConsentsSection() {
           {activeVoice ? (
             <>
               <p>
-                You agreed to voice recording for Shadow practice. If you withdraw, your next Shadow
-                round asks again before recording.
+                {activeVoice.current
+                  ? 'You agreed to voice recording for Shadow practice. If you withdraw, your next Shadow round asks again before recording.'
+                  : 'You agreed to an earlier version of voice recording consent. ListenUp asks you to agree to the current version before your next Shadow round, and you can withdraw the earlier one now.'}
               </p>
               <div>
                 <button
@@ -114,10 +116,7 @@ export function ConsentsSection() {
             ) : undefined
           }
         >
-          <p>
-            New Shadow rounds will not record until you agree again. Recordings you already made are
-            deleted 90 days after recording, or sooner when you delete them.
-          </p>
+          <p>New Shadow rounds will not record until you agree again.</p>
         </ConfirmDialog>
       )}
     </section>

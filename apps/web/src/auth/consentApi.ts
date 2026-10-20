@@ -17,6 +17,8 @@ export const DOCUMENTS = {
 
 export const CONSENT_VERSIONS_KEY = ['consents', 'versions'] as const;
 export const MY_CONSENTS_KEY = ['consents', 'mine'] as const;
+/** True once the server refused a request with 403 `consent_required` (ADR 0048). */
+export const CONSENT_REFUSED_KEY = ['consents', 'refused'] as const;
 
 const versionsQuery = {
   queryKey: CONSENT_VERSIONS_KEY,
@@ -28,9 +30,23 @@ export function useConsentVersions(enabled = true) {
   return useQuery({ ...versionsQuery, enabled });
 }
 
-/** The current versions, waiting for them if they are still loading. */
-export function currentVersions(queryClient: QueryClient): Promise<ConsentVersions> {
-  return queryClient.ensureQueryData(versionsQuery);
+/**
+ * Whether the server has refused a request because the learner owes a consent. The
+ * query client sets it (`app/queryClient.ts`); accepting clears it.
+ */
+export function useConsentRefused(): boolean {
+  const refused = useQuery({
+    queryKey: CONSENT_REFUSED_KEY,
+    queryFn: () => false,
+    staleTime: Infinity,
+  });
+  return refused.data === true;
+}
+
+/** Remember a 403 `consent_required` and fetch `/me` again, which lists what is owed. */
+export function noteConsentRefused(queryClient: QueryClient): void {
+  queryClient.setQueryData(CONSENT_REFUSED_KEY, true);
+  void queryClient.invalidateQueries({ queryKey: ME_KEY });
 }
 
 export function useMyConsents() {
@@ -50,6 +66,9 @@ export function useGrantConsents() {
     },
     onSuccess: (answer) => {
       if (answer) queryClient.setQueryData(MY_CONSENTS_KEY, answer);
+      queryClient.setQueryData(CONSENT_REFUSED_KEY, false);
+      // Requests refused while consent was owed can now succeed.
+      void queryClient.invalidateQueries({ predicate: (query) => query.state.status === 'error' });
       return queryClient.invalidateQueries({ queryKey: ME_KEY });
     },
     // A newer version published meanwhile (409): show the current one.

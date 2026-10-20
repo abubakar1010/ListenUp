@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { lazy, useCallback } from 'react';
 import { Navigate, Outlet, useLocation, useSearchParams } from 'react-router';
 
+import { useConsentRefused } from '../auth/consentApi';
 import { DEFAULT_SIGNED_IN_PATH, nextPath, signInPath } from '../auth/next';
 import type { Me } from '../api/client';
 import { useMe } from '../auth/useMe';
@@ -14,6 +15,22 @@ import { PageLoading } from './PageLoading';
 import { RouteBoundary } from './RouteBoundary';
 
 const ConsentPrompt = lazy(() => import('../auth/ConsentPrompt'));
+
+/** Pages a learner who declines a new terms or privacy version still needs (ADR 0048). */
+const OPEN_WHILE_CONSENT_OWED = new Set(['/settings', '/settings/delete-account']);
+
+/**
+ * Whether the consent prompt replaces the page (#104, ADR 0048). Settings stay open so
+ * a learner who declines can export or delete their data. An open practice session is
+ * not swapped out under the learner (it would void a Blind listen); it gets the prompt
+ * once the server refuses one of its requests, or on the next page.
+ */
+function useConsentPromptShown(me: Me): boolean {
+  const { pathname } = useLocation();
+  const refused = useConsentRefused();
+  if (me.consents_required.length === 0 || OPEN_WHILE_CONSENT_OWED.has(pathname)) return false;
+  return refused || !pathname.startsWith('/sessions/');
+}
 
 /**
  * Pages below this route need a signed-in learner. Signed-out visitors go to sign
@@ -35,6 +52,7 @@ export function RequireAuth() {
  */
 function SignedInRoot({ me }: { me: Me }) {
   const notices = useClipNotices();
+  const consentPrompt = useConsentPromptShown(me);
   const queryClient = useQueryClient();
   const keysFor = useCallback(
     (event: LiveEvent) => queryKeysForEvent(event, queryClient),
@@ -54,11 +72,7 @@ function SignedInRoot({ me }: { me: Me }) {
     <>
       <RouteBoundary>
         {/* A newer terms or privacy version is accepted before anything else (#104). */}
-        {me.consents_required.length > 0 ? (
-          <ConsentPrompt required={me.consents_required} />
-        ) : (
-          <Outlet />
-        )}
+        {consentPrompt ? <ConsentPrompt required={me.consents_required} /> : <Outlet />}
       </RouteBoundary>
       <ClipNotices notices={notices} />
     </>

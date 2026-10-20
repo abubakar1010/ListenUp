@@ -23,6 +23,13 @@ async function fillAndSubmit(button: string) {
   fireEvent.click(screen.getByRole('button', { name: button }));
 }
 
+/** The box can be ticked once the versions it accepts are shown (#104). */
+async function enabledAcceptBox() {
+  const box = await screen.findByRole('checkbox', { name: /I agree to the Terms/ });
+  await vi.waitFor(() => expect(box).toBeEnabled());
+  return box;
+}
+
 test('signing in sends the CSRF token and goes to the library', async () => {
   let signedIn = false;
   const fetchMock = mockApi({
@@ -80,7 +87,7 @@ test('the server message explains a failed registration', async () => {
       problem(409, 'email_taken', 'An account with this email already exists. Sign in instead.'),
   });
   renderWithProviders(<App />, { route: '/register' });
-  fireEvent.click(await screen.findByRole('checkbox', { name: /I agree to the Terms/ }));
+  fireEvent.click(await enabledAcceptBox());
 
   await fillAndSubmit('Create account');
 
@@ -196,7 +203,7 @@ test('Google sign-up on /register keeps next once the terms are accepted (#104)'
     '/auth/consent-versions': jsonResponse(200, { terms: 't', privacy: 'p', voice_recording: 'v' }),
   });
   renderWithProviders(<App />, { route: '/register?next=%2Fsettings' });
-  fireEvent.click(await screen.findByRole('checkbox', { name: /I agree to the Terms/ }));
+  fireEvent.click(await enabledAcceptBox());
   expect(await screen.findByRole('link', { name: 'Continue with Google' })).toHaveAttribute(
     'href',
     '/api/v1/auth/oidc/google/start?next=%2Fsettings&terms_version=t&privacy_version=p',
