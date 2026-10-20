@@ -1,8 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback } from 'react';
+import { lazy, useCallback } from 'react';
 import { Navigate, Outlet, useLocation, useSearchParams } from 'react-router';
 
 import { DEFAULT_SIGNED_IN_PATH, nextPath, signInPath } from '../auth/next';
+import type { Me } from '../api/client';
 import { useMe } from '../auth/useMe';
 import { useLiveEvents, type LiveEvent } from '../events/useLiveEvents';
 import { ClipNotices } from '../features/content/ClipNotices';
@@ -12,6 +13,8 @@ import { ErrorPage } from './ErrorPage';
 import { PageLoading } from './PageLoading';
 import { RouteBoundary } from './RouteBoundary';
 
+const ConsentPrompt = lazy(() => import('../auth/ConsentPrompt'));
+
 /**
  * Pages below this route need a signed-in learner. Signed-out visitors go to sign
  * in and come back to the same address afterwards (the `next` parameter).
@@ -20,7 +23,7 @@ export function RequireAuth() {
   const me = useMe();
   const location = useLocation();
 
-  if (me.data) return <SignedInRoot key={me.data.id} />;
+  if (me.data) return <SignedInRoot key={me.data.id} me={me.data} />;
   if (me.isPending) return <PageLoading />;
   if (me.isError) return <ErrorPage error={me.error} onRetry={() => void me.refetch()} />;
   return <Navigate to={signInPath(location)} replace />;
@@ -30,7 +33,7 @@ export function RequireAuth() {
  * Everything a signed-in learner sees renders inside this component, so hooks that
  * need an account (for example the live-events connection) belong here.
  */
-function SignedInRoot() {
+function SignedInRoot({ me }: { me: Me }) {
   const notices = useClipNotices();
   const queryClient = useQueryClient();
   const keysFor = useCallback(
@@ -50,7 +53,12 @@ function SignedInRoot() {
   return (
     <>
       <RouteBoundary>
-        <Outlet />
+        {/* A newer terms or privacy version is accepted before anything else (#104). */}
+        {me.consents_required.length > 0 ? (
+          <ConsentPrompt required={me.consents_required} />
+        ) : (
+          <Outlet />
+        )}
       </RouteBoundary>
       <ClipNotices notices={notices} />
     </>
