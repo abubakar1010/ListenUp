@@ -1,4 +1,4 @@
-"""Versioned prompt files: `ai/prompts/<task>/<version>.md` and `<task>/schema.json`
+"""Versioned prompt files: `ai/prompts/<task>/<version>.md` and `<version>.schema.json`
 (Architecture 7.3, NFR-AI-4, NFR-AI-5).
 
 A prompt file starts with YAML front matter (task, version, status, input fields) and its
@@ -95,9 +95,11 @@ def load_prompt(task: str, version: str | None = None, *, root: Path = PROMPTS_D
     if wanted not in files:
         raise PromptError(f"{task}: no prompt version {wanted}")
     try:
-        schema = json.loads((folder / "schema.json").read_text(encoding="utf-8"))
+        # Each version has its own output schema, so the stored version names the output
+        # format too and a retired version keeps the one it was used with (NFR-AI-5).
+        schema = json.loads((folder / f"{wanted}.schema.json").read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
-        raise PromptError(f"{task}: unreadable schema.json") from error
+        raise PromptError(f"{task}: unreadable schema for {wanted}") from error
     front, body = files[wanted]
     return PromptSpec(**front.model_dump(), body=body, output_schema=schema)
 

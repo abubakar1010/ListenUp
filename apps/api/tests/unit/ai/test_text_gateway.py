@@ -203,6 +203,7 @@ def bump(root, new):
     text = (folder / f"{old}.md").read_text().replace(f"version: {old}", f"version: {new}")
     (folder / f"{old}.md").unlink()
     (folder / f"{new}.md").write_text(text)
+    (folder / f"{old}.schema.json").rename(folder / f"{new}.schema.json")
 
 
 @pytest.mark.anyio
