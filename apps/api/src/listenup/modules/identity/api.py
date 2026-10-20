@@ -7,7 +7,8 @@ from typing import Literal
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
 
-from listenup.modules.identity.service import AccountsDep, CurrentLearner
+from listenup.modules.identity.domain.consents import ConsentKind
+from listenup.modules.identity.service import AccountsDep, CurrentLearner, consent_versions
 from listenup.platform.database import DbSession
 
 router = APIRouter(tags=["identity"])
@@ -16,6 +17,22 @@ router = APIRouter(tags=["identity"])
 class Credentials(BaseModel):
     email: str = Field(max_length=320)
     password: str = Field(max_length=1000)
+
+
+class Registration(Credentials):
+    terms_version: str | None = Field(
+        default=None,
+        max_length=20,
+        description=(
+            "The terms of service version the learner accepted (#104); it must be the "
+            "current one from GET /auth/consent-versions."
+        ),
+    )
+    privacy_version: str | None = Field(
+        default=None,
+        max_length=20,
+        description="The privacy policy version the learner accepted; it must be current.",
+    )
 
 
 class SignIn(Credentials):
@@ -36,17 +53,49 @@ class Me(BaseModel):
     deletion_grace_days: int = Field(
         description="Days a deleted account can be restored before its data is removed."
     )
+    consents_required: list[Literal["terms", "privacy"]] = Field(
+        description=(
+            "Documents whose current version the learner has not accepted yet (#104). "
+            "Accept each with POST /me/consents before going on."
+        )
+    )
+
+
+class ConsentVersions(BaseModel):
+    terms: str
+    privacy: str
+    voice_recording: str
+
+
+@router.get("/auth/consent-versions")
+async def current_consent_versions(request: Request) -> ConsentVersions:
+    """The document versions a learner accepts now, for the sign-up form (#104)."""
+    current = consent_versions(request.app.state.settings)
+    return ConsentVersions(
+        terms=current.terms, privacy=current.privacy, voice_recording=current.voice_recording
+    )
 
 
 @router.post("/auth/register", status_code=201)
 async def register(
-    body: Credentials,
+    body: Registration,
     request: Request,
     response: Response,
     session: DbSession,
     accounts: AccountsDep,
 ) -> Me:
-    learner = await accounts.register(session, request, response, body.email, body.password)
+    """Create an account. The learner must accept the current terms and privacy
+    versions: 422 `consent_required` without them, 409 `consent_version_changed` when
+    they changed meanwhile (#104)."""
+    learner = await accounts.register(
+        session,
+        request,
+        response,
+        body.email,
+        body.password,
+        terms_version=body.terms_version,
+        privacy_version=body.privacy_version,
+    )
     return Me.model_validate(await accounts.profile(session, learner))
 
 
@@ -77,6 +126,87 @@ async def logout(
 @router.get("/me")
 async def me(learner: CurrentLearner, session: DbSession, accounts: AccountsDep) -> Me:
     return Me.model_validate(await accounts.profile(session, learner))
+
+
+class ConsentRecord(BaseModel):
+    kind: ConsentKind
+    version: str
+    granted_at: datetime
+    withdrawn_at: datetime | None
+    current: bool = Field(description="True when this is the version in force now.")
+
+
+class Consents(BaseModel):
+    current: ConsentVersions
+    consents: list[ConsentRecord] = Field(description="Every version accepted, newest first.")
+
+
+async def _consents(
+    request: Request, session: DbSession, accounts: AccountsDep, learner: uuid.UUID
+) -> Consents:
+    current = consent_versions(request.app.state.settings)
+    return Consents(
+        current=ConsentVersions(
+            terms=current.terms, privacy=current.privacy, voice_recording=current.voice_recording
+        ),
+        consents=[
+            ConsentRecord(
+                kind=c.kind,
+                version=c.version,
+                granted_at=c.granted_at,
+                withdrawn_at=c.withdrawn_at,
+                current=c.version == current.of(c.kind),
+            )
+            for c in await accounts.consents(session, learner)
+        ],
+    )
+
+
+@router.get("/me/consents")
+async def my_consents(
+    request: Request, learner: CurrentLearner, session: DbSession, accounts: AccountsDep
+) -> Consents:
+    """The learner's consents for the settings page (#104)."""
+    return await _consents(request, session, accounts, learner)
+
+
+class GrantConsent(BaseModel):
+    kind: ConsentKind
+    version: str = Field(min_length=1, max_length=20)
+
+
+@router.post("/me/consents")
+async def grant_consent(
+    body: GrantConsent,
+    request: Request,
+    learner: CurrentLearner,
+    session: DbSession,
+    accounts: AccountsDep,
+) -> Consents:
+    """Accept the current version of a document (#104): a changed terms or privacy
+    policy on sign-in, or voice recording before Shadow. A version that is not current
+    answers 409 `consent_version_changed`. Granting again changes nothing."""
+    await accounts.grant_consent(session, learner, body.kind, body.version)
+    return await _consents(request, session, accounts, learner)
+
+
+class WithdrawConsent(BaseModel):
+    kind: ConsentKind
+
+
+@router.post("/me/consents/withdraw")
+async def withdraw_consent(
+    body: WithdrawConsent,
+    request: Request,
+    learner: CurrentLearner,
+    session: DbSession,
+    accounts: AccountsDep,
+) -> Consents:
+    """Withdraw voice-recording consent (FR-SH-17): sets `withdrawn_at`, and new Shadow
+    rounds are refused until the learner agrees again. Terms and privacy answer 409
+    `consent_not_withdrawable`."""
+    await accounts.withdraw_consent(session, learner, body.kind)
+    return await _consents(request, session, accounts, learner)
 
 
 class DeletionSummary(BaseModel):

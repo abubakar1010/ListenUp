@@ -40,6 +40,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from listenup.platform.config import Settings
 from tests.integration.seed import SeededLearner
 
 
@@ -173,7 +174,16 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ("POST", "/api/v1/auth/password-reset/confirm"): Public(
         "authorised by the one-time token from the email, not by a login session"
     ),
+    ("GET", "/api/v1/auth/consent-versions"): Public(
+        "the current document version labels for the sign-up form; no learner data"
+    ),
     ("GET", "/api/v1/me"): Scoped(a_sees=lambda w: [w.a.user_id]),
+    # Consents (#104): B lists, grants and withdraws only B's own; A's rows stay as they are.
+    ("GET", "/api/v1/me/consents"): Scoped(),
+    ("POST", "/api/v1/me/consents"): Scoped(
+        body=lambda w: {"kind": "voice_recording", "version": Settings().voice_consent_version}
+    ),
+    ("POST", "/api/v1/me/consents/withdraw"): Scoped(body=lambda w: {"kind": "voice_recording"}),
     ("GET", "/api/v1/me/deletion-summary"): Scoped(check=_deletion_summary_counts_only_b),
     # B can only ever delete B's own account; with a wrong password nothing happens.
     ("DELETE", "/api/v1/me"): Scoped(

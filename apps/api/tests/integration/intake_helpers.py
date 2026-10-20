@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from listenup.main import create_app
 from listenup.platform.config import Settings
 from listenup.platform.storage import Downloaded, SignedUrl, StoredObject
-from tests.integration.conftest import with_csrf
+from tests.integration.conftest import accepted_consents, with_csrf
 
 MB = 1024 * 1024
 PASSWORD = "correct horse battery"
@@ -101,7 +101,8 @@ def client_factory(api_role_url: str, storage: FakeStorage) -> Iterator[ClientFa
         with_csrf(client)
         email = f"learner-{uuid.uuid4().hex}@example.com"
         registered = client.post(
-            "/api/v1/auth/register", json={"email": email, "password": PASSWORD}
+            "/api/v1/auth/register",
+            json={"email": email, "password": PASSWORD, **accepted_consents()},
         )
         assert registered.status_code == 201
         return client

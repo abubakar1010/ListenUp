@@ -31,7 +31,7 @@ from listenup.platform.events import (
     publish,
 )
 from listenup.platform.jobs import JobDeps, Lane, app, configure_runtime, enqueue, job
-from tests.integration.conftest import conninfo_to_url
+from tests.integration.conftest import accepted_consents, conninfo_to_url
 
 PASSWORD = "correct horse battery"
 WAIT = 5.0
@@ -74,7 +74,9 @@ def signed_in(base_url: str) -> tuple[httpx.Client, uuid.UUID]:
     token = next(v for k, v in client.cookies.items() if k.endswith("listenup_csrf"))
     client.headers["X-CSRF-Token"] = token
     email = f"sse-{uuid.uuid4().hex}@example.com"
-    response = client.post("/api/v1/auth/register", json={"email": email, "password": PASSWORD})
+    response = client.post(
+        "/api/v1/auth/register", json={"email": email, "password": PASSWORD, **accepted_consents()}
+    )
     assert response.status_code == 201, response.text
     me = client.get("/api/v1/me")
     return client, uuid.UUID(me.json()["id"])

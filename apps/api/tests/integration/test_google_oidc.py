@@ -12,6 +12,7 @@ import pytest
 from authlib.jose import JsonWebKey, jwt
 from fastapi.testclient import TestClient
 
+from tests.integration.conftest import accepted_consents
 from tests.integration.test_auth import ClientFactory
 from tests.integration.test_auth import make_client as auth_client_factory
 
@@ -104,8 +105,12 @@ def google(
     return client, options
 
 
-def begin(google: tuple[TestClient, dict[str, Any]], **params: str) -> str:
+def begin(google: tuple[TestClient, dict[str, Any]], *, consent: bool = True, **params: str) -> str:
+    """Start a flow; like the sign-up page, it accepts the current documents unless
+    `consent` is False (#104). Existing accounts sign in either way."""
     client, options = google
+    if consent:
+        params = {**accepted_consents(), **params}
     response = client.get("/api/v1/auth/oidc/google/start", params=params, follow_redirects=False)
     query = parse_qs(urlparse(response.headers["location"]).query)
     options["nonce"] = query["nonce"][0]
@@ -153,7 +158,8 @@ def test_verified_google_email_links_unverified_password_account_despite_passwor
 
     client, claims = google
     registered = client.post(
-        "/api/v1/auth/register", json={"email": claims["email"], "password": PASSWORD}
+        "/api/v1/auth/register",
+        json={"email": claims["email"], "password": PASSWORD, **accepted_consents()},
     ).json()
     client.post("/api/v1/auth/logout")
     for _ in range(5):
@@ -406,7 +412,7 @@ def test_concurrent_callbacks_create_one_identity(api_role_url: str) -> None:
 
         async def resolve() -> uuid.UUID:
             async with db.transaction() as session:
-                return (await google_account(session, subject, email)).id
+                return (await google_account(session, subject, email))[0].id
 
         try:
             return await asyncio.gather(resolve(), resolve())
@@ -433,7 +439,11 @@ def test_keep_deleted_also_signs_out_a_session_created_in_another_tab(
     assert callback(client, begin(google)).status_code == 303
     client.post(
         "/api/v1/auth/register",
-        json={"email": f"{uuid.uuid4()}@example.com", "password": "a valid new password"},
+        json={
+            "email": f"{uuid.uuid4()}@example.com",
+            "password": "a valid new password",
+            **accepted_consents(),
+        },
     )
     assert client.get("/api/v1/me").status_code == 200
     assert (
@@ -573,3 +583,77 @@ def test_callback_refusal_rolls_back_account_changes_but_not_state_consumption(
             "SELECT count(*) FROM identity.oauth_accounts WHERE subject = %s", [claims["sub"]]
         ).fetchone() == (0,)
     assert_refusal(callback(client, state))
+
+
+# -- #104: Google sign-up accepts the current terms and privacy versions ---------------
+
+
+def consent_rows(url: str, user: object) -> list[tuple[str, str]]:
+    with psycopg.connect(url) as conn:
+        rows = conn.execute(
+            "SELECT kind, version FROM identity.consents WHERE user_id = %s ORDER BY kind",
+            [user],
+        ).fetchall()
+    return [(str(k), str(v)) for k, v in rows]
+
+
+def test_google_sign_up_records_the_current_terms_and_privacy_versions(
+    google: Any, migrated_url: str
+) -> None:
+    from listenup.platform.config import Settings
+
+    client, _ = google
+    assert callback(client, begin(google)).status_code == 303
+    me = client.get("/api/v1/me").json()
+    assert me["consents_required"] == []
+    defaults = Settings()
+    assert consent_rows(migrated_url, me["id"]) == [
+        ("privacy", defaults.privacy_version),
+        ("terms", defaults.terms_version),
+    ]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [{}, {"terms_version": "old-terms", "privacy_version": "placeholder-1"}],
+    ids=["not accepted", "outdated version"],
+)
+def test_google_sign_up_without_the_current_consent_creates_no_account(
+    google: Any, migrated_url: str, params: dict[str, str]
+) -> None:
+    client, claims = google
+    response = callback(client, begin(google, consent=False, **params))
+    assert response.status_code == 303
+    assert response.headers["location"] == "/auth/google-error?reason=consent&intent=login"
+    assert client.get("/api/v1/me").status_code == 401
+    with psycopg.connect(migrated_url) as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM identity.users WHERE email = %s", [claims["email"]]
+        ).fetchone() == (0,)
+        assert conn.execute(
+            "SELECT count(*) FROM identity.oauth_accounts WHERE subject = %s", [claims["sub"]]
+        ).fetchone() == (0,)
+
+
+def test_google_sign_in_to_an_existing_account_needs_no_acceptance(google: Any) -> None:
+    client, _ = google
+    callback(client, begin(google))
+    user = client.get("/api/v1/me").json()["id"]
+    client.post("/api/v1/auth/logout")
+
+    assert callback(client, begin(google, consent=False)).status_code == 303
+
+    assert client.get("/api/v1/me").json()["id"] == user
+
+
+def test_google_links_a_password_account_without_asking_again(google: Any) -> None:
+    client, claims = google
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": claims["email"], "password": "a valid new password", **accepted_consents()},
+    )
+    client.post("/api/v1/auth/logout")
+
+    assert callback(client, begin(google, consent=False)).status_code == 303
+
+    assert client.get("/api/v1/me").json()["email"] == claims["email"]

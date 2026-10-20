@@ -1,9 +1,9 @@
 """Google sign-in, explicit restoration, and fresh deletion confirmation (FR-ACC-1/4)."""
 
 import uuid
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel
 from starlette.responses import RedirectResponse
 
@@ -17,6 +17,12 @@ from listenup.platform.errors import ProblemError
 
 router = APIRouter(tags=["identity"])
 HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+# Fixed reason codes of /auth/google-error; any other refusal is `failed`.
+REFUSAL_REASONS = {
+    "google_fresh_auth_required": "fresh_auth",
+    "consent_required": "consent",
+    "consent_version_changed": "consent",
+}
 
 
 @router.get("/auth/oidc/google/start", status_code=303, response_class=RedirectResponse)
@@ -26,11 +32,17 @@ async def start(
     accounts: AccountsDep,
     next: str = "/library",
     purpose: Literal["login", "reauth"] = "login",
+    terms_version: Annotated[str | None, Query(max_length=20)] = None,
+    privacy_version: Annotated[str | None, Query(max_length=20)] = None,
 ) -> Response:
+    """Start Google sign-in. A new account is created only when the flow carries the
+    current terms and privacy versions the learner accepted (#104); without them the
+    callback refuses with reason `consent` and creates nothing."""
     google: GoogleOIDC = request.app.state.google
     learner = await current_learner(request, session) if purpose == "reauth" else None
     await accounts.enforce_google_limit(request)
-    return await google.start(request, next, learner)
+    consent = {"terms": terms_version, "privacy": privacy_version}
+    return await google.start(request, next, learner, consent)
 
 
 @router.get("/auth/oidc/google/callback", status_code=303, response_class=RedirectResponse)
@@ -60,7 +72,7 @@ async def callback(
         async with session.begin_nested():
             return await complete_callback(request, session, accounts, google, flow, claims)
     except ProblemError as problem:
-        reason = "fresh_auth" if problem.code == "google_fresh_auth_required" else "failed"
+        reason = REFUSAL_REASONS.get(problem.code, "failed")
         return RedirectResponse(
             f"/auth/google-error?reason={reason}&intent={intent}", status_code=303, headers=HEADERS
         )
@@ -96,11 +108,17 @@ async def complete_callback(
         )
         google.cookie(response, proof, "_delete")
         return response
-    account = await repository.google_account(
+    account, created = await repository.google_account(
         session, claims["sub"], normalize_email(claims["email"])
     )
     if account.gone:
         raise ProblemError(401, "invalid_credentials", "This account cannot sign in.")
+    if created:
+        # A Google sign-up accepts the current documents like the email one (#104);
+        # a refusal rolls the new account back with the savepoint.
+        consent = flow.get("consent") or {}
+        accounts.check_sign_up_consent(consent.get("terms"), consent.get("privacy"))
+        await accounts.record_sign_up_consent(session, account.id)
     response = RedirectResponse(flow["next"], status_code=303, headers=HEADERS)
     try:
         await accounts.complete_sign_in(session, request, response, account, restore=False)

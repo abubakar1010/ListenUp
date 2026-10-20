@@ -155,3 +155,21 @@ class OIDCFlow(Base):
     data: Mapped[dict[str, Any]] = mapped_column(JSONB)
     expires_at: Mapped[datetime] = mapped_column(Timestamp)
     created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+
+
+class Consent(Base):
+    """A learner's consent to one version of a document (#104, Database Design 3)."""
+
+    __tablename__ = "consents"
+    __table_args__ = (
+        CheckConstraint("kind IN ('terms', 'privacy', 'voice_recording')"),
+        CheckConstraint("char_length(version) <= 20"),
+        {"schema": "identity"},
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("identity.users.id", ondelete="CASCADE"), primary_key=True
+    )
+    kind: Mapped[str] = mapped_column(Text, primary_key=True)
+    version: Mapped[str] = mapped_column(Text, primary_key=True)
+    granted_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+    withdrawn_at: Mapped[datetime | None] = mapped_column(Timestamp)

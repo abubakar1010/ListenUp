@@ -14,6 +14,14 @@ from fastapi import Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.identity import jobs, passwords, repository
+from listenup.modules.identity.domain.consents import (
+    SIGN_IN_KINDS,
+    Consent,
+    ConsentKind,
+    CurrentVersions,
+    holds,
+    outstanding,
+)
 from listenup.modules.identity.domain.credentials import (
     email_problem,
     normalize_email,
@@ -28,6 +36,25 @@ from listenup.platform.events import EventType, publish
 from listenup.platform.export import ExportPart, learner_rows
 from listenup.platform.ids import uuid7
 from listenup.platform.rate_limit import Limit, RateLimiter, ip_key
+
+
+def consent_versions(settings: Settings) -> CurrentVersions:
+    """The document versions a learner consents to now (#104, ADR 0048)."""
+    return CurrentVersions(
+        terms=settings.terms_version,
+        privacy=settings.privacy_version,
+        voice_recording=settings.voice_consent_version,
+    )
+
+
+def _consent_version_changed(current: CurrentVersions) -> ProblemError:
+    return ProblemError(
+        409,
+        "consent_version_changed",
+        "The terms of service or privacy policy changed while you were reading. "
+        "Read the current version and accept it again.",
+        current={kind.value: current.of(kind) for kind in ConsentKind},
+    )
 
 
 def session_cookie_name(secure: bool) -> str:
@@ -106,6 +133,9 @@ class Accounts:
         response: Response,
         email: str,
         password: str,
+        *,
+        terms_version: str | None,
+        privacy_version: str | None,
     ) -> uuid.UUID:
         ip = _client_ip(request)
         if ip:
@@ -115,6 +145,7 @@ class Accounts:
             raise ProblemError(422, "invalid_email", problem)
         if problem := password_problem(password):
             raise ProblemError(422, "weak_password", problem)
+        self.check_sign_up_consent(terms_version, privacy_version)
 
         user_id = uuid7()
         await repository.release_email_of_gone_account(session, email)
@@ -127,7 +158,61 @@ class Accounts:
                 "An account with this email already exists. Sign in instead.",
             )
         await self._start_session(session, request, response, user_id)
+        await self.record_sign_up_consent(session, user_id)
         return user_id
+
+    def check_sign_up_consent(self, terms_version: str | None, privacy_version: str | None) -> None:
+        """Refuse a sign-up that did not accept the current terms and privacy (#104).
+
+        Both sign-up paths (email and Google) send the versions the learner was shown,
+        so a version published while the form was open is refused rather than recorded
+        as accepted: 422 `consent_required` without them, 409 `consent_version_changed`
+        with the current versions when they are out of date.
+        """
+        if not terms_version or not privacy_version:
+            raise ProblemError(
+                422,
+                "consent_required",
+                "Accept the terms of service and the privacy policy to create an account.",
+            )
+        current = consent_versions(self.settings)
+        if (terms_version, privacy_version) != (current.terms, current.privacy):
+            raise _consent_version_changed(current)
+
+    async def record_sign_up_consent(self, session: AsyncSession, learner: uuid.UUID) -> None:
+        """Store the new account's consent to the current terms and privacy versions."""
+        current = consent_versions(self.settings)
+        for kind in SIGN_IN_KINDS:
+            await repository.grant_consent(session, learner, kind, current.of(kind))
+
+    async def consents(self, session: AsyncSession, learner: uuid.UUID) -> list[Consent]:
+        return await repository.list_consents(session, learner)
+
+    async def grant_consent(
+        self, session: AsyncSession, learner: uuid.UUID, kind: ConsentKind, version: str
+    ) -> None:
+        """Accept the current version of a document: a changed terms or privacy policy
+        on sign-in, or voice recording before Shadow (#78). Only the current version
+        can be accepted (409 `consent_version_changed`)."""
+        current = consent_versions(self.settings)
+        if version != current.of(kind):
+            raise _consent_version_changed(current)
+        await repository.grant_consent(session, learner, kind, version)
+
+    async def withdraw_consent(
+        self, session: AsyncSession, learner: uuid.UUID, kind: ConsentKind
+    ) -> None:
+        """Withdraw voice-recording consent (FR-SH-17); new Shadow rounds are refused
+        until the learner grants it again. Terms and privacy are the conditions of the
+        account itself: 409 `consent_not_withdrawable` (delete the account instead)."""
+        if not kind.withdrawable:
+            raise ProblemError(
+                409,
+                "consent_not_withdrawable",
+                "The terms of service and privacy policy apply while you have an account. "
+                "To stop using ListenUp, delete your account.",
+            )
+        await repository.withdraw_consent(session, learner, kind)
 
     async def sign_in(
         self,
@@ -407,7 +492,13 @@ class Accounts:
         profile = await repository.get_profile(session, learner)
         if profile is None:
             raise _not_signed_in()
-        return {**profile, "deletion_grace_days": self.settings.account_deletion_grace_days}
+        held = await repository.list_consents(session, learner)
+        return {
+            **profile,
+            "deletion_grace_days": self.settings.account_deletion_grace_days,
+            # A newer terms or privacy version asks the learner to accept it (#104).
+            "consents_required": outstanding(consent_versions(self.settings), held),
+        }
 
     async def deletion_summary(self, session: AsyncSession, learner: uuid.UUID) -> dict[str, int]:
         """Counts shown before the learner begins the irreversible deletion flow."""
@@ -475,6 +566,31 @@ async def hold_active_account(session: AsyncSession, learner: uuid.UUID) -> bool
 AccountsDep = Annotated[Accounts, Depends(get_accounts)]
 
 
+async def has_voice_consent(
+    session: AsyncSession, learner: uuid.UUID, settings: Settings | None = None
+) -> bool:
+    """True while the learner holds the current voice-recording consent, not withdrawn.
+
+    For the Shadow module (#78, #79): a round can start only when this holds
+    (FR-SH-17, Database Design 3). Runs in the learner's row-level-security session.
+    """
+    current = consent_versions(settings or get_settings())
+    held = await repository.list_consents(session, learner)
+    return holds(current, held, ConsentKind.VOICE_RECORDING)
+
+
+async def require_voice_consent(
+    session: AsyncSession, learner: uuid.UUID, settings: Settings | None = None
+) -> None:
+    """Refuse with 403 `voice_consent_required` unless `has_voice_consent` holds."""
+    if not await has_voice_consent(session, learner, settings):
+        raise ProblemError(
+            403,
+            "voice_consent_required",
+            "Agree to voice recording before you record a Shadow round.",
+        )
+
+
 async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
     """The learner's identity rows for their data export (#92, NFR-SEC-5).
 
@@ -484,6 +600,7 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
     return ExportPart(
         tables=(
             await learner_rows(session, "identity.oauth_accounts", learner, order_by="created_at"),
+            await learner_rows(session, "identity.consents", learner, order_by="granted_at"),
             await learner_rows(
                 session,
                 "identity.oidc_flows",
