@@ -125,3 +125,10 @@ Read the section for the area you are changing before you change it. The rules e
 - Passage transport, controls and policy live in `features/media`; Dictation keeps
   compatibility exports. Transcript supplies sentence replay and keyboard handling.
   Readiness/failure events invalidate the named review query; pending reads also poll.
+- Marks (#58, ADR 0047): `review` owns `practice.marks`; other modules reach marks only
+  through `review/service.py`. Every mark route calls `require_reached(TRANSCRIPT)` first.
+  A new mark carries a browser-made id and is one `INSERT ... ON CONFLICT DO NOTHING`, so
+  a resend answers 200 with the same mark; never wrap it in `run_once`. The server
+  derives `at_ms` and the phrase from the passage words. Tags (#61), the list and count
+  (#60) and Dictation pre-fill (#55, #59) extend this service, schemas and
+  `features/review/markSync.ts`, which keeps unsent changes per session in localStorage.
