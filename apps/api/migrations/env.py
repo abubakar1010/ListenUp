@@ -20,6 +20,7 @@ from listenup.modules.dictation import models as _dictation_models  # noqa: F401
 from listenup.modules.export import models as _export_models  # noqa: F401
 from listenup.modules.identity import models as _identity_models  # noqa: F401
 from listenup.modules.practice import models as _practice_models  # noqa: F401
+from listenup.modules.review import models as _review_models  # noqa: F401
 from listenup.modules.transcript import models as _transcript_models  # noqa: F401
 from listenup.platform import models as _platform_models  # noqa: F401
 from listenup.platform.config import get_settings
