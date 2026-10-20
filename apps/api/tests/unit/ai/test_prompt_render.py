@@ -59,11 +59,72 @@ def test_refused_when_even_a_little_reference_text_does_not_fit():
         fit(SPEC, data, serialized_size(task_input(transcript="")) + 5)
 
 
+def test_refused_when_only_the_truncation_marker_would_remain():
+    """ADR 0045: a passage cut to nothing is refused, never sent as a bare marker."""
+    data = task_input(transcript="Sleeping well matters a great deal")
+    with pytest.raises(InputTooLarge):
+        fit(SPEC, data, serialized_size(task_input(transcript="[truncated]")))
+
+
+def test_a_trimmable_field_that_is_not_text_is_never_changed():
+    fields = tuple(
+        f.model_copy(update={"trim": True}) if f.name == "key_points" else f
+        for f in SPEC.input_fields
+    )
+    spec = SPEC.model_copy(update={"input_fields": fields})  # key_points listed first
+    data = task_input(transcript="word " * 40)
+    fitted = fit(spec, data, serialized_size(data) - 30)
+    assert fitted.input["key_points"] == KEY_POINTS and fitted.trimmed == ("transcript",)
+    with pytest.raises(InputTooLarge):  # it is skipped, never shortened, so this is refused
+        fit(spec, task_input(transcript=""), serialized_size(task_input(transcript="")) - 1)
+
+
 def test_unknown_or_missing_fields_are_refused():
     with pytest.raises(ValueError, match="fields"):
         fit(SPEC, {**task_input(), "email": "a@b.c"}, 10_000)
     with pytest.raises(ValueError, match="fields"):
         render_messages(SPEC, {"gist": "x"})
+
+
+SHADOW = load_prompt("shadow_feedback")
+SHADOW_INPUT = {"round": 2, "measures": {"timing": 72}, "flagged_words": ["asked"]}
+UUID = "0192f3e0-7c1a-7b3e-9a41-5d2c8e6f1a10"
+
+
+@pytest.mark.parametrize(
+    ("spec", "data"),
+    [
+        # FR-BL-13: nested values cannot carry identifiers or unlisted keys either.
+        (SPEC, task_input() | {"key_points": [{**KEY_POINTS[0], "id": UUID}]}),
+        (SPEC, task_input() | {"key_points": [{**KEY_POINTS[0], "user_id": UUID}]}),
+        (SPEC, task_input() | {"key_points": [KEY_POINTS[0], KEY_POINTS[0]]}),
+        (
+            SPEC,
+            task_input() | {"key_points": [{**KEY_POINTS[0], "id": f"kp{i}"} for i in range(7)]},
+        ),
+        (SPEC, task_input() | {"gist": {"text": "I heard about sleep.", "email": "a@b.c"}}),
+        (SPEC, task_input() | {"gist": 5}),
+        (SHADOW, SHADOW_INPUT | {"measures": {"timing": 72, "email": 1}}),
+        (SHADOW, SHADOW_INPUT | {"measures": {"timing": 101}}),
+        (SHADOW, SHADOW_INPUT | {"round": 4}),
+        (SHADOW, SHADOW_INPUT | {"round": "2"}),
+        (SHADOW, SHADOW_INPUT | {"flagged_words": [{"word": "asked", "user": UUID}]}),
+    ],
+)
+def test_input_that_does_not_match_the_task_input_model_is_refused(spec, data):
+    for call in (lambda: render_messages(spec, data), lambda: fit(spec, data, 100_000)):
+        with pytest.raises(ValueError, match="input model") as error:
+            call()
+        assert UUID not in str(error.value) and "a@b.c" not in str(error.value)
+
+
+def test_input_that_matches_the_task_input_model_is_sent_unchanged():
+    data = task_input() | {"key_points": [{"id": "kp6", "text": "x", "kind": "supporting"}]}
+    _, user = render_messages(SPEC, data, new_nonce=lambda: "n")
+    assert json.loads(user["content"].split("\n")[1]) == data
+    assert json.loads(render_messages(SHADOW, SHADOW_INPUT)[1]["content"].split("\n")[1]) == (
+        SHADOW_INPUT
+    )
 
 
 @given(

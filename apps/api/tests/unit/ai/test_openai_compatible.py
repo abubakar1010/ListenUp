@@ -18,7 +18,7 @@ from listenup.ai.providers.openai_compatible import (
 )
 from listenup.ai.tasks import EXAMPLES, TASK_MODELS, GistGrade, KeyPoints
 
-KEY = "LISTENUP_AI_TEST_KEY"
+KEY = "LISTENUP_AI_TEST_API_KEY"
 GRADE_INPUT = {
     "key_points": [{"id": "kp1", "text": "It is about sleep.", "kind": "main"}],
     "transcript": "Sleep matters. Adults need eight hours.",
@@ -138,6 +138,25 @@ async def test_optional_seed_and_reasoning_effort_are_passed():
     assert (server.sent["seed"], server.sent["reasoning_effort"]) == (7, "low")
 
 
+def test_settings_that_change_the_output_change_the_recorded_version():
+    """NFR-AI-5: the version stored with a result names every option that changes it."""
+    versions = {
+        version_for(entry_for(options=options))
+        for options in (
+            {},
+            {"reasoning_effort": "low"},
+            {"reasoning_effort": "high"},
+            {"seed": 7},
+            {"seed": 8},
+            {"structured_output": "json_object"},
+        )
+    }
+    assert len(versions) == 6
+    assert version_for(entry_for(options={"reasoning_effort": "low", "seed": -1})) == (
+        "openai-chat-v1; structured=json_schema; reasoning=low; seed=-1"
+    )
+
+
 @pytest.mark.anyio
 async def test_no_authorization_header_without_an_api_key_option():
     entry = ProviderEntry(
@@ -159,6 +178,16 @@ async def test_result_carries_provenance_and_the_prompt_version_of_the_file():
     )
     assert "digest-abc" in result.provenance.version
     assert (result.task, result.prompt_version) == ("grade_gist", load_task("grade_gist").version)
+
+
+@pytest.mark.anyio
+async def test_provenance_never_comes_from_the_reply():
+    body = completion(
+        json.dumps(EXAMPLES["grade_gist"]), model="other-model", system_fingerprint="fp_x"
+    )
+    adapter, _ = make(Server(body))
+    result = await grade(adapter)
+    assert (result.provenance.model, result.provenance.version) == ("m-1", version_for(entry_for()))
 
 
 @pytest.mark.anyio
@@ -293,7 +322,12 @@ def test_every_task_has_a_model(task):
         entry_for(options={"base_url": "ftp://llm.example"}),
         entry_for(options={"base_url": ""}),
         entry_for(options={"api_key_env": "lower-case"}),
+        # Only a LISTENUP_AI_*_API_KEY variable may be sent: never another secret.
+        entry_for(options={"api_key_env": "LISTENUP_DATABASE_URL"}),
+        entry_for(options={"api_key_env": "LISTENUP_SESSION_SECRET"}),
+        entry_for(options={"api_key_env": "LISTENUP_AI_API_KEY"}),
         entry_for(options={"structured_output": "grammar"}),
+        entry_for(options={"seed": 2**64}),  # would overflow the logged version
         entry_for(options={"deployment_version": "a b/c"}),
         entry_for(options={"surprise": 1}),
         ProviderEntry(provider="groq", options={}),

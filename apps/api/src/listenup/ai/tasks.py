@@ -1,13 +1,15 @@
-"""Output formats of the Text AI tasks (Architecture 7.3, NFR-AI-4).
+"""Input and output formats of the Text AI tasks (Architecture 7.3, NFR-AI-4, FR-BL-13).
 
 Every provider must return exactly these structures, and the gateway validates them before
 use. The overall score and level of a gist are not here: our code computes them from the
 dimension scores and the rubric weights (Architecture 5.4), never from model arithmetic.
 `ai/prompts/<task>/schema.json` is the JSON Schema of the model named here; a test fails
-when they differ.
+when they differ. The input models bound what may reach a provider at every level: a
+key point id is a short label (`kp1`), not a database id, and no model has room for an
+account identifier.
 """
 
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -70,6 +72,56 @@ class ShadowFeedback(_Output):
     feedback: str = Field(min_length=1, max_length=600)
     top_fixes: tuple[str, ...] = Field(min_length=1, max_length=3)
 
+
+# --- Inputs (FR-BL-13: only the transcript, key points, gist and round measures) ------
+
+
+class _Input(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+
+
+_Text = Annotated[str, Field(strict=True)]
+
+
+class KeyPointInput(_Input):
+    id: _Text = Field(pattern=r"^kp[1-6]$")  # a label, never a stored id
+    text: _Text = Field(max_length=300)
+    kind: Literal["main", "supporting"]
+
+
+class ExtractKeyPointsInput(_Input):
+    transcript: _Text
+
+
+class GradeGistInput(_Input):
+    key_points: tuple[KeyPointInput, ...] = Field(min_length=1, max_length=6)
+    transcript: _Text
+    gist: _Text
+
+    @model_validator(mode="after")
+    def _unique_ids(self) -> Self:
+        if len({point.id for point in self.key_points}) != len(self.key_points):
+            raise ValueError("duplicate key point id")
+        return self
+
+
+# The seven speaking measures (SRS 5.6, Database Design `round_grades.measures`).
+Measure = Literal[
+    "timing", "pronunciation", "accent", "articulation", "fluency", "fillers", "completeness"
+]
+
+
+class ShadowFeedbackInput(_Input):
+    round: int = Field(ge=1, le=3, strict=True)
+    measures: dict[Measure, Annotated[int, Field(ge=0, le=100, strict=True)]]
+    flagged_words: tuple[Annotated[str, Field(strict=True, min_length=1, max_length=64)], ...]
+
+
+TASK_INPUTS: dict[str, type[BaseModel]] = {
+    EXTRACT_KEY_POINTS: ExtractKeyPointsInput,
+    GRADE_GIST: GradeGistInput,
+    SHADOW_FEEDBACK: ShadowFeedbackInput,
+}
 
 TASK_MODELS: dict[str, type[BaseModel]] = {
     EXTRACT_KEY_POINTS: KeyPoints,

@@ -2,7 +2,7 @@
   "provider": "groq",
   "task": "extract_key_points",
   "synthetic": true,
-  "note": "Hand-authored in the server's documented response shape (no key or network was available). It proves request and response mapping, not model quality (NFR-AI-6). Replace with scripts/record_ai_contract.py --text output.",
+  "note": "Hand-authored in the server's documented response shape (no key or network was available). It proves request and response mapping, not model quality (NFR-AI-6). Replace with the output of scripts/record_ai_contract.py text_ai.",
   "input": {
     "transcript": "Sleep matters for health. Adults need about eight hours each night. Screens late at night make sleep worse."
   },

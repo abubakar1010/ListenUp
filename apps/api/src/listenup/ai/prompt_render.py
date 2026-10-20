@@ -1,13 +1,14 @@
 """Turn task input into chat messages: fit it to the token budget, then wrap it as data.
 
-- `fit` runs before the gateway (ADR 0043). Reference text a prompt file marks `trim` is
+- `fit` runs before the gateway (ADR 0045). Reference text a prompt file marks `trim` is
   shortened at a word boundary to fit; learner text is never changed, so an over-long
   learner text is refused instead (ADR 0041). Sizes use the gateway's own measure: the UTF-8
   bytes of the JSON input, one byte per token, which over-counts and so stays safe.
 - `render_messages` puts the instructions in the system message and every input field in
   one JSON block between per-call random markers that the data cannot contain, and the
   instructions say to treat the block as data (Architecture 7.3, FR-BL-12). Only the
-  fields the prompt file lists may be sent, so no identifier can ride along (FR-BL-13).
+  fields the prompt file lists may be sent, each shaped by the task's input model in
+  `tasks.py` down to nested values, so no identifier can ride along (FR-BL-13).
 """
 
 import json
@@ -17,7 +18,10 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic import ValidationError
+
 from listenup.ai.prompt_files import DELIMITER, PromptSpec
+from listenup.ai.tasks import TASK_INPUTS
 
 TRUNCATED = " [truncated]"
 NOTHING_KEPT = "[truncated]"
@@ -41,6 +45,11 @@ def serialized_size(input: Mapping[str, Any]) -> int:
 def _check_fields(spec: PromptSpec, input: Mapping[str, Any]) -> None:
     if set(input) != spec.field_names:
         raise ValueError("input fields do not match the prompt file")
+    try:
+        TASK_INPUTS[spec.task].model_validate(dict(input))
+    except ValidationError:
+        # The validation message would quote the input, which can be learner text.
+        raise ValueError("input does not match the task's input model") from None
 
 
 def _shorten(text: str, keep: int) -> str:

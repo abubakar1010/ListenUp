@@ -67,7 +67,7 @@ def hosted(**change):
         populations=("adult",),
         limits={"day": {"calls": 100}, "month": {"calls": 1000}},
         retries=0,
-        options={"base_url": HOSTED, "api_key_env": "TEST_KEY"},
+        options={"base_url": HOSTED, "api_key_env": "LISTENUP_AI_TEST_API_KEY"},
     )
     return ProviderEntry(**{**base, **change})
 
@@ -86,7 +86,7 @@ def local(**change):
 
 
 def build(servers, entries, *, tasks=None, environ=None, prompts_root=PROMPTS_DIR, **config):
-    environ = {"TEST_KEY": "k"} if environ is None else environ
+    environ = {"LISTENUP_AI_TEST_API_KEY": "k"} if environ is None else environ
 
     def factory(entry):
         return OpenAICompatibleTextAI(
@@ -127,7 +127,7 @@ async def test_invalid_output_from_the_first_provider_falls_back_to_the_second(f
     assert [c["outcome"] for c in fake_accounting.calls] == [
         "error",
         "ok",
-    ]  # adapter-side validation failures log as error (ADR 0043)
+    ]  # adapter-side validation failures log as error (ADR 0045)
 
 
 @pytest.mark.anyio
@@ -281,6 +281,36 @@ async def test_text_input_budget_matches_the_gateways_own_refusal_boundary(fake_
     gateway = AIGateway(config, registry=replace(Registry(), text_ai={"ollama": lambda e: None}))
     assert gateway.text_input_budget("grade_gist") == 250
     assert gateway.text_input_budget("extract_key_points") == 400  # the entry's own limits
+
+
+def test_text_input_budget_is_the_smallest_across_the_tasks_providers(fake_accounting):
+    entries = (
+        hosted(input_token_limit=3000, prompt_token_budget=500),
+        local(input_token_limit=1200, prompt_token_budget=400),
+    )
+    gateway = build(Servers(), entries)
+    assert gateway.text_input_budget("grade_gist") == 800
+    only_hosted = build(Servers(), entries, tasks={"grade_gist": ("groq",)})
+    assert only_hosted.text_input_budget("grade_gist") == 2500
+
+
+@pytest.mark.anyio
+async def test_input_of_exactly_the_budget_is_sent_and_one_byte_more_is_refused(
+    fake_accounting,
+):
+    servers = Servers()
+    gateway = build(servers, [local(input_token_limit=900, prompt_token_budget=300)])
+    budget = gateway.text_input_budget("grade_gist")
+
+    def sized(size):
+        data = {**GRADE_INPUT, "transcript": ""}
+        return {**data, "transcript": "x" * (size - serialized_size(data))}
+
+    with pytest.raises(AIUnavailable):
+        await grade(gateway, sized(budget + 1))
+    assert servers.requests == []
+    await grade(gateway, sized(budget))
+    assert len(servers.requests) == 1
 
 
 def test_text_input_budget_with_no_provider_is_unavailable(fake_accounting):

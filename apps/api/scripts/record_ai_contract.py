@@ -11,7 +11,7 @@ runs; --model records another model with the same options.
 
 CI replays the recording through the whole adapter without the model.
 
-A Text AI recording (ADR 0043) needs the provider's key in the environment variable its
+A Text AI recording (ADR 0045) needs the provider's key in the environment variable its
 `api_key_env` option names (never a file) and an input of synthetic text only, because the
 repository is public. It records the server's reply, not the request or any header:
 
