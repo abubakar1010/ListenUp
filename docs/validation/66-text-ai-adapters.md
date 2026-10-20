@@ -59,7 +59,7 @@ A fresh-session review found no blocker and seven low-severity findings; all sev
 
 After the fixes: `ruff format --check`, `ruff check`, `mypy` (153 files) and `lint-imports` (6 kept) pass. The full coverage run with both required-service flags (moto again for S3) gives **1460 passed, 2 failed**: the same two tests named above, which fail identically on a clean `main` with moto (rechecked by the reviewer). Changed-line coverage is **100%** against both the PR base (342 lines) and the pre-fix head (37 lines). `pytest -m performance`: 1 passed.
 
-The earlier review suggested per-version schemas, stricter deployment trust and automatic fitting in `generate`. These are optional follow-ups, not requirements changed by this PR: ADR 0046 already specifies one task schema, operator-controlled local entries and explicit fitting before gateway admission. This revision preserves those decisions and does not enable a provider.
+The review's three owner questions (per-version schemas, how far `local: true` is trusted, automatic fitting) were first kept as follow-ups. The owner then decided all three; see "Owner decisions" at the end, which supersedes that choice.
 
 ## Not verified
 
@@ -93,3 +93,16 @@ The fix returns the existing marker-only refusal when no complete word fits; an 
 - `docker compose config --quiet` and `docker compose --profile llm config --quiet` passed. PostgreSQL 16 and actual SeaweedFS are running for the required-service coverage suite; local PostgreSQL client tools are version 16.15 from the official image.
 - The full required-service coverage command, inventory check, changed-line gate and final-head CI outcomes are reported in PR #168. Historical moto failures above do not represent the final verification environment.
 - No new route or database schema: migrations and access-registry additions are not applicable. No web source changes: web behavior checks run in required CI. Real-service model-quality acceptance remains a provider activation gate; no provider is enabled by this revision.
+
+## Owner decisions on the review questions
+
+The owner delegated the three open review questions and took these decisions; ADR 0046, Architecture 7.3 and the AI layer conventions now state them. Commands from `apps/api` with `--no-cov`.
+
+| Decision | Named tests | Red | Green |
+| --- | --- | --- | --- |
+| Each prompt version has its own `<version>.schema.json`, so the stored prompt version names the output format and a retired version keeps its schema (NFR-AI-4, NFR-AI-5) | `test_each_version_keeps_its_own_output_schema`; the version-bump tests in `test_text_gateway.py` and `test_text_ai_calls.py` move the schema with the prompt | `test_prompt_files.py`: **5 failed, 20 passed** (the loader read one `schema.json` per task) | the v1 schemas moved unchanged (manifest hashes identical); `tests/unit/ai`, `tests/contract` and the integration file **325 passed** |
+| A `local: true` entry must name this host or the private network (Compose service name, `localhost`, `.internal`, loopback, private or link-local address), because local entries skip consent, retention and region checks and may use http (NFR-AI-7) | `test_a_local_entry_may_reach_this_host_or_the_private_network` (6), `test_a_local_entry_cannot_name_a_public_server` (4) | `-k local_entry`: **4 failed, 6 passed** | **335 passed** |
+| `text_tasks.run_task` is the one call for a task: active version, fit to `text_input_budget`, then `generate`; an over-long learner text is refused before admission. `generate` and admission from #64 are unchanged (NFR-AI-4, System Design 7.3) | `test_run_task_trims_over_budget_reference_text_and_reports_it`, `test_run_task_sends_input_within_budget_unchanged`, `test_run_task_refuses_long_learner_text_before_admission`, `test_run_task_refuses_a_schema_of_another_task`, `test_run_task_records_the_version_written_in_the_prompt_file` | collection error: no `listenup.ai.text_tasks` | **344 passed** with `tests/architecture`; mutant "send unfitted input" fails `test_run_task_trims_...` |
+
+These decisions arrived after PR #168 was merged, so they follow on branch `feat/66-text-ai-review-decisions` from `main` at `943ca8d`. Final checks on that code: `ruff format --check`, `ruff check`, `mypy` (158 files) and `lint-imports` (6 kept) pass. The full coverage run with both required-service flags (moto for S3, as no SeaweedFS was available) gives **1520 passed, 2 failed**: `test_three_minute_passage_real_storage_decode_and_configured_gateway` and `test_a_real_upload_is_private_bound_to_its_size_and_confirmed`, the two that fail identically on a clean `main` with moto (see above); CI with SeaweedFS is the check for them. Changed-line coverage against the merged head `ea05901` is **100%** (34 lines). `pytest -m performance`: 1 passed. No route, schema, migration or web change.
+
