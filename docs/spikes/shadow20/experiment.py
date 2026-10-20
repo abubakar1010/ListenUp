@@ -8,6 +8,7 @@ import json
 import os
 import re
 import subprocess
+from collections import Counter
 from pathlib import Path
 
 import espeakng_loader
@@ -173,8 +174,15 @@ def assess(models, original, audio, text, ref):
     aligned = models.word_align(audio, text)
     phones = models.phone_profile(audio, text)
     transcript = models.recognize(audio)
-    matches = matched_indices(words(text), words(transcript))
-    present = {i for i, _ in matches}
+    expected, observed = words(text), words(transcript)
+    matches = matched_indices(expected, observed)
+    expected_counts, observed_counts = Counter(expected), Counter(observed)
+    ambiguous = {
+        w
+        for w, count in expected_counts.items()
+        if max(count, observed_counts[w]) > 1 and count != observed_counts[w]
+    }
+    present = {i for i, _ in matches if expected[i] not in ambiguous}
     p = pitch(audio, aligned)
     valid = [i for i in present if p[i] is not None and ref["pitch"][i] is not None]
     accent = None
@@ -188,14 +196,46 @@ def assess(models, original, audio, text, ref):
     gaps = lambda a: np.array(
         [a[j]["start"] - a[i]["end"] for i, j in itertools.pairwise(idx)]
     )
-    pron = relative(
-        np.mean([x["mean"] for x in phones]),
-        np.mean([x["mean"] for x in ref["phones"]]),
+    # A forced path exists even for unspoken words. Whole-passage GOP grades
+    # require corroboration for every word; ASR absence means unknown, not omitted.
+    alignment_ok = all(
+        len(ws) == len(words(text))
+        and all(
+            np.isfinite([w["start"], w["end"]]).all() and w["end"] > w["start"] >= 0
+            for w in ws
+        )
+        for ws in [aligned, ref["aligned"]]
     )
-    articulation = relative(
-        np.mean([x["ending"] for x in phones]),
-        np.mean([x["ending"] for x in ref["phones"]]),
+    phone_ok = all(
+        len(ps) == len(aligned)
+        and all(
+            len(p["phones"]) == len(p["gop"]) > 0
+            and np.isfinite([*p["gop"], p["mean"], p["ending"]]).all()
+            for p in ps
+        )
+        for ps in [phones, ref["phones"]]
     )
+    gop_reason = (
+        "invalid_alignment"
+        if not alignment_ok
+        else "invalid_phone_evidence"
+        if not phone_ok
+        else "ambiguous_word_evidence"
+        if ambiguous
+        else "incomplete_word_evidence"
+        if not aligned or len(present) != len(aligned)
+        else None
+    )
+    pron, articulation = None, None
+    if gop_reason is None:
+        pron = relative(
+            np.mean([x["mean"] for x in phones]),
+            np.mean([x["mean"] for x in ref["phones"]]),
+        )
+        articulation = relative(
+            np.mean([x["ending"] for x in phones]),
+            np.mean([x["ending"] for x in ref["phones"]]),
+        )
     fc = filler_count(transcript)
     base = filler_count(ref["transcript"])
     # All scores relative to the original; no fixed native-speaker target.
@@ -215,12 +255,25 @@ def assess(models, original, audio, text, ref):
         "filler_count": fc,
         "matched_words": len(matches),
         "total_words": len(aligned),
+        "timing_evidence": {
+            "reason": "insufficient_matched_words" if len(idx) < 2 else None,
+            "matched_words": len(idx),
+        },
+        "gop_evidence": {
+            "reason": gop_reason,
+            "supported_words": len(present),
+            "total_words": len(aligned),
+            "ambiguous_tokens": sorted(ambiguous),
+        },
+        "word_evidence": [
+            "asr_supported" if i in present else "unknown" for i in range(len(aligned))
+        ],
         "words": aligned,
         "phones": phones,
         "pitch": p,
         "markers": [
-            "missed"
-            if i not in present
+            "unknown"
+            if i not in present or not alignment_ok or not phone_ok
             else "good"
             if relative(x["mean"], ref["phones"][i]["mean"]) >= 70
             else "needs work"

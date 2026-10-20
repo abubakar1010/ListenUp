@@ -8,7 +8,7 @@ Requirements: FR-SH-4, FR-SH-9, FR-SH-10, FR-SH-15, AT-17.
 benchmark.** #16 is not provisioned; no latency, throughput, or capacity claim is
 made. #21 owns speed on the real server. The experiment stayed within the issue's
 three-day effort box. Tool: Codex, authorized by the owner after Claude Code was
-found unavailable. Base: current main, recorded in the provenance file.
+found unavailable. Original PR base: `4efc101`, recorded in the provenance file.
 
 ## Method and limits
 
@@ -40,13 +40,20 @@ confidence renamed as GOP. eSpeak en-us phones are Viterbi-aligned to original a
 candidate; score transforms compare their GOPs. Articulation uses word-final-phone
 GOP. Parselmouth supplies word pitch using actual frame timestamps. A separate
 prompted `small.en` pass supplies observed text and fillers, so forced alignment
-cannot automatically count missing words as present. All seven measures use the
+cannot automatically count missing words as present. Timing is null with fewer
+than two unambiguous matched words. Whole-passage pronunciation/articulation grades
+require complete unambiguous candidate-word corroboration and valid alignment/phone
+evidence. Otherwise they are null with an explicit reason; forced-phone GOP stays
+in the raw diagnostics. Differing repeated-token counts make occurrence identity
+unknown. Unsupported words are marked `unknown`, not confirmed `missed`.
+These conservative research eligibility rules are not production scoring policy.
+All seven measures use the
 original clip/profile as their comparator. Accent is excluded from overall; no
 available-measure average is used to waive a missing measure or pass the spike.
 
 A measure wins only on strict good > poor. Ties and missing values do not win.
 Four strict wins out of all seven is the narrow issue's “most measures” criterion.
-Missing accent or fluency is shown explicitly, not converted to a passing zero.
+Unavailable timing, GOP, accent and fluency are shown explicitly, never as wins.
 These arbitrary prototype score transforms are not calibrated learning grades.
 See the [prototype README](shadow20/README.md) for formulas, exact model revisions,
 licences and reproduction. [Raw fp32](shadow20/results/results-fp32.json) and
@@ -61,148 +68,156 @@ requirements. Host: Intel Xeon Platinum 8573C, 3 visible vCPUs, cgroup quota 2 C
 about 9.7 GiB visible RAM, Python 3.12.14; 2 torch threads, no GPU. Date: 2026-10-20.
 All scored downloads succeeded through the inherited proxy; no policy bypass.
 The upstream ARCTIC host returned 502/503, so the permitted public dataset mirror
-was used. Audio/weights live only in ignored scratch, never in this PR.
+was used. Audio/weights live only in uncommitted scratch, never in this PR.
 
 ## Validation record
 
-- Core score behavior was tested first: the initial focused pytest command failed
-  because the `measures` interface did not exist; five tests then passed. A strict
-  floating-point equality in the timing test was corrected to approximate equality.
-- During the first model run, fluency's empty matched-gap case incorrectly returned
-  100. Added `test_fluency_requires_observed_gaps_and_penalizes_excess_pause`, observed
-  its missing-interface failure, implemented null for unobservable gaps, and got
-  six passing tests. Interrupted the incomplete old run and regenerated both full
-  runs with the corrected code. The abandoned partial run is not evidence here.
-- The model orchestration/fetch/report scripts were assembled as notebook-quality
-  research code and exercised with real inputs; they did **not** have a complete
-  test-first development cycle. This limitation is disclosed, not reconstructed
-  as TDD evidence. They are not production adapters.
-- Named tests cover GOP competitor exclusion, reference-relative scoring, missing
-  and repeated-word matching, late starts versus allowed lag, changed speech rate,
-  exact delayed echo versus independent noise/silence/empty input, filler phrase
-  matching, and missing fluency evidence. They detect reversed scoring direction,
-  counting forced missing words, ignoring all constant lag, and an all-high echo
-  classifier. Regex tests explicitly preserve the lexical “like” limitation.
-- Final helper checks: **6 tests pass**, with **100% line/branch coverage of
-  `measures.py` only**; Ruff lint and format checks pass for the prototype. This
-  coverage figure does not cover the model orchestration/fetch/report scripts.
-- App backend/web, database, migrations and generated API checks are not applicable:
-  no application code, package dependencies or schemas changed. Independent
-  fresh-session review and required CI remain PR/merge gates; no merge requested.
+The initial author reported an interface-missing red/green cycle for five helper
+tests, then a sixth for unavailable fluency. That history is retained in the
+original PR commit; this follow-up does not reconstruct or claim to prove it.
+The orchestration/fetch/report scripts originally had no complete test-first cycle.
+That historical gap remains disclosed; notebook-quality research is not an
+exemption from `docs/testing.md`.
 
-The generated per-pair tables follow. The final assessment and follow-up decision
-use both combined degradation and the controls; ranking alone does not establish
-that each score measures its intended property.
+The review fixes have actual regression evidence from this session:
 
+| Behavior | Focused command (Python from `work/review169/venv/bin/python`) | Observed red → green |
+| --- | --- | --- |
+| No timing grade/win with zero or one observed word | `-m pytest docs/spikes/shadow20/test_measures.py -q -k timing_requires -o cache_dir=work/review169/pytest-cache` | 2 failures (`0.0 is None`) before the fix; 8 helper cases pass after it |
+| GOP eligibility, unknown words, finite evidence and positive durations | `-m pytest docs/spikes/shadow20/test_assess.py -q -o cache_dir=work/review169/pytest-cache` | 6 failures, including fabricated perfect grades and absent evidence metadata; 14 total cases pass after the fix |
+| Ambiguous repeated-word occurrences | `-m pytest docs/spikes/shadow20/test_assess.py -q -k repeated -o cache_dir=work/review169/pytest-cache` | 2 failures before the ambiguity guard; all 16 cases pass after it |
+
+Final command: `python -m pytest docs/spikes/shadow20 -q --cov=measures
+--cov=experiment --cov=summarize --cov-branch --cov-report=term-missing`:
+**16 passed**. `measures.py` has 100% line/branch coverage; `experiment.py` has
+33.5% line / 10.5% branch coverage and `summarize.py` 18.0% / 5.6%. The new
+orchestration tests use boundary fakes and exercise eligibility, not model quality.
+Uncovered model loading/inference, pitch, build and CLI/report paths were exercised
+by real runs, but are not claimed as unit-test coverage. `fetch.py` is not in this
+coverage scope. The historical fetch/report TDD gap remains; no policy waiver is
+inferred from this disclosure. Ruff lint/format and relative-link/diff checks pass.
+
+Both full CPU evaluations were regenerated after the fixes using the pinned
+public inputs. Re-fetch and a fresh build matched all 12 input artifact hashes
+and every manifest waveform hash. No network-policy denial or proxy bypass occurred.
+Per-recording `timing_evidence`, `gop_evidence` and `word_evidence` retain the
+eligibility reasons next to the unchanged raw phone diagnostics. The old 10/10
+claim is withdrawn: absent timing and unsupported forced-phone grades had counted
+as wins. The regenerated tables below use only eligible strict comparisons.
+
+Application backend/web, database, migrations and API checks are not applicable:
+those areas and their dependencies remain untouched. The original PR CI run 297
+passed, but it does not execute this isolated harness. CI on this correction and
+fresh-session re-review remain merge gates. No stage-0 speed criterion is claimed.
 
 ### Pair 01: a0001.wav (bdl → slt)
 
-Removed word: `trail`. Strict good > poor: **4/7** (fp32), **4/7** (int8).
+Removed word: `trail`. Strict good > poor: **1/7** (fp32), **1/7** (int8).
 
 | Measure | Good fp32 | Poor fp32 | Good int8 | Poor int8 |
 | --- | ---: | ---: | ---: | ---: |
-| timing | 93.9 | 0.0 | 93.9 | 0.0 |
-| pronunciation | 90.4 | 0.0 | 93.2 | 0.0 |
+| timing | 93.9 | missing | 93.9 | missing |
+| pronunciation | missing | missing | missing | missing |
 | accent | 82.0 | missing | 82.0 | missing |
-| articulation | 100.0 | 0.0 | 100.0 | 0.0 |
+| articulation | missing | missing | missing | missing |
 | fluency | 100.0 | missing | 100.0 | missing |
 | fillers | 100.0 | 100.0 | 100.0 | 100.0 |
 | completeness | 87.5 | 0.0 | 87.5 | 0.0 |
 
 ### Pair 02: a0002.wav (slt → clb)
 
-Removed word: `case`. Strict good > poor: **4/7** (fp32), **5/7** (int8).
+Removed word: `case`. Strict good > poor: **3/7** (fp32), **3/7** (int8).
 
 | Measure | Good fp32 | Poor fp32 | Good int8 | Poor int8 |
 | --- | ---: | ---: | ---: | ---: |
-| timing | 96.0 | 38.4 | 96.0 | 37.5 |
-| pronunciation | 100.0 | 0.0 | 92.3 | 0.0 |
-| accent | 95.8 | missing | 95.8 | 64.1 |
-| articulation | 87.8 | 0.1 | 81.2 | 0.1 |
+| timing | 96.0 | 37.5 | 96.0 | 37.5 |
+| pronunciation | missing | missing | missing | missing |
+| accent | 95.8 | 64.1 | 95.8 | 64.1 |
+| articulation | missing | missing | missing | missing |
 | fluency | 100.0 | 100.0 | 100.0 | 100.0 |
 | fillers | 100.0 | 100.0 | 100.0 | 100.0 |
-| completeness | 87.5 | 25.0 | 87.5 | 50.0 |
+| completeness | 87.5 | 50.0 | 87.5 | 50.0 |
 
 ### Pair 03: a0003.wav (clb → bdl)
 
-Removed word: `evening`. Strict good > poor: **5/7** (fp32), **5/7** (int8).
+Removed word: `evening`. Strict good > poor: **3/7** (fp32), **3/7** (int8).
 
 | Measure | Good fp32 | Poor fp32 | Good int8 | Poor int8 |
 | --- | ---: | ---: | ---: | ---: |
 | timing | 93.8 | 12.9 | 93.8 | 12.9 |
-| pronunciation | 96.8 | 0.6 | 100.0 | 0.5 |
+| pronunciation | missing | missing | missing | missing |
 | accent | 0.0 | 87.5 | 0.0 | 87.5 |
-| articulation | 99.4 | 4.0 | 100.0 | 3.0 |
+| articulation | missing | missing | missing | missing |
 | fluency | 100.0 | 39.5 | 100.0 | 39.5 |
 | fillers | 100.0 | 100.0 | 100.0 | 100.0 |
 | completeness | 90.9 | 54.5 | 90.9 | 54.5 |
 
 ### Pair 04: a0004.wav (bdl → slt)
 
-Removed word: `to`. Strict good > poor: **5/7** (fp32), **5/7** (int8).
+Removed word: `to`. Strict good > poor: **3/7** (fp32), **3/7** (int8).
 
 | Measure | Good fp32 | Poor fp32 | Good int8 | Poor int8 |
 | --- | ---: | ---: | ---: | ---: |
-| timing | 83.8 | 18.6 | 83.8 | 18.6 |
-| pronunciation | 75.8 | 0.1 | 75.8 | 0.1 |
-| accent | 73.3 | 87.3 | 73.3 | 87.3 |
-| articulation | 59.1 | 0.2 | 52.7 | 0.2 |
+| timing | 83.8 | 17.3 | 83.8 | 17.3 |
+| pronunciation | 75.8 | missing | 75.8 | missing |
+| accent | 73.3 | 87.8 | 73.3 | 87.8 |
+| articulation | 59.1 | missing | 52.7 | missing |
 | fluency | 100.0 | 33.6 | 100.0 | 33.6 |
 | fillers | 100.0 | 100.0 | 100.0 | 100.0 |
 | completeness | 100.0 | 55.6 | 100.0 | 55.6 |
 
 ### Pair 05: a0006.wav (slt → clb)
 
-Removed word: `i'll`. Strict good > poor: **5/7** (fp32), **5/7** (int8).
+Removed word: `i'll`. Strict good > poor: **3/7** (fp32), **3/7** (int8).
 
 | Measure | Good fp32 | Poor fp32 | Good int8 | Poor int8 |
 | --- | ---: | ---: | ---: | ---: |
-| timing | 81.1 | 12.0 | 81.1 | 12.0 |
-| pronunciation | 96.2 | 0.1 | 86.6 | 0.1 |
-| accent | 87.8 | 94.5 | 87.8 | 94.5 |
-| articulation | 100.0 | 0.0 | 93.4 | 0.0 |
+| timing | 81.4 | 12.0 | 81.4 | 12.0 |
+| pronunciation | missing | missing | missing | missing |
+| accent | 86.9 | 94.5 | 86.9 | 94.5 |
+| articulation | missing | missing | missing | missing |
 | fluency | 97.0 | 30.7 | 97.0 | 30.7 |
 | fillers | 100.0 | 100.0 | 100.0 | 100.0 |
 | completeness | 90.9 | 54.5 | 90.9 | 54.5 |
 
 ### Pair 06: a0007.wav (clb → bdl)
 
-Removed word: `see`. Strict good > poor: **5/7** (fp32), **5/7** (int8).
+Removed word: `see`. Strict good > poor: **3/7** (fp32), **3/7** (int8).
 
 | Measure | Good fp32 | Poor fp32 | Good int8 | Poor int8 |
 | --- | ---: | ---: | ---: | ---: |
 | timing | 97.9 | 7.8 | 97.9 | 7.8 |
-| pronunciation | 100.0 | 3.9 | 100.0 | 4.6 |
+| pronunciation | 100.0 | missing | 100.0 | missing |
 | accent | 79.8 | 84.2 | 79.8 | 84.2 |
-| articulation | 100.0 | 8.7 | 100.0 | 8.9 |
+| articulation | 100.0 | missing | 100.0 | missing |
 | fluency | 100.0 | 42.3 | 100.0 | 42.3 |
 | fillers | 100.0 | 100.0 | 100.0 | 100.0 |
 | completeness | 100.0 | 63.6 | 100.0 | 63.6 |
 
 ### Pair 07: a0009.wav (bdl → slt)
 
-Removed word: `faced`. Strict good > poor: **5/7** (fp32), **5/7** (int8).
+Removed word: `faced`. Strict good > poor: **3/7** (fp32), **3/7** (int8).
 
 | Measure | Good fp32 | Poor fp32 | Good int8 | Poor int8 |
 | --- | ---: | ---: | ---: | ---: |
 | timing | 84.8 | 12.1 | 84.8 | 12.1 |
-| pronunciation | 100.0 | 0.1 | 97.5 | 0.1 |
+| pronunciation | 100.0 | missing | 97.5 | missing |
 | accent | 93.7 | 94.6 | 93.7 | 94.6 |
-| articulation | 100.0 | 0.1 | 100.0 | 0.2 |
+| articulation | 100.0 | missing | 100.0 | missing |
 | fluency | 100.0 | 39.5 | 100.0 | 39.5 |
 | fillers | 100.0 | 100.0 | 100.0 | 100.0 |
 | completeness | 100.0 | 66.7 | 100.0 | 66.7 |
 
 ### Pair 08: a0010.wav (slt → clb)
 
-Removed word: `what`. Strict good > poor: **5/7** (fp32), **5/7** (int8).
+Removed word: `what`. Strict good > poor: **4/7** (fp32), **4/7** (int8).
 
 | Measure | Good fp32 | Poor fp32 | Good int8 | Poor int8 |
 | --- | ---: | ---: | ---: | ---: |
-| timing | 61.3 | 8.7 | 61.3 | 8.7 |
-| pronunciation | 100.0 | 0.4 | 100.0 | 0.4 |
-| accent | 75.9 | 78.1 | 75.9 | 78.1 |
-| articulation | 100.0 | 0.7 | 100.0 | 0.9 |
+| timing | 61.3 | 8.1 | 61.3 | 8.1 |
+| pronunciation | 100.0 | missing | 100.0 | missing |
+| accent | 75.9 | 75.2 | 75.9 | 75.2 |
+| articulation | 100.0 | missing | 100.0 | missing |
 | fluency | 100.0 | 30.4 | 100.0 | 30.4 |
 | fillers | 100.0 | 100.0 | 100.0 | 100.0 |
 | completeness | 100.0 | 83.3 | 100.0 | 83.3 |
@@ -223,46 +238,46 @@ Removed word: `in`. Strict good > poor: **5/7** (fp32), **5/7** (int8).
 
 ### Pair 10: a0012.wav (bdl → slt)
 
-Removed word: `and`. Strict good > poor: **5/7** (fp32), **4/7** (int8).
+Removed word: `and`. Strict good > poor: **1/7** (fp32), **1/7** (int8).
 
 | Measure | Good fp32 | Poor fp32 | Good int8 | Poor int8 |
 | --- | ---: | ---: | ---: | ---: |
-| timing | 91.3 | 0.0 | 91.3 | 0.0 |
-| pronunciation | 100.0 | 0.1 | 89.3 | 0.1 |
+| timing | 91.3 | missing | 91.3 | missing |
+| pronunciation | 100.0 | missing | 89.3 | missing |
 | accent | 88.0 | missing | 88.0 | missing |
-| articulation | 81.0 | 0.2 | 61.6 | 0.2 |
+| articulation | 81.0 | missing | 61.6 | missing |
 | fluency | 100.0 | missing | 100.0 | missing |
-| fillers | 100.0 | 0.0 | 100.0 | 100.0 |
-| completeness | 100.0 | 0.0 | 100.0 | 10.0 |
+| fillers | 100.0 | 100.0 | 100.0 | 100.0 |
+| completeness | 100.0 | 0.0 | 100.0 | 0.0 |
 
 ## Aggregate strict wins
 
 | Measure | fp32 wins / ties / missing | int8 wins / ties / missing |
 | --- | --- | --- |
-| timing | 10 / 0 / 0 | 10 / 0 / 0 |
-| pronunciation | 10 / 0 / 0 | 10 / 0 / 0 |
-| accent | 1 / 0 / 3 | 2 / 0 / 2 |
-| articulation | 10 / 0 / 0 | 10 / 0 / 0 |
+| timing | 8 / 0 / 2 | 8 / 0 / 2 |
+| pronunciation | 1 / 0 / 9 | 1 / 0 / 9 |
+| accent | 3 / 0 / 2 | 3 / 0 / 2 |
+| articulation | 1 / 0 / 9 | 1 / 0 / 9 |
 | fluency | 7 / 1 / 2 | 7 / 1 / 2 |
-| fillers | 1 / 9 / 0 | 0 / 10 / 0 |
+| fillers | 0 / 10 / 0 | 0 / 10 / 0 |
 | completeness | 9 / 1 / 0 | 9 / 1 / 0 |
 
 ## Single-degradation controls (fp32)
 
 | Pair | Variant | Timing | GOP pronunciation | Articulation | Fluency | Fillers | Completeness |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 01 | good | 93.9 | 90.4 | 100.0 | 100.0 | 100.0 | 87.5 |
-| 01 | late | 30.7 | 90.3 | 100.0 | 100.0 | 100.0 | 87.5 |
-| 01 | lowpass | 98.5 | 0.6 | 0.9 | 100.0 | 100.0 | 50.0 |
-| 01 | skip | 76.1 | 46.1 | 100.0 | 100.0 | 100.0 | 87.5 |
-| 01 | fill | 59.1 | 87.0 | 100.0 | 51.2 | 0.0 | 75.0 |
-| 01 | poor | 0.0 | 0.0 | 0.0 | missing | 100.0 | 0.0 |
-| 02 | good | 96.0 | 100.0 | 87.8 | 100.0 | 100.0 | 87.5 |
-| 02 | late | 41.2 | 95.5 | 70.8 | 100.0 | 100.0 | 87.5 |
-| 02 | lowpass | 92.5 | 0.3 | 0.1 | 100.0 | 100.0 | 37.5 |
-| 02 | skip | 86.4 | 31.5 | 61.0 | 100.0 | 100.0 | 62.5 |
-| 02 | fill | 57.3 | 98.8 | 75.1 | 49.2 | 100.0 | 87.5 |
-| 02 | poor | 38.4 | 0.0 | 0.1 | 100.0 | 100.0 | 25.0 |
+| 01 | good | 93.9 | missing | missing | 100.0 | 100.0 | 87.5 |
+| 01 | late | 30.7 | missing | missing | 100.0 | 100.0 | 87.5 |
+| 01 | lowpass | 98.5 | missing | missing | 100.0 | 100.0 | 50.0 |
+| 01 | skip | 76.1 | missing | missing | 100.0 | 100.0 | 87.5 |
+| 01 | fill | 59.1 | missing | missing | 51.2 | 0.0 | 75.0 |
+| 01 | poor | missing | missing | missing | missing | 100.0 | 0.0 |
+| 02 | good | 96.0 | missing | missing | 100.0 | 100.0 | 87.5 |
+| 02 | late | 41.2 | missing | missing | 100.0 | 100.0 | 87.5 |
+| 02 | lowpass | 92.5 | missing | missing | 100.0 | 100.0 | 37.5 |
+| 02 | skip | 86.4 | missing | missing | 100.0 | 100.0 | 62.5 |
+| 02 | fill | 57.3 | missing | missing | 49.2 | 100.0 | 87.5 |
+| 02 | poor | 37.5 | missing | missing | 100.0 | 100.0 | 50.0 |
 
 ## Echo controls (threshold 0.6)
 
@@ -292,63 +307,74 @@ Removed word: `and`. Strict good > poor: **5/7** (fp32), **4/7** (int8).
 | 07 | 0 | 0 | 0 |
 | 08 | 1 | 1 | 1 |
 | 09 | 0 | 0 | 0 |
-| 10 | 0 | 0 | 23 |
+| 10 | 0 | 0 | 0 |
 
 ## Phoneme int8 sensitivity and rerun stability
 
-Both configurations meet the narrow majority criterion in 10/10 pairs. Across
-the 28 candidate/control recordings, corresponding phone GOP values change by
-**0.325 log-ratio units on average**, **0.940 at p95**, and **6.817 at maximum**
-(absolute differences). Reference-relative pronunciation score changes average
-**2.73 points**, with a **15.44-point maximum**. Timing agreement from B2 cannot
-justify treating these posterior changes as free. Keep fp32 as the research
-baseline; int8 GOP needs independent human-error calibration before adoption.
+The corrected majority criterion passes in **2/10 pairs in each configuration**,
+not 10/10. Nine pairs lack an eligible pronunciation/articulation comparison;
+forced phones for unsupported words no longer supply ranking wins. The two
+remaining majority cases are pairs 08 and 09; this is not a pass of issue #20.
 
-The separate full runs also produced different poor-speech Whisper hypotheses
-for pairs **02 and 10**, despite unchanged Whisper settings and identical waveform
-hashes. Pair 10 changes from 23 regex fillers to zero. Thus changes to the
-non-GOP measures in the int8 columns cannot be attributed to phoneme quantization.
-The tables preserve actual run outputs; the correct next experiment caches an
-independent transcript/alignment when isolating posterior precision. Reproduction
-commands are supplied, but bit-for-bit transcript repeatability is not established.
+The per-phone diagnostics are retained independently of grade eligibility.
+Across the 28 candidate/control recordings, corresponding phone GOP values change
+by **0.325 log-ratio units on average**, **0.940 at p95**, and **6.817 at maximum**.
+Applying the *ungated diagnostic* transform `100 exp(min(0, Gshadow−Goriginal))`
+to the raw word-mean GOPs changes it by **2.73 points on average**, with a
+**15.44-point maximum**. These are not differences between validated whole-passage
+grades. Most such grades are now unavailable. B2 timing agreement cannot justify
+adopting int8 posterior values as equivalent; retain fp32 as the research baseline.
 
-## Measure verdicts (fp32 baseline)
+The corrected fp32/int8 runs produced identical Whisper hypotheses. Earlier
+unchanged-setting runs on identical waveform hashes differed for poor clips
+**02 and 10**: the original fp32 pair 10 output counted **23** regex fillers,
+whereas this rerun counts **zero**. That earlier adverse evidence remains in the
+[original raw output](https://github.com/abubakar1010/ListenUp/blob/b9d36ef477954dcbe11778dd8186673d4e0509fd/docs/spikes/shadow20/results/results-fp32.json).
+The independent review also reproduced those two unstable clips before these fixes.
+Do not attribute non-GOP changes to phoneme quantization or infer repeatability
+from the newest matching hypotheses. Cache transcription/alignment when isolating
+precision effects. Both corrected runs retain the original per-phone, boundary,
+pitch and echo evidence exactly; the eligibility rules and ASR-derived fields
+explain the changed grades/markers.
+
+## Measure verdicts (corrected fp32 baseline)
 
 | Measure | Rating | Evidence and practical limit |
 | --- | --- | --- |
-| Rhythm and timing | **works, on this synthetic test** | Good wins 10/10 combined pairs; late-only controls fall from 93.9 to 30.7 and 96.0 to 41.2. Missing ASR matches also drive this score down, so it is not independent of completeness. No real shadow-lag calibration or human boundary accuracy is established. |
-| Pronunciation (phoneme GOP) | **weak** | Good wins 10/10, but low-pass-only controls collapse from 90.4 to 0.6 and 100.0 to 0.3 even with unchanged words. This demonstrates sensitivity to damaged acoustics, not calibrated phone-error detection. Pair 02's late-only score changes from 100.0 to 95.5 despite identical spoken material. |
-| Accent | **fails; experimental** | Only 1/10 strict win, 3 missing comparisons, and 6 reversals. Pair 01's filler-only intonation score rises 82.0 → 89.7. Pitch correlation cannot represent the SRS's consonants, vowels and stress, and filtering changes which frames/words are observable. Keep it outside overall. |
-| Articulation | **weak** | Good wins 10/10 combined, but shares the phoneme GOP's acoustic confound. Pair 01's skipped-word-only score stays 100.0; pair 02's late-only ending score falls 87.8 → 70.8 without changed endings. It cannot yet support word/sound error markers. |
-| Fluency | **weak** | 7 wins, 1 tie, 2 missing. Filler-only pauses lower both controls to about 50, but pair 02's combined poor speech still scores 100 after most words are lost. Matching surviving words is insufficient to measure restarts or all hesitations. |
-| Filler words | **fails** | 1 win and 9 ties. The one win is misleading: pair 10's poor hypothesis contains 23 regex fillers, not the intended 2. Pair 01's filler-only pass counts 2, pair 02's counts 0. Prompting is not reliable retention. Lexical “like” in pair 08 counts as a filler in both good and poor. No full AT-17 pass. |
-| Completeness | **weak** | 9 wins, 1 tie, but pair 01's skipped-word control stays 87.5, identical to good. The unmodified good readings in pairs 01/02 score 87.5 due to transcription/text mismatch; low-pass-only changes to 50.0/37.5 without deleting words. ASR matches avoid tautological forced-alignment coverage but are not literal presence ground truth. |
+| Rhythm and timing | **works, where observable on this synthetic test** | 8 strict wins and 2 missing comparisons; late-only controls still fall from 93.9 to 30.7 and 96.0 to 41.2. Zero/one-word evidence is unavailable, not a zero grade. ASR support and provisional forced boundaries remain confounders; real shadow-lag calibration is absent. |
+| Pronunciation (phoneme GOP) | **weak; mostly unavailable** | 1 strict win and 9 missing comparisons. Raw forced-phone diagnostics respond to filtering, but cannot establish pronunciation quality. For example, ungated diagnostic transforms on pair 01 good/lowpass are 90.4/0.6; both whole-passage grades are unavailable because word corroboration is incomplete. Human phone-error labels are still needed. |
+| Accent | **fails; experimental** | 3 strict wins, 2 missing comparisons and 5 reversals after excluding ambiguous repeated-token occurrences. The changed subset itself changes pitch correlation; a few extra wins do not validate vowel/consonant/stress assessment. Keep it outside overall. |
+| Articulation | **weak; mostly unavailable** | 1 strict win and 9 missing comparisons. Raw word-final GOP shares pronunciation's acoustic confounds; ungated pair 01 good/lowpass transforms are 100.0/0.9. These diagnostics are not eligible grades or independently verified word/sound markers. |
+| Fluency | **weak** | 7 wins, 1 tie and 2 missing comparisons. Filler-only pauses lower both controls to about 50, but pair 02's poor speech still scores 100 despite incomplete word coverage. Surviving unambiguous gaps do not measure all hesitations/restarts. |
+| Filler words | **fails** | 0 wins and 10 ties in this rerun. Pair 01's filler-only pass counts 2, pair 02's counts 0. The historical pair 10 count of 23 versus the new zero shows instability, not successful retention. Lexical “like” in pair 08 remains a false-positive candidate. No AT-17 pass. |
+| Completeness | **weak** | 9 wins and 1 tie, but pair 01's skipped-word control stays 87.5, identical to good. Good readings in pairs 01/02 score 87.5 due to ASR/text mismatch; low-pass-only scores fall to 50.0/37.5 without deleting words. Pair 09's omitted word is restored by ASR and completeness stays 100; full ASR corroboration is not literal presence ground truth. |
 
-The **narrow combined-ranking criterion passes in all 10 pairs** on the fp32
-baseline (four or five strict wins out of seven). That is a useful feasibility
-signal, not a go for all seven measures. Separate controls expose false responses,
-missing evidence and correlated measures. In particular, the two GOP-based wins
-are not independent confirmation of pronunciation and articulation validity.
+**The narrow combined-ranking acceptance criterion does not pass.** Only two
+pairs reach four strict wins out of seven. There is no available-measure average
+or substitution of raw diagnostic transforms for missing grades. Pair 09's
+hallucinated word and the unstable/subset-dependent measures show why even those
+two majority results do not independently validate the measures. The original
+10/10 result is withdrawn, not retained as an acceptance claim.
 
-**Echo screen: weak.** With threshold 0.6, all 10 exact copies are flagged and all
+**Echo screen: weak.** At threshold 0.6, all 10 exact copies are flagged and all
 10 independent good voices are below threshold. Only 4/10 digital mixtures are
-flagged; 6 leak mixtures are missed. There are no room impulse responses, speaker
-playback recordings or acoustic echo-cancellation tests. Do not treat a clean
-screen as proof the original is absent from a microphone recording.
+flagged; 6 mixtures are missed. No loudspeaker/room echo or acoustic echo
+cancellation was tested. A clean screen is not proof that a microphone recording
+contains no original playback.
 
-For the combined poor controls, detected filler counts are 0 in eight pairs,
-1 in pair 08 and 23 in pair 10. Against two intended insertions, only pair 08 is
-numerically within one, and that is a lexical false-positive candidate, not
-validated recall. All other errors exceed one. Original/good recordings have no
-independent filler annotation, and synthesized insertions have not been listened
-to by a teacher; this diagnostic cannot supply #22's precision/recall gate.
+For the combined poor controls, this rerun detects zero fillers in nine pairs
+and one in pair 08. Against two intended insertions, only pair 08 is numerically
+within one, and that is a lexical false-positive candidate, not validated recall.
+Original/good readings have no independent filler annotation; the synthesized
+insertions have not been teacher-verified. This does not supply #22's
+precision/recall or AT-17 count gate.
 
 ## Go/no-go and next work
 
 **No-go for shipping these seven scores; go for continued self-hosted research.**
-ADR 0010 remains the privacy/default decision. Model inference can run locally,
-but this set does not establish the necessary individual score validity. ADR 0050
-records candidate model choices and the detailed carry-forward for #21, #22 and
-#80. Keep original-relative raw evidence, experimental accent, missingness and
-provenance; validate real human shadowing, boundary accuracy, phone errors and
-microphone leakage before promoting the transforms or per-word markers.
+ADR 0010 remains the privacy/default decision. The corrected experiment fails
+the ten-pair majority criterion as well as individual validity gates. ADR 0050
+retains the candidate model choices and unchanged carry-forward for #21, #22 and
+#80. Keep raw original-relative evidence, explicit missingness/reasons, experimental
+accent and provenance. Validate human shadowing, boundaries, phone errors, word
+presence and microphone leakage before promoting transforms or markers.

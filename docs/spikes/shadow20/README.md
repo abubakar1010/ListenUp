@@ -22,7 +22,7 @@ uv pip install --python work/shadow20/venv/bin/python \
 work/shadow20/venv/bin/python docs/spikes/shadow20/fetch.py work/shadow20 \
   --whisper-revision d1d751a5f8271d482d14ca55d9e2deeebbae577f
 uv pip install --python work/shadow20/venv/bin/python -r docs/spikes/shadow20/dev-requirements.txt
-work/shadow20/venv/bin/python -m pytest docs/spikes/shadow20 -q --cov=measures --cov-branch --cov-report=term-missing
+work/shadow20/venv/bin/python -m pytest docs/spikes/shadow20 -q --cov=measures --cov=experiment --cov=summarize --cov-branch --cov-report=term-missing
 work/shadow20/venv/bin/ruff check docs/spikes/shadow20
 work/shadow20/venv/bin/ruff format --check docs/spikes/shadow20
 OMP_NUM_THREADS=2 work/shadow20/venv/bin/python docs/spikes/shadow20/experiment.py build --data work/shadow20
@@ -65,18 +65,31 @@ rather than adjusting the data or thresholds to make the measures pass.
   mean log P(expected) minus log P(strongest competing phone) over its assigned
   frames; blank and special tokens are excluded from competitors. This is a
   CTC GOP approximation, not a validated clinical/teacher pronunciation score.
-  Word/sound values are retained. Relative score = 100 exp(min(0, Gshadow−Goriginal)).
-  Independent speaker and dictionary mismatch can affect that value.
+  Word/sound values are retained even when no grade is available. Relative score =
+  100 exp(min(0, Gshadow−Goriginal)), but whole-passage pronunciation/articulation
+  grades require complete, unambiguous ASR corroboration of the reference words,
+  positive finite aligned durations, and nonempty finite phone evidence. Otherwise
+  both grades are null with a `gop_evidence.reason`; raw GOP remains diagnostic.
+  This conservative eligibility rule is not a production quality threshold.
+  ASR corroboration itself can be wrong, including hallucinated omitted words.
+  Independent speaker and dictionary mismatch can affect the underlying GOP.
 - Articulation: the same relative GOP calculation on word-final phones. It shares
   errors with pronunciation and does not independently detect every merged sound.
 - Timing: matched-word onset lag (first 250 ms allowed), residual timing deviation
   and rate difference. Constant late starts beyond 250 ms are penalized. This
   differs deliberately from the older harness, which removed arbitrary lag.
+  Fewer than two unambiguous matched words gives null with an explicit
+  `timing_evidence.reason`, never zero or a ranking win.
 - Fluency: excess inter-word gaps over the original, with 150 ms tolerance,
   scored exponentially. Restarts are not separately classified.
 - Completeness: ordered exact text matches from a separate Whisper hypothesis,
   divided by reference word count. Forced alignment alone cannot prove a word
-  was spoken. Ambiguous repeated phrases and ASR errors remain risks.
+  was spoken. A repeated token with differing reference/hypothesis counts has
+  unknown occurrence identity: exclude it from timing/pitch/gap evidence and
+  withhold whole-passage GOP grades. Per-word markers are `unknown` for
+  unsupported/ambiguous words, not `missed`; this is not the production FR-SH-10
+  marker contract. Completeness remains an ASR-match diagnostic, not ground truth.
+  More complex repeated phrases and ASR errors remain risks.
 - Fillers: prompted `small.en`, int8, beam 5, VAD off, conditioning off; regex
   counts um/uh/er/erm/like/you know. Score penalizes rate above the original.
   Lexical “like”/“you know” are not disambiguated; false positives remain visible.
@@ -90,7 +103,9 @@ rather than adjusting the data or thresholds to make the measures pass.
   voice and digital mixing. This cannot validate loudspeaker/room echo rejection.
 
 Scores are prototype transforms, not calibrated 0–100 learning grades. A missing
-measure is missing evidence. No cutoff or formula was tuned against the ten-pair
+measure is missing evidence and never counts as a strict win. The earlier 10/10
+majority conclusion counted unavailable timing as zero and forced-phone aggregates
+without corroboration; that conclusion is withdrawn in the corrected report. No cutoff or formula was tuned against the ten-pair
 outcomes. `torchaudio.functional.forced_align` is deprecated and removed in 2.9;
 retain the pin until a replacement has independent boundary validation.
 

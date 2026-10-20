@@ -34,7 +34,7 @@ def matched_indices(reference, hypothesis):
 
 def timing(original, shadow):
     if len(original) < 2:
-        return 0.0
+        return None
     original, shadow = np.asarray(original), np.asarray(shadow)
     lag = np.median(shadow - original)
     residual = np.mean(np.abs(shadow - original - lag))

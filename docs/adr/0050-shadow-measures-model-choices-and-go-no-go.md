@@ -36,8 +36,11 @@ Candidate choices, not production configuration changes:
   `ae45363bf3413b374fecd9dc8bc1df0e24c3b7f4`, for canonical-phone CTC GOP. Keep
   fp32 as the research baseline. The spike separately compares int8 phoneme
   posteriors; do not assume B2's letter-boundary agreement validates GOP.
-  Int8 retains the ten-pair majority ranking, but changes pronunciation scores
-  by up to 15.44 points and individual phone GOP by up to 6.817 log-ratio units.
+  The original 10/10 majority ranking is withdrawn after evidence-eligibility
+  corrections: only 2/10 pairs pass in each rerun. Int8 changes the ungated
+  pronunciation diagnostic transform by
+  up to 15.44 points and individual phone GOP by up to 6.817 log-ratio units.
+  These diagnostic deltas are not changes between validated whole-passage grades.
   Do not adopt it as equivalent based on this sample. Separate unchanged-setting
   Whisper reruns vary on two poor clips; cache non-GOP evidence when isolating
   precision effects, and keep that instability in the reliability assessment.
@@ -48,7 +51,13 @@ Candidate choices, not production configuration changes:
   must never prove completeness. Articulation's word-final GOP shares the
   pronunciation model's acoustic and dictionary biases.
 - Keep null/unobservable values explicit. Never turn failed alignment/ASR or
-  insufficient matched words into perfect fluency. Keep per-word/per-sound raw
+  insufficient matched words into perfect fluency or a zero timing score that
+  counts as a ranking loss. Timing requires at least two unambiguous matched words.
+  Whole-passage GOP grades require complete unambiguous word corroboration and
+  valid alignment/phone evidence; otherwise return null with a reason and retain
+  the raw forced-phone GOP only as a diagnostic. Unsupported/ambiguous words are
+  unknown, not confirmed omissions. ASR corroboration is itself provisional.
+  Keep per-word/per-sound raw
   evidence and model/configuration provenance; prototype thresholds are not
   contractually approved good/needs-work/missed thresholds.
 
@@ -84,8 +93,9 @@ into application code as approved scoring policy.
 ## Consequences
 
 Speech inference remains local with licence-documented public research inputs.
-No `listenup` dependencies or API/web code change. A successful aggregate ranking
-on synthetic poor speech does not waive individual weak/failing measures, the
+No `listenup` dependencies or API/web code change. The corrected evaluation does
+not establish the ten-pair majority acceptance criterion. Ungated diagnostic
+rankings do not waive missing evidence, individual weak/failing measures, the
 natural-shadowing gap, B2's human labels, AT-17 filler accuracy, or real-server
 latency. The owner can review the evidence in one unmerged PR and choose the next
 research work without misrepresenting this as a production-ready assessment.

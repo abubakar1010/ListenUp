@@ -22,7 +22,6 @@ def test_late_start_penalized_but_small_shadow_lag_allowed():
     assert timing(o, o + 0.15) == pytest.approx(100)
     assert timing(o, o + 1.2) < timing(o, o + 0.15)
     assert timing(o, o * 1.5) < 100
-    assert timing([], []) == 0
 
 
 def test_echo_detects_shifted_waveform_without_flagging_other_voice():
@@ -45,3 +44,24 @@ def test_fluency_requires_observed_gaps_and_penalizes_excess_pause():
     assert fluency([], []) is None
     assert fluency([0.1], [0.1]) == 100
     assert fluency([0.1], [0.9]) < 60
+
+
+@pytest.mark.parametrize("original, shadow", [([], []), ([0.2], [1.4])])
+def test_timing_requires_two_observed_words(original, shadow):
+    from summarize import wins
+
+    assert timing(original, shadow) is None
+    good = dict.fromkeys(
+        [
+            "timing",
+            "pronunciation",
+            "accent",
+            "articulation",
+            "fluency",
+            "fillers",
+            "completeness",
+        ],
+        None,
+    )
+    poor = good | {"timing": timing(original, shadow)}
+    assert wins(good | {"timing": 100}, poor) == []
