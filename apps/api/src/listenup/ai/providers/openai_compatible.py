@@ -15,6 +15,7 @@ error the gateway answers with the next provider, and each retry is admitted afr
 (ADR 0041). Errors carry no response text, which can echo learner words.
 """
 
+import ipaddress
 import json
 import os
 import re
@@ -67,7 +68,20 @@ def parse_options(entry: ProviderEntry) -> _Options:
         raise ValueError("base_url must be https (http only for a local server), no credentials")
     if parts.query or parts.fragment:
         raise ValueError("base_url must not carry a query")
+    if entry.local and not _is_local_host(parts.hostname):
+        raise ValueError("a local entry must be on this host or the private network")
     return options.model_copy(update={"base_url": options.base_url.rstrip("/")})
+
+
+def _is_local_host(host: str) -> bool:
+    """`local: true` skips the consent, retention and region checks (policy.eligible) and
+    allows plain HTTP, so it must name this host or the private network: a Compose service
+    name, `localhost`, a `.internal` name, or a loopback, private or link-local address."""
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return "." not in host or host.endswith((".internal", ".localhost"))
+    return address.is_loopback or address.is_private or address.is_link_local
 
 
 def version_for(entry: ProviderEntry) -> str:

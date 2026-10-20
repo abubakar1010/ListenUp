@@ -343,3 +343,34 @@ def test_unsafe_or_unknown_options_are_refused_at_construction(entry):
 def test_a_local_server_may_use_plain_http():
     options = parse_options(entry_for(local=True, options={"base_url": "http://llm:11434/v1/"}))
     assert options.base_url == "http://llm:11434/v1"
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://localhost:11434/v1",
+        "http://127.0.0.1:8080/v1",
+        "http://10.0.0.5:11434/v1",
+        "http://192.168.1.20:11434/v1",
+        "http://[::1]:11434/v1",
+        "http://host.docker.internal:11434/v1",
+    ],
+)
+def test_a_local_entry_may_reach_this_host_or_the_private_network(base_url):
+    assert parse_options(entry_for(local=True, options={"base_url": base_url})).base_url
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://api.groq.com/openai/v1",
+        "http://llm.example/v1",
+        "http://8.8.8.8:11434/v1",
+        "http://[2001:4860:4860::8888]:11434/v1",
+    ],
+)
+def test_a_local_entry_cannot_name_a_public_server(base_url):
+    """`local: true` skips consent, retention and region checks (policy.eligible) and
+    allows plain http, so it must really be local: a public server is a hosted entry."""
+    with pytest.raises(ValueError, match="local"):
+        parse_options(entry_for(local=True, options={"base_url": base_url}))
