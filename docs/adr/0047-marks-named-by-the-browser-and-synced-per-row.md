@@ -1,6 +1,6 @@
 # ADR 0047: Marks are named by the browser and synced one row at a time
 
-- Status: Proposed in the #58 pull request; the owner accepts it by merging
+- Status: Accepted by the owner in the #58 pull request (2026-10-20)
 - Date: 2026-10-19
 - Implements: FR-TR-2, AT-4 (range and audio time), NFR-PERF-3, NFR-REL-1, UI-4
 - Builds on: ADRs 0014, 0021, 0025, 0033, 0035 and 0044
@@ -51,7 +51,15 @@ policy and explicit `listenup_api` grants, and are in the data export.
 A create can be resent any number of times without doubling a mark or an analytics
 event, with no idempotency row. A client could choose an id that is already taken;
 that is refused and costs nothing else. Two tabs editing one note overwrite each other
-silently, which is acceptable for an optional note. UX decision UX-07 says Enter marks a
-focused word; this keeps Enter for jumping, as shipped in #57, and uses M, pending the
-owner's choice. The issue's "saved within 1 s" reads as the local copy within 1 s, with
-the server save after the 2 s debounce (SRS NFR-PERF-3 as revised by ADR 0033).
+silently, which is acceptable for an optional note.
+
+Owner decisions (2026-10-20):
+
+- M marks; Enter and Space keep jumping to the word, as shipped in #57. One key keeps
+  one meaning on a word button, and #57's shortcut stays stable. The UX-07 keyboard map
+  in `docs/design/ux-decisions.md` is updated to match.
+- "Saved within 1 s" means the local copy within 1 s, with the server save after the
+  2 s debounce (SRS NFR-PERF-3 as revised by ADR 0033). Actual-server latency is
+  validated at the pre-launch gate (#155).
+- A mark covers at most 20 words (`MAX_MARK_WORDS`): a word or a phrase, never a
+  paragraph.
