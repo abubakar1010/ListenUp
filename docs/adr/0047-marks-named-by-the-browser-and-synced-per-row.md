@@ -26,7 +26,8 @@ policy and explicit `listenup_api` grants, and are in the data export.
   per mark, and a resend of the same id and range answers 200 with the stored mark. The
   id is the idempotency key, so marks do not use `run_once`. Refusals: 409
   `mark_exists` (these words are already marked; carries `mark_id`), 409
-  `mark_id_taken`, 422 `mark_out_of_range`, `mark_too_long` (over 20 words) and
+  `mark_id_taken`, 422 `mark_out_of_range`, `mark_no_words` (every word in the range
+  was removed by a correction), `mark_too_long` (over 20 words) and
   `note_too_long` (over 500 characters after trimming; an empty note is no note).
 - The server sets `at_ms` from the start of the first word and takes the phrase from the
   passage words (`transcript.service.read_passage`, with the learner's corrections).
@@ -40,11 +41,21 @@ policy and explicit `listenup_api` grants, and are in the data export.
   changes to one mark before sending (a note travels with an unsent create; an unsent
   removed mark is never sent) and reuses `lib/autosave`'s debounce, failure
   classification, backoff and status text. Marks are per-row with no version: the last
-  note saved wins. A refused mark is taken back with the reason; `mark_exists` reloads
-  the list so the other tab's mark shows.
+  note saved wins. A refused new mark is taken back with the reason. A refused note
+  change or removal puts back what the server holds, so a saved mark never disappears;
+  a 401 keeps every change on the device and the next change tries again. A create is
+  marked as attempted when it is sent, because its answer may be lost after the server
+  stored it: removing such a mark still sends the DELETE (a 404 is fine), and the mark is
+  dropped without a request only when no create was ever sent. `mark_exists` reloads
+  the list, so the other tab's marks, notes and removals show. The saved list is read
+  each time Transcript opens and is not kept in the query cache.
 - Keyboard (UI-4): on a word, Left and Right move, Shift with an arrow extends the
   selection, M marks it (or opens the note of the mark it already is), Esc clears it.
-  Enter and Space keep jumping to the word (ADR 0044).
+  Enter and Space keep jumping to the word (ADR 0044). Shift+Arrow grows from the word
+  that has the focus. The 20-word limit is also held in the browser: the selection stops
+  there and says so. Words can be marked before the audio is ready; only the jump waits.
+  The panel sticks below the practice header and raises the page's `scroll-padding-top`
+  by its height, so a focused word is never hidden behind it (WCAG 2.4.11).
 
 ## Consequences
 
