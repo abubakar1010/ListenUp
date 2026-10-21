@@ -13,6 +13,7 @@ from listenup.ai.ports import TextTask
 from listenup.ai.prompt_files import load_prompt, load_task
 from listenup.ai.providers.openai_compatible import (
     OpenAICompatibleTextAI,
+    _resolve,
     parse_options,
     version_for,
 )
@@ -392,3 +393,83 @@ def test_a_local_entry_cannot_name_a_public_server(base_url):
     allows plain http, so it must really be local: a public server is a hosted entry."""
     with pytest.raises(ValueError, match="local"):
         parse_options(entry_for(local=True, options={"base_url": base_url}))
+
+
+# --- a local name must resolve to this host or the private network ---------------------
+
+
+def local_adapter(addresses=None, error=None):
+    """A local entry on a Compose-style name, with a fake resolver and a recording server."""
+    server = Server()
+    asked: list[str] = []
+
+    async def resolver(host):
+        asked.append(host)
+        if error:
+            raise error
+        return addresses
+
+    adapter = OpenAICompatibleTextAI(
+        entry_for(local=True, options={"base_url": "http://llm:11434/v1"}),
+        transport=httpx.MockTransport(server),
+        environ={KEY: "k"},
+        resolver=resolver,
+    )
+    return adapter, server, asked
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("addresses", [["172.18.0.5"], ["127.0.0.1", "::1"], ["::ffff:10.0.0.2"]])
+async def test_a_local_name_that_resolves_to_a_private_address_is_called(addresses):
+    adapter, server, asked = local_adapter(addresses)
+    await grade(adapter)
+    assert asked == ["llm"] and len(server.requests) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "addresses",
+    [["8.8.8.8"], ["172.18.0.5", "8.8.8.8"], ["::ffff:8.8.8.8"], ["2002:808:808::"], []],
+)
+async def test_a_local_name_that_resolves_outside_the_private_network_gets_no_request(addresses):
+    """A single label can be completed by a resolver search domain, so it is checked where
+    it resolves, before any learner text is sent (NFR-AI-7)."""
+    adapter, server, _ = local_adapter(addresses)
+    with pytest.raises(PermanentProviderError):
+        await grade(adapter)
+    assert server.requests == []
+
+
+@pytest.mark.anyio
+async def test_a_local_name_that_does_not_resolve_is_a_retryable_error():
+    adapter, server, _ = local_adapter(error=OSError("no such host"))
+    with pytest.raises(TransientProviderError):
+        await grade(adapter)
+    assert server.requests == []
+
+
+@pytest.mark.anyio
+async def test_an_address_literal_and_a_hosted_entry_are_not_resolved():
+    resolved: list[str] = []
+
+    async def resolver(host):
+        resolved.append(host)
+        return ["8.8.8.8"]
+
+    for change in (
+        dict(local=True, options={"base_url": "http://10.0.0.5:11434/v1"}),
+        dict(options={"base_url": "https://llm.example/v1"}),
+    ):
+        adapter = OpenAICompatibleTextAI(
+            entry_for(**change),
+            transport=httpx.MockTransport(Server()),
+            environ={KEY: "k"},
+            resolver=resolver,
+        )
+        await grade(adapter)
+    assert resolved == []
+
+
+@pytest.mark.anyio
+async def test_the_default_resolver_returns_the_addresses_of_a_name():
+    assert {"127.0.0.1", "::1"} & set(await _resolve("localhost"))

@@ -15,12 +15,13 @@ error the gateway answers with the next provider, and each retry is admitted afr
 (ADR 0041). Errors carry no response text, which can echo learner words.
 """
 
+import asyncio
 import ipaddress
 import json
 import os
 import re
 import socket
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -89,13 +90,32 @@ def _is_local_url(base_url: str, host: str) -> bool:
     return client_host == host and _is_local_host(host)
 
 
+def _is_local_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if isinstance(address, ipaddress.IPv6Address):
+        if address.ipv4_mapped is not None:
+            address = address.ipv4_mapped
+        elif address.sixtofour is not None or address.teredo is not None:
+            return False
+    return address.is_private  # includes loopback and link-local
+
+
+def _is_address(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
+
+
 def _is_local_host(host: str) -> bool:
     """`local: true` skips the consent, retention and region checks (policy.eligible) and
     allows plain HTTP, so it must name this host or the private network: a Compose service
     name, `localhost`, a `.internal` name, or a private, loopback or link-local address.
     Only plain ASCII names qualify. A single label that the resolver reads as an address
     (`134744072`, `0x08080808`) is refused, as are IPv4-mapped, 6to4 and Teredo addresses
-    that carry another address inside."""
+    that carry another address inside. A name is also checked where it resolves, per request
+    (`OpenAICompatibleTextAI._check_resolved`), because a resolver search domain can complete a
+    single label."""
     if not host.isascii():
         return False
     try:
@@ -103,12 +123,7 @@ def _is_local_host(host: str) -> bool:
     except ValueError:
         pass
     else:
-        if isinstance(address, ipaddress.IPv6Address):
-            if address.ipv4_mapped is not None:
-                address = address.ipv4_mapped
-            elif address.sixtofour is not None or address.teredo is not None:
-                return False
-        return address.is_private  # includes loopback and link-local
+        return _is_local_address(address)
     if host.endswith((".internal", ".localhost")):
         return _DOMAIN.fullmatch(host) is not None
     if _SINGLE_LABEL.fullmatch(host) is None:
@@ -135,6 +150,14 @@ def version_for(entry: ProviderEntry) -> str:
     return version
 
 
+Resolver = Callable[[str], Awaitable[list[str]]]
+
+
+async def _resolve(host: str) -> list[str]:
+    infos = await asyncio.get_running_loop().getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    return [str(info[4][0]) for info in infos]
+
+
 class OpenAICompatibleTextAI:
     def __init__(
         self,
@@ -143,6 +166,7 @@ class OpenAICompatibleTextAI:
         transport: httpx.AsyncBaseTransport | None = None,
         environ: Mapping[str, str] | None = None,
         prompts_root: Path = PROMPTS_DIR,
+        resolver: Resolver | None = None,
     ) -> None:
         self._entry = entry
         self._prompts_root = prompts_root
@@ -150,6 +174,11 @@ class OpenAICompatibleTextAI:
         self._transport = transport
         self._environ = environ
         self._version = version_for(entry)
+        # Only a local entry on a name is resolved; a test transport never connects, so it
+        # needs no resolver unless one is passed.
+        host = urlsplit(self._options.base_url).hostname or ""
+        self._resolved_host = host if entry.local and not _is_address(host) else None
+        self._resolver = resolver or (_resolve if transport is None else None)
 
     def _headers(self) -> dict[str, str]:
         name = self._options.api_key_env
@@ -189,7 +218,21 @@ class OpenAICompatibleTextAI:
         body["messages"] = messages
         return body
 
+    async def _check_resolved(self) -> None:
+        """A local entry skips the consent, retention and region checks, so the name it
+        uses must lead to this host or the private network, whatever a resolver search
+        domain makes of a single label. Checked before any learner text is sent."""
+        if self._resolved_host is None or self._resolver is None:
+            return
+        try:
+            addresses = await self._resolver(self._resolved_host)
+        except OSError:
+            raise TransientProviderError("local text AI host did not resolve") from None
+        if not addresses or not all(_is_local_address(ipaddress.ip_address(a)) for a in addresses):
+            raise PermanentProviderError("local text AI host resolves outside the private network")
+
     async def _post(self, body: dict[str, Any], headers: dict[str, str]) -> Any:
+        await self._check_resolved()
         url = f"{self._options.base_url}/chat/completions"
         try:
             async with httpx.AsyncClient(
