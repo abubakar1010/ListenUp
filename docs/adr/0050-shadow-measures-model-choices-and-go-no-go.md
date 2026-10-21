@@ -93,8 +93,11 @@ into application code as approved scoring policy.
 ## Consequences
 
 Speech inference remains local with licence-documented public research inputs.
-No `listenup` dependencies or API/web code change. The corrected evaluation does
-not establish the ten-pair majority acceptance criterion. Ungated diagnostic
+No speech dependencies or API/web source change. The sole application-dependency
+exception is the owner-approved, lockfile-only certifi security update from
+2026.7.22 to 2026.10.19 (`PYSEC-2026-4320`), discovered by fresh merge-preparation
+CI; the isolated experiment dependencies/results are unchanged. The corrected
+evaluation does not establish the ten-pair majority acceptance criterion. Ungated diagnostic
 rankings do not waive missing evidence, individual weak/failing measures, the
 natural-shadowing gap, B2's human labels, AT-17 filler accuracy, or real-server
 latency. The owner can review the evidence in one unmerged PR and choose the next

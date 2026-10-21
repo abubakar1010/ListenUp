@@ -105,10 +105,18 @@ eligibility reasons next to the unchanged raw phone diagnostics. The old 10/10
 claim is withdrawn: absent timing and unsupported forced-phone grades had counted
 as wins. The regenerated tables below use only eligible strict comparisons.
 
-Application backend/web, database, migrations and API checks are not applicable:
-those areas and their dependencies remain untouched. The original PR CI run 297
-passed, but it does not execute this isolated harness. CI on this correction and
-fresh-session re-review remain merge gates. No stage-0 speed criterion is claimed.
+The spike changes no API/web source or speech dependencies. During merge
+preparation, fresh CI run 319 found pre-existing `certifi 2026.7.22` vulnerability
+`PYSEC-2026-4320`. The owner explicitly approved the sole application-dependency
+exception: three lockfile lines update existing transitive certifi to `2026.10.19`
+and its artifact hashes. The failing audit supplies Red; the updated export passes
+pip-audit, and the 17 targeted API network-guard/provider tests pass. This security
+maintenance is separate from the unchanged speech experiment environment/results.
+Full application CI is rerun for this lockfile update; see the PR for current CI
+status. Database/migration and generated API changes are not applicable locally.
+CI does not execute this isolated harness. The corrected spike still needs
+fresh-session re-review; that validation gap remains disclosed despite the owner's
+merge instruction. No stage-0 speed criterion is claimed.
 
 ### Pair 01: a0001.wav (bdl → slt)
 
