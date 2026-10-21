@@ -43,12 +43,16 @@ export function MarkPanel({
   const range: Range | null = selection ? rangeOf(selection) : null;
   const full = range !== null && range.word_to - range.word_from + 1 >= MAX_MARK_WORDS;
   const section = useRef<HTMLElement>(null);
-  useStickyClearance(section);
+  // Sticky while words are chosen; with a note editor open it is too tall to float, so it
+  // scrolls with the page (360 px screens would lose much of the transcript).
+  const sticky = !mark;
+  useStickyClearance(section, sticky);
   return (
     <section
       ref={section}
+      data-sticky={sticky}
       aria-label="Mark words"
-      className="sticky top-[4.5rem] z-[9] flex flex-col gap-2 rounded-md border border-line bg-surface-raised p-3"
+      className={`${sticky ? 'sticky top-[4.5rem] z-[9]' : ''} flex flex-col gap-2 rounded-md border border-line bg-surface-raised p-3`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-bold">Mark what you did not hear</h3>
@@ -171,10 +175,10 @@ function NoteEditor({
  * focused word clear of both. The panel grows when the note editor opens, so its height is
  * followed. The first measurement comes after the layout has set its own padding.
  */
-function useStickyClearance(panel: RefObject<HTMLElement | null>) {
+function useStickyClearance(panel: RefObject<HTMLElement | null>, sticky: boolean) {
   useEffect(() => {
     const element = panel.current;
-    if (!element || typeof ResizeObserver === 'undefined') return;
+    if (!sticky || !element || typeof ResizeObserver === 'undefined') return;
     const root = document.documentElement;
     let applied = '';
     const observer = new ResizeObserver(() => {
@@ -188,5 +192,5 @@ function useStickyClearance(panel: RefObject<HTMLElement | null>) {
       if (root.style.scrollPaddingTop === applied)
         root.style.scrollPaddingTop = STICKY_HEADER_CLEARANCE;
     };
-  }, [panel]);
+  }, [panel, sticky]);
 }

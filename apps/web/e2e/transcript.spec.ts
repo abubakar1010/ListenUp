@@ -99,6 +99,12 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
       marks.push(mark);
       return route.fulfill({ status: 201, json: mark });
     }
+    if (req.method() === 'PATCH' && /^\/sessions\/s-57\/marks\/[^/]+$/.test(path)) {
+      const mark = marks.find((m) => path.endsWith(`/${String(m['id'])}`));
+      if (!mark) return route.fulfill({ status: 404, json: { code: 'mark_not_found' } });
+      mark['note'] = (req.postDataJSON() as { note: string | null }).note;
+      return route.fulfill({ json: mark });
+    }
     if (path === '/sessions/s-57/marks') return route.fulfill({ json: { marks } });
     if (path === '/media/m-57') {
       const range = /bytes=(\d+)-(\d*)/.exec(req.headers()['range'] ?? '');
@@ -169,9 +175,15 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await expect(panel).toContainText('Marks saved', { timeout: 5000 });
   expect(marks).toMatchObject([{ word_from: 0, word_to: 1 }]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  // The panel sticks below the practice header, never over it, even with the note editor
-  // open (it is then at its tallest at 360 px).
+  // With the note editor open the panel is at its tallest at 360 px, so it scrolls with the
+  // page instead of floating over the transcript.
   await page.getByLabel('Note (optional)').fill('sounds like one word');
+  await expect(panel).toHaveAttribute('data-sticky', 'false');
+  // While words are chosen it sticks below the practice header, never over it.
+  await page.keyboard.press('Escape'); // focus is still in the note field: move back to a word
+  await first.focus();
+  await page.keyboard.press('Escape');
+  await expect(panel).toHaveAttribute('data-sticky', 'true');
   await page.evaluate(() => {
     // Room to scroll inside the section the panel sticks in (padding would not count).
     const spacer = document.createElement('div');

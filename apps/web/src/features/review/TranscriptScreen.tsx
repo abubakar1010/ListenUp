@@ -197,8 +197,8 @@ function TranscriptWork({
                       aria-describedby={marking.describedBy(word.index)}
                       className={`min-h-11 max-w-full rounded-sm px-1 text-left underline decoration-dotted underline-offset-4 [overflow-wrap:anywhere] hover:bg-surface-raised ${marking.isMarked(word.index) ? 'bg-mark-bg' : ''} ${marking.isSelected(word.index) ? 'outline-2 outline-mark-strong' : ''}`}
                       onClick={(event) => {
-                        marking.choose(word.index, event);
-                        jump(word.start_ms);
+                        // Choosing a range (Shift+click) must not move the audio.
+                        if (!marking.choose(word.index, event)) jump(word.start_ms);
                       }}
                       onKeyDown={(event) => marking.onWordKey(word.index, event)}
                     >
@@ -306,14 +306,16 @@ function useMarking(sessionId: string, data: TranscriptReview, saved: SavedMark[
     }
   };
 
-  const choose = (index: number, event: MouseEvent) => {
+  /** Select the clicked word, or extend to it with Shift; true when the click extended. */
+  const choose = (index: number, event: MouseEvent): boolean => {
     if (!(event.shiftKey && selection)) {
       setSelection(moveTo(index, sync.marks));
-      return;
+      return false;
     }
     const next = reach(selection, index);
     if (next.focus !== index) announce(LIMIT_MESSAGE);
     setSelection(next);
+    return true;
   };
 
   const onNoteFocused = useCallback(() => setFocusNote(false), []);

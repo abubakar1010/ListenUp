@@ -478,3 +478,27 @@ test('the_sticky_panel_keeps_the_focused_word_clear_of_itself', async () => {
   expect(document.documentElement.style.scrollPaddingTop).toBe('');
   vi.unstubAllGlobals();
 });
+
+test('shift_click_extends_the_selection_without_moving_the_audio', async () => {
+  renderMarking();
+  await ready();
+  const play = vi.mocked(HTMLMediaElement.prototype.play);
+  fireEvent.click(word('Hello')); // a plain click selects and jumps to the word (#57)
+  expect(play).toHaveBeenCalledTimes(1);
+  fireEvent.click(word('Again.'), { shiftKey: true });
+  expect(within(panel()).getByText('“Hello world. Again.”')).toBeInTheDocument();
+  expect(play).toHaveBeenCalledTimes(1); // choosing a range must not disturb listening
+});
+
+test('the_panel_follows_the_page_while_words_are_chosen_and_scrolls_away_while_a_note_is_written', async () => {
+  renderMarking({}, [serverMark({ id: 'm1', word_from: 0, word_to: 0 })]);
+  await ready();
+  expect(panel()).toHaveAttribute('data-sticky', 'true');
+  fireEvent.click(word('world.'));
+  expect(panel()).toHaveAttribute('data-sticky', 'true');
+  fireEvent.click(word('Hello')); // a marked word opens its note editor
+  expect(within(panel()).getByLabelText('Note (optional)')).toBeInTheDocument();
+  expect(panel()).toHaveAttribute('data-sticky', 'false');
+  fireEvent.keyDown(word('Hello'), { key: 'Escape' });
+  expect(panel()).toHaveAttribute('data-sticky', 'true');
+});
