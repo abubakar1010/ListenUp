@@ -393,3 +393,122 @@ test('a_failed_reload_after_words_marked_elsewhere_is_reported', async () => {
   expect(sync.getSnapshot().marks).toEqual([]);
   expect(sync.getSnapshot().status).toMatchObject({ kind: 'failed' });
 });
+
+// -- a refusal that is not a refused create (NFR-REL-1: a saved mark is never lost) --------
+
+test('a_refused_note_change_puts_back_the_saved_note_and_keeps_the_mark', async () => {
+  const { transport } = fakeServer([saved('m1', 1, 'old')]);
+  transport.setNote = vi.fn().mockRejectedValue(refusal(422, 'note_too_long'));
+  const storage = memoryStorage();
+  const sync = make(transport, storage, [saved('m1', 1, 'old')]);
+  sync.setNote('m1', 'new');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().marks).toMatchObject([{ id: 'm1', note: 'old', saved: true }]);
+  expect(sync.getSnapshot().status).toMatchObject({ kind: 'failed' });
+  expect(storage.items.has(KEY)).toBe(false);
+});
+
+test('a_refused_removal_keeps_the_mark_on_screen', async () => {
+  const { transport } = fakeServer([saved('m1', 1)]);
+  transport.remove = vi.fn().mockRejectedValue(refusal(409, 'step_locked'));
+  const sync = make(transport, memoryStorage(), [saved('m1', 1)]);
+  sync.remove('m1');
+  expect(ids(sync)).toEqual([]);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().marks).toMatchObject([{ id: 'm1', saved: true }]);
+  expect(sync.getSnapshot().status).toMatchObject({ kind: 'failed' });
+});
+
+test('a_signed_out_learner_keeps_every_change_on_the_device_and_nothing_is_retried_blindly', async () => {
+  const { transport } = fakeServer([saved('m1', 1)]);
+  transport.setNote = vi.fn().mockRejectedValue(refusal(401, 'not_signed_in'));
+  const storage = memoryStorage();
+  const sync = make(transport, storage, [saved('m1', 1)]);
+  sync.setNote('m1', 'weak form');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().marks).toMatchObject([{ id: 'm1', note: 'weak form', saved: false }]);
+  expect(sync.getSnapshot().status).toMatchObject({ kind: 'failed' });
+  expect(JSON.parse(storage.items.get(KEY)!)).toMatchObject({ ops: [{ op: 'note' }] });
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(transport.setNote).toHaveBeenCalledTimes(1);
+  // The next change is a fresh attempt, and the kept note goes with it.
+  transport.setNote = vi.fn(async (id: string, note: string | null) => ({ ...saved(id, 1), note }));
+  sync.setNote('m1', 'weak form, linking');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setNote).toHaveBeenCalledWith('m1', 'weak form, linking');
+  expect(sync.getSnapshot().status.kind).toBe('saved');
+});
+
+// -- a create whose answer was lost may be on the server ------------------------------------
+
+/** The first create reaches the server but its answer never comes back. */
+function lostAnswer(server: ReturnType<typeof fakeServer>) {
+  const { transport } = server;
+  const create = transport.create.getMockImplementation()!;
+  transport.create.mockImplementationOnce(async (mark) => {
+    await create(mark);
+    throw new TypeError('Failed to fetch');
+  });
+}
+
+test('removing_a_mark_whose_create_answer_was_lost_still_removes_it_from_the_server', async () => {
+  const server = fakeServer();
+  lostAnswer(server);
+  const sync = make(server.transport);
+  sync.add({ id: 'm1', word_from: 2, word_to: 2, at_ms: 2000, note: null });
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().status.kind).toBe('offline');
+  expect(server.marks.has('m1')).toBe(true);
+  sync.remove('m1');
+  expect(ids(sync)).toEqual([]);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(server.transport.remove).toHaveBeenCalledWith('m1');
+  expect(server.marks.has('m1')).toBe(false);
+  expect(sync.getSnapshot().status.kind).toBe('saved');
+});
+
+test('that_removal_survives_a_reload_even_when_the_page_loaded_before_the_create_landed', async () => {
+  const server = fakeServer();
+  lostAnswer(server);
+  const storage = memoryStorage();
+  const sync = make(server.transport, storage);
+  sync.add({ id: 'm1', word_from: 2, word_to: 2, at_ms: 2000, note: null });
+  await vi.advanceTimersByTimeAsync(2000);
+  sync.remove('m1');
+  expect(JSON.parse(storage.items.get(KEY)!)).toMatchObject({ ops: [{ op: 'delete' }] });
+  closeTab();
+  const again = make(server.transport, storage, []); // the list that loaded the page lacks m1
+  expect(again.getSnapshot().marks).toEqual([]);
+  await vi.runOnlyPendingTimersAsync();
+  expect(server.marks.has('m1')).toBe(false);
+});
+
+// -- reloading the list ----------------------------------------------------------------------
+
+test('a_reload_takes_the_other_tabs_notes_and_removals_but_keeps_unsent_changes', async () => {
+  const { transport, marks } = fakeServer();
+  marks.set('a', saved('a', 0, 'from the other tab'));
+  marks.set('theirs', saved('theirs', 3));
+  transport.create = vi.fn().mockRejectedValue(refusal(409, 'mark_exists', { mark_id: 'theirs' }));
+  const sync = make(transport, memoryStorage(), [saved('a', 0, 'old'), saved('gone', 5)]);
+  sync.add({ id: 'mine', word_from: 3, word_to: 3, at_ms: 3000, note: null });
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().marks).toMatchObject([
+    { id: 'a', note: 'from the other tab' },
+    { id: 'theirs' },
+  ]);
+});
+
+test('a_refused_removal_of_a_mark_never_confirmed_puts_it_back_and_sends_it_again', async () => {
+  const server = fakeServer();
+  lostAnswer(server);
+  server.transport.remove = vi.fn().mockRejectedValue(refusal(403, 'forbidden'));
+  const sync = make(server.transport);
+  sync.add({ id: 'm1', word_from: 2, word_to: 2, at_ms: 2000, note: null });
+  await vi.advanceTimersByTimeAsync(2000);
+  sync.remove('m1');
+  await vi.advanceTimersByTimeAsync(62_000);
+  expect(ids(sync)).toEqual(['m1']);
+  expect(server.transport.create).toHaveBeenCalledTimes(2);
+  expect(sync.getSnapshot().marks[0]).toMatchObject({ saved: true });
+});

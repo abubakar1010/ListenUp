@@ -25,13 +25,19 @@ export function useTranscript(id: string) {
 export type MarkList = components['schemas']['MarkList'];
 export const marksKey = (id: string) => [...SESSIONS_KEY, 'marks', id] as const;
 
-/** The session's saved marks, read once when Transcript opens (#58, NFR-REL-1). */
+/**
+ * The session's saved marks, read each time Transcript opens (#58, NFR-REL-1).
+ * `MarkSync` takes the list once and then owns it, so a copy kept in the query cache would
+ * go stale as marks are made: it is dropped as soon as the screen closes (`gcTime: 0`),
+ * and coming back to Transcript reads the list again.
+ */
 export function useMarks(id: string) {
   return useQuery({
     queryKey: marksKey(id),
     queryFn: () => api<MarkList>(`/sessions/${encodeURIComponent(id)}/marks`),
     retry: false,
     staleTime: Infinity,
+    gcTime: 0,
   });
 }
 

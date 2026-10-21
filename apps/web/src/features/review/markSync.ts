@@ -20,8 +20,10 @@ import {
  *   carries the id made here, so a create resent after a lost answer is not doubled.
  * - Changes to one mark are merged before sending: a note written before the first save
  *   travels with the create, and an unsent mark that is removed is never sent.
- * - No connection: wait for it; a busy server: try again after a pause. A refused mark
- *   is taken back. Words already marked in another tab show that tab's mark.
+ * - No connection: wait for it; a busy server: try again after a pause. A refused new
+ *   mark is taken back; a refused note change or removal puts back what the server holds,
+ *   so a saved mark never disappears. Signed out: every change stays on the device until
+ *   the learner is back. Words already marked in another tab show that tab's mark.
  *
  * Marks are per-row changes, so there is no version conflict to resolve: the last note
  * saved wins. Framework-free; `useMarkSync` binds it to React.
@@ -83,10 +85,21 @@ interface Entry {
   op: Op;
   /** Counts local changes, so a save that finished can tell whether it is still current. */
   rev: number;
+  /** The mark as the server last held it; null while the server may not have it yet. */
+  server: NewLocalMark | null;
+  /**
+   * True once a create for this mark has been sent. Its answer may have been lost, so
+   * the server may hold the mark and a removal has to be sent too.
+   */
+  attempted: boolean;
 }
 
 interface StoredCopy {
-  ops: { op: Exclude<Op, 'none'>; mark: NewLocalMark }[];
+  ops: { op: Exclude<Op, 'none'>; mark: NewLocalMark; attempted?: boolean }[];
+}
+
+function fromServer(mark: SavedMark): Entry {
+  return { mark: local(mark), op: 'none', rev: 0, server: local(mark), attempted: false };
 }
 
 function local(mark: SavedMark | NewLocalMark): NewLocalMark {
@@ -108,8 +121,6 @@ export class MarkSync {
   private restored = false;
   private snapshot: MarkSyncSnapshot;
   private inFlight = false;
-  /** The id of the mark whose request is on its way. */
-  private sending: string | null = null;
   private retries = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
@@ -128,8 +139,7 @@ export class MarkSync {
       ...options,
       storage: options.storage === undefined ? defaultStorage() : options.storage,
     };
-    for (const mark of options.marks)
-      this.entries.set(mark.id, { mark: local(mark), op: 'none', rev: 0 });
+    for (const mark of options.marks) this.entries.set(mark.id, fromServer(mark));
     this.restore();
     this.snapshot = this.makeSnapshot();
   }
@@ -164,7 +174,13 @@ export class MarkSync {
   // -- writing --------------------------------------------------------------------------
 
   add(mark: NewLocalMark): void {
-    this.entries.set(mark.id, { mark: { ...mark }, op: 'create', rev: 1 });
+    this.entries.set(mark.id, {
+      mark: { ...mark },
+      op: 'create',
+      rev: 1,
+      server: null,
+      attempted: false,
+    });
     this.changed();
   }
 
@@ -181,7 +197,9 @@ export class MarkSync {
     const entry = this.entries.get(id);
     if (!entry || entry.op === 'delete') return;
     entry.rev += 1;
-    if (entry.op === 'create' && !this.isSending(id)) this.entries.delete(id);
+    // A create that was never sent leaves nothing behind. One that was sent may have
+    // reached the server even though its answer was lost, so the removal must be sent.
+    if (entry.op === 'create' && !entry.attempted) this.entries.delete(id);
     else entry.op = 'delete';
     this.changed();
   }
@@ -194,10 +212,6 @@ export class MarkSync {
   }
 
   // -- internals ------------------------------------------------------------------------
-
-  private isSending(id: string): boolean {
-    return this.sending === id;
-  }
 
   private changed(): void {
     this.writeLocal();
@@ -265,7 +279,6 @@ export class MarkSync {
       this.status = { kind: 'saved', at: new Date(this.options.now()) };
     } catch (error) {
       this.inFlight = false;
-      this.sending = null;
       this.onFailure(error, entry);
       this.writeLocal();
     }
@@ -274,31 +287,29 @@ export class MarkSync {
 
   private async sendOne(entry: Entry): Promise<void> {
     const { mark, op, rev } = entry;
-    this.sending = mark.id;
-    try {
-      if (op === 'create') {
-        const stored = await this.options.transport.create({
-          id: mark.id,
-          word_from: mark.word_from,
-          word_to: mark.word_to,
-          note: mark.note,
-        });
-        this.settled(entry, rev, local(stored));
-      } else if (op === 'note') {
-        const stored = await this.gone(() => this.options.transport.setNote(mark.id, mark.note));
-        if (stored) this.settled(entry, rev, local(stored));
-        else this.entries.delete(mark.id);
-      } else {
-        await this.gone(() => this.options.transport.remove(mark.id));
-        this.entries.delete(mark.id);
-      }
-    } finally {
-      this.sending = null;
+    if (op === 'create') {
+      entry.attempted = true;
+      this.writeLocal(); // kept before the request: the tab may close while it is on its way
+      const stored = await this.options.transport.create({
+        id: mark.id,
+        word_from: mark.word_from,
+        word_to: mark.word_to,
+        note: mark.note,
+      });
+      this.settled(entry, rev, local(stored));
+    } else if (op === 'note') {
+      const stored = await this.gone(() => this.options.transport.setNote(mark.id, mark.note));
+      if (stored) this.settled(entry, rev, local(stored));
+      else this.entries.delete(mark.id);
+    } else {
+      await this.gone(() => this.options.transport.remove(mark.id));
+      this.entries.delete(mark.id);
     }
   }
 
   /** The request finished: keep the server's mark unless the learner changed it since. */
   private settled(entry: Entry, rev: number, stored: NewLocalMark): void {
+    entry.server = stored;
     if (entry.rev === rev) {
       entry.mark = stored;
       entry.op = 'none';
@@ -329,11 +340,27 @@ export class MarkSync {
     } else if (error instanceof ApiError && error.code === 'mark_exists' && entry) {
       this.entries.delete(entry.mark.id);
       void this.reload();
+    } else if (error instanceof ApiError && error.problem.status === 401) {
+      // Signed out: nothing is refused, so every change stays here (and on the device)
+      // until the learner is back; the next change tries again.
+      this.status = { kind: 'failed', error };
     } else {
       // Refused for good: take the change back so the queue does not stick on it.
-      if (entry) this.entries.delete(entry.mark.id);
+      if (entry) this.takeBack(entry);
       this.status = { kind: 'failed', error };
       if (this.next()) this.schedule(this.options.debounceMs);
+    }
+  }
+
+  /** Undo a refused change: a new mark goes; a saved mark shows what the server holds. */
+  private takeBack(entry: Entry): void {
+    if (entry.op === 'create') {
+      this.entries.delete(entry.mark.id);
+    } else if (entry.server) {
+      entry.mark = entry.server;
+      entry.op = 'none';
+    } else {
+      entry.op = 'create'; // a removal of a mark never confirmed: it stays, and is sent again
     }
   }
 
@@ -342,9 +369,7 @@ export class MarkSync {
     this.inFlight = true;
     try {
       const marks = await this.options.transport.list();
-      for (const mark of marks)
-        if (!this.entries.has(mark.id))
-          this.entries.set(mark.id, { mark: local(mark), op: 'none', rev: 0 });
+      this.takeServerMarks(marks);
       this.inFlight = false;
       this.status = { kind: 'pending' };
       this.emit();
@@ -354,6 +379,21 @@ export class MarkSync {
       this.onFailure(error, undefined);
       this.emit();
     }
+  }
+
+  /** The server's marks over the saved ones; this tab's unsent changes stay on top. */
+  private takeServerMarks(marks: SavedMark[]): void {
+    const onServer = new Set(marks.map((mark) => mark.id));
+    for (const mark of marks) {
+      const entry = this.entries.get(mark.id);
+      if (!entry) this.entries.set(mark.id, fromServer(mark));
+      else {
+        entry.server = local(mark);
+        if (entry.op === 'none') entry.mark = local(mark);
+      }
+    }
+    for (const [id, entry] of this.entries)
+      if (entry.op === 'none' && !onServer.has(id)) this.entries.delete(id);
   }
 
   private setOffline(): void {
@@ -379,10 +419,13 @@ export class MarkSync {
   private restore(): void {
     const copy = this.readLocal();
     if (!copy) return;
-    for (const { op, mark } of copy.ops) {
+    for (const { op, mark, attempted = false } of copy.ops) {
       const entry = this.entries.get(mark.id);
       if (op === 'create' && !entry) {
-        this.entries.set(mark.id, { mark, op: 'create', rev: 1 });
+        this.entries.set(mark.id, { mark, op: 'create', rev: 1, server: null, attempted });
+      } else if (!entry && op === 'delete' && attempted) {
+        // The page's list may predate a create that landed late: send the removal anyway.
+        this.entries.set(mark.id, { mark, op: 'delete', rev: 1, server: null, attempted });
       } else if (entry && op === 'delete') {
         entry.op = 'delete';
         entry.rev = 1;
@@ -412,7 +455,11 @@ export class MarkSync {
   private writeLocal(): void {
     const ops = [...this.entries.values()]
       .filter((entry) => entry.op !== 'none')
-      .map((entry) => ({ op: entry.op as Exclude<Op, 'none'>, mark: entry.mark }));
+      .map((entry) => ({
+        op: entry.op as Exclude<Op, 'none'>,
+        mark: entry.mark,
+        ...(entry.attempted && !entry.server ? { attempted: true } : {}),
+      }));
     try {
       if (ops.length === 0) this.options.storage?.removeItem(this.options.storageKey);
       else this.options.storage?.setItem(this.options.storageKey, JSON.stringify({ ops }));
