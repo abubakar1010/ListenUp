@@ -270,6 +270,27 @@ jobs:
             --entrypoint amtool prom/alertmanager:v0.28.1 \
             check-config /cfg/alertmanager.yml
 
+  media-sandbox:
+    name: Media sandbox (Docker and real scanner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # No speech weights or production signature CDN downloads for this contract.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/backend.Dockerfile
+          target: media-runtime
+          tags: listenup-media-check:ci
+          load: true
+          cache-from: |
+            type=gha,scope=media-runtime
+            type=gha,scope=worker-media
+          cache-to: type=gha,mode=max,scope=media-runtime
+      - name: Enforce the deployed media boundary and scan EICAR
+        run: python infra/scripts/check-media-sandbox.py listenup-media-check:ci
+
   images:
     name: Docker image (${{ matrix.target }})
     runs-on: ubuntu-latest

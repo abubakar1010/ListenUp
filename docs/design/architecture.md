@@ -435,7 +435,7 @@ The largest risks are learner voice data, untrusted uploads and untrusted text s
 | --- | --- |
 | Reading another learner's data | Every query is scoped by `user_id` from the session; an integration test calls every endpoint as a second user and expects 404 |
 | Leaked media links | Private bucket; signed URLs expire in minutes; Blind URLs are bound to one attempt |
-| Malicious uploads | Size limit before upload, ffprobe validation, ffmpeg re-encoding in a sandboxed worker container with no network access to internal services |
+| Malicious uploads | Size limit before upload, ffprobe validation, ffmpeg re-encoding in a sandboxed worker container with access only to required storage and database services; no API or other internal-service route (ADR 0049) |
 | yt-dlp or ffmpeg exploits | Media worker runs as a non-root user with a read-only filesystem except its scratch directory, and with CPU, memory and time limits per job |
 | Prompt injection in gists | Delimited data blocks, fixed output schema, range checks, scores computed by our code |
 | Credential attacks | Argon2id hashes, login rate limits, account sign-in lock for 15 minutes after 5 failed attempts, session rotation on login, secure cookies, CSRF tokens |
@@ -453,7 +453,7 @@ The largest risks are learner voice data, untrusted uploads and untrusted text s
 ### 12.3 Observability
 
 - Structured JSON logs with a request id that follows a request into the jobs it creates.
-- OpenTelemetry traces across API, queue and workers; metrics for job wait time, job duration, failure rate, AI latency and remaining free quota per provider.
+- OpenTelemetry traces across API, queue and workers; metrics for job wait time, job duration, failure rate, AI latency and remaining free quota per provider. Isolated media processes relay content-free OTLP through the database queue to the default pool, which alone contacts collectors (ADR 0049).
 - Alerts on: job backlog growing, a provider quota at or below 25% remaining (ADR 0037/0041), grading failure rate over 5%, error rate spikes.
 - Errors go to an error tracker through its open SDK, swappable like any other adapter.
 

@@ -21,14 +21,18 @@ import asyncio
 import socket
 import time
 import uuid
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
+from opentelemetry import context as otel_context
 from opentelemetry import metrics, trace
 from opentelemetry.metrics import Counter, Histogram, Meter, MeterProvider
 from opentelemetry.metrics import _Gauge as Gauge  # public in the API, named _Gauge
+from opentelemetry.sdk.metrics.export import MetricExporter, MetricExportResult, MetricsData
+from opentelemetry.sdk.trace import ReadableSpan
+from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode, Tracer, TracerProvider
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -184,6 +188,47 @@ def _parse_headers(raw: str | None) -> dict[str, str]:
     return headers
 
 
+class QueuedSpanExporter(SpanExporter):
+    def __init__(self, **kwargs: Any) -> None:
+        pass
+
+    def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
+        from opentelemetry.exporter.otlp.proto.common.trace_encoder import encode_spans
+
+        from listenup.platform.telemetry_relay import submit
+
+        try:
+            submit("traces", encode_spans(spans).SerializeToString())
+        except Exception:
+            # SDK callbacks must never print DB credentials or learner input.
+            return SpanExportResult.FAILURE
+        return SpanExportResult.SUCCESS
+
+
+class QueuedMetricExporter(MetricExporter):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__()
+
+    def export(
+        self, metrics_data: MetricsData, timeout_millis: float = 10_000, **kwargs: Any
+    ) -> MetricExportResult:
+        from opentelemetry.exporter.otlp.proto.common.metrics_encoder import encode_metrics
+
+        from listenup.platform.telemetry_relay import submit
+
+        try:
+            submit("metrics", encode_metrics(metrics_data).SerializeToString())
+        except Exception:
+            return MetricExportResult.FAILURE
+        return MetricExportResult.SUCCESS
+
+    def force_flush(self, timeout_millis: float = 10_000) -> bool:
+        return True
+
+    def shutdown(self, timeout_millis: float = 30_000, **kwargs: Any) -> None:
+        pass
+
+
 def configure_telemetry(settings: Settings, role: str) -> None:
     """Start exporting for this process (`role`: api, worker-media, worker-default, backup).
 
@@ -220,6 +265,13 @@ def configure_telemetry(settings: Settings, role: str) -> None:
         }
     )
     tracer_provider = None
+    # Media processes have DB access only. Their exporters queue serialized OTLP;
+    # the default pool performs HTTP delivery using its own collector settings.
+    span_exporter: Any = OTLPSpanExporter
+    metric_exporter: Any = OTLPMetricExporter
+    if role == "worker-media":
+        span_exporter = QueuedSpanExporter
+        metric_exporter = QueuedMetricExporter
     if settings.otel_traces_endpoint:
         tracer_provider = SdkTracerProvider(
             resource=resource,
@@ -227,13 +279,13 @@ def configure_telemetry(settings: Settings, role: str) -> None:
         )
         tracer_provider.add_span_processor(
             BatchSpanProcessor(
-                OTLPSpanExporter(endpoint=settings.otel_traces_endpoint, headers=headers)
+                span_exporter(endpoint=settings.otel_traces_endpoint, headers=headers)
             )
         )
     meter_provider = None
     if settings.otel_metrics_endpoint:
         reader = PeriodicExportingMetricReader(
-            OTLPMetricExporter(endpoint=settings.otel_metrics_endpoint, headers=headers),
+            metric_exporter(endpoint=settings.otel_metrics_endpoint, headers=headers),
             export_interval_millis=settings.otel_metrics_interval_seconds * 1000,
         )
         meter_provider = SdkMeterProvider(resource=resource, metric_readers=[reader])
@@ -270,6 +322,16 @@ def job_trace_args(span: Span | None = None) -> dict[str, Any]:
     _propagator.inject(carrier, context=context)
     carrier["enqueued_at"] = time.time()
     return {TRACE_ARG: carrier}
+
+
+@contextmanager
+def continued_trace(carrier: Mapping[str, Any] | None) -> Iterator[None]:
+    """Continue the supervisor's trace in a fresh job interpreter."""
+    token = otel_context.attach(_propagator.extract(dict(carrier or {})))
+    try:
+        yield
+    finally:
+        otel_context.detach(token)
 
 
 @contextmanager
