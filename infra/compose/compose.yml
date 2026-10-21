@@ -142,6 +142,9 @@ services:
     memswap_limit: 18g
     tmpfs:
       - /scratch:rw,noexec,nosuid,nodev,size=2g,uid=10001,gid=10001,mode=0700
+      # Docker keeps these auxiliary mounts writable even with read_only=true.
+      - /dev/shm:ro,noexec,nosuid,nodev,size=64k,mode=0555
+      - /dev/mqueue:ro,noexec,nosuid,nodev,size=64k,mode=0555
     networks: [media-data]
     environment:
       LISTENUP_ENVIRONMENT: local
@@ -149,6 +152,10 @@ services:
       LISTENUP_S3_ENDPOINT_URL: http://storage:9000
       LISTENUP_S3_BUCKET: listenup
       HF_HUB_OFFLINE: "1"
+      LISTENUP_OTEL_ENABLED: ${LISTENUP_OTEL_ENABLED:-false}
+      # Used as signal selectors only: media queues OTLP through PostgreSQL.
+      LISTENUP_OTEL_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+      LISTENUP_OTEL_METRICS_ENDPOINT: http://prometheus:9090/api/v1/otlp/v1/metrics
       # Never inherit a host/CI proxy that could bypass the network boundary.
       HTTP_PROXY: ""
       HTTPS_PROXY: ""

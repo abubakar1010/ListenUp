@@ -42,6 +42,7 @@ READY_FILE = Path(tempfile.gettempdir()) / "listenup-worker-ready"
 # Modules whose job handlers this process registers. Each feature story adds its
 # module's jobs package here.
 JOB_MODULES: list[str] = [
+    "listenup.platform.telemetry_relay",
     "listenup.ai.jobs",
     "listenup.modules.identity.jobs",
     "listenup.modules.content.jobs",

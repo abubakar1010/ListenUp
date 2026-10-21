@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -155,17 +156,22 @@ def test_launcher_sets_hard_limits_before_exec(monkeypatch: pytest.MonkeyPatch) 
     execute = Mock()
     monkeypatch.setattr(media_sandbox.resource, "setrlimit", limits)
     monkeypatch.setattr(media_sandbox, "_deny_detach", detach)
-    monkeypatch.setattr(media_sandbox.os, "execvp", execute)
+    execute.return_value = 0
+    monkeypatch.setattr(media_sandbox, "_reap_job", execute)
     monkeypatch.setattr(media_sandbox.sys, "argv", ["launcher", "128", "7", "python", "-c", "pass"])
-    media_sandbox.main()
+    with pytest.raises(SystemExit) as exit_status:
+        media_sandbox.main()
+    assert exit_status.value.code == 0
     limits.assert_any_call(media_sandbox.resource.RLIMIT_AS, (128 * 1024**2,) * 2)
     limits.assert_any_call(media_sandbox.resource.RLIMIT_CPU, (7, 7))
     limits.assert_any_call(media_sandbox.resource.RLIMIT_CORE, (0, 0))
     detach.assert_called_once()
-    execute.assert_called_once_with("python", ["python", "-c", "pass"])
+    execute.assert_called_once_with(["python", "-c", "pass"], 7)
 
 
-@pytest.mark.parametrize("failure", ["library", "allocation", "syscall", "rule", "load", None])
+@pytest.mark.parametrize(
+    "failure", ["library", "allocation", "syscall", "rule", "accounting", "load", None]
+)
 def test_detachment_filter_fails_closed(
     monkeypatch: pytest.MonkeyPatch, failure: str | None
 ) -> None:
@@ -175,6 +181,7 @@ def test_detachment_filter_fails_closed(
     library.seccomp_init.return_value = None if failure == "allocation" else 123
     library.seccomp_syscall_resolve_name.return_value = -1 if failure == "syscall" else 12
     library.seccomp_rule_add.return_value = -1 if failure == "rule" else 0
+    library.seccomp_rule_add_array.return_value = -1 if failure == "accounting" else 0
     library.seccomp_load.return_value = -1 if failure == "load" else 0
     monkeypatch.setattr(
         media_sandbox.ctypes.util,
@@ -238,9 +245,35 @@ time.sleep(30)
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("orphan", [False, True])
+async def test_cpu_budget_retains_auto_reaped_and_orphaned_children(orphan: bool) -> None:
+    # Each child stays below RLIMIT_CPU. Ignoring SIGCHLD used to discard its
+    # usage; double-forking also discarded usage when the container init reaped it.
+    script = f"""
+import os, signal, time
+try:
+    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+except PermissionError:
+    pass  # a fail-closed sandbox may prohibit disabling child accounting
+for _ in range(8):
+    if os.fork() == 0:
+        if {orphan!r} and os.fork() != 0:
+            os._exit(0)
+        start = time.process_time()
+        while time.process_time() - start < .3:
+            pass
+        os._exit(0)
+    time.sleep(.5)
+"""
+    with pytest.raises(media_sandbox.MediaProcessFailed, match="CPU"):
+        await media_sandbox.run_process(
+            [sys.executable, "-c", script], b"", seconds=15, memory_mb=128, cpu_seconds=1
+        )
+
+
+@pytest.mark.anyio
 async def test_cancellation_kills_descendants(tmp_path) -> None:
     import asyncio
-    from pathlib import Path
 
     marker = tmp_path / "child-pid"
     script = f"""
@@ -260,6 +293,7 @@ time.sleep(30)
             if running.done():
                 await running
             await asyncio.sleep(0.01)
+
     child = int(marker.read_text())
     running.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -269,3 +303,79 @@ time.sleep(30)
             if stat.read_text().rsplit(")", 1)[1].split()[0] == "Z":
                 break  # terminated, awaiting the container init's reap
             await asyncio.sleep(0.01)
+
+
+@pytest.mark.parametrize(
+    "status,over_budget,expected", [(0, False, 0), (15, False, 143), (0, True, 71)]
+)
+def test_reaper_preserves_result_and_settles_cpu_before_exit(
+    monkeypatch, status, over_budget, expected
+):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    libc = SimpleNamespace(prctl=Mock(return_value=0))
+    monkeypatch.setattr(media_sandbox.ctypes, "CDLL", lambda *a, **k: libc)
+    monkeypatch.setattr(media_sandbox.os, "fork", lambda: 31)
+    monkeypatch.setattr(
+        media_sandbox.os,
+        "wait4",
+        Mock(side_effect=[(0, 0, None), (31, status, None), ChildProcessError()]),
+    )
+    monkeypatch.setattr(media_sandbox, "_group_usage", lambda group: (0, 2 if over_budget else 0))
+    monkeypatch.setattr(media_sandbox.Path, "glob", lambda *a: [])
+    monkeypatch.setattr(media_sandbox.time, "sleep", Mock())
+    assert media_sandbox._reap_job(["python", "-c", "pass"], 1) == expected
+    libc.prctl.assert_called_once_with(36, 1, 0, 0, 0)
+
+
+def test_reaper_refuses_missing_kernel_support(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        media_sandbox.ctypes, "CDLL", lambda *a, **k: SimpleNamespace(prctl=lambda *a: -1)
+    )
+    with pytest.raises(RuntimeError, match="accounting"):
+        media_sandbox._reap_job(["unused"], 1)
+
+
+def test_reaper_kills_leftovers_and_tolerates_disappearing_processes(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(
+        media_sandbox.ctypes, "CDLL", lambda *a, **k: SimpleNamespace(prctl=lambda *a: 0)
+    )
+    monkeypatch.setattr(media_sandbox.os, "fork", lambda: 31)
+    monkeypatch.setattr(
+        media_sandbox.os, "wait4", Mock(side_effect=[(31, 0, None), ChildProcessError()])
+    )
+    monkeypatch.setattr(media_sandbox.os, "getpgrp", lambda: 123)
+    monkeypatch.setattr(media_sandbox.os, "getpid", lambda: 99)
+    monkeypatch.setattr(media_sandbox, "_group_usage", lambda group: (0, 0))
+    paths = [
+        SimpleNamespace(
+            parent=SimpleNamespace(name="32"), read_text=lambda: "32 (leftover) S 0 123"
+        ),
+        SimpleNamespace(parent=SimpleNamespace(name="99"), read_text=lambda: "99 (reaper) S 0 123"),
+    ]
+    monkeypatch.setattr(media_sandbox.Path, "glob", lambda *a: paths)
+    killed = Mock(side_effect=ProcessLookupError())
+    monkeypatch.setattr(media_sandbox.os, "kill", killed)
+    assert media_sandbox._reap_job(["unused"], 1) == 0
+    killed.assert_called_once_with(32, media_sandbox.signal.SIGKILL)
+
+
+def test_reaper_missing_executable_has_fixed_failure_code(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(
+        media_sandbox.ctypes, "CDLL", lambda *a, **k: SimpleNamespace(prctl=lambda *a: 0)
+    )
+    monkeypatch.setattr(media_sandbox.os, "fork", lambda: 0)
+    monkeypatch.setattr(media_sandbox.os, "execvp", Mock(side_effect=OSError("private input")))
+    monkeypatch.setattr(media_sandbox.os, "_exit", Mock(side_effect=SystemExit(70)))
+    with pytest.raises(SystemExit) as status:
+        media_sandbox._reap_job(["missing"], 1)
+    assert status.value.code == 70

@@ -129,3 +129,51 @@ isolation and network membership are unchanged.
 After the fix: configuration suite 3 passed, live Docker probe all groups passed,
 and the real S3 adapter contract against the Compose storage service 3 passed.
 The fix is a listener binding/readiness change, not a retry of a failed assertion.
+
+## PR #172 review remediation
+
+The owner approved the remediation plan, upload-only dependency exception, and
+DB/storage design clarification. #38 remains unimplemented and outside scope.
+
+- CPU regression: `uv run pytest tests/unit/test_media_sandbox.py -k retains_auto
+  --no-cov -q` observed **1 failed, 1 passed** before the fix. The auto-reaped
+  case completed above its 1-second CPU budget. The orphan case characterized
+  this host's unreaped zombies; the expanded live Docker check also exercises
+  orphan reaping under container init. A job-local Linux subreaper now retains
+  waited/orphaned CPU, and seccomp denies SIGCHLD disposition changes that could
+  enable SIG_IGN/SA_NOCLDWAIT. Tests cover bounded work, transient/permanent status,
+  failed subreaper setup, leftover termination and disappearing-process races.
+- Filesystem regression: the expanded real Docker probe first failed with
+  `write outside scratch succeeded: /dev/shm`. Explicit read-only `/dev/shm` and
+  `/dev/mqueue` mounts then passed the probe. Root read-only alone was insufficient.
+- Telemetry regression: `uv run pytest tests/unit/test_media_telemetry.py --no-cov
+  -q` first failed both cases on the missing relay boundary. Queued OTLP exporters
+  now preserve metrics/traces and child trace ancestry through PostgreSQL, with
+  delivery by the default pool. Unit cases validate protobuf encoding, bounded
+  payloads, disabled signals, redacted failures and HTTP retries; the PostgreSQL
+  test asserts the persisted background job and its delivery payload. No schema,
+  collector route, or media privilege was added.
+- Final focused boundary suites: **57 passed**. Scanner refusal and real-budget
+  settlement integration cases: **5 passed**. Real persisted relay integration:
+  **1 passed**. Lint, formatting, strict mypy (154 files) and six import contracts
+  pass. Added defensive cases beyond the observed regressions are supplemental
+  validation rather than separately claimed test-first cycles.
+- Both media runtime and complete speech images build. Actual provisioner code
+  downloaded and loaded configured `small.en` and `WAV2VEC2_ASR_BASE_960H` models.
+  A new interpreter inside the deployed non-root/read-only/network-isolated
+  Compose service then performed real offline transcription (**29 words**) and
+  alignment (**28 words**) on the public Narsil/asr_dummy `1.flac` fixture, inside
+  an 8 GiB/600 CPU-second/180-second job boundary. It completed in **28.66 s**.
+  This proves functional provisioning/inference, not model quality or staging
+  latency/capacity; those existing targets remain unchanged under #155.
+- The real freshclam updater downloaded/verified daily, main and bytecode CVDs
+  using the session proxy/CA. A read-only consumer using production freshness
+  defaults accepted the public audio and rejected EICAR as `upload_infected`.
+  No freshness override was used for this production-database check.
+- Concurrent large-image runs exhausted this managed environment's Docker/VFS
+  disk. Disposable build images/cache and verified unreferenced copies abandoned
+  by failed container creation were removed, retaining DB/storage/model volumes.
+  The image builds and provisioning checks above subsequently completed.
+- The complete required-service backend coverage command and expanded final
+  Docker contract are running for this revision; final outcomes and exact-head
+  CI are recorded in the follow-up verification below before merge.

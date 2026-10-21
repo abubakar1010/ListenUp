@@ -11,6 +11,8 @@ Uploads reach native media parsers. Coroutine cancellation cannot enforce a
 memory/CPU budget or stop arbitrary synchronous/native work. Container limits
 shared by two concurrent jobs are not sufficient per-job limits. YouTube #38 is
 not implemented; future media jobs must inherit the same boundary automatically.
+The owner approved upload-only completion of #95 without #38 during PR #172
+review remediation, together with Architecture 12.1's DB/storage exception.
 
 ## Decision
 
@@ -37,7 +39,8 @@ or model download; this avoids hundreds of MB of mutable data per build.
 Apply the sandbox to the **whole media service**, not to one converter or job
 name. It runs as UID/GID 10001, drops all capabilities, denies privilege escalation,
 has a read-only root and source/model/signature mounts, and only a bounded 2 GiB
-noexec/nosuid/nodev scratch tmpfs. Speech models are provisioned by a separate
+noexec/nosuid/nodev scratch tmpfs. Docker's auxiliary `/dev/shm` and `/dev/mqueue`
+mounts are explicitly read-only; root read-only alone does not restrict them. Speech models are provisioned by a separate
 one-shot service before startup. Jobs have no writable model cache or downloader
 network. No Docker socket or host network is available.
 
@@ -57,8 +60,14 @@ and aggregate RSS, 600 CPU seconds, and the existing per-job lane wall deadline.
 The container adds a 2-core cap, 18 GiB memory/swap ceiling and 256-process ceiling
 for both slots and supervisor. Seccomp denies `setsid` and `setpgid` after session
 creation, so descendants cannot escape group termination; missing seccomp fails
-closed. SIGKILL terminates the group on limit, crash or cancellation. The parent
-waits for the leader, and the container init reaps orphaned descendants. The
+closed. The launcher stays alive as a Linux child subreaper: wait4 accounting
+retains orphaned descendants inside the monitored group, including clone children
+without SIGCHLD. SIGCHLD is reset to default before the inherited filter denies
+rt_sigaction(SIGCHLD), preventing SIG_IGN and SA_NOCLDWAIT from discarding exited
+children's CPU usage. Libraries requiring custom SIGCHLD handlers are refused;
+current Python subprocesses, ffmpeg and real speech adapters are validated. SIGKILL terminates the group on limit, crash or cancellation. The parent
+waits for the job reaper, which collects orphaned descendants on normal completion;
+the container init reaps leftovers after group SIGKILL. The
 supervisor cleans each job's scratch directory even after SIGKILL.
 
 A limit or crash is permanent and invokes the existing `on_give_up` hook on the
@@ -67,6 +76,16 @@ scanner/input refusal is already settled by its handler. Transient child errors
 remain retryable and invoke the hook after the final attempt. Child error details
 are not printed or transported as exception text; request correlation crosses the
 boundary as structured stdin data.
+
+When telemetry is enabled, both supervisor and job interpreters use queued SDK
+exporters. Content-free OTLP protobufs (bounded to 1 MiB per batch) are queued via
+PostgreSQL to `platform.export_media_telemetry` on the default/background pool.
+Only that pool contacts collectors, using its own endpoints and headers. There
+is no new schema, proxy, collector route, or Docker socket in the media boundary.
+Existing trace context crosses stdin so jobs queued by a child retain ancestry.
+Queue retries bound transient export failures; an outage beyond the retry budget
+can lose telemetry, as with normal best-effort SDK export. A SIGKILL can also lose
+the child's buffered signals, while the surviving supervisor records job failure.
 
 ClamAV's maximum file size follows the upload policy, with a total scan budget
 twice that size. `--alert-exceeds-max=yes` makes scan-limit exhaustion a refusal,

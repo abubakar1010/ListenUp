@@ -144,3 +144,8 @@ Read the section for the area you are changing before you change it. The rules e
   separate services and mount them read-only for workers. Run
   `python infra/scripts/check-media-sandbox.py <media-image>` after infra changes
   on a disposable/local stack; it starts dev DB/storage and an API canary on :8000.
+
+- Media launchers retain orphan CPU as child subreapers and deny SIGCHLD disposition
+  changes as well as detachment. Do not bypass this with auto-reaping. `/dev/shm`
+  and `/dev/mqueue` must stay read-only. Media telemetry uses queued OTLP export
+  through DB to the default pool; never add a collector route to media-data.

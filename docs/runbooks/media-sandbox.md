@@ -25,6 +25,20 @@ API, telemetry collectors, mail, model downloaders, proxies or a Docker socket t
 this boundary. Future media jobs automatically inherit it; this does not enable
 YouTube intake or build #38.
 
+Docker's `/dev/shm` and `/dev/mqueue` mounts are explicitly read-only as well.
+Job launchers remain child subreapers, retaining CPU consumed by orphaned exits.
+SIGCHLD disposition changes are denied to prevent auto-reaping from discarding CPU
+accounting. A library that requires a custom SIGCHLD handler must be validated
+before enabling it; do not weaken the filter to resolve a startup error.
+
+With `LISTENUP_OTEL_ENABLED=true`, media supervisors and child jobs queue bounded,
+content-free OTLP batches through PostgreSQL. The default/background worker handles
+`platform.export_media_telemetry` and delivers to its configured collector endpoints
+with bounded retries. Enable telemetry and set endpoints on both pools; collector
+credentials belong only to the default pool. Inspect failed relay jobs when signals
+are missing. No media-to-collector network route is required. A killed child's last
+buffered signals can be lost, while its supervisor still records the failed job.
+
 Each job has an isolated process session and temporary scratch directory.
 Defaults: 8 GiB memory/address-space, 600 CPU seconds, lane-specific wall time
 (intake: 10 minutes; speech-interactive: 3 minutes). Configure memory/CPU with

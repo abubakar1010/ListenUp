@@ -23,7 +23,13 @@ def test_media_compose_has_readonly_root_and_isolated_network() -> None:
     assert "no-new-privileges:true" in media["security_opt"]
     assert media["pids_limit"] <= 256
     assert int(media["mem_limit"]) == 18 * 1024**3 and float(media["cpus"]) == 2
-    assert len(media["tmpfs"]) == 1 and media["tmpfs"][0].startswith("/scratch:")
+    assert media["tmpfs"][0].startswith("/scratch:rw,")
+    assert {mount.split(":")[0] for mount in media["tmpfs"]} == {
+        "/scratch",
+        "/dev/shm",
+        "/dev/mqueue",
+    }
+    assert all(":ro," in mount for mount in media["tmpfs"][1:])
     assert all(mount["read_only"] for mount in media["volumes"])
     assert set(media["networks"]) == {"media-data"}
     network = config["networks"]["media-data"]
