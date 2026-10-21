@@ -36,7 +36,7 @@ from listenup.platform.errors import ProblemError
 from listenup.platform.jobs import JobDeps, run_handler
 from listenup.platform.rate_limit import RateLimiter
 from listenup.platform.storage import StoredObject, use_storage
-from tests.integration.conftest import conninfo_to_url, with_csrf
+from tests.integration.conftest import accepted_consents, conninfo_to_url, with_csrf
 from tests.integration.intake_helpers import FakeStorage
 from tests.integration.seed import SeededLearner, seed_learner_data
 from tests.integration.test_password_reset import (
@@ -99,7 +99,9 @@ def unique_email() -> str:
 
 
 def register(client: TestClient, email: str) -> uuid.UUID:
-    response = client.post("/api/v1/auth/register", json={"email": email, "password": PASSWORD})
+    response = client.post(
+        "/api/v1/auth/register", json={"email": email, "password": PASSWORD, **accepted_consents()}
+    )
     assert response.status_code == 201
     return uuid.UUID(response.json()["id"])
 
@@ -710,7 +712,9 @@ def test_an_email_past_its_grace_period_can_register_again_before_the_purge(
     make_due(migrated_url, old_id)
 
     fresh = make_client()
-    response = fresh.post("/api/v1/auth/register", json={"email": email, "password": PASSWORD})
+    response = fresh.post(
+        "/api/v1/auth/register", json={"email": email, "password": PASSWORD, **accepted_consents()}
+    )
 
     assert response.status_code == 201
     new_id = uuid.UUID(response.json()["id"])
@@ -723,7 +727,9 @@ def test_an_email_past_its_grace_period_can_register_again_before_the_purge(
     delete_me_client = make_client()
     assert login(delete_me_client, other).status_code == 200
     assert delete_me(delete_me_client).status_code == 202
-    taken = make_client().post("/api/v1/auth/register", json={"email": other, "password": PASSWORD})
+    taken = make_client().post(
+        "/api/v1/auth/register", json={"email": other, "password": PASSWORD, **accepted_consents()}
+    )
     assert taken.json()["code"] == "email_taken"
     assert user_row(migrated_url, pending_id) is not None
 

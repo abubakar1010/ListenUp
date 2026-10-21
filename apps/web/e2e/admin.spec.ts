@@ -1,6 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 
-const ADMIN = { id: '1', email: 'ops@example.com', display_name: null, email_verified: true };
+const ADMIN = {
+  id: '1',
+  email: 'ops@example.com',
+  display_name: null,
+  email_verified: true,
+  consents_required: [],
+};
 
 const LANES = [
   { lane: 'speech-interactive', waiting: 0, scheduled: 0, running: 0, oldest_wait_seconds: null },

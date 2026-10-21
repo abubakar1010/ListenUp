@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from listenup.main import create_app
 from listenup.platform.config import Settings
-from tests.integration.conftest import with_csrf
+from tests.integration.conftest import accepted_consents, with_csrf
 from tests.integration.intake_helpers import PASSWORD
 
 AdminFactory = Callable[..., TestClient]
@@ -48,7 +48,8 @@ def accounts(api_role_url: str, migrated_url: str) -> Iterator[AdminFactory]:
         opened.append(client)
         with_csrf(client)
         registered = client.post(
-            "/api/v1/auth/register", json={"email": email, "password": PASSWORD}
+            "/api/v1/auth/register",
+            json={"email": email, "password": PASSWORD, **accepted_consents()},
         )
         assert registered.status_code == 201
         if verified:

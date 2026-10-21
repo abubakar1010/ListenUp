@@ -93,12 +93,11 @@ into application code as approved scoring policy.
 ## Consequences
 
 Speech inference remains local with licence-documented public research inputs.
-No speech dependencies or API/web source change. The application-dependency
-exceptions during merge preparation are security maintenance: the approved
-certifi lock update from 2026.7.22 to 2026.10.19 (`PYSEC-2026-4320`) and the Vite
-dev-dependency patch from 8.3.2 to 8.3.3 (`GHSA-587h-7wmj-h5pm`) exposed when the
-previously skipped JavaScript audit ran. All other web transitive resolutions and
-the isolated experiment dependencies/results are unchanged. The corrected
+No application dependency or API/web source changes remain relative to current
+main. The certifi 2026.10.19 and Vite security fixes prepared during merge work
+were superseded by PR #170 on main, whose certifi 2026.10.19 and newer Vite 8.3.5
+manifest/lockfiles are retained exactly. The isolated speech dependencies and
+experiment results are unchanged. The corrected
 evaluation does not establish the ten-pair majority acceptance criterion. Ungated diagnostic
 rankings do not waive missing evidence, individual weak/failing measures, the
 natural-shadowing gap, B2's human labels, AT-17 filler accuracy, or real-server

@@ -17,7 +17,7 @@ from alembic.config import Config
 from fastapi.testclient import TestClient
 from psycopg import sql
 
-from listenup.platform.config import get_settings
+from listenup.platform.config import Settings, get_settings
 from listenup.platform.db import to_sqlalchemy_url
 
 API_DIR = Path(__file__).resolve().parents[2]
@@ -108,6 +108,12 @@ def learner(migrated_url: str) -> Iterator[uuid.UUID]:
         )
         yield user_id
         connection.execute("DELETE FROM identity.users WHERE id = %s", [user_id])
+
+
+def accepted_consents() -> dict[str, str]:
+    """What a sign-up form sends after the learner accepts the current documents (#104)."""
+    settings = Settings()
+    return {"terms_version": settings.terms_version, "privacy_version": settings.privacy_version}
 
 
 def with_csrf(client: TestClient) -> TestClient:

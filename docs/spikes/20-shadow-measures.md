@@ -121,6 +121,13 @@ known vulnerabilities. Web lint, formatting, type checks, all 359 coverage-instr
 production build and the 200 KB gzip size check pass locally. Browser smoke is
 validated by CI rather than claimed as a local result.
 
+Main then advanced through PR #170, which independently included certifi
+2026.10.19 and the newer Vite 8.3.5 security patch. Integration retains main's
+package manifest and both application lockfiles exactly. Therefore this PR's net
+diff against current main again contains no application dependency or API/web
+source changes. The 359-test Vite 8.3.3 checks above record merge-preparation
+history; final CI validates the integrated main versions.
+
 This security maintenance is separate from the unchanged isolated speech
 environment/results. Full application CI reruns before merge; see the PR for its
 current status. Database/migration and generated API changes are not applicable

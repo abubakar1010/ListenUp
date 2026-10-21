@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.modules.identity.domain.consents import Consent, ConsentKind, CurrentVersions
 from listenup.platform.database import set_learner
 from listenup.platform.ids import uuid7
 
@@ -572,11 +573,12 @@ async def delete_user(session: AsyncSession, user_id: uuid.UUID) -> bool:
     return deleted is not None
 
 
-async def google_account(session: AsyncSession, subject: str, email: str) -> Account:
+async def google_account(session: AsyncSession, subject: str, email: str) -> tuple[Account, bool]:
     """Serialize subject and email decisions; the verified provider email is authoritative.
 
     Existing links always win over email changes. Gone linked identities are retained
     until cascade purge; their subject cannot resurrect or migrate an expired account.
+    The flag is True when this call created the account (a sign-up, #104).
     """
     await session.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 32))"),
@@ -586,19 +588,20 @@ async def google_account(session: AsyncSession, subject: str, email: str) -> Acc
     if linked:
         account = await get_account(session, linked)
         assert account is not None
-        return account
+        return account, False
     await session.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 32))"),
         {"key": "google-email:" + email.casefold()},
     )
     await release_email_of_gone_account(session, email)
-    await session.execute(
+    created = await session.execute(
         text("""
         INSERT INTO identity.users (id, email, email_verified_at)
-        VALUES (:id, :email, now()) ON CONFLICT (email) DO NOTHING
+        VALUES (:id, :email, now()) ON CONFLICT (email) DO NOTHING RETURNING id
     """),
         {"id": uuid7(), "email": email},
     )
+    is_new = created.first() is not None
     account = await find_account(session, email)
     assert account is not None
     await set_learner(session, account.id)
@@ -616,7 +619,7 @@ async def google_account(session: AsyncSession, subject: str, email: str) -> Acc
     """),
         {"id": account.id},
     )
-    return account
+    return account, is_new
 
 
 async def google_user_id(session: AsyncSession, subject: str) -> uuid.UUID | None:
@@ -624,3 +627,73 @@ async def google_user_id(session: AsyncSession, subject: str) -> uuid.UUID | Non
         text("SELECT identity.google_account(:sub)"), {"sub": subject}
     )
     return value
+
+
+async def list_consents(session: AsyncSession, user_id: uuid.UUID) -> list[Consent]:
+    """Every consent row of the learner, newest first."""
+    rows = await session.execute(
+        text("""
+        SELECT kind, version, granted_at, withdrawn_at FROM identity.consents
+         WHERE user_id = :id ORDER BY granted_at DESC, kind
+        """),
+        {"id": user_id},
+    )
+    return [
+        Consent(ConsentKind(kind), version, granted_at, withdrawn_at)
+        for kind, version, granted_at, withdrawn_at in rows
+    ]
+
+
+async def current_consents(
+    session: AsyncSession, user_id: uuid.UUID, current: CurrentVersions
+) -> list[Consent]:
+    """The learner's rows for the version of each kind that is current now: at most
+    one per kind, so the check on every request stays a primary-key lookup."""
+    rows = await session.execute(
+        text("""
+        SELECT kind, version, granted_at, withdrawn_at FROM identity.consents
+         WHERE user_id = :id
+           AND (kind, version) IN (('terms', :terms), ('privacy', :privacy),
+                                   ('voice_recording', :voice_recording))
+        """),
+        {
+            "id": user_id,
+            "terms": current.terms,
+            "privacy": current.privacy,
+            "voice_recording": current.voice_recording,
+        },
+    )
+    return [
+        Consent(ConsentKind(kind), version, granted_at, withdrawn_at)
+        for kind, version, granted_at, withdrawn_at in rows
+    ]
+
+
+async def grant_consent(
+    session: AsyncSession, user_id: uuid.UUID, kind: ConsentKind, version: str
+) -> None:
+    """Record consent to one version; granting a withdrawn version again renews it.
+
+    Granting a version the learner already holds keeps its original time, so a
+    repeated request changes nothing.
+    """
+    await session.execute(
+        text("""
+        INSERT INTO identity.consents (user_id, kind, version) VALUES (:id, :kind, :version)
+        ON CONFLICT (user_id, kind, version) DO UPDATE
+           SET granted_at = now(), withdrawn_at = NULL
+         WHERE identity.consents.withdrawn_at IS NOT NULL
+        """),
+        {"id": user_id, "kind": kind.value, "version": version},
+    )
+
+
+async def withdraw_consent(session: AsyncSession, user_id: uuid.UUID, kind: ConsentKind) -> None:
+    """Withdraw every version of `kind` the learner still holds."""
+    await session.execute(
+        text("""
+        UPDATE identity.consents SET withdrawn_at = now()
+         WHERE user_id = :id AND kind = :kind AND withdrawn_at IS NULL
+        """),
+        {"id": user_id, "kind": kind.value},
+    )

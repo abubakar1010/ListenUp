@@ -1,7 +1,13 @@
 import { expect, test } from '@playwright/test';
 
 test('expired learner A data stays hidden while learner B library loads', async ({ page }) => {
-  const learnerA = { id: 'a', email: 'a@example.com', display_name: null, email_verified: false };
+  const learnerA = {
+    id: 'a',
+    email: 'a@example.com',
+    display_name: null,
+    email_verified: false,
+    consents_required: [],
+  };
   const learnerB = { ...learnerA, id: 'b', email: 'b@example.com' };
   const clipA = {
     id: 'a-clip',

@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-query';
 
 import { ApiError, type Me } from '../api/client';
+import { noteConsentRefused } from '../auth/consentApi';
 import { changeSession, SessionChangedError } from '../auth/session';
 import { ME_KEY } from '../auth/useMe';
 
@@ -111,6 +112,9 @@ export function createQueryClient(): QueryClient {
         ) {
           changeSession(queryClient, null);
         }
+        if (error instanceof ApiError && error.code === 'consent_required') {
+          noteConsentRefused(queryClient);
+        }
       },
     }),
     mutationCache: new SessionMutationCache({
@@ -126,6 +130,9 @@ export function createQueryClient(): QueryClient {
       onError: (error, _variables, _context, _mutation, request) => {
         if (isCurrent(request) && error instanceof ApiError && error.code === 'not_signed_in') {
           changeSession(queryClient, null);
+        }
+        if (isCurrent(request) && error instanceof ApiError && error.code === 'consent_required') {
+          noteConsentRefused(queryClient);
         }
       },
     }),
