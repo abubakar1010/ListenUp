@@ -9,6 +9,24 @@ export default function GoogleErrorPage() {
   const [params] = useSearchParams();
   const reauth = params.get('intent') === 'reauth';
   const fresh = reauth && params.get('reason') === 'fresh_auth';
+  // A new Google account needs the current terms and privacy accepted first (#104).
+  if (!reauth && params.get('reason') === 'consent') {
+    return (
+      <main className="mx-auto flex max-w-reading flex-col gap-5 p-6">
+        <h1 className="font-display text-title-compact">Google confirmation was not completed</h1>
+        <p role="alert">
+          To create an account with Google, first accept the Terms of Service and Privacy Policy on
+          the Create account page. No account was created.
+        </p>
+        <Link to="/register" className={buttonClass('primary')}>
+          Create an account
+        </Link>
+        <Link to="/sign-in" className="font-bold text-accent">
+          Back to sign in
+        </Link>
+      </main>
+    );
+  }
   return (
     <main className="mx-auto flex max-w-reading flex-col gap-5 p-6">
       <h1 className="font-display text-title-compact">Google confirmation was not completed</h1>

@@ -8,6 +8,9 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 LOCAL_ANALYTICS_HMAC_KEY = "listenup-local-analytics-key-change-me"
 
+# A consent document version label (#104): short, and safe to show and log.
+ConsentVersion = Annotated[str, Field(min_length=1, max_length=20, pattern=r"^[A-Za-z0-9._-]+$")]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LISTENUP_", env_file=".env", extra="ignore")
@@ -66,6 +69,14 @@ class Settings(BaseSettings):
     # Account deletion (FR-ACC-4, DR-1, D9): a deleted account is disabled at once and
     # can be restored by signing in for this many days; then the purge job removes it.
     account_deletion_grace_days: int = 7
+    # Versions of the documents a learner consents to (#104, ADR 0048). A new label
+    # asks every learner to accept terms or privacy again on their next sign-in, and
+    # voice consent again before their next Shadow round. The defaults are
+    # placeholders until the policy text (#103) is written; labels fit
+    # identity.consents.version (at most 20 characters).
+    terms_version: ConsentVersion = "placeholder-1"
+    privacy_version: ConsentVersion = "placeholder-1"
+    voice_consent_version: ConsentVersion = "placeholder-1"
 
     # File uploads (FR-CI-1, FR-CI-3, D5). Sizes are binary: 500 MB is 500 MiB, as
     # operating systems show file sizes.
@@ -99,6 +110,8 @@ class Settings(BaseSettings):
     # Where media workers write source and converted files while a job runs; the
     # system's temporary directory when unset. Each job removes its own files.
     media_scratch_dir: str | None = None
+    media_job_memory_mb: int = Field(default=8192, ge=128)
+    media_job_cpu_seconds: int = Field(default=600, ge=1)
 
     # AI providers per role (ADR 0028): a path to an ai.yaml; the packaged
     # listenup/ai/ai.yaml when unset. listenup/ai/ai.fake.yaml needs no models.

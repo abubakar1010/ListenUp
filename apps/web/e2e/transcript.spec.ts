@@ -56,6 +56,7 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
           display_name: null,
           email_verified: false,
           deletion_grace_days: 7,
+          consents_required: [],
         },
       });
     if (path === '/sessions/s-57') return route.fulfill({ json: SESSION });

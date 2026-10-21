@@ -1,0 +1,14 @@
+{
+  "bdl.parquet": "1b2a86eaed50ea338325ad718e3f2e8e91acf32105aa2eeef08a3c2aa60723c6",
+  "slt.parquet": "9f76b0da2b34679c65b4d55014377a9f6a04f8f9a73dc8af9134f9481a4d6ad7",
+  "clb.parquet": "4cc4b4342d49d542b1c4c4f2684bb02aab1eb9c8a654c186639ef7b692c508bf",
+  "phone/pytorch_model.bin": "3173bde9e9ce490fa0f989e413c42f25bc1820c020adc1e6b9b87025b3cfcc5e",
+  "phone/config.json": "4609fb49b7e1d28aecb2840da1926c40bd915bc6f1120a940afacf7159bbfb13",
+  "phone/preprocessor_config.json": "a2254a5b58f72cd4de3632f8eee64f3f098b7c1402128d2f419e7d00ae13e335",
+  "phone/vocab.json": "d732ab2456c0c017930001dc9af0b41b3b93d25b2eb9740bf9d925508d7d87d0",
+  "word.pth": "488fd4f16de84438ffc945334278c1b9fb9b7159a806c1080b16111a958c945d",
+  "whisper/tokenizer.json": "929c5252409436dce1b38a75d1abbcb5e132d170d8e324e4e04ed915fa2d22df",
+  "whisper/model.bin": "62b2a45b05ee59acb4a5341b33ee35e041395d378d418a18acfe4c9e768ee37a",
+  "whisper/config.json": "666a9605530ac1f61fa8177f3702b4dacec9966749e42610839fcc32661d5fae",
+  "whisper/vocabulary.txt": "ff77588746d3a2595d32ab5b69ffd7b95ce2441ac57533cb66fc3eb575a115cf"
+}

@@ -50,3 +50,53 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
     # Installing again (a second worker of the pool) registers nothing twice.
     assert set(jobs.install_schedules(default)) == set(scheduled)
     assert len(installed) == 3
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("pool", ["media", "default"])
+async def test_pool_enables_process_isolation_before_accepting_jobs(
+    pool: str,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock
+
+    from listenup import worker
+
+    database = SimpleNamespace(dispose=AsyncMock())
+    monkeypatch.setattr(jobs._runtime, "database", None)
+    monkeypatch.setattr(jobs._runtime, "isolate_media", False)
+    monkeypatch.setattr(worker, "Database", Mock(return_value=database))
+    monkeypatch.setattr(worker, "JOB_MODULES", ["json"])
+    monkeypatch.setattr(worker, "load_models", AsyncMock())
+    monkeypatch.setattr(worker, "configure_logging", Mock())
+    monkeypatch.setattr(worker, "configure_telemetry", Mock())
+    monkeypatch.setattr(worker, "shutdown_telemetry", Mock())
+    monkeypatch.setattr(worker, "install_schedules", Mock())
+    monkeypatch.setattr(worker, "set_gate", Mock())
+    monkeypatch.setattr(worker, "sample_queue_forever", AsyncMock())
+    monkeypatch.setattr(worker, "READY_FILE", tmp_path / "ready")
+    monkeypatch.setattr(asyncio.get_running_loop(), "add_signal_handler", Mock())
+
+    class StopAtReadiness:
+        async def wait(self):
+            assert worker.READY_FILE.read_text() == pool
+            assert jobs._runtime.database is database
+            assert jobs._runtime.isolate_media is (pool == "media")
+
+        def set(self):
+            pass
+
+    @asynccontextmanager
+    async def opened():
+        yield
+
+    monkeypatch.setattr(worker.asyncio, "Event", StopAtReadiness)
+    monkeypatch.setattr(worker.app, "open_async", opened)
+    monkeypatch.setattr(worker.app, "run_worker_async", AsyncMock())
+    await worker.run_pool(pool)
+    assert not worker.READY_FILE.exists()
+    database.dispose.assert_awaited_once()

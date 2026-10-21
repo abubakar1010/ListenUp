@@ -27,7 +27,7 @@ from listenup.platform.config import Settings
 from listenup.platform.database import Database
 from listenup.platform.jobs import JobDeps, PermanentError
 from listenup.platform.storage import use_storage
-from tests.integration.conftest import conninfo_to_url, with_csrf
+from tests.integration.conftest import accepted_consents, conninfo_to_url, with_csrf
 from tests.integration.intake_helpers import (
     PASSWORD,
     ClientFactory,
@@ -427,7 +427,8 @@ def test_upload_requests_are_limited_per_ip_across_learners(
         with_csrf(client)
         email = f"learner-{uuid.uuid4().hex}@example.com"
         registered = client.post(
-            "/api/v1/auth/register", json={"email": email, "password": PASSWORD}
+            "/api/v1/auth/register",
+            json={"email": email, "password": PASSWORD, **accepted_consents()},
         )
         assert registered.status_code == 201
         return client

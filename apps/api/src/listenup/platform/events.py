@@ -445,8 +445,9 @@ def get_event_hub(request: Request) -> EventHub:
 def events_router(learner: Callable[..., Any]) -> APIRouter:
     """`GET /events`, guarded by `learner`, the dependency that resolves the signed-in user.
 
-    The caller passes it in (identity's `current_learner`) so the platform package
-    never imports a feature module.
+    The caller passes it in (identity's `signed_in_learner`) so the platform package
+    never imports a feature module. It does not wait for consent (ADR 0048): events
+    carry ids only, and a learner who owes consent still needs `account.disabled`.
     """
     router = APIRouter(tags=["events"])
 
