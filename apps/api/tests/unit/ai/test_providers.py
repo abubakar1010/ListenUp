@@ -208,3 +208,16 @@ def test_registered_versions_match_deployed_speech_settings(monkeypatch):
     engine = object.__new__(FasterWhisperEngine)
     engine._compute_type = "float32"
     assert engine.version == whisper_version(whisper)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("task", ["extract_key_points", "grade_gist", "shadow_feedback"])
+async def test_fake_text_ai_answers_the_three_tasks_without_registration(task):
+    from listenup.ai.config import ProviderEntry
+    from listenup.ai.ports import TextTask
+    from listenup.ai.providers.fake import FakeTextAI
+    from listenup.ai.tasks import TASK_MODELS
+
+    fake_text = FakeTextAI(ProviderEntry(provider="fake"))
+    result = await fake_text.generate(TextTask(task, "v1"), {}, TASK_MODELS[task])
+    assert isinstance(result.value, TASK_MODELS[task])

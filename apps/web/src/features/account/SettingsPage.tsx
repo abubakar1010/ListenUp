@@ -1,4 +1,5 @@
 import { usePageTitle } from '../../app/usePageTitle';
+import { ConsentsSection } from './ConsentsSection';
 import { DataExportSection } from './DataExportSection';
 import { DeleteAccountSection } from './DeleteAccountSection';
 
@@ -14,6 +15,7 @@ export default function SettingsPage() {
       <div id="data-export" className="scroll-mt-4">
         <DataExportSection />
       </div>
+      <ConsentsSection />
       <DeleteAccountSection />
     </main>
   );

@@ -16,7 +16,7 @@ from listenup.modules.export.service import build_exports
 from listenup.modules.identity import api as identity_api
 from listenup.modules.identity import google_api
 from listenup.modules.identity.oidc import GoogleOIDC
-from listenup.modules.identity.service import build_accounts, current_learner
+from listenup.modules.identity.service import build_accounts, signed_in_learner
 from listenup.modules.library import api as library_api
 from listenup.modules.practice import api as practice_api
 from listenup.modules.review import api as review_api
@@ -89,7 +89,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(dictation_api.router)
     api.include_router(export_api.router)
     api.include_router(admin_api.router)
-    api.include_router(events_router(current_learner))
+    api.include_router(events_router(signed_in_learner))
     app.include_router(api)
     return app
 

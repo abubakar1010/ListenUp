@@ -26,6 +26,7 @@ test('keyboard Google navigation reloads into the authenticated account', async 
               display_name: null,
               email_verified: true,
               deletion_grace_days: 7,
+              consents_required: [],
             }
           : { status: 401, code: 'not_signed_in', detail: 'Sign in to continue.' },
       });
@@ -78,6 +79,7 @@ for (const intent of ['login', 'reauth'] as const) {
             display_name: null,
             email_verified: true,
             deletion_grace_days: 7,
+            consents_required: [],
           },
         });
       }

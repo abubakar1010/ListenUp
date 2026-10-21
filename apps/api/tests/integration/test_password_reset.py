@@ -25,7 +25,7 @@ from listenup.modules.notifications.service import EmailContent
 from listenup.platform.config import Settings
 from listenup.platform.database import Database
 from listenup.platform.jobs import Lane, app, configure_runtime
-from tests.integration.conftest import conninfo_to_url, with_csrf
+from tests.integration.conftest import accepted_consents, conninfo_to_url, with_csrf
 
 PASSWORD = "correct horse battery"
 NEW_PASSWORD = "a brand new passphrase"
@@ -86,7 +86,9 @@ def unique_email() -> str:
 
 
 def register(client: TestClient, email: str, password: str = PASSWORD) -> Response:
-    return client.post("/api/v1/auth/register", json={"email": email, "password": password})
+    return client.post(
+        "/api/v1/auth/register", json={"email": email, "password": password, **accepted_consents()}
+    )
 
 
 def login(client: TestClient, email: str, password: str = PASSWORD) -> Response:

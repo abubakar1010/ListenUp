@@ -40,6 +40,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from listenup.platform.config import Settings
 from tests.integration.seed import SeededLearner
 
 
@@ -133,6 +134,14 @@ def _usage_counts_only_b(world: World, response: httpx.Response) -> str | None:
     return None if used == 0 else f"B's storage use is {used}, which counts A's uploads"
 
 
+def _voice_consent_of_b(response: httpx.Response, *, withdrawn: bool) -> str | None:
+    # Writes run in route order, so B grants voice consent before withdrawing it.
+    voice = [c for c in response.json()["consents"] if c["kind"] == "voice_recording"]
+    if [c["withdrawn_at"] is not None for c in voice] == [withdrawn]:
+        return None
+    return f"B's own voice consent is not {'withdrawn' if withdrawn else 'granted'}: {voice}"
+
+
 def _deletion_summary_counts_only_b(world: World, response: httpx.Response) -> str | None:
     found = response.json()
     expected = {"clips": 0, "practice_sessions": 0, "cards": 0, "recordings": 0}
@@ -173,7 +182,22 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ("POST", "/api/v1/auth/password-reset/confirm"): Public(
         "authorised by the one-time token from the email, not by a login session"
     ),
+    ("GET", "/api/v1/auth/consent-versions"): Public(
+        "the current document version labels for the sign-up form; no learner data"
+    ),
     ("GET", "/api/v1/me"): Scoped(a_sees=lambda w: [w.a.user_id]),
+    # Consents (#104): B lists, grants and withdraws only B's own. A holds voice consent
+    # (seed.py), so the row snapshot fails if B's write reaches A's rows; the checks
+    # make sure B's write really happened, so the entry cannot pass on a no-op.
+    ("GET", "/api/v1/me/consents"): Scoped(),
+    ("POST", "/api/v1/me/consents"): Scoped(
+        body=lambda w: {"kind": "voice_recording", "version": Settings().voice_consent_version},
+        check=lambda w, r: _voice_consent_of_b(r, withdrawn=False),
+    ),
+    ("POST", "/api/v1/me/consents/withdraw"): Scoped(
+        body=lambda w: {"kind": "voice_recording"},
+        check=lambda w, r: _voice_consent_of_b(r, withdrawn=True),
+    ),
     ("GET", "/api/v1/me/deletion-summary"): Scoped(check=_deletion_summary_counts_only_b),
     # B can only ever delete B's own account; with a wrong password nothing happens.
     ("DELETE", "/api/v1/me"): Scoped(

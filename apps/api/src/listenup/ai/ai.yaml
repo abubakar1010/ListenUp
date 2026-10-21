@@ -6,10 +6,20 @@
 # `version` is the file format; history lives in git.
 version: 1
 saving_mode: true  # ADR 0037; rounds 1/2 use grading templates
-# #66 adds registered text adapters only after eligibility and evaluation acceptance.
-# tasks maps extract_key_points/grade_gist to hosted -> local, and shadow_feedback/
-# suggestions to local -> hosted. Unknown adapter IDs still fail configuration.
-tasks: {}
+# Text AI (#66, ADR 0046): key points and gist grading try the hosted free tier first and
+# the self-hosted model only when it is skipped (quota, eligibility, invalid output);
+# round feedback keeps the hosted allowance for grading and goes local first (ADR 0037).
+tasks:
+  extract_key_points: [groq, ollama]
+  grade_gist: [groq, ollama]
+  shadow_feedback: [ollama, groq]
+# Token budgets per task (System Design 7.3). Input is measured as UTF-8 bytes of the JSON
+# input, one byte per token (conservative); a reservation is input + output, which must
+# stay under Groq's 8,000 tokens per minute. `prompt_tokens` is the prompt file's overhead.
+task_budgets:
+  extract_key_points: {input_tokens: 7000, output_tokens: 512, prompt_tokens: 700}
+  grade_gist: {input_tokens: 7000, output_tokens: 700, prompt_tokens: 900}
+  shadow_feedback: {input_tokens: 1536, output_tokens: 400, prompt_tokens: 500}
 roles:
   transcription:
     - provider: faster-whisper
@@ -36,6 +46,46 @@ roles:
         threads: 2
         window_seconds: 30  # bounded emission windows; rerun B2 with production preprocessing
         int8: true  # dynamic int8 linear layers; record this choice in provenance
-  # No adapter yet: Shadow grading (#20, #21) and the hosted Text AI (#23) add them.
+  # No adapter yet: Shadow grading (#20, #21) adds one.
   speech_assessment: []
-  text_ai: []
+  text_ai:
+    # Hosted free tier. Disabled until the operator has verified the organisation's limits,
+    # zero data retention, allowed regions and populations, and the golden set passes
+    # (ADR 0037, NFR-AI-6). Never put the key here: LISTENUP_AI_GROQ_API_KEY holds it.
+    - provider: groq
+      model: openai/gpt-oss-20b
+      enabled: false
+      accepted: false
+      retention_verified: false
+      trains_on_inputs: false  # Services Agreement 4.2, read 2026-10-11 (ADR 0037)
+      regions: []
+      populations: []
+      timeout_seconds: 15
+      retries: 1
+      retry_backoff_seconds: 1
+      # B6 spike: 30 RPM, 8K TPM, 1,000 RPD, 200K TPD. Monthly figures are calculated
+      # ceilings (30 x daily), not published limits: replace with the organisation's own.
+      limits:
+        minute: {calls: 30, tokens: 8000}
+        day: {calls: 1000, tokens: 200000}
+        month: {calls: 30000, tokens: 6000000}
+      projected_input_cost_per_million: 0.075
+      projected_output_cost_per_million: 0.30
+      options:
+        base_url: https://api.groq.com/openai/v1
+        api_key_env: LISTENUP_AI_GROQ_API_KEY
+        structured_output: json_schema
+        reasoning_effort: low
+    # Self-hosted fallback: the optional `llm` Compose service (profile `llm`). Idle and
+    # not running by default, so it takes no CPU from speech work (System Design 5.2).
+    - provider: ollama
+      model: qwen3:4b-instruct
+      local: true
+      enabled: false
+      accepted: false
+      trains_on_inputs: false
+      timeout_seconds: 30
+      retries: 0
+      options:
+        base_url: http://llm:11434/v1
+        structured_output: json_schema

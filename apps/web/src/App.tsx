@@ -21,6 +21,7 @@ const StartPlanPage = lazy(() => import('./features/session/StartPlanPage'));
 const SettingsPage = lazy(() => import('./features/account/SettingsPage'));
 const DeleteAccountPage = lazy(() => import('./features/account/DeleteAccountPage'));
 const JobsPage = lazy(() => import('./features/admin/JobsPage'));
+const LegalPage = lazy(() => import('./features/legal/LegalPage'));
 const NotFoundPage = lazy(() => import('./app/NotFoundPage'));
 const AccountDeletedPage = lazy(() => import('./features/account/AccountDeletedPage'));
 const PasswordResetRequestPage = lazy(() =>
@@ -60,6 +61,9 @@ export function App() {
             />
           </Route>
           <Route path="/auth/google-error" element={<GoogleErrorPage />} />
+          {/* Placeholders until the policy text is written (#103, ADR 0048). */}
+          <Route path="/terms" element={<LegalPage document="terms" />} />
+          <Route path="/privacy" element={<LegalPage document="privacy" />} />
           {/* Outside RedirectIfSignedIn: a reset link must also work while signed in. */}
           <Route
             path="/forgot-password"

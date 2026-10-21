@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from listenup.modules.export import service
 from listenup.modules.export.service import ExportsDep
-from listenup.modules.identity.service import CurrentLearner
+from listenup.modules.identity.service import SignedInLearner
 from listenup.platform.database import DbSession
 from listenup.platform.idempotency import IdempotencyKeyHeader, request_fingerprint, run_once
 
@@ -58,7 +58,7 @@ def _out(export: service.DataExport) -> DataExport:
 )
 async def request_export(
     request: Request,
-    learner: CurrentLearner,
+    learner: SignedInLearner,
     session: DbSession,
     exports: ExportsDep,
     idempotency_key: IdempotencyKeyHeader = None,
@@ -78,7 +78,7 @@ async def request_export(
 
 @router.get("/me/exports/latest")
 async def latest_export(
-    learner: CurrentLearner, session: DbSession, exports: ExportsDep, response: Response
+    learner: SignedInLearner, session: DbSession, exports: ExportsDep, response: Response
 ) -> LatestExport:
     """The learner's most recent export and its status; `export` is null if none."""
     found = await exports.latest(session, learner)
@@ -98,7 +98,7 @@ async def latest_export(
     },
 )
 async def download_export(
-    export_id: uuid.UUID, learner: CurrentLearner, session: DbSession, exports: ExportsDep
+    export_id: uuid.UUID, learner: SignedInLearner, session: DbSession, exports: ExportsDep
 ) -> RedirectResponse:
     """Download the archive. Needs the owner's session; the link it redirects to works
     for a short time only."""

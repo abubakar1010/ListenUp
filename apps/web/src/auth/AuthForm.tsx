@@ -1,10 +1,12 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useId, useState, type FormEvent, type ReactNode } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import { api, ApiError, type Me } from '../api/client';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { formatDeletionDate } from '../features/account/deletionApi';
+import { ErrorPanel } from '../components/ErrorPanel';
+import { CONSENT_VERSIONS_KEY, DOCUMENTS, useConsentVersions } from './consentApi';
 import { errorMessage } from './errorMessage';
 import { GoogleRestore } from './GoogleRestore';
 import { nextPath } from './next';
@@ -21,6 +23,9 @@ function scheduledDate(error: unknown): string | null {
   return typeof at === 'string' ? at : null;
 }
 
+/** Sign-up needs the current terms and privacy versions (#104). */
+const CONSENT_REQUIRED = 'Accept the Terms of Service and Privacy Policy to create an account.';
+
 const COPY = {
   'sign-in': { title: 'Sign in', submit: 'Sign in', path: '/auth/login' },
   register: { title: 'Create your account', submit: 'Create account', path: '/auth/register' },
@@ -28,9 +33,25 @@ const COPY = {
 
 export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
   const copy = COPY[mode];
-  const ids = { email: useId(), password: useId(), error: useId(), hint: useId() };
+  const ids = {
+    email: useId(),
+    password: useId(),
+    error: useId(),
+    hint: useId(),
+    consent: useId(),
+    versions: useId(),
+  };
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const registering = mode === 'register';
+  const versions = useConsentVersions(registering);
+  // The labels the learner ticked the box for: a newer version shown later is not
+  // accepted until the box is ticked again.
+  const shown = versions.data ? `${versions.data.terms}\n${versions.data.privacy}` : null;
+  const [acceptedLabels, setAcceptedLabels] = useState<string | null>(null);
+  const accepted = shown !== null && acceptedLabels === shown;
+  const [consentError, setConsentError] = useState<string | null>(null);
+  const consentBox = useRef<HTMLInputElement>(null);
   // While the restore question is open: the date the deleted account's data goes.
   const [restoreUntil, setRestoreUntil] = useState<string | null>(null);
   // Set when the learner chose to keep a deleted account deleted: the same date.
@@ -41,12 +62,24 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
 
   const submit = useMutation({
     meta: { changesSession: true },
-    mutationFn: (restore: boolean) =>
-      api<Me>(copy.path, {
+    mutationFn: (restore: boolean) => {
+      // The versions shown next to the box; the server refuses older ones (409).
+      const consent = registering && versions.data;
+      return api<Me>(copy.path, {
         method: 'POST',
-        body: restore ? { email, password, restore: true } : { email, password },
-      }),
+        body: restore
+          ? { email, password, restore: true }
+          : consent
+            ? { email, password, terms_version: consent.terms, privacy_version: consent.privacy }
+            : { email, password },
+      });
+    },
     onError: (failure, restore) => {
+      if (failure instanceof ApiError && failure.code === 'consent_version_changed') {
+        // A newer version was published while the form was open: show it, ask again.
+        setAcceptedLabels(null);
+        void queryClient.invalidateQueries({ queryKey: CONSENT_VERSIONS_KEY });
+      }
       const at = scheduledDate(failure);
       if (at) setRestoreUntil(at);
       // A refused restore (the grace period just ended) closes the question; a
@@ -61,14 +94,31 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
     },
   });
 
+  function requireConsent(): boolean {
+    if (!registering || accepted) return true;
+    submit.reset();
+    setConsentError(CONSENT_REQUIRED);
+    consentBox.current?.focus();
+    return false;
+  }
+
   function onSubmit(event: FormEvent) {
     event.preventDefault();
     setKeptDeleted(null);
+    if (!requireConsent()) return;
     submit.mutate(false);
   }
 
+  const next = encodeURIComponent(nextPath(searchParams));
+  const googleStart =
+    registering && versions.data
+      ? `/api/v1/auth/oidc/google/start?next=${next}&terms_version=${encodeURIComponent(versions.data.terms)}&privacy_version=${encodeURIComponent(versions.data.privacy)}`
+      : `/api/v1/auth/oidc/google/start?next=${next}`;
+  const googleClass =
+    'mt-4 inline-flex min-h-11 items-center rounded border px-4 py-2 font-bold focus:outline-2 focus:outline-offset-2';
+
   const failed = submit.isError && !scheduledDate(submit.error);
-  const error = failed && !restoreUntil ? errorMessage(submit.error) : null;
+  const error = consentError ?? (failed && !restoreUntil ? errorMessage(submit.error) : null);
 
   function keepDeleted() {
     // Nothing was signed in: declining only closes the question.
@@ -81,12 +131,66 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
   return (
     <main className="mx-auto max-w-sm p-6">
       <h1 className="text-2xl font-semibold">{copy.title}</h1>
-      <a
-        className="mt-4 inline-flex min-h-11 items-center rounded border px-4 py-2 font-bold focus:outline-2 focus:outline-offset-2"
-        href={`/api/v1/auth/oidc/google/start?next=${encodeURIComponent(nextPath(searchParams))}`}
-      >
-        Continue with Google
-      </a>
+      {registering && (
+        <div className="mt-4 flex items-start gap-2">
+          <input
+            ref={consentBox}
+            id={ids.consent}
+            type="checkbox"
+            checked={accepted}
+            // Nothing can be accepted before the learner can see which versions.
+            disabled={shown === null}
+            onChange={(event) => {
+              setAcceptedLabels(event.target.checked ? shown : null);
+              if (event.target.checked) setConsentError(null);
+            }}
+            aria-invalid={consentError !== null}
+            aria-describedby={consentError ? `${ids.versions} ${ids.error}` : ids.versions}
+            className="mt-1 size-5"
+          />
+          <label htmlFor={ids.consent}>
+            I agree to the{' '}
+            <Link to={DOCUMENTS.terms.path} target="_blank" className="text-blue-700 underline">
+              {DOCUMENTS.terms.name}
+            </Link>{' '}
+            and the{' '}
+            <Link to={DOCUMENTS.privacy.path} target="_blank" className="text-blue-700 underline">
+              {DOCUMENTS.privacy.name}
+            </Link>
+            .
+          </label>
+        </div>
+      )}
+      {registering && (
+        <div id={ids.versions} className="mt-2 text-sm text-gray-700">
+          {versions.data ? (
+            <p>
+              {DOCUMENTS.terms.name} version {versions.data.terms}, {DOCUMENTS.privacy.name} version{' '}
+              {versions.data.privacy}.
+            </p>
+          ) : versions.isError ? (
+            <ErrorPanel error={versions.error} onRetry={() => void versions.refetch()} />
+          ) : (
+            <p role="status">Loading the current Terms of Service and Privacy Policy…</p>
+          )}
+        </div>
+      )}
+      {registering && !accepted ? (
+        // A Google sign-up accepts the same documents, so it waits for the box, and
+        // for the versions it would accept.
+        <button
+          type="button"
+          className={`${googleClass} disabled:opacity-60`}
+          onClick={requireConsent}
+          disabled={!versions.data}
+        >
+          Continue with Google
+        </button>
+      ) : (
+        <a className={googleClass} href={googleStart}>
+          Continue with Google
+        </a>
+      )}
       {searchParams.get('google') === 'cancelled' && (
         <p role="status">Google sign-in was cancelled. You can try again.</p>
       )}
