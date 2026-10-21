@@ -353,7 +353,11 @@ def test_a_local_server_may_use_plain_http():
         "http://10.0.0.5:11434/v1",
         "http://192.168.1.20:11434/v1",
         "http://[::1]:11434/v1",
+        "http://[::ffff:10.0.0.1]:11434/v1",
+        "http://169.254.1.1:11434/v1",
         "http://host.docker.internal:11434/v1",
+        "http://llm-1.localhost:11434/v1",
+        "http://LLM:11434/v1",
     ],
 )
 def test_a_local_entry_may_reach_this_host_or_the_private_network(base_url):
@@ -367,6 +371,20 @@ def test_a_local_entry_may_reach_this_host_or_the_private_network(base_url):
         "http://llm.example/v1",
         "http://8.8.8.8:11434/v1",
         "http://[2001:4860:4860::8888]:11434/v1",
+        "http://[::ffff:8.8.8.8]:11434/v1",  # IPv4-mapped
+        "http://[2002:808:808::]:11434/v1",  # 6to4 for 8.8.8.8
+        "http://[2001:0:4136:e378:8000:63bf:3fff:fdd2]:11434/v1",  # Teredo
+        "http://134744072:11434/v1",  # one number: 8.8.8.8 to the resolver
+        "http://0x08080808:11434/v1",
+        "http://1:11434/v1",
+        "http://evil\u3002com:11434/v1",  # ideographic full stop: httpx reads evil.com
+        "http://evil\uff0ecom:11434/v1",
+        "http://\u65e5\u672c:11434/v1",
+        "http://llm.:11434/v1",
+        "http://localhost.:11434/v1",
+        "http://llm_$x:11434/v1",
+        "http://a$.internal:11434/v1",
+        "http://010.1.1.1:11434/v1",  # httpx refuses it as an invalid URL
     ],
 )
 def test_a_local_entry_cannot_name_a_public_server(base_url):

@@ -19,6 +19,7 @@ import ipaddress
 import json
 import os
 import re
+import socket
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
@@ -68,20 +69,55 @@ def parse_options(entry: ProviderEntry) -> _Options:
         raise ValueError("base_url must be https (http only for a local server), no credentials")
     if parts.query or parts.fragment:
         raise ValueError("base_url must not carry a query")
-    if entry.local and not _is_local_host(parts.hostname):
+    if entry.local and not _is_local_url(options.base_url, parts.hostname):
         raise ValueError("a local entry must be on this host or the private network")
     return options.model_copy(update={"base_url": options.base_url.rstrip("/")})
+
+
+_SINGLE_LABEL = re.compile(r"[a-z0-9_-]+")
+_DOMAIN = re.compile(r"[a-z0-9_-]+(?:\.[a-z0-9_-]+)+")
+
+
+def _is_local_url(base_url: str, host: str) -> bool:
+    """The host is judged as the HTTP client will read it, not only as `urlsplit` does:
+    `evil。com` (ideographic full stop) has no ASCII dot to `urlsplit` but is `evil.com` to
+    httpx, so the two must agree or the entry is refused."""
+    try:
+        client_host = httpx.URL(base_url).host
+    except httpx.InvalidURL:
+        return False
+    return client_host == host and _is_local_host(host)
 
 
 def _is_local_host(host: str) -> bool:
     """`local: true` skips the consent, retention and region checks (policy.eligible) and
     allows plain HTTP, so it must name this host or the private network: a Compose service
-    name, `localhost`, a `.internal` name, or a loopback, private or link-local address."""
+    name, `localhost`, a `.internal` name, or a private, loopback or link-local address.
+    Only plain ASCII names qualify. A single label that the resolver reads as an address
+    (`134744072`, `0x08080808`) is refused, as are IPv4-mapped, 6to4 and Teredo addresses
+    that carry another address inside."""
+    if not host.isascii():
+        return False
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
-        return "." not in host or host.endswith((".internal", ".localhost"))
-    return address.is_loopback or address.is_private or address.is_link_local
+        pass
+    else:
+        if isinstance(address, ipaddress.IPv6Address):
+            if address.ipv4_mapped is not None:
+                address = address.ipv4_mapped
+            elif address.sixtofour is not None or address.teredo is not None:
+                return False
+        return address.is_private  # includes loopback and link-local
+    if host.endswith((".internal", ".localhost")):
+        return _DOMAIN.fullmatch(host) is not None
+    if _SINGLE_LABEL.fullmatch(host) is None:
+        return False
+    try:
+        socket.inet_aton(host)
+    except OSError:
+        return True  # a name, resolved by the Compose network or a search domain
+    return False
 
 
 def version_for(entry: ProviderEntry) -> str:
