@@ -1,0 +1,46 @@
+{
+  "$defs": {
+    "ExtractedKeyPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "maxLength": 300,
+          "minLength": 3,
+          "title": "Text",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "main",
+            "supporting"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "kind"
+      ],
+      "title": "ExtractedKeyPoint",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "key_points": {
+      "items": {
+        "$ref": "#/$defs/ExtractedKeyPoint"
+      },
+      "maxItems": 6,
+      "minItems": 3,
+      "title": "Key Points",
+      "type": "array"
+    }
+  },
+  "required": [
+    "key_points"
+  ],
+  "title": "KeyPoints",
+  "type": "object"
+}

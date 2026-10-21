@@ -19,6 +19,9 @@ x-backend-env: &backend-env
   LISTENUP_OTEL_ENABLED: ${LISTENUP_OTEL_ENABLED:-false}
   LISTENUP_OTEL_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
   LISTENUP_OTEL_METRICS_ENDPOINT: http://prometheus:9090/api/v1/otlp/v1/metrics
+  # Hosted Text AI key (ADR 0046). Read from your shell, never from a file in the repository;
+  # the hosted entry stays disabled in ai.yaml until it is verified and accepted.
+  LISTENUP_AI_GROQ_API_KEY: ${LISTENUP_AI_GROQ_API_KEY:-}
 
 x-backend: &backend
   build:
@@ -115,6 +118,39 @@ services:
       # Speech models (ADR 0028), downloaded on the first start and kept here.
       - ai-models:/models
 
+  # Optional self-hosted text model, the fallback when the hosted free quota runs out
+  # (ADR 0037, ADR 0046). Off unless started: `docker compose --profile llm up llm llm-pull`.
+  # It competes with speech work for CPU, so it is capped (System Design 5.2); route to it
+  # by enabling the `ollama` entry in ai.yaml only after its golden-set acceptance.
+  llm:
+    image: ollama/ollama:0.40.6@sha256:265409e1d931028a8f7d5a32bcbafddd7bffbc6cc629d77efe9560adf692a5e7
+    profiles: [llm]
+    environment:
+      OLLAMA_CONTEXT_LENGTH: "8192"  # the OpenAI-compatible route cannot set it per request
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_KEEP_ALIVE: 10m
+    volumes:
+      - ollama-models:/root/.ollama
+    cpus: ${LISTENUP_LLM_CPUS:-2}
+    mem_limit: ${LISTENUP_LLM_MEMORY:-6g}
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # One-off download of the model into the volume; pin its digest here once benchmarked.
+  llm-pull:
+    image: ollama/ollama:0.40.6@sha256:265409e1d931028a8f7d5a32bcbafddd7bffbc6cc629d77efe9560adf692a5e7
+    profiles: [llm]
+    depends_on:
+      llm:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: llm:11434
+    entrypoint: ["ollama", "pull", "qwen3:4b-instruct"]
+    restart: "no"
+
   # Nightly pg_dump to object storage, kept 14 days (ADR 0032). Opt in locally with
   # `docker compose --profile backup up backup`; production always runs it.
   backup:
@@ -163,3 +199,4 @@ volumes:
   storage-data:
   prometheus-data:
   ai-models:
+  ollama-models:

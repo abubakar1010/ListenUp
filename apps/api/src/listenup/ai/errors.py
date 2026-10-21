@@ -20,3 +20,8 @@ class TransientProviderError(Exception):
 
 class AIConfigError(Exception):
     """`ai.yaml` is invalid or names a provider no adapter implements for that role."""
+
+
+class PermanentProviderError(Exception):
+    """A call that will not pass on retry (rejected credentials, a missing key, a bad
+    request). The gateway moves on to the next provider; the message carries no content."""

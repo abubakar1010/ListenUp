@@ -1,0 +1,26 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "feedback": {
+      "maxLength": 600,
+      "minLength": 1,
+      "title": "Feedback",
+      "type": "string"
+    },
+    "top_fixes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 3,
+      "minItems": 1,
+      "title": "Top Fixes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "feedback",
+    "top_fixes"
+  ],
+  "title": "ShadowFeedback",
+  "type": "object"
+}
