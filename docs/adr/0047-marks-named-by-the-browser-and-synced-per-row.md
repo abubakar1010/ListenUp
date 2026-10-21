@@ -54,8 +54,11 @@ policy and explicit `listenup_api` grants, and are in the data export.
   Enter and Space keep jumping to the word (ADR 0044). Shift+Arrow grows from the word
   that has the focus. The 20-word limit is also held in the browser: the selection stops
   there and says so. Words can be marked before the audio is ready; only the jump waits.
-  The panel sticks below the practice header and raises the page's `scroll-padding-top`
-  by its height, so a focused word is never hidden behind it (WCAG 2.4.11).
+  A plain click selects the word and jumps to it (#57); Shift+click only extends the
+  selection and never moves the audio. While words are chosen the panel sticks below the
+  practice header and raises the page's `scroll-padding-top` by its height, so a focused
+  word is never hidden behind it (WCAG 2.4.11). With a note editor open it is about 380 px
+  tall at 360 px, so it scrolls with the page instead.
 
 ## Consequences
 
