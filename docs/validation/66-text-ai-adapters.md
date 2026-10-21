@@ -119,3 +119,13 @@ An independent review of this branch found that `_is_local_host` could be passed
 | Coverage base misnamed | corrected above | n/a | n/a |
 
 Two further mutants survive by design: dropping the `isascii` check or the `urlsplit`/httpx host comparison alone, because each covers the other. Not re-run here: the full coverage suite with S3 (no S3 server available); CI is the check for it.
+
+### Resolution check for single-label names
+
+The owner asked to close the remaining trust in single-label names. A `local: true` entry on a name is now resolved before each request and refused unless every address is private (`OpenAICompatibleTextAI._check_resolved`, NFR-AI-7); the injected `resolver` and a test transport keep tests off the network.
+
+| Named tests | Evidence |
+| --- | --- |
+| `test_a_local_name_that_resolves_to_a_private_address_is_called` (3), `test_a_local_name_that_resolves_outside_the_private_network_gets_no_request` (5), `test_a_local_name_that_does_not_resolve_is_a_retryable_error`, `test_an_address_literal_and_a_hosted_entry_are_not_resolved`, `test_the_default_resolver_returns_the_addresses_of_a_name` | Red shown by mutants, because my first red run failed partly through a test bug and is not counted: no check at all fails **9**, accepting every address fails **4**, a permanent error for a failed lookup fails **1**, resolving hosted entries fails **1**. Green: `test_openai_compatible.py` **96 passed**, 100% line and branch coverage of the adapter; `tests/unit/ai`, `tests/contract`, the integration file and `tests/architecture` **372 passed** before the last test; `ruff`, `mypy` and `lint-imports` clean. |
+
+Limit: the check and the connection resolve separately, so it is not a defence against DNS rebinding.
