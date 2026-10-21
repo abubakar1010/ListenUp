@@ -107,16 +107,26 @@ as wins. The regenerated tables below use only eligible strict comparisons.
 
 The spike changes no API/web source or speech dependencies. During merge
 preparation, fresh CI run 319 found pre-existing `certifi 2026.7.22` vulnerability
-`PYSEC-2026-4320`. The owner explicitly approved the sole application-dependency
-exception: three lockfile lines update existing transitive certifi to `2026.10.19`
-and its artifact hashes. The failing audit supplies Red; the updated export passes
-pip-audit, and the 17 targeted API network-guard/provider tests pass. This security
-maintenance is separate from the unchanged speech experiment environment/results.
-Full application CI is rerun for this lockfile update; see the PR for current CI
-status. Database/migration and generated API changes are not applicable locally.
-CI does not execute this isolated harness. The corrected spike still needs
-fresh-session re-review; that validation gap remains disclosed despite the owner's
-merge instruction. No stage-0 speed criterion is claimed.
+`PYSEC-2026-4320`. The owner approved a dependency-security exception: three
+application lockfile lines update existing transitive certifi to `2026.10.19` and
+its artifact hashes. The failing audit supplies Red; the updated export passes
+pip-audit, and all 17 targeted API network-guard/provider tests pass.
+
+Once that Python audit passed, CI run 328 reached the previously skipped JavaScript
+audit and exposed pre-existing Vite advisory `GHSA-587h-7wmj-h5pm`. The minimal
+follow-up patches the existing dev dependency from 8.3.2 to 8.3.3 in its manifest
+and lockfile, retaining every other transitive resolution. The high-level audit
+fails before the patch and passes afterward; the updated full audit reports zero
+known vulnerabilities. Web lint, formatting, type checks, all 359 coverage-instrumented tests,
+production build and the 200 KB gzip size check pass locally. Browser smoke is
+validated by CI rather than claimed as a local result.
+
+This security maintenance is separate from the unchanged isolated speech
+environment/results. Full application CI reruns before merge; see the PR for its
+current status. Database/migration and generated API changes are not applicable
+locally. CI does not execute this isolated speech harness. The corrected spike
+still needs fresh-session re-review; that gap remains disclosed despite the
+owner's merge instruction. No stage-0 speed criterion is claimed.
 
 ### Pair 01: a0001.wav (bdl → slt)
 
