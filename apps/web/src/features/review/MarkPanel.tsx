@@ -178,8 +178,8 @@ function useStickyClearance(panel: RefObject<HTMLElement | null>) {
     const root = document.documentElement;
     let applied = '';
     const observer = new ResizeObserver(() => {
-      applied = `calc(${STICKY_HEADER_CLEARANCE} + ${element.offsetHeight + 8}px)`;
-      root.style.scrollPaddingTop = applied;
+      root.style.scrollPaddingTop = `calc(${STICKY_HEADER_CLEARANCE} + ${element.offsetHeight + 8}px)`;
+      applied = root.style.scrollPaddingTop; // as the browser reports it back
     });
     observer.observe(element);
     return () => {
