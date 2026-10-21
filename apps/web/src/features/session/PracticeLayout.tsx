@@ -111,12 +111,15 @@ export function PracticeLayout({
   );
 }
 
+/** How far down a control must stay to clear the sticky header. */
+export const STICKY_HEADER_CLEARANCE = '4.5rem';
+
 /** While the screen is shown, scrolling to a focused control leaves room for the sticky header. */
 function useStickyHeaderScrollPadding() {
   useEffect(() => {
     const root = document.documentElement;
     const before = root.style.scrollPaddingTop;
-    root.style.scrollPaddingTop = '4.5rem';
+    root.style.scrollPaddingTop = STICKY_HEADER_CLEARANCE;
     return () => {
       root.style.scrollPaddingTop = before;
     };

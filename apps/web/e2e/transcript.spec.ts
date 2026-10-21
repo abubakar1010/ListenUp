@@ -169,6 +169,21 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await expect(panel).toContainText('Marks saved', { timeout: 5000 });
   expect(marks).toMatchObject([{ word_from: 0, word_to: 1 }]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  // The panel sticks below the practice header, never over it, even with the note editor
+  // open (it is then at its tallest at 360 px).
+  await page.getByLabel('Note (optional)').fill('sounds like one word');
+  await page.evaluate(() => {
+    // Room to scroll inside the section the panel sticks in (padding would not count).
+    const spacer = document.createElement('div');
+    spacer.style.height = '3000px';
+    document.querySelector('[data-slot="work"]')!.append(spacer);
+    window.scrollTo(0, 1200);
+  });
+  const header = await page.locator('header').first().boundingBox();
+  const stuck = await panel.boundingBox();
+  expect(stuck!.y).toBeGreaterThanOrEqual(header!.y + header!.height - 1);
+  expect(stuck!.y).toBeLessThan(header!.y + header!.height + 24); // it did stick
+  await page.evaluate(() => window.scrollTo(0, 0));
   // The saved mark is there again after a reload.
   await page.reload();
   await expect(page.getByRole('button', { name: 'Jump to Again.' })).toHaveAccessibleDescription(

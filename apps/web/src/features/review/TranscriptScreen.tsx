@@ -23,7 +23,19 @@ import { markTransport, useMarks, useTranscript, type TranscriptReview } from '.
 import { currentLine } from './line';
 import { MarkPanel } from './MarkPanel';
 import type { SavedMark } from './markSync';
-import { extend, markAt, moveTo, rangeOf, select, type Range, type Selection } from './selection';
+import {
+  extend,
+  growFrom,
+  markAt,
+  MAX_MARK_WORDS,
+  moveTo,
+  rangeOf,
+  reach,
+  select,
+  wouldPassLimit,
+  type Range,
+  type Selection,
+} from './selection';
 import { useMarkSync } from './useMarkSync';
 
 export function TranscriptScreen({ session, progress }: { session: Session; progress: ReactNode }) {
@@ -116,6 +128,7 @@ function TranscriptWork({
   const player = usePassagePlayer(audio, data.passage.start_ms, data.passage.end_ms);
   const line = currentLine(data.lines, data.passage.start_ms + player.positionMs);
   const jump = (absoluteMs: number) => {
+    if (player.status !== 'ready') return; // words can be marked before the audio is ready
     player.seek(absoluteMs - data.passage.start_ms);
     if (audio.current?.paused) player.toggle();
   };
@@ -182,7 +195,6 @@ function TranscriptWork({
                       }}
                       aria-label={`Jump to ${word.text || 'removed word'}${word.edited ? ' (edited)' : ''}`}
                       aria-describedby={marking.describedBy(word.index)}
-                      disabled={player.status !== 'ready'}
                       className={`min-h-11 max-w-full rounded-sm px-1 text-left underline decoration-dotted underline-offset-4 [overflow-wrap:anywhere] hover:bg-surface-raised ${marking.isMarked(word.index) ? 'bg-mark-bg' : ''} ${marking.isSelected(word.index) ? 'outline-2 outline-mark-strong' : ''}`}
                       onClick={(event) => {
                         marking.choose(word.index, event);
@@ -204,6 +216,7 @@ function TranscriptWork({
   );
 }
 
+const LIMIT_MESSAGE = `A mark covers at most ${MAX_MARK_WORDS} words.`;
 const MARKED = 'mark-description-marked';
 const SELECTED = 'mark-description-selected';
 
@@ -225,6 +238,10 @@ function useMarking(sessionId: string, data: TranscriptReview, saved: SavedMark[
   });
   const [selection, setSelection] = useState<Selection | null>(null);
   const [announcement, setAnnouncement] = useState('');
+  // The same words twice in a row would not change the live region, so a screen reader
+  // would stay silent the second time: a trailing no-break space makes it a change.
+  const announce = (text: string) =>
+    setAnnouncement((previous) => (previous === text ? `${text}\u00a0` : text));
   const [focusNote, setFocusNote] = useState(false);
   const wordRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const marked = useMemo(() => {
@@ -250,9 +267,14 @@ function useMarking(sessionId: string, data: TranscriptReview, saved: SavedMark[
       return;
     }
     const r = rangeOf(target);
+    const phrase = phraseOf(r);
+    if (!phrase) {
+      announce('Removed words cannot be marked.'); // the API refuses them too
+      return;
+    }
     const at_ms = words[r.word_from]!.start_ms;
     sync.add({ id: crypto.randomUUID(), ...r, at_ms, note: null });
-    setAnnouncement(`Mark added: ${phraseOf(r)}, ${formatClock(at_ms)}.`);
+    announce(`Mark added: ${phrase}, ${formatClock(at_ms)}.`);
   };
 
   const onWordKey = (index: number, event: ReactKeyboardEvent) => {
@@ -262,7 +284,10 @@ function useMarking(sessionId: string, data: TranscriptReview, saved: SavedMark[
       event.preventDefault();
       const step = event.key === 'ArrowRight' ? 1 : -1;
       if (event.shiftKey) {
-        const next = extend(held ?? select(index), step, words.length);
+        // Grow from the word that has the focus, so the focus ring never jumps.
+        const from = held ? growFrom(held, index) : select(index);
+        const next = extend(from, step, words.length);
+        if (wouldPassLimit(from, step)) announce(LIMIT_MESSAGE);
         setSelection(next);
         focusWord(next.focus);
       } else {
@@ -282,11 +307,13 @@ function useMarking(sessionId: string, data: TranscriptReview, saved: SavedMark[
   };
 
   const choose = (index: number, event: MouseEvent) => {
-    setSelection(
-      event.shiftKey && selection
-        ? { anchor: selection.anchor, focus: index }
-        : moveTo(index, sync.marks),
-    );
+    if (!(event.shiftKey && selection)) {
+      setSelection(moveTo(index, sync.marks));
+      return;
+    }
+    const next = reach(selection, index);
+    if (next.focus !== index) announce(LIMIT_MESSAGE);
+    setSelection(next);
   };
 
   const onNoteFocused = useCallback(() => setFocusNote(false), []);
@@ -316,7 +343,7 @@ function useMarking(sessionId: string, data: TranscriptReview, saved: SavedMark[
         onNote={sync.setNote}
         onRemove={(id) => {
           sync.remove(id);
-          setAnnouncement('Mark removed.');
+          announce('Mark removed.');
           if (selection) focusWord(selection.focus);
         }}
         onNoteFocused={onNoteFocused}
