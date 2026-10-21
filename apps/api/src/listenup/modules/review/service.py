@@ -20,6 +20,7 @@ from listenup.modules.review.domain import (
     MarkOutOfRange,
     MarkRuleError,
     MarkTooLong,
+    MarkWithoutWords,
     clean_note,
     place_mark,
 )
@@ -80,6 +81,8 @@ def _mark(row: repository.MarkRow) -> schemas.Mark:
 def _refused(error: MarkRuleError) -> ProblemError:
     if isinstance(error, MarkOutOfRange):
         return ProblemError(422, "mark_out_of_range", "Those words are not in this passage.")
+    if isinstance(error, MarkWithoutWords):
+        return ProblemError(422, "mark_no_words", "Removed words cannot be marked.")
     if isinstance(error, MarkTooLong):
         return ProblemError(422, "mark_too_long", "Mark a word or a short phrase.")
     return ProblemError(422, "note_too_long", "A note can be at most 500 characters.")

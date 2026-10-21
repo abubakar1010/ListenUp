@@ -30,6 +30,10 @@ class NoteTooLong(MarkRuleError):
     pass
 
 
+class MarkWithoutWords(MarkRuleError):
+    """Every word in the range was removed by a correction, so there is nothing to mark."""
+
+
 @dataclass(frozen=True)
 class MarkPlace:
     at_ms: int
@@ -45,6 +49,8 @@ def place_mark(
     if word_to - word_from + 1 > MAX_MARK_WORDS:
         raise MarkTooLong(f"a mark covers at most {MAX_MARK_WORDS} words")
     phrase = " ".join(word for word in words[word_from : word_to + 1] if word)
+    if not phrase:
+        raise MarkWithoutWords("those words were all removed from the transcript")
     return MarkPlace(at_ms=starts_ms[word_from], phrase=phrase)
 
 

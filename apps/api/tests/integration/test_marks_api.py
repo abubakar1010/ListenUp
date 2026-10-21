@@ -17,7 +17,7 @@ from listenup.modules.practice.service import Step
 from listenup.modules.review.domain import MAX_MARK_WORDS
 from tests.integration.conftest import conninfo_to_url
 from tests.integration.intake_helpers import ClientFactory, FakeStorage, client_factory, learner_id
-from tests.integration.test_review_api import cache
+from tests.integration.test_review_api import cache, correction
 from tests.integration.test_sessions_api import add_clip, finish, start
 
 # The cached words (test_review_api.cache) inside the passage 10 s to 40 s:
@@ -346,3 +346,38 @@ def test_another_learner_cannot_reach_the_marks(make_client, worker_url, client,
         assert response.status_code == 404
         assert response.json()["code"] == "session_not_found"
     assert client.get(marks_path(session_id)).json() == {"marks": [mark]}
+
+
+def test_a_mark_id_owned_by_another_learner_is_refused_and_nothing_leaks(
+    make_client, worker_url, client, session_id, migrated_url, api_role_url
+):
+    mark = client.post(marks_path(session_id), json=new_mark(note="mine")).json()
+    other = make_client(transcript_read_database_url=worker_url)
+    other_clip = add_clip(migrated_url, learner_id(other))
+    cache(migrated_url, other_clip)
+    theirs = start(other, other_clip, "dictation", passage=PASSAGE)
+    finish(api_role_url, other, theirs["id"], Step.DICTATION)
+    response = other.post(
+        marks_path(str(theirs["id"])), json=new_mark(id=mark["id"], word_from=2, word_to=2)
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "mark_id_taken"
+    assert "mine" not in response.text and session_id not in response.text
+    assert stored(migrated_url, mark["id"]) == (0, 1, 11_000, "mine", "manual", "confirmed")
+    assert other.get(marks_path(str(theirs["id"]))).json() == {"marks": []}
+    assert mark_events(migrated_url, mark["id"]) != []
+    assert len(mark_events(migrated_url, mark["id"])) == 1
+
+
+def test_a_word_a_correction_removed_cannot_be_marked(client, clip, session_id, migrated_url):
+    with psycopg.connect(migrated_url) as conn:
+        (media,) = conn.execute(
+            "SELECT media_object_id FROM content.contents WHERE id = %s", [clip]
+        ).fetchone()
+    # Cached word 2 is the passage's word 1 ("world."): word 0 of the cache lies before it.
+    correction(migrated_url, learner_id(client), media, index=2, value="")
+    refused = client.post(marks_path(session_id), json=new_mark(word_from=1, word_to=1))
+    assert (refused.status_code, refused.json()["code"]) == (422, "mark_no_words")
+    # Removed words inside a longer phrase are fine: the phrase still has words.
+    ok = client.post(marks_path(session_id), json=new_mark(word_from=0, word_to=1))
+    assert ok.status_code == 201

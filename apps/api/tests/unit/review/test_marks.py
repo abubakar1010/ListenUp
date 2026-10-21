@@ -7,6 +7,7 @@ from listenup.modules.review.domain import (
     MAX_NOTE_LENGTH,
     MarkOutOfRange,
     MarkTooLong,
+    MarkWithoutWords,
     NoteTooLong,
     clean_note,
     place_mark,
@@ -28,6 +29,12 @@ def test_a_single_word_mark():
 
 def test_removed_words_leave_no_gaps_in_the_phrase():
     assert place_mark(3, 4, WORDS, STARTS).phrase == "people."
+
+
+def test_removed_words_alone_cannot_be_marked():
+    # A correction can empty a word; there is nothing left to hear as written text.
+    with pytest.raises(MarkWithoutWords):
+        place_mark(4, 4, WORDS, STARTS)
 
 
 @pytest.mark.parametrize(("word_from", "word_to"), [(-1, 0), (2, 1), (4, 5), (5, 5)])

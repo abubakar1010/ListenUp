@@ -62,7 +62,10 @@ async def list_marks(
             "description": "`step_locked`, `transcript_not_ready`, `transcript_failed`, "
             "`mark_exists` (with `mark_id`) or `mark_id_taken`"
         },
-        422: {"description": "`mark_out_of_range`, `mark_too_long` or `note_too_long`"},
+        422: {
+            "description": "`mark_out_of_range`, `mark_no_words`, `mark_too_long` or "
+            "`note_too_long`"
+        },
     },
 )
 async def create_mark(

@@ -3737,7 +3737,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description `mark_out_of_range`, `mark_too_long` or `note_too_long` */
+      /** @description `mark_out_of_range`, `mark_no_words`, `mark_too_long` or `note_too_long` */
       422: {
         headers: {
           [name: string]: unknown;
