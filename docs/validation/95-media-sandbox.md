@@ -196,3 +196,15 @@ DB/storage design clarification. #38 remains unimplemented and outside scope.
   at handoff; no green result is claimed here. This documentation follow-up also
   requires current CI before owner merge. Independent re-review of the new
   supervision/telemetry changes remains required; no helper agents were used.
+
+## Merge preparation: dependency audit
+
+The current-head CI run 39658980227 completed all functional, coverage, Docker,
+image, web, migration and performance jobs successfully. Its sole failure was
+`pip-audit`: transitive certifi 2026.7.22 matched PYSEC-2026-4320, fixed in
+2026.10.19. This is an observed audit regression, not a transient CI error.
+
+`uv lock --upgrade-package 'certifi==2026.10.19'` updates only certifi's locked
+version and distribution metadata. Re-running the CI-equivalent export and
+`uvx pip-audit -r` locally reports **No known vulnerabilities found**. No advisory
+ignore or CI bypass was added. Current CI must pass on the new head before merge.
