@@ -174,6 +174,25 @@ DB/storage design clarification. #38 remains unimplemented and outside scope.
   disk. Disposable build images/cache and verified unreferenced copies abandoned
   by failed container creation were removed, retaining DB/storage/model volumes.
   The image builds and provisioning checks above subsequently completed.
-- The complete required-service backend coverage command and expanded final
-  Docker contract are running for this revision; final outcomes and exact-head
-  CI are recorded in the follow-up verification below before merge.
+- The complete required-service backend coverage command completed with **1398
+  passed, 1 failed, 1 performance test deselected** in 425.10 s. The one failure
+  was the existing real-storage/configured-gateway transcript test: its accounting
+  connection used the default local database, still at migration **0012**. After
+  `uv run alembic upgrade head` on that local database, the exact failed test,
+  neighboring decode case and expanded telemetry boundaries passed with coverage
+  appended: **11 passed**. This is a repaired focused rerun, not a claim that the
+  original full command exited green. Required CI remains the clean full-suite
+  merge gate. `uv run pytest -m performance --no-cov -q`: **1 passed**, 2.95 s.
+- Runtime coverage inventory passes. Changed executable coverage against base
+  `4efc101` is **98%**; no thresholds or exclusions changed. Remaining uncovered
+  lines are the child-CPU exit-code race, disappearing `/proc` races and module
+  launch lines; real process/Docker checks exercise those boundaries separately.
+- Final live Docker contract passes on the **complete speech image**, with the
+  runtime image as the small API canary: non-root/read-only including auxiliary
+  mounts, writable scratch, API DNS/IP/host-gateway denial, DB/storage access,
+  real ClamAV outcomes, actual ClamAV/ffmpeg/ffprobe under the job signal filter,
+  CPU/memory/wall kills, and retained CPU for auto-reaped/orphaned descendants.
+- Code remediation commit: `cd4d0c5`. CI run **39658730602** was queued/running
+  at handoff; no green result is claimed here. This documentation follow-up also
+  requires current CI before owner merge. Independent re-review of the new
+  supervision/telemetry changes remains required; no helper agents were used.
