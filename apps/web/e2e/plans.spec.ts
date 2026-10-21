@@ -6,6 +6,7 @@ const LEARNER = {
   display_name: null,
   email_verified: false,
   deletion_grace_days: 7,
+  consents_required: [],
 };
 
 const CLIP = {
