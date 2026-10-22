@@ -1,6 +1,7 @@
 """Which consents a learner still owes, and whether voice consent holds (#104, FR-SH-17)."""
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -12,6 +13,8 @@ from listenup.modules.identity.domain.consents import (
     outstanding,
 )
 from listenup.modules.identity.service import consent_versions
+
+REPO = Path(__file__).resolve().parents[4]
 
 NOW = datetime(2026, 10, 19, tzinfo=UTC)
 CURRENT = CurrentVersions(terms="t2", privacy="p1", voice_recording="v1")
@@ -71,16 +74,30 @@ def test_current_versions_come_from_configuration(monkeypatch: pytest.MonkeyPatc
     assert consent_versions(Settings()) == CurrentVersions("2026-11", "2026-12", "voice-2")
 
 
-def test_the_default_versions_are_marked_as_placeholders(
+def test_the_default_versions_are_the_2026_1_drafts(monkeypatch: pytest.MonkeyPatch) -> None:
+    from listenup.platform.config import Settings
+
+    for name in ("TERMS", "PRIVACY", "VOICE_CONSENT"):
+        monkeypatch.delenv(f"LISTENUP_{name}_VERSION", raising=False)
+    # The texts in docs/legal/ (#103); a label names exactly one file there.
+    versions = consent_versions(Settings(_env_file=None))  # type: ignore[call-arg]
+    assert versions == CurrentVersions("terms-2026-1", "privacy-2026-1", "voice-2026-1")
+
+
+def test_every_default_version_has_its_text_in_the_web_app(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from listenup.platform.config import Settings
 
     for name in ("TERMS", "PRIVACY", "VOICE_CONSENT"):
         monkeypatch.delenv(f"LISTENUP_{name}_VERSION", raising=False)
-    # #103 has not written the policy text yet (ADR 0048).
+    # ADR 0051: a label names one file in docs/legal/, registered in texts.ts, or the
+    # page shows an error instead of the text the learner is asked to accept.
+    texts = (REPO / "apps/web/src/features/legal/texts.ts").read_text()
     versions = consent_versions(Settings(_env_file=None))  # type: ignore[call-arg]
-    assert all("placeholder" in v for v in (versions.terms, versions.privacy))
+    for label in (versions.terms, versions.privacy, versions.voice_recording):
+        assert (REPO / "docs/legal" / f"{label}.md").is_file(), label
+        assert f"'{label}': " in texts, label
 
 
 @pytest.mark.parametrize("version", ["", "x" * 21, "has space", "v1;drop"])

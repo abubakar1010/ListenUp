@@ -1,6 +1,6 @@
 # ADR 0048: Versioned consents with configured placeholder versions
 
-- Status: Accepted
+- Status: Accepted; the placeholder defaults and their production refusal are settled by [ADR 0051](0051-legal-texts-as-versioned-files.md)
 - Date: 2026-10-20
 - Source: issue #104; [SRS FR-SH-17, NFR-SEC-4](https://claude.ai/code/artifact/fd47a9cb-6515-4fde-a232-3ab8cc14f0dd); [Software Architecture 8 (`identity.consents`) and 12.2](https://claude.ai/code/artifact/6a30920f-b6a0-4131-a486-f2044c71bb13); [Database Design 3](https://claude.ai/code/artifact/ba05f7b3-f881-41e5-86d6-dcb94a509644); ADRs 0013, 0014, 0021, 0039 and 0040
 

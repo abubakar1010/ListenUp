@@ -12,7 +12,7 @@ export type ConsentKind = components['schemas']['ConsentRecord']['kind'];
 export const DOCUMENTS = {
   terms: { name: 'Terms of Service', path: '/terms' },
   privacy: { name: 'Privacy Policy', path: '/privacy' },
-  voice_recording: { name: 'Voice recording consent', path: '/privacy' },
+  voice_recording: { name: 'Voice recording consent', path: '/voice-consent' },
 } as const;
 
 export const CONSENT_VERSIONS_KEY = ['consents', 'versions'] as const;
