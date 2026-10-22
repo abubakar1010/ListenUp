@@ -34,8 +34,9 @@ PRODUCTION_KEY = SecretStr("a-stable-production-analytics-key-123")
 
 @pytest.mark.parametrize("field", ["terms_version", "privacy_version", "voice_consent_version"])
 def test_production_refuses_a_placeholder_consent_version(field: str) -> None:
-    # ADR 0048 left this to #103: a placeholder label has no published text.
-    with pytest.raises(ValidationError, match="placeholder"):
+    # ADR 0048 left this to #103: a placeholder label has no published text. The error
+    # names the variable the operator must change.
+    with pytest.raises(ValidationError, match=f"LISTENUP_{field.upper()} is a placeholder"):
         Settings(
             environment="production",
             analytics_hmac_key=PRODUCTION_KEY,
