@@ -116,7 +116,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-test('one_click_marks_the_chosen_word_at_once_and_saves_it_after_the_debounce', async () => {
+test('choosing_a_word_and_pressing_mark_shows_it_at_once_and_saves_it_after_the_debounce', async () => {
   const { calls } = renderMarking();
   await ready();
   fireEvent.click(word('world.'));
