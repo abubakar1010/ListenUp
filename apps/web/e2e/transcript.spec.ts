@@ -45,6 +45,7 @@ const AUDIO = wav();
 
 test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
+  const marks: Record<string, unknown>[] = [];
   await page.route('**/api/v1/**', async (route) => {
     const req = route.request();
     const path = new URL(req.url()).pathname.replace('/api/v1', '');
@@ -84,6 +85,28 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
           ],
         },
       });
+    // A server that keeps the marks it is sent (#58).
+    if (path === '/sessions/s-57/marks' && req.method() === 'POST') {
+      const body = req.postDataJSON() as { id: string; word_from: number; word_to: number };
+      const mark = {
+        ...body,
+        session_id: 's-57',
+        at_ms: body.word_from === 0 ? 0 : 10000,
+        note: null,
+        source: 'manual',
+        status: 'confirmed',
+        created_at: '2026-10-19T00:00:00Z',
+      };
+      marks.push(mark);
+      return route.fulfill({ status: 201, json: mark });
+    }
+    if (req.method() === 'PATCH' && /^\/sessions\/s-57\/marks\/[^/]+$/.test(path)) {
+      const mark = marks.find((m) => path.endsWith(`/${String(m['id'])}`));
+      if (!mark) return route.fulfill({ status: 404, json: { code: 'mark_not_found' } });
+      mark['note'] = (req.postDataJSON() as { note: string | null }).note;
+      return route.fulfill({ json: mark });
+    }
+    if (path === '/sessions/s-57/marks') return route.fulfill({ json: { marks } });
     if (path === '/media/m-57') {
       const range = /bytes=(\d+)-(\d*)/.exec(req.headers()['range'] ?? '');
       const start = range ? Number(range[1]) : 0;
@@ -138,4 +161,45 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
     .poll(() => page.locator('audio').evaluate((el: HTMLAudioElement) => el.currentTime))
     .toBeGreaterThan(10.5);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+
+  // Mark a phrase by keyboard (#58, UI-4): arrows move, Shift+arrow selects, M marks.
+  const first = page.getByRole('button', { name: 'Jump to Hello. (edited)' });
+  await first.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(second).toBeFocused();
+  await page.keyboard.press('Shift+ArrowLeft');
+  await page.keyboard.press('m');
+  await expect(first).toHaveAccessibleDescription('Marked');
+  await expect(second).toHaveAccessibleDescription('Marked');
+  const panel = page.getByRole('region', { name: 'Mark words' });
+  await expect(panel).toContainText('“Hello. Again.”');
+  await expect(panel).toContainText('Marks saved', { timeout: 5000 });
+  expect(marks).toMatchObject([{ word_from: 0, word_to: 1 }]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  // With the note editor open the panel is at its tallest at 360 px, so it scrolls with the
+  // page instead of floating over the transcript.
+  await page.getByLabel('Note (optional)').fill('sounds like one word');
+  await expect(panel).toHaveAttribute('data-sticky', 'false');
+  // While words are chosen it sticks below the practice header, never over it.
+  await page.keyboard.press('Escape'); // focus is still in the note field: move back to a word
+  await first.focus();
+  await page.keyboard.press('Escape');
+  await expect(panel).toHaveAttribute('data-sticky', 'true');
+  await page.evaluate(() => {
+    // Room to scroll inside the section the panel sticks in (padding would not count).
+    const spacer = document.createElement('div');
+    spacer.style.height = '3000px';
+    document.querySelector('[data-slot="work"]')!.append(spacer);
+    window.scrollTo(0, 1200);
+  });
+  const header = await page.locator('header').first().boundingBox();
+  const stuck = await panel.boundingBox();
+  expect(stuck!.y).toBeGreaterThanOrEqual(header!.y + header!.height - 1);
+  expect(stuck!.y).toBeLessThan(header!.y + header!.height + 24); // it did stick
+  await page.evaluate(() => window.scrollTo(0, 0));
+  // The saved mark is there again after a reload.
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Jump to Again.' })).toHaveAccessibleDescription(
+    'Marked',
+  );
 });

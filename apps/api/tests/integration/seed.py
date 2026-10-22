@@ -54,6 +54,8 @@ class SeededLearner:
     """The live Dictation attempt, with a draft, of the session open at Dictation."""
     export_id: uuid.UUID | None = None
     """A finished data export, ready to download (#92)."""
+    mark_id: uuid.UUID | None = None
+    """A manual mark on the session open at Transcript (#58)."""
 
     def ids(self) -> list[str]:
         """Every id this learner owns, as text: none may appear in another learner's view."""
@@ -69,6 +71,7 @@ class SeededLearner:
                 *([self.blind_attempt_id] if self.blind_attempt_id else []),
                 *([self.dictation_attempt_id] if self.dictation_attempt_id else []),
                 *([self.export_id] if self.export_id else []),
+                *([self.mark_id] if self.mark_id else []),
             )
         ]
 
@@ -181,6 +184,22 @@ def add_ready_export(owner_url: str, user_id: uuid.UUID) -> uuid.UUID:
     return export_id
 
 
+def add_mark(owner_url: str, user_id: uuid.UUID, session_id: uuid.UUID) -> uuid.UUID:
+    """A manual mark on the first two words of a session's passage (#58).
+
+    Written directly: the seed has no transcript, which the mark service reads.
+    """
+    mark_id = uuid.uuid4()
+    with psycopg.connect(owner_url, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO practice.marks "
+            "(id, session_id, user_id, word_from, word_to, at_ms, note, source) "
+            "VALUES (%s, %s, %s, 0, 1, %s, 'sounds like one word', 'manual')",
+            [mark_id, session_id, user_id, PASSAGE.start_ms],
+        )
+    return mark_id
+
+
 async def add_sessions(
     owner_url: str, user_id: uuid.UUID, content_id: uuid.UUID
 ) -> dict[str, uuid.UUID]:
@@ -239,6 +258,7 @@ def seed_learner_data(owner_url: str, user_id: uuid.UUID) -> SeededLearner:
         add_dictation_draft(owner_url, user_id, sessions["dictation"])
     )
     export_id = add_ready_export(owner_url, user_id)
+    mark_id = add_mark(owner_url, user_id, sessions["transcript"])
     add_consents(owner_url, user_id, ("voice_recording",))
     return SeededLearner(
         user_id=user_id,
@@ -253,4 +273,5 @@ def seed_learner_data(owner_url: str, user_id: uuid.UUID) -> SeededLearner:
         blind_media_token=token,
         dictation_attempt_id=dictation_attempt_id,
         export_id=export_id,
+        mark_id=mark_id,
     )

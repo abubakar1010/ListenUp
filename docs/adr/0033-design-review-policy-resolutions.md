@@ -1,6 +1,6 @@
 # ADR 0033: Resolve the design review policies for Blind, intake, autosave and restoration
 
-- Status: Accepted
+- Status: Accepted; amended for marks by [ADR 0047](0047-marks-named-by-the-browser-and-synced-per-row.md) (no version checks)
 - Date: 2026-10-09
 - Source: PR #137 review; the owner delegated the policy choices and authorized the fixes in the review session.
 - Requirements: FR-BL-3, SR-5, FR-CI-3, NFR-PERF-3, DR-1; UX-17, UX-34, UX-36.
