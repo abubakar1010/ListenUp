@@ -36,7 +36,8 @@ Checked against `main` at `2800167` on 2026-10-22.
 | Export archive kept 7 days; three requests per UTC day | `export_keep_days = 7`, `export_daily_limit = 3` in `config.py`; ADR 0030 |
 | AI providers must not train on data; hosted ones also need verified zero retention, region and population | NFR-AI-7, FR-BL-13, FR-SH-17; ADR 0037; `eligible()` in `apps/api/src/listenup/ai/policy.py` (refuses any entry whose `trains_on_inputs` is not `false`, and hosted entries without `retention_verified`, consent, region and population) |
 | No hosted AI service in use today; transcription faster-whisper, alignment wav2vec2, text AI self-hosted | `apps/api/src/listenup/ai/ai.yaml`: `faster-whisper` and `wav2vec2-ctc` are local; `groq` has `enabled: false`, `retention_verified: false`; `ollama` is local and `enabled: false`; `speech_assessment: []` |
-| Hosted text AI receives transcript, key points and gist, no identifiers | SRS FR-BL-13; `CallContext` in `ai/policy.py` carries no learner identity |
+| Hosted text AI may grade gists, extract key points and, as a fallback, write Shadow feedback | `tasks` in `ai.yaml`: `extract_key_points` and `grade_gist` list `groq` first, `shadow_feedback` lists `ollama` then `groq` (ADR 0037, ADR 0046) |
+| Hosted text AI receives transcript, key points and gist, or a round's number, scores and flagged words; never audio or identifiers | SRS FR-BL-13; `GradeGistInput`, `ExtractKeyPointsInput` and `ShadowFeedbackInput` in `apps/api/src/listenup/ai/tasks.py`; `CallContext` in `ai/policy.py` carries no learner identity. See owner note 10 |
 | Password stored as a salted Argon2id hash | NFR-SEC-1; `apps/api/src/listenup/modules/identity/passwords.py` |
 | Sign-in session lasts at most 30 days; user agent and IP kept with it | `session_days = 30` in `config.py`; `user_agent` and `ip` in `apps/api/src/listenup/modules/identity/models.py` |
 | Upload limits 500 MB per file, 2 GB per account (binary units) | `upload_max_bytes`, `upload_quota_bytes` in `config.py`; ADR 0020; D5 |
@@ -52,7 +53,8 @@ Checked against `main` at `2800167` on 2026-10-22.
 | Uploads checked for type and size and scanned | NFR-SEC-3; ADR 0049 |
 | Withdrawing voice consent stops new recordings only | ADR 0048 ("until then the withdrawal dialog promises only that new rounds will not record"); `ConsentsSection.tsx` |
 | Shadow can be skipped | CLAUDE.md (Card and Shadow can be skipped after confirmation); FR-SH-7 |
-| No third-party analytics; cookies only for sign-in and CSRF | ADR 0035; `identity/service.py` and `platform/csrf.py` set the only cookies |
+| No third-party analytics; cookies only for sign-in and CSRF | ADR 0035; the only cookies are the session cookie (`identity/service.py`), the Google sign-in flow cookie `listenup_oidc` (`identity/oidc.py`) and the CSRF cookie (`platform/csrf.py`) |
+| Takedown notices reviewed, content removed or disabled, the learner told and able to reply; accounts that break the terms may be closed with a reason | SRS 2.2 (the Administrator handles abuse and takedown requests); Architecture 4.1 (`admin`: takedown records) and 9.2 (`POST /admin/takedowns`). **Not built yet**: see owner note 11 |
 
 ## Owner notes: where the code and the stated value differ
 
@@ -67,6 +69,8 @@ The owner chose to state the design value and track the gap (#103 plan approval,
 7. **Deleting a clip or session is not built yet** (#89); the texts describe DR-2.
 8. **Expired unconfirmed uploads**: nothing deletes the stored file of an upload that was never confirmed; the policy says only that it is not added to the library.
 9. **Login session rows** (with IP and user agent): no clean-up of expired rows was found; the policy says only that a session lasts at most 30 days.
+10. **The sources disagree on what hosted text AI may receive.** SRS FR-BL-13 lists the transcript, key points and gist; `ai/tasks.py` also sends Shadow round measures and flagged words (`shadow_feedback`, with `groq` as its fallback in `ai.yaml`). The privacy policy discloses both. The owner must either amend FR-BL-13 or remove `groq` from `shadow_feedback`, and then update the policy.
+11. **Takedown handling and account closure are not built.** `modules/admin` has no takedown records or `POST /admin/takedowns`, no story tracks them yet, and nothing tells a learner why content was removed or an account closed. The terms describe the intended process; a story must build it before launch.
 
 ## Questions for the legal adviser
 
@@ -82,3 +86,5 @@ The owner chose to state the design value and track the gap (#103 plan approval,
 10. Wording of "AI feedback may be wrong" and the warranty and liability clauses.
 11. Server-side YouTube downloading remains under the OQ-6 review; the terms describe it as switched off.
 12. Are the unverified-draft banners acceptable while the service is not public, and must accepted draft versions be re-accepted after review (the plan is yes, via new labels)?
+13. Hosted AI is also gated on the learner's consent and population (age group) in `ai/policy.py`; must the policy say so?
+14. Backups: ADR 0032 also relies on the managed database tier's own backups, whose retention is not set. Is "kept for 14 days" complete, and is "deleted for good" after the 7-day restore period accurate next to it?

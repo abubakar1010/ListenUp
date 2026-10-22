@@ -53,7 +53,7 @@ Today, all of this runs on our own servers:
 - **Word timing**: an open-source alignment model (wav2vec2).
 - **Text feedback** (gist grading, key points, Shadow feedback): an open-source model run on our servers when it is switched on.
 
-A hosted text service may be used later for gist grading and key points. It is used only if its terms exclude training on your data, it keeps no copy of it (zero data retention), and it serves your region. It then receives the passage's transcript, its key points and your gist, never your email or account details. Before a hosted service is switched on, it is added to the list below.
+A hosted text service may be used later for gist grading and key points, and for written Shadow feedback when our own model cannot give it. It is used only if its terms exclude training on your data, it keeps no copy of it (zero data retention), and it serves your region. For gist grading and key points it receives the passage's transcript, its key points and your gist; for Shadow feedback it receives the round number, the round's scores and the words flagged in it, never the recording. It never receives your email or account details. Before a hosted service is switched on, it is added to the list below.
 
 ## Who processes your data
 
