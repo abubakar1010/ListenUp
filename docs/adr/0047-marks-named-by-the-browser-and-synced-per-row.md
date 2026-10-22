@@ -1,6 +1,7 @@
 # ADR 0047: Marks are named by the browser and synced one row at a time
 
-- Status: Accepted by the owner in the #58 pull request (2026-10-20)
+- Status: Accepted by the owner in the #58 pull request (2026-10-20); amends ADR 0033
+  for marks (no version checks)
 - Date: 2026-10-19
 - Implements: FR-TR-2, AT-4 (range and audio time), NFR-PERF-3, NFR-REL-1, UI-4
 - Builds on: ADRs 0014, 0021, 0025, 0033, 0035 and 0044
@@ -82,3 +83,21 @@ Owner decisions (2026-10-20):
   validated at the pre-launch gate (#155).
 - A mark covers at most 20 words (`MAX_MARK_WORDS`): a word or a phrase, never a
   paragraph.
+
+Owner decisions (2026-10-22, after the #58 review):
+
+- "One action" (FR-TR-2) is the marking itself, once the words are chosen: M on a
+  focused word, or the Mark button after choosing words by pointer. Choosing a word by
+  pointer is a separate step, because a plain click keeps its #57 meaning (jump to the
+  word) and a phrase has to be chosen before it can be marked.
+- This ADR amends ADR 0033 for marks: ADR 0033's version checks protect whole-value
+  drafts such as the Dictation draft (ADR 0025), where a stale save would overwrite
+  newer text. Marks
+  sync one row at a time, so they carry no version and the last note saved wins. SRS
+  NFR-PERF-3 names no version check and stays as it is.
+- Marks are exempt from the `run_once` rule in `CLAUDE.md`, which names the exemption:
+  the browser-made id is the idempotency key.
+- When another tab has already marked the same words, `mark_exists` drops this tab's
+  unsent mark, including a note typed on it, and shows the other tab's mark. This needs
+  two tabs marking exactly the same words before either has synced, and the note is
+  optional, so it is accepted rather than merged.
