@@ -72,8 +72,18 @@ report login and verifies no identity reads or accounting writes.
   bundle budget passed (124.6 kB initial JavaScript gzip; 200 kB cap).
 - Playwright: 39 passed, including keyboard navigation, learner 404 and narrow
   usage layout. These tests mock the API; database integration proves the server.
-- Full backend coverage, uninstrumented performance checks and changed-line
-  coverage: running; final results will be recorded before handoff.
+- Backend full coverage command from `docs/testing.md`, with both
+  `LISTENUP_REQUIRE_DB=1` and `LISTENUP_REQUIRE_S3=1`: 1,633 passed, one performance
+  test deselected; no skipped or failed tests (404.40 seconds). The new Compose
+  test was added after this run's collection and passed separately alongside the
+  three existing media configuration tests.
+- `uv run --frozen pytest -m performance --no-cov`: one passed, 1,634 deselected.
+- Coverage inventory checks passed for both applications. `diff-cover` against
+  base `28001678a446d1d05d14c7755aa192898a472168` reports API 97/97 changed
+  executable lines covered and web 22/22: 100% in each. The changed admin backend
+  repository and usage module also have full line and branch coverage; no changed
+  security branches are uncovered. Backend combined line/branch coverage is 97%;
+  frontend line coverage is 94.85%, branch coverage 86.7%.
 - No migration: existing read-only grants cover both accounting tables.
 - Fresh-session independent review and remote CI remain merge prerequisites.
 
