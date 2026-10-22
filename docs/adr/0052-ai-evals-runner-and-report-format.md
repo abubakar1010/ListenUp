@@ -1,4 +1,4 @@
-# ADR 0051: AI evaluation runner and versioned reports
+# ADR 0052: AI evaluation runner and versioned reports
 
 - Status: Accepted for implementation by the owner in story #108
 - Date: 2026-10-22
@@ -23,11 +23,12 @@ this story starts from current main and edits none of those files or the gateway
 1. Put the typed runner and CLI in `listenup.ai.evals`; expose `ai-evals` as an
    installed command. Keep manifests, threshold configuration and synthetic examples
    in `ai-evals/`. No schema migration, product endpoint or application UI is needed.
-2. Use the gateway's public constructor, configuration, prompt loader, fitting and
-   generate interfaces available on main. All gist inference, including fake CI
+2. Use the gateway's public constructor, configuration and `text_tasks.run_task`
+   helper available on main. All gist inference, including fake CI
    inference, uses the same eligibility and persistent accounting path. No vendor
-   calls, implicit provider enabling or quota bypass is allowed. A later rebase on
-   #173 should adopt its public task convenience helper when available.
+   calls, implicit provider enabling or quota bypass is allowed. The original
+   implementation used the public prompt/fitting/generate interfaces; integration
+   with current main adopts #173's public task convenience helper.
 3. Use dataset version 1: explicit kind/suite/source, unique case IDs, typed inputs,
    reference numeric grades and explicit smoke membership. Teacher assets remain
    externally provisioned. Permit three synthetic grade samples only for synthetic

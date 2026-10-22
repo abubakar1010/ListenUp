@@ -61,9 +61,10 @@ export function App() {
             />
           </Route>
           <Route path="/auth/google-error" element={<GoogleErrorPage />} />
-          {/* Placeholders until the policy text is written (#103, ADR 0048). */}
+          {/* The current version of each legal text (#103, ADR 0051). */}
           <Route path="/terms" element={<LegalPage document="terms" />} />
           <Route path="/privacy" element={<LegalPage document="privacy" />} />
+          <Route path="/voice-consent" element={<LegalPage document="voice_recording" />} />
           {/* Outside RedirectIfSignedIn: a reset link must also work while signed in. */}
           <Route
             path="/forgot-password"

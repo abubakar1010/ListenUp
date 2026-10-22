@@ -2,7 +2,7 @@
 
 Branch: `feat/108-ai-evals-runner`, from current main `2800167`.
 Owner-approved plan, implementation with Codex, and explicit unavailable live
-Shadow integration. See [ADR 0051](../adr/0051-ai-evals-runner-and-report-format.md)
+Shadow integration. See [ADR 0052](../adr/0052-ai-evals-runner-and-report-format.md)
 and [format/commands](../../ai-evals/README.md).
 
 ## Scope and evidence limits
@@ -190,3 +190,27 @@ The review also noted a pre-existing policy tension between the gateway's
 sequence. The owner has not specified a new candidate-evaluation procedure here.
 This follow-up neither bypasses eligibility nor enables a production provider;
 that policy question remains explicit rather than inventing a decision.
+
+## Integration with current main before merge
+
+The owner requested merging PR #175 after the review fixes. Branch protection
+requires the PR to include current main, now `57ff878`. Its integration is a merge
+commit, preserving the reviewed commit and remediation history.
+
+- Main's legal-text decision already uses ADR 0051. The eval decision is renumbered
+  to **ADR 0052**, with its links updated; the decision itself is unchanged.
+- Main now provides `text_tasks.run_task`. The eval runner uses that public helper
+  as anticipated by the eval ADR and current AI conventions, retaining the fitted
+  input budget, gateway admission, output validation and reported trimmed fields.
+  This is a behavior-preserving refactor: the existing **75** eval tests passed
+  before and after it. No new test-first behavior is claimed.
+- `uv sync --frozen --python 3.12` passed against main's updated dependency lock.
+- The same neighboring-AI/architecture/persistent-quota command above passed
+  **436 tests**, with one dependency deprecation warning, after integration.
+- Backend Ruff format/lint, strict mypy and all six import contracts passed:
+  **345** formatted files and **173** typed source files.
+- Protected AI providers/prompts, `text_tasks.py`, gateway, review, admin and web
+  match current main; the integration adds no story-specific changes there.
+
+Required hosted CI must be checked for the integrated PR head before merge;
+neither the original green run nor the earlier remediation head substitutes for it.

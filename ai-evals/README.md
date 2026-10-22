@@ -158,7 +158,7 @@ dropping failures from denominators. Every threshold decision records its bound,
 actual value and pass flag. The Markdown companion summarizes those decisions;
 the JSON carries the per-run evidence. Use numeric JSON values for comparisons,
 not rounded Markdown display values. Bump the report version for incompatible
-field or metric-definition changes (ADR 0051).
+field or metric-definition changes (ADR 0052).
 
 ## CI
 

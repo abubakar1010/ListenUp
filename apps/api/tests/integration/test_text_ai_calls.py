@@ -38,6 +38,10 @@ def server(request):
     )
 
 
+async def compose_network(host):
+    return ["172.18.0.5"]
+
+
 @pytest.mark.anyio
 async def test_editing_the_prompt_version_changes_the_version_stored_with_the_call(
     migrated_url, tmp_path
@@ -61,7 +65,10 @@ async def test_editing_the_prompt_version_changes_the_version_stored_with_the_ca
             registry=Registry(
                 text_ai={
                     provider: lambda e: OpenAICompatibleTextAI(
-                        e, transport=httpx.MockTransport(server), prompts_root=root
+                        e,
+                        transport=httpx.MockTransport(server),
+                        prompts_root=root,
+                        resolver=compose_network,
                     )
                 },
                 versions={provider: version_for},
@@ -74,6 +81,7 @@ async def test_editing_the_prompt_version_changes_the_version_stored_with_the_ca
             old.read_text().replace("version: v1", "version: v2")
         )
         old.unlink()
+        (root / "grade_gist" / "v1.schema.json").rename(root / "grade_gist" / "v2.schema.json")
         second = await gateway.generate(load_task("grade_gist", root=root), INPUT, GistGrade)
         with psycopg.connect(migrated_url) as conn:
             rows = conn.execute(

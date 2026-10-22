@@ -7,9 +7,8 @@ from listenup.ai.evals.metrics import summarize
 from listenup.ai.evals.models import Dataset, Grade, Thresholds
 from listenup.ai.gateway import AIGateway
 from listenup.ai.ports import Role
-from listenup.ai.prompt_files import load_prompt, load_task
-from listenup.ai.prompt_render import fit
 from listenup.ai.tasks import GistGrade, GradeGistInput
+from listenup.ai.text_tasks import run_task
 
 
 def required_metrics(dataset: Dataset) -> set[str]:
@@ -127,15 +126,14 @@ async def run(
                 else:
                     assert isinstance(case.input, GradeGistInput)
                     assert thresholds.gist_level_bounds is not None
-                    task = load_task("grade_gist")
-                    fitted = fit(
-                        load_prompt(task.name, task.version),
+                    output = await run_task(
+                        gateway,
+                        "grade_gist",
                         case.input.model_dump(mode="json"),
-                        gateway.text_input_budget(task.name),
+                        GistGrade,
+                        context=case.context,
                     )
-                    result = await gateway.generate(
-                        task, fitted.input, GistGrade, context=case.context
-                    )
+                    result = output.result
                     if not set(result.value.covered_points) <= {
                         p.id for p in case.input.key_points
                     }:
@@ -144,7 +142,7 @@ async def run(
                     observation.update(
                         provenance=result.provenance.model_dump(),
                         prompt_version=result.prompt_version,
-                        trimmed=list(fitted.trimmed),
+                        trimmed=list(output.trimmed),
                     )
                     actual.add(result.provenance.provider)
                 grades.append(grade)

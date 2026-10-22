@@ -1,4 +1,5 @@
-"""Configuration refuses a shared development analytics key in production."""
+"""Configuration refuses development-only values in production: the shared analytics
+key and placeholder consent versions."""
 
 import pytest
 from pydantic import SecretStr, ValidationError
@@ -26,3 +27,24 @@ def test_production_rejects_a_short_analytics_hmac_key() -> None:
             environment="production",
             analytics_hmac_key=SecretStr("too-short"),
         )
+
+
+PRODUCTION_KEY = SecretStr("a-stable-production-analytics-key-123")
+
+
+@pytest.mark.parametrize("field", ["terms_version", "privacy_version", "voice_consent_version"])
+def test_production_refuses_a_placeholder_consent_version(field: str) -> None:
+    # ADR 0048 left this to #103: a placeholder label has no published text. The error
+    # names the variable the operator must change.
+    with pytest.raises(ValidationError, match=f"LISTENUP_{field.upper()} is a placeholder"):
+        Settings(
+            environment="production",
+            analytics_hmac_key=PRODUCTION_KEY,
+            **{field: "placeholder-1"},
+        )
+
+
+def test_local_runs_accept_a_placeholder_consent_version() -> None:
+    settings = Settings(environment="local", terms_version="placeholder-1")
+
+    assert settings.terms_version == "placeholder-1"

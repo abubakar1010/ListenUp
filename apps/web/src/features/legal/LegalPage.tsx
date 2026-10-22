@@ -1,27 +1,39 @@
+import { PageLoading } from '../../app/PageLoading';
 import { usePageTitle } from '../../app/usePageTitle';
-import { DOCUMENTS } from '../../auth/consentApi';
+import { DOCUMENTS, type ConsentKind, useConsentVersions } from '../../auth/consentApi';
+import { errorMessage } from '../../auth/errorMessage';
+import { LegalText } from './LegalText';
+import { TEXTS } from './texts';
 
 /**
- * The Terms of Service and Privacy Policy (#104). PLACEHOLDER: the policy text is
- * written in #103; until then these pages say so, and the versions learners accept
- * are the placeholder labels in LISTENUP_TERMS_VERSION and LISTENUP_PRIVACY_VERSION
- * (ADR 0048).
+ * The Terms of Service, Privacy Policy and voice recording consent (#103). Shows the
+ * text of the version learners accept now (`GET /auth/consent-versions`, ADR 0048), so
+ * the page and the recorded consent always name the same text (ADR 0051).
  */
-export default function LegalPage({ document }: { document: 'terms' | 'privacy' }) {
+export default function LegalPage({ document }: { document: ConsentKind }) {
   const { name } = DOCUMENTS[document];
   usePageTitle(name);
+  const versions = useConsentVersions();
+  const version = versions.data?.[document];
+  // Own keys only: a label such as `constructor` must not find an inherited property.
+  const texts = TEXTS[document];
+  const text = version !== undefined && Object.hasOwn(texts, version) ? texts[version] : undefined;
+
   return (
     <main className="mx-auto flex max-w-reading flex-col gap-4 p-6">
-      <h1 className="font-display text-title-compact">{name}</h1>
-      <p className="rounded-md border border-line bg-surface-raised p-4 font-bold">
-        Placeholder: the final text of this document is not written yet. It will replace this page
-        before ListenUp opens to the public.
-      </p>
-      {document === 'privacy' && (
-        <p>
-          In short, as the product is designed: your recordings, media and texts are used only for
-          your own practice, are never sold or shared, and are never used to train AI models.
-        </p>
+      {versions.isPending ? (
+        <PageLoading />
+      ) : text !== undefined ? (
+        <LegalText source={text} />
+      ) : (
+        <>
+          <h1 className="font-display text-title-compact">{name}</h1>
+          <p role="alert" className="text-danger">
+            {versions.isError
+              ? errorMessage(versions.error)
+              : `The text of version ${version} is not available here.`}
+          </p>
+        </>
       )}
     </main>
   );
