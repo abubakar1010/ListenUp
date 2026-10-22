@@ -28,6 +28,7 @@ def test_three_run_consistency_uses_worst_case_range():
     assert result["max_range.timing"] == 11
     assert result["max_range.overall"] == 11
     assert result["filler_count_mae"] == 1
+    assert result["filler_count_max_error"] == 2
 
 
 def test_missing_runs_or_scores_cannot_look_like_perfect_results():

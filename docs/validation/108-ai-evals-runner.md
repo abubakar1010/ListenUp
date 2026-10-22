@@ -119,3 +119,74 @@ failure propagation and upload configuration are tested above.
 
 No model-quality or real-server performance claim is made. Fresh-session independent
 review and required green CI remain owner merge gates; the owner merges.
+
+## PR #175 review remediation
+
+The independent review identified two assertion gaps, not runtime defects:
+synthetic-only acceptance tests short-circuited the smoke/fallback restrictions,
+and the filler metric example asserted MAE without asserting its worst error.
+This follow-up changes only tests and this evidence record; runtime code, provider
+configuration, production thresholds and the approved live Shadow limitation remain
+unchanged. These are characterization/regression tests for existing behavior, not
+new test-first implementation or evidence of model quality.
+
+| Review finding | Named tests and independent expectations |
+| --- | --- |
+| Provider-acceptance restrictions | `test_teacher_primary_acceptance_excludes_smoke`: full primary success accepts, smoke does not; `test_teacher_fallback_success_never_accepts_requested_provider`: fallback-only and mixed-provider success do not accept; `test_teacher_task_override_acceptance_uses_effective_provider`: a successful task override accepts, fallback to the role primary does not |
+| Worst filler-count error / AT-17 boundary | `test_three_run_consistency_uses_worst_case_range` now asserts maximum filler error **2** alongside MAE **1**; `test_shadow_filler_gate_checks_worst_error_at_inclusive_bound` accepts maximum error **1** and rejects **2**, across two cases with six successful attempts, while the diluted MAE remains below **1** |
+
+Teacher scope in these unit tests is simulated with deterministic test doubles
+and invented inputs solely to exercise otherwise short-circuited report branches.
+No teacher dataset or real provider has been evaluated or accepted. Synthetic
+Shadow samples still exercise report mechanics without AI or audio access.
+
+Actual commands ran from `apps/api` with the existing Python 3.12 environment:
+
+- `PYTHONPATH=src .venv/bin/python -m pytest tests/unit/ai/test_evals_runner.py
+  tests/unit/ai/test_evals_metrics.py -q -p no:cacheprovider`: **35 passed**.
+- `PYTHONPATH=src .venv/bin/python -m pytest tests/unit/ai/test_evals* -q
+  -p no:cacheprovider`: **75 passed** (the reviewed baseline had **67 passed**).
+- `LISTENUP_REQUIRE_DB=1 PYTHONPATH=src .venv/bin/python -m pytest tests/unit/ai
+  tests/architecture tests/integration/test_ai_evals.py -q -p no:cacheprovider`:
+  **382 passed**, one dependency deprecation warning. This includes the real
+  PostgreSQL persistent-quota integration check and all neighboring AI and
+  architecture tests.
+- `.venv/bin/ruff format --check .`, `.venv/bin/ruff check .`, `.venv/bin/mypy`,
+  `.venv/bin/lint-imports`: passed; **336** formatted files, **169** typed source
+  files and all **6** import contracts kept. One formatting/line-length failure
+  during editing was corrected before these final checks.
+
+Independent in-memory mutations used `inspect.getsource`, `exec` in the affected
+module's namespace, and `pytest.main(['tests/unit/ai/', '-q', '-k', 'evals', '-p',
+'no:cacheprovider'])` in a fresh subprocess for each mutant. No tracked runtime
+file was edited. The previous review observed that removing the smoke/provider
+restrictions together and substituting mean filler error each left all **67**
+tests green. The expanded suite now rejects each defect independently:
+
+| Mutation | Actual result |
+| --- | --- |
+| Remove `and not smoke` | **1 failed, 74 passed** |
+| Remove the requested-provider equality guard | **3 failed, 72 passed** |
+| Compare actual providers with the role primary instead of the effective task provider | **2 failed, 73 passed** |
+| Replace `float(max(errors))` with `float(mean(errors))` | **3 failed, 72 passed** |
+| Replace the inclusive maximum comparison `<=` with `<` | **17 failed, 58 passed** |
+
+All five mutant processes exited **1** due to assertion failures; the normal
+suite exited **0**. These mutation failures demonstrate assertion quality, not
+test-before-implementation chronology.
+
+Initial PostgreSQL connection attempts failed before local services were started;
+an initial broader unit run was interrupted while local connections were restricted
+by the command sandbox. Neither is counted as a pass. Starting the configured
+PostgreSQL/SeaweedFS services and granting the test command network access allowed
+the **382-test** run above to complete, with AI calls still guarded against network
+access. Full service-backed coverage and performance checks are delegated to the
+normal CI run for the remediation commit; historical CI on `4fd50e4` is not claimed
+as verification of that new head. No changed runtime lines, schema, API or web
+behavior were introduced by this follow-up.
+
+The review also noted a pre-existing policy tension between the gateway's
+`accepted: true` eligibility precondition and NFR-AI-6's evaluation-before-acceptance
+sequence. The owner has not specified a new candidate-evaluation procedure here.
+This follow-up neither bypasses eligibility nor enables a production provider;
+that policy question remains explicit rather than inventing a decision.

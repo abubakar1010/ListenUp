@@ -136,6 +136,106 @@ def test_gateway_eligibility_denial_and_fallback_are_visible(fake_accounting):
     assert calls == ["b"] * 3
 
 
+@pytest.mark.parametrize("smoke,accepted", [(False, True), (True, False)])
+def test_teacher_primary_acceptance_excludes_smoke(fake_accounting, smoke, accepted):
+    # Teacher scope exercises report branches only; these are deterministic test doubles,
+    # not teacher assets or evidence of any real provider's quality or acceptance.
+    dataset = gist_dataset().model_copy(update={"kind": "teacher"})
+    config = thresholds().model_copy(update={"scope": "teacher"})
+    gateway, calls = make_gateway(fake_accounting)
+    report = asyncio.run(run(dataset, config, gateway, smoke=smoke))
+    assert report["status"] == "pass"
+    assert report["attempts"] == report["successful_attempts"] == 3
+    assert report["requested_provider"] == "a"
+    assert report["actual_providers"] == ["a"]
+    assert report["model_quality_evidence"] is True
+    assert report["provider_acceptance"] is accepted
+    assert calls == ["a"] * 3
+
+
+@pytest.mark.parametrize("primary_successes", [0, 1])
+def test_teacher_fallback_success_never_accepts_requested_provider(
+    fake_accounting, monkeypatch, primary_successes
+):
+    dataset = gist_dataset().model_copy(update={"kind": "teacher"})
+    config = thresholds().model_copy(update={"scope": "teacher"})
+    gateway, calls = make_gateway(fake_accounting, ("a", "b"))
+    if primary_successes:
+        finish = fake_accounting.finish
+
+        async def exhaust_after_primary_success(ticket, *args):
+            await finish(ticket, *args)
+            if ticket.provider == "a":
+                fake_accounting.exhausted.add("a")
+
+        monkeypatch.setattr(fake_accounting, "finish", exhaust_after_primary_success)
+    else:
+        fake_accounting.exhausted.add("a")
+    report = asyncio.run(run(dataset, config, gateway))
+    assert report["status"] == "pass"
+    assert report["attempts"] == report["successful_attempts"] == 3
+    assert report["model_quality_evidence"] is True
+    assert report["requested_provider"] == "a"
+    assert report["actual_providers"] == (["a", "b"] if primary_successes else ["b"])
+    assert report["provider_acceptance"] is False
+    assert calls == ["a"] * primary_successes + ["b"] * (3 - primary_successes)
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+def test_teacher_task_override_acceptance_uses_effective_provider(fake_accounting, fallback):
+    dataset = gist_dataset().model_copy(update={"kind": "teacher"})
+    config = thresholds().model_copy(update={"scope": "teacher"})
+    gateway, calls = make_gateway(fake_accounting, ("a", "b"))
+    gateway._config.tasks["grade_gist"] = ("b", "a")
+    if fallback:
+        fake_accounting.exhausted.add("b")
+    report = asyncio.run(run(dataset, config, gateway, task_provider="b"))
+    actual = "a" if fallback else "b"
+    assert report["status"] == "pass"
+    assert report["attempts"] == report["successful_attempts"] == 3
+    assert report["model_quality_evidence"] is True
+    assert report["role_provider"] == "a"
+    assert report["requested_provider"] == "b"
+    assert report["actual_providers"] == [actual]
+    assert report["provider_acceptance"] is (not fallback)
+    assert calls == [actual] * 3
+
+
+@pytest.mark.parametrize("maximum_error,status", [(1, "pass"), (2, "fail")])
+def test_shadow_filler_gate_checks_worst_error_at_inclusive_bound(
+    fake_accounting, maximum_error, status
+):
+    data = json.loads((ROOT / "ai-evals/fixtures/shadow.json").read_text())
+    case = data["cases"][0]
+    case["synthetic_runs"][2]["filler_count"] = case["expected"]["filler_count"] + maximum_error
+    config_data = json.loads((ROOT / "ai-evals/smoke.thresholds.json").read_text())
+    # Keep every other grade exact, so only the worst-count gate determines the verdict.
+    del config_data["rules"]["shadow"]["filler_count_mae"]
+    config_data["rules"]["shadow"]["filler_count_max_error"] = {"max": 1}
+    gateway, calls = make_gateway(fake_accounting)
+    report = asyncio.run(
+        run(
+            Dataset.model_validate(data),
+            Thresholds.model_validate(config_data),
+            gateway,
+            offline=True,
+        )
+    )
+    assert report["status"] == status
+    assert report["attempts"] == report["successful_attempts"] == 6
+    assert report["metrics"]["filler_count_mae"] == pytest.approx(maximum_error / 6)
+    assert report["metrics"]["filler_count_max_error"] == maximum_error
+    assert report["thresholds"]["filler_count_max_error"] == {
+        "max": 1,
+        "actual": maximum_error,
+        "pass": status == "pass",
+    }
+    assert report["execution"] == "synthetic_report_contract"
+    assert report["model_quality_evidence"] is False
+    assert report["provider_acceptance"] is False
+    assert calls == []
+
+
 def test_missing_thresholds_or_smoke_cases_cannot_pass(fake_accounting):
     gateway, calls = make_gateway(fake_accounting)
     empty = thresholds().model_copy(update={"rules": {"gist": {}}})
