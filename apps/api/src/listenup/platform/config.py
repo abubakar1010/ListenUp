@@ -73,12 +73,13 @@ class Settings(BaseSettings):
     account_deletion_grace_days: int = 7
     # Versions of the documents a learner consents to (#104, ADR 0048). A new label
     # asks every learner to accept terms or privacy again on their next sign-in, and
-    # voice consent again before their next Shadow round. The defaults are
-    # placeholders until the policy text (#103) is written; labels fit
-    # identity.consents.version (at most 20 characters).
-    terms_version: ConsentVersion = "placeholder-1"
-    privacy_version: ConsentVersion = "placeholder-1"
-    voice_consent_version: ConsentVersion = "placeholder-1"
+    # voice consent again before their next Shadow round. Each label names one text in
+    # docs/legal/ (#103, ADR 0051), which the web app shows; publishing a new text means
+    # a new file and a new label. Labels fit identity.consents.version (at most 20
+    # characters); a label containing "placeholder" is refused outside local and test.
+    terms_version: ConsentVersion = "terms-2026-1"
+    privacy_version: ConsentVersion = "privacy-2026-1"
+    voice_consent_version: ConsentVersion = "voice-2026-1"
 
     # File uploads (FR-CI-1, FR-CI-3, D5). Sizes are binary: 500 MB is 500 MiB, as
     # operating systems show file sizes.
@@ -184,6 +185,18 @@ class Settings(BaseSettings):
             raise ValueError(
                 "LISTENUP_ANALYTICS_HMAC_KEY must be set outside local and test environments"
             )
+        return self
+
+    @model_validator(mode="after")
+    def refuse_placeholder_consent_versions(self) -> Self:
+        # A placeholder label has no published text to consent to (ADR 0048, #103).
+        if self.environment not in ("local", "test"):
+            for name in ("terms_version", "privacy_version", "voice_consent_version"):
+                if "placeholder" in getattr(self, name).lower():
+                    raise ValueError(
+                        f"LISTENUP_{name.upper()} is a placeholder "
+                        "label; set a published version outside local and test environments"
+                    )
         return self
 
 

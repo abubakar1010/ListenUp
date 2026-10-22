@@ -106,7 +106,7 @@ Each screen on the UI canvas has its own spec panel (states, focus order, keys, 
 | Replay segment or line | R | Ctrl+Alt+R | None |
 | Slower / faster | \[ and \] | Ctrl+Alt+\[ and \] | None |
 | Keys list | ? | None (button only) | ? |
-| Mark word (Transcript) | Enter on a focused word; Shift+Arrow extends | n/a | n/a |
+| Mark word (Transcript) | On a focused word: Left/Right move, Shift+Arrow extends, M marks (or opens the mark's note), Esc clears; Enter or Space jumps to the word (ADR 0047) | n/a | n/a |
 | Mark list row | Enter seeks, E edits, Delete removes (Undo in toast) | n/a | n/a |
 
 Mac uses Ctrl+Option in place of Ctrl+Alt. Shortcuts act only on keydown, call preventDefault, and never fire while a dialog or sheet is open. The "Keys" button in every practice header lists the keys for the current mode.

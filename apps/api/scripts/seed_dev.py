@@ -41,6 +41,7 @@ def main() -> None:
     for stage, session_id in seeded.sessions.items():
         print(f"session   {session_id} at {stage}")
     print(f"dictation {seeded.dictation_attempt_id} (attempt with a draft)")
+    print(f"mark      {seeded.mark_id} (on the session at transcript)")
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ Read the section for the area you are changing before you change it. The rules e
 
 - Register content-free deployment version resolvers in `Registry.versions`; never use an inference response as the source of a log version. Unregistered adapters log NULL versions, and registered versions must match result provenance. Normalize Whisper timestamp jitter only inside its adapter (at most 100 ms per timestamp); the gateway keeps strict containment checks. Assessment words must match reference indexes/text, and sounds must remain ordered inside their word (ADR 0041).
 
-- Text AI (#66, ADR 0046): get the task and version from `prompt_files.load_task(name)`, never a literal; trim reference text with `prompt_render.fit(spec, input, gateway.text_input_budget(task))` before `generate`, and never trim learner text. Prompts are `ai/prompts/<task>/<version>.md` with a `schema.json` per task; changing a released file needs a new version and `write_manifest()`, and `tasks.py` must match `schema.json`. Learner text goes only in the delimited data block, only through fields the prompt file lists, shaped by the task's input model in `tasks.py` (`TASK_INPUTS`; pass key point ids as `kp1` to `kp6`, never stored ids). A new OpenAI-compatible server is a provider id in `registry.OPENAI_COMPATIBLE` plus an `ai.yaml` entry (`base_url`, `api_key_env` naming a `LISTENUP_AI_<NAME>_API_KEY` variable, never a key; https unless `local: true`), disabled and unaccepted until its golden set passes. AI tests make no network call (`tests/network_guard.py`); record a real reply with `scripts/record_ai_contract.py text_ai`.
+- Text AI (#66, ADR 0046): call a task with `text_tasks.run_task(gateway, name, input, Model)`, which reads the version from the active prompt file, trims reference text to `gateway.text_input_budget(name)` and never trims learner text; do not call `generate` with a literal version or unfitted input. Record the returned `trimmed` fields with the result. Prompts are `ai/prompts/<task>/<version>.md` with its own `<version>.schema.json`; changing a released file, schema included, needs a new version and `write_manifest()`, and `tasks.py` must match the active version's schema. Learner text goes only in the delimited data block, only through fields the prompt file lists, shaped by the task's input model in `tasks.py` (`TASK_INPUTS`; pass key point ids as `kp1` to `kp6`, never stored ids). A new OpenAI-compatible server is a provider id in `registry.OPENAI_COMPATIBLE` plus an `ai.yaml` entry (`base_url`, `api_key_env` naming a `LISTENUP_AI_<NAME>_API_KEY` variable, never a key; https unless `local: true`, which must name this host or the private network as plain ASCII and resolve there at request time, connecting to the checked address; the adapter ignores proxy variables and sends only the active prompt version, and tests that build a local adapter pass a fake `resolver`, see ADR 0046), disabled and unaccepted until its golden set passes. AI tests make no network call (`tests/network_guard.py`); record a real reply with `scripts/record_ai_contract.py text_ai`.
 
 ## Transcripts (ADR 0038)
 
@@ -63,6 +63,7 @@ Read the section for the area you are changing before you change it. The rules e
 - A disabled account reaches nothing: `identity.resolve_auth_session` returns a learner only while `users.status = 'active'`. Background work that must not run for a deleted account checks `identity.service.account_is_active` (the export build does).
 - The purge (`identity.purge_account`) deletes storage under `users/<id>/` first, then the `identity.users` row, then performs a final prefix sweep before it marks the request completed. A failed final sweep leaves the request at `storage_deleted`; retries preserve its earlier row-count report. Every learner table must be deleted with the user (a foreign key to `identity.users`, or to a parent that has one, with `ON DELETE CASCADE`), so a new table needs no purge code; `test_account_deletion.py` fails while any row with the learner's `user_id` survives. A module that keeps a learner's files outside `users/<id>/` needs its own step in the purge. Rate counters about a learner use keys ending in `:user:<id>` (`user_key` in `platform/rate_limit.py`), which the purge removes.
 - Consents (#104, ADR 0048): every account is created with terms and privacy rows for the current `LISTENUP_TERMS_VERSION` and `LISTENUP_PRIVACY_VERSION`; a new sign-up path calls `Accounts.check_sign_up_consent` before creating the account and `record_sign_up_consent` after. A newer label reaches the learner as `Me.consents_required` and is accepted with `POST /me/consents`; until then `CurrentLearner` refuses with 403 `consent_required`. Only routes a learner who declines still needs (profile, consents, export, deletion, events) take `SignedInLearner`; every other route uses `CurrentLearner`. A module that records voice checks `identity.service.require_voice_consent(session, learner, settings)` with the app's settings (403 `voice_consent_required`) before each new round; only `voice_recording` can be withdrawn. Never write `identity.consents` from another module.
+- Legal texts (#103, ADR 0051): each version is a file `docs/legal/<kind>-<year>-<n>.md` named by its label; never change a deployed label's text in meaning. A new version adds the file, its entry in `apps/web/src/features/legal/texts.ts` and the label in `config.py`, and updates `docs/legal/README.md`, which cites the source of every value the texts state. Production refuses a label containing `placeholder`.
 - Password reset and account deletion both lock live reset-token rows before the learner's `identity.users` row. Keep that order when either flow changes; the concurrency regression in `test_account_deletion.py` proves they cannot deadlock.
 
 ## Analytics (ADR 0035)
@@ -135,6 +136,19 @@ Read the section for the area you are changing before you change it. The rules e
 - Passage transport, controls and policy live in `features/media`; Dictation keeps
   compatibility exports. Transcript supplies sentence replay and keyboard handling.
   Readiness/failure events invalidate the named review query; pending reads also poll.
+- Marks (#58, ADR 0047): `review` owns `practice.marks`; other modules reach marks only
+  through `review/service.py`. Every mark route calls `require_reached(TRANSCRIPT)` first.
+  A new mark carries a browser-made id and is one `INSERT ... ON CONFLICT DO NOTHING`, so
+  a resend answers 200 with the same mark; never wrap it in `run_once`. The server
+  derives `at_ms` and the phrase from the passage words. Tags (#61), the list and count
+  (#60) and Dictation pre-fill (#55, #59) extend this service, schemas and
+  `features/review/markSync.ts`, which keeps unsent changes per session in localStorage.
+  There, only a refused *new* mark is taken back; a refused note change or removal puts the
+  server's version back, and a create that was ever sent is removed with a DELETE even when
+  its answer was lost; a note written after a lost answer follows the resend as a PATCH.
+  Test fakes of the marks API answer a resent create with the stored mark, as the API
+  does. The limits (at most 20 words; not only removed words) are kept in both
+  `domain/marks.py` and `selection.ts`.
 
 ## Media sandbox and scanning (ADR 0049)
 

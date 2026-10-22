@@ -25,6 +25,11 @@ FILES = sorted(RECORDINGS.glob("*.json"))
 KEY_PATTERNS = [r"gsk_[A-Za-z0-9]{16,}", r"sk-[A-Za-z0-9]{16,}", r"(?i)authorization", r"Bearer\s"]
 
 
+async def compose_network(host):
+    """The fake resolver for the local entry: its name is a Compose service."""
+    return ["172.18.0.5"]
+
+
 def test_both_adapters_have_a_recording_for_every_task():
     pairs = {tuple(f.stem.split("_", 1)) for f in FILES}
     assert pairs == {(p, t) for p in ("groq", "ollama") for t in TASK_MODELS}
@@ -43,7 +48,10 @@ async def test_recorded_reply_becomes_a_validated_object(path):
         return httpx.Response(record["response"]["status"], json=record["response"]["body"])
 
     adapter = OpenAICompatibleTextAI(
-        entry, transport=httpx.MockTransport(server), environ={"LISTENUP_AI_GROQ_API_KEY": "k"}
+        entry,
+        transport=httpx.MockTransport(server),
+        environ={"LISTENUP_AI_GROQ_API_KEY": "k"},
+        resolver=compose_network,
     )
     assert isinstance(adapter, TextAIPort)
     model = TASK_MODELS[record["task"]]

@@ -199,14 +199,6 @@ test('the learner may sign out instead of accepting', async () => {
   expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
 });
 
-test('the placeholder documents say they are placeholders', async () => {
-  mockApi({ '/me': SIGNED_OUT });
-  renderWithProviders(<App />, { route: '/terms' });
-
-  expect(await screen.findByRole('heading', { name: 'Terms of Service' })).toBeInTheDocument();
-  expect(screen.getByText(/Placeholder/)).toBeInTheDocument();
-});
-
 test('a version published while the prompt is open is shown and asked for again', async () => {
   let terms = 'terms-2';
   mockApi({
@@ -226,12 +218,15 @@ test('a version published while the prompt is open is shown and asked for again'
   expect(await screen.findByText('(version terms-3)', { exact: false })).toBeInTheDocument();
 });
 
-test('the privacy placeholder states the product rule on learner data', async () => {
-  mockApi({ '/me': SIGNED_OUT });
+test('the privacy policy states the product rule on learner data', async () => {
+  mockApi({
+    '/me': SIGNED_OUT,
+    '/auth/consent-versions': jsonResponse(200, { ...VERSIONS, privacy: 'privacy-2026-1' }),
+  });
   renderWithProviders(<App />, { route: '/privacy' });
 
   expect(await screen.findByRole('heading', { name: 'Privacy Policy' })).toBeInTheDocument();
-  expect(screen.getByText(/never used to train AI models/)).toBeInTheDocument();
+  expect(screen.getAllByText(/never use them to train AI models/).length).toBeGreaterThan(0);
 });
 
 test('the register form shows the versions it asks the learner to accept', async () => {
