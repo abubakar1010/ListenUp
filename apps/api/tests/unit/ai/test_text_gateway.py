@@ -86,6 +86,11 @@ def local(**change):
     return ProviderEntry(**{**base, **change})
 
 
+async def compose_network(host):
+    """The fake resolver: every name is a Compose service on the private network."""
+    return ["172.18.0.5"]
+
+
 def build(servers, entries, *, tasks=None, environ=None, prompts_root=PROMPTS_DIR, **config):
     environ = {"LISTENUP_AI_TEST_API_KEY": "k"} if environ is None else environ
 
@@ -95,6 +100,7 @@ def build(servers, entries, *, tasks=None, environ=None, prompts_root=PROMPTS_DI
             transport=httpx.MockTransport(servers),
             environ=environ,
             prompts_root=prompts_root,
+            resolver=compose_network,
         )
 
     ids = {e.provider for e in entries}

@@ -90,11 +90,20 @@ def _is_local_url(base_url: str, host: str) -> bool:
     return client_host == host and _is_local_host(host)
 
 
+# Local-use NAT64 (RFC 8215): Python counts it as private, but a NAT64 gateway forwards it
+# to the public IPv4 address it carries.
+_NAT64_LOCAL_USE = ipaddress.IPv6Network("64:ff9b:1::/48")
+
+
 def _is_local_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if isinstance(address, ipaddress.IPv6Address):
         if address.ipv4_mapped is not None:
             address = address.ipv4_mapped
-        elif address.sixtofour is not None or address.teredo is not None:
+        elif (
+            address.sixtofour is not None
+            or address.teredo is not None
+            or address in _NAT64_LOCAL_USE
+        ):
             return False
     return address.is_private  # includes loopback and link-local
 
@@ -112,10 +121,10 @@ def _is_local_host(host: str) -> bool:
     allows plain HTTP, so it must name this host or the private network: a Compose service
     name, `localhost`, a `.internal` name, or a private, loopback or link-local address.
     Only plain ASCII names qualify. A single label that the resolver reads as an address
-    (`134744072`, `0x08080808`) is refused, as are IPv4-mapped, 6to4 and Teredo addresses
-    that carry another address inside. A name is also checked where it resolves, per request
-    (`OpenAICompatibleTextAI._check_resolved`), because a resolver search domain can complete a
-    single label."""
+    (`134744072`, `0x08080808`) is refused, as are IPv4-mapped, 6to4, Teredo and local-use
+    NAT64 addresses that carry another address inside. A name is also checked where it
+    resolves, per request (`OpenAICompatibleTextAI._check_resolved`), because a resolver
+    search domain can complete a single label."""
     if not host.isascii():
         return False
     try:
@@ -174,11 +183,11 @@ class OpenAICompatibleTextAI:
         self._transport = transport
         self._environ = environ
         self._version = version_for(entry)
-        # Only a local entry on a name is resolved; a test transport never connects, so it
-        # needs no resolver unless one is passed.
+        # Only a local entry on a name is resolved, whatever transport is passed; tests
+        # pass a fake resolver.
         host = urlsplit(self._options.base_url).hostname or ""
         self._resolved_host = host if entry.local and not _is_address(host) else None
-        self._resolver = resolver or (_resolve if transport is None else None)
+        self._resolver = resolver or _resolve
 
     def _headers(self) -> dict[str, str]:
         name = self._options.api_key_env
@@ -222,7 +231,7 @@ class OpenAICompatibleTextAI:
         """A local entry skips the consent, retention and region checks, so the name it
         uses must lead to this host or the private network, whatever a resolver search
         domain makes of a single label. Checked before any learner text is sent."""
-        if self._resolved_host is None or self._resolver is None:
+        if self._resolved_host is None:
             return
         try:
             addresses = await self._resolver(self._resolved_host)
@@ -235,8 +244,10 @@ class OpenAICompatibleTextAI:
         await self._check_resolved()
         url = f"{self._options.base_url}/chat/completions"
         try:
+            # trust_env=False: a proxy from the environment would receive the learner text
+            # instead of the server checked above (NFR-AI-7).
             async with httpx.AsyncClient(
-                transport=self._transport, timeout=self._entry.timeout_seconds
+                transport=self._transport, timeout=self._entry.timeout_seconds, trust_env=False
             ) as client:
                 response = await client.post(url, json=body, headers=headers)
         except httpx.TimeoutException:
