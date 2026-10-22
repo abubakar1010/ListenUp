@@ -4,7 +4,7 @@
 - Decision: [ADR 0034](../adr/0034-speech-models-chosen-by-spikes-b1-and-b2.md).
 - Raw results: [`data/b2/`](data/b2/), produced by `spikes/` (`spike-b2`, `spike-compare`, `spike-summary`). Hand-label kit: [`b2-labels/`](b2-labels/README.md).
 
-> **Indicative numbers.** The stage 0 server (#16) does not exist yet. Every number here was measured on the cloud container below and must be rerun on stage 0 before it becomes a commitment. **The hand-labelled boundary check is pending** (see below): the boundary figures here are agreement between systems, not accuracy against a person.
+> **Indicative numbers.** The stage 0 server (#16) does not exist yet. Every number here was measured on the cloud container below and must be rerun on stage 0 before it becomes a commitment. **The hand-labelled boundary check has no result** (see [Hand labels](#hand-labels-result-of-the-2026-10-22-run)): the three windows are still unlabelled, so the boundary figures here are agreement between systems, not accuracy against a person.
 
 > **Review correction: the B2 results below are historical and do not validate the production adapter.** The original harness expanded contractions and stripped accents differently from production, and its boundary comparator discarded words shifted more than one second. Both defects are now fixed: B2 imports the production text helper, and comparison matches ordered text blocks without a timing cutoff and reports missing coverage. The original audio and per-word model outputs were unavailable in the review-fix workspace, so neither new model measurements nor corrected boundary statistics have been produced. Keep the original JSON for audit; regenerate all B2 settings and comparisons using the commands below before relying on the numeric conclusions. The model choice remains provisional pending that rerun and the human labels.
 
@@ -79,9 +79,32 @@ Per set:
 
 Alignment of a 3-minute passage costs about 0.18 x 185 = 33 core-s. System Design 2.2 budgets about 0.5 core-s per audio-s (90 core-s) for the whole reference profile (alignment, sounds, pitch); alignment now takes about a third of that budget, leaving the rest to the sound and pitch analysis spike #20 measures. A captioned YouTube passage needs this alignment instead of transcription plus alignment, saving about 100 core-s per new passage.
 
-## Hand labels (pending)
+## Hand labels: result of the 2026-10-22 run
 
-The issue's spot-check against hand labels needs a person to listen. Three 60 s windows are prepared in [`b2-labels/`](b2-labels/README.md): one test-clean (female reader), one test-other (male reader), one VoxPopuli accented (Spanish accent), about 450 words in all. Each has a Praat TextGrid whose hint tier carries only the reference text of the utterances in the window, with no times from any system, so the labels are independent of every system they measure. Labelling takes about 30 to 40 minutes per window; the README has the steps and the commands that import the labels and add the "vs hand labels" rows here and to ADR 0034.
+**No mean word-boundary error can be reported: none of the three windows has been labelled.** The committed TextGrids in [`b2-labels/`](b2-labels/README.md) are still the templates `spike-labelkit make` writes: each `words` tier is one empty interval over the whole 60 s, and only the `hint` tier (reference text) has content. No `*.labels.csv` file exists. Labelling needs a person listening in Praat (about 30 to 40 minutes per window, steps in the README); it cannot be produced from any model without measuring the systems against themselves.
+
+The corrected harness was run on the committed label set (container below, 2026-10-22, commit on this branch):
+
+```sh
+cd spikes
+uv run --no-sync spike-labelkit import ../docs/spikes/b2-labels/windows.json ../docs/spikes/b2-labels
+# clean-f-1221.TextGrid: no words labelled yet
+# other-m-1688.TextGrid: no words labelled yet
+# accented-es-20090218.TextGrid: no words labelled yet
+uv run --no-sync spike-compare <words> --labels ../docs/spikes/b2-labels --out <out>
+```
+
+| Comparison | Hand-labelled windows | Unlabelled windows | Words compared | Mean | Coverage | `meets_hand_label_gate` |
+| --- | --- | --- | --- | --- | --- | --- |
+| English base, 30 s windows, int8 vs hand labels | 0 of 3 | `accented-es-20090218`, `clean-f-1221`, `other-m-1688` | 0 | none | 0.0 | **false** |
+
+The model-output folder for this run was empty: with no labels the row is the same for any model output, so no new alignment run was spent on it. Model output must be regenerated with the corrected harness (Reproduce, below) when the labels exist; until then, every boundary figure in this report is historical agreement between systems, not accuracy.
+
+**Harness fix in the same change.** The gate previously counted only the label CSVs present, so labelling one window of three could pass on a third of the sample. `spike-compare` now reads `windows.json` from the label folder, lists unlabelled windows in the report summary (`unlabelled windows`) and fails the gate while any remain (`test_unlabelled_windows_fail_the_gate_and_are_listed`).
+
+**Gate status: not met (no evidence).** Under ADR 0034's condition the caption path does not ship; see [ADR 0053](../adr/0053-b2-caption-path-hand-label-result.md).
+
+**Core-seconds on the stage 0 server: deferred until staging, unverified.** The target (about 0.2 core-s per audio-s, System Design 5.1 and 12.1 B2) and its evidence requirement (the B2 commands below run on stage 0 with the corrected harness) are unchanged and tracked in [#155](https://github.com/abubakar1010/ListenUp/issues/155); it needs the server from [#16](https://github.com/abubakar1010/ListenUp/issues/16). The 0.177 container figure above is historical and is not a pass.
 
 ## Reproduce
 
