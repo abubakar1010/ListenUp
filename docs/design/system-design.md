@@ -105,7 +105,7 @@ Blind takes the length of the passage (3 minutes by default) plus the gist, so t
 | Gist grade | under 10 s | queue wait under 1 s, AI call 3 to 6 s, validation and storage 50 ms, live event 100 ms |
 | Shadow round: scores | under 50 s | upload of about 0.2 MB in 1 to 2 s (section 9), queue wait under 2 s, analysis about 45 s, scoring 1 s |
 | Shadow round: written feedback | under 60 s | scores plus one AI call of 3 to 6 s |
-| Mark saved | under 1 s, shown instantly | optimistic update in the browser, one INSERT on the server |
+| Mark saved | shown instantly; kept on the device within 1 s; server save starts after the 2 s debounce ([ADR 0033](../adr/0033-design-review-policy-resolutions.md), [ADR 0047](../adr/0047-marks-named-by-the-browser-and-synced-per-row.md)) | optimistic update in the browser, one INSERT on the server |
 
 **Two-phase results.** Shadow scores and word labels are shown as soon as the speech analysis finishes; the AI-written feedback appears a few seconds later in the same panel. The learner sees useful output well before the slowest part completes.
 

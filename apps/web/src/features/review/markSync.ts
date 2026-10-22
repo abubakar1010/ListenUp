@@ -1,0 +1,476 @@
+import { ApiError } from '../../api/client';
+import type { components } from '../../api/schema';
+import {
+  DEBOUNCE_MS,
+  classifyFailure,
+  defaultBackoff,
+  type AutosaveStatus,
+  type LocalStore,
+} from '../../lib/autosave';
+
+/**
+ * Marks made in Transcript, shown at once and saved in the background (#58; FR-TR-2,
+ * NFR-PERF-3, NFR-REL-1; ADR 0033 and 0047).
+ *
+ * The autosave rules of `lib/autosave`, applied to a set of marks instead of one value:
+ *
+ * - A mark appears the moment it is made, and every change is copied to the browser at
+ *   once (localStorage), so a reload, a closed tab or a lost connection loses nothing.
+ * - Changes go to the server 2 s after the last one, one request at a time. A new mark
+ *   carries the id made here, so a create resent after a lost answer is not doubled.
+ * - Changes to one mark are merged before sending: a note written before the first save
+ *   travels with the create, and an unsent mark that is removed is never sent.
+ * - No connection: wait for it; a busy server: try again after a pause. A refused new
+ *   mark is taken back; a refused note change or removal puts back what the server holds,
+ *   so a saved mark never disappears. Signed out: every change stays on the device until
+ *   the learner is back. Words already marked in another tab show that tab's mark.
+ *
+ * Marks are per-row changes, so there is no version conflict to resolve: the last note
+ * saved wins. Framework-free; `useMarkSync` binds it to React.
+ */
+
+export type SavedMark = components['schemas']['Mark'];
+
+export interface MarkTransport {
+  create(mark: {
+    id: string;
+    word_from: number;
+    word_to: number;
+    note: string | null;
+  }): Promise<SavedMark>;
+  setNote(id: string, note: string | null): Promise<SavedMark>;
+  remove(id: string): Promise<void>;
+  list(): Promise<SavedMark[]>;
+}
+
+/** A mark as the screen shows it; `saved` is false until the server has this version. */
+export interface LocalMark {
+  id: string;
+  word_from: number;
+  word_to: number;
+  at_ms: number;
+  note: string | null;
+  saved: boolean;
+}
+
+export type NewLocalMark = Omit<LocalMark, 'saved'>;
+
+export type MarkSyncStatus = AutosaveStatus<never>;
+
+export interface MarkSyncSnapshot {
+  marks: LocalMark[];
+  status: MarkSyncStatus;
+  /** True when this visit started from unsent changes kept on this device. */
+  restored: boolean;
+}
+
+export interface MarkSyncOptions {
+  /** Where the unsent changes live, one key per session. */
+  storageKey: string;
+  /** The marks the server returned when the page loaded. */
+  marks: SavedMark[];
+  transport: MarkTransport;
+  debounceMs?: number;
+  storage?: LocalStore | null;
+  backoffMs?: (attempt: number) => number;
+  offlinePollMs?: number;
+  isOnline?: () => boolean;
+  now?: () => number;
+}
+
+type Op = 'none' | 'create' | 'note' | 'delete';
+
+interface Entry {
+  mark: NewLocalMark;
+  op: Op;
+  /** Counts local changes, so a save that finished can tell whether it is still current. */
+  rev: number;
+  /** The mark as the server last held it; null while the server may not have it yet. */
+  server: NewLocalMark | null;
+  /**
+   * True once a create for this mark has been sent. Its answer may have been lost, so
+   * the server may hold the mark and a removal has to be sent too.
+   */
+  attempted: boolean;
+}
+
+interface StoredCopy {
+  ops: { op: Exclude<Op, 'none'>; mark: NewLocalMark; attempted?: boolean }[];
+}
+
+function fromServer(mark: SavedMark): Entry {
+  return { mark: local(mark), op: 'none', rev: 0, server: local(mark), attempted: false };
+}
+
+function local(mark: SavedMark | NewLocalMark): NewLocalMark {
+  const { id, word_from, word_to, at_ms, note } = mark;
+  return { id, word_from, word_to, at_ms, note };
+}
+
+function defaultStorage(): LocalStore | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage;
+  } catch {
+    return null; // blocked site data
+  }
+}
+
+export class MarkSync {
+  private readonly entries = new Map<string, Entry>();
+  private status: MarkSyncStatus = { kind: 'saved', at: null };
+  private restored = false;
+  private snapshot: MarkSyncSnapshot;
+  private inFlight = false;
+  private retries = 0;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private running = false;
+  private readonly listeners = new Set<() => void>();
+  private readonly options: Required<Omit<MarkSyncOptions, 'storage'>> & {
+    storage: LocalStore | null;
+  };
+
+  constructor(options: MarkSyncOptions) {
+    this.options = {
+      debounceMs: DEBOUNCE_MS,
+      backoffMs: defaultBackoff,
+      offlinePollMs: 15_000,
+      isOnline: () => (typeof navigator === 'undefined' ? true : navigator.onLine),
+      now: () => Date.now(),
+      ...options,
+      storage: options.storage === undefined ? defaultStorage() : options.storage,
+    };
+    for (const mark of options.marks) this.entries.set(mark.id, fromServer(mark));
+    this.restore();
+    this.snapshot = this.makeSnapshot();
+  }
+
+  // -- reading --------------------------------------------------------------------------
+
+  getSnapshot = (): MarkSyncSnapshot => this.snapshot;
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  // -- lifecycle ------------------------------------------------------------------------
+
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    if (typeof window !== 'undefined') window.addEventListener('online', this.onOnline);
+    if (this.status.kind === 'pending') this.schedule(0);
+  }
+
+  /** Stop timers and send what is left once; it stays on this device anyway. */
+  stop(): void {
+    if (!this.running) return;
+    this.running = false;
+    if (typeof window !== 'undefined') window.removeEventListener('online', this.onOnline);
+    this.clearTimer();
+    if (!this.inFlight) void this.send();
+  }
+
+  // -- writing --------------------------------------------------------------------------
+
+  add(mark: NewLocalMark): void {
+    this.entries.set(mark.id, {
+      mark: { ...mark },
+      op: 'create',
+      rev: 1,
+      server: null,
+      attempted: false,
+    });
+    this.changed();
+  }
+
+  setNote(id: string, note: string | null): void {
+    const entry = this.entries.get(id);
+    if (!entry || entry.op === 'delete' || entry.mark.note === note) return;
+    entry.mark = { ...entry.mark, note };
+    entry.rev += 1;
+    if (entry.op === 'none') entry.op = 'note';
+    this.changed();
+  }
+
+  remove(id: string): void {
+    const entry = this.entries.get(id);
+    if (!entry || entry.op === 'delete') return;
+    entry.rev += 1;
+    // A create that was never sent leaves nothing behind. One that was sent may have
+    // reached the server even though its answer was lost, so the removal must be sent.
+    if (entry.op === 'create' && !entry.attempted) this.entries.delete(id);
+    else entry.op = 'delete';
+    this.changed();
+  }
+
+  /** Send now instead of after the debounce. */
+  flush(): void {
+    if (this.inFlight || !this.next()) return;
+    this.clearTimer();
+    void this.send();
+  }
+
+  // -- internals ------------------------------------------------------------------------
+
+  private changed(): void {
+    this.writeLocal();
+    const kind = this.status.kind;
+    if (kind !== 'offline' && kind !== 'retrying') {
+      if (!this.next()) this.status = { kind: 'saved', at: null };
+      else this.status = this.inFlight ? { kind: 'saving' } : { kind: 'pending' };
+      if (!this.inFlight && this.next()) this.schedule(this.options.debounceMs);
+    }
+    this.emit();
+  }
+
+  private next(): Entry | undefined {
+    for (const entry of this.entries.values()) if (entry.op !== 'none') return entry;
+    return undefined;
+  }
+
+  private onOnline = () => {
+    if (this.status.kind === 'offline' || this.status.kind === 'retrying') {
+      this.clearTimer();
+      void this.send();
+    }
+  };
+
+  private schedule(ms: number): void {
+    this.clearTimer();
+    if (!this.running) return;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      void this.send();
+    }, ms);
+  }
+
+  private clearTimer(): void {
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+  }
+
+  /** Send the waiting changes one after the other until none is left or one fails. */
+  private async send(): Promise<void> {
+    if (this.inFlight) return;
+    if (!this.next()) {
+      if (this.status.kind !== 'saved') {
+        this.status = { kind: 'saved', at: new Date(this.options.now()) };
+        this.emit();
+      }
+      return;
+    }
+    if (!this.options.isOnline()) {
+      this.setOffline();
+      return;
+    }
+    this.inFlight = true;
+    this.status = { kind: 'saving' };
+    this.emit();
+    let entry: Entry | undefined;
+    try {
+      while ((entry = this.next())) {
+        await this.sendOne(entry);
+        this.writeLocal();
+        this.emit();
+      }
+      this.inFlight = false;
+      this.retries = 0;
+      this.status = { kind: 'saved', at: new Date(this.options.now()) };
+    } catch (error) {
+      this.inFlight = false;
+      this.onFailure(error, entry);
+      this.writeLocal();
+    }
+    this.emit();
+  }
+
+  private async sendOne(entry: Entry): Promise<void> {
+    const { mark, op, rev } = entry;
+    if (op === 'create') {
+      entry.attempted = true;
+      this.writeLocal(); // kept before the request: the tab may close while it is on its way
+      const stored = await this.options.transport.create({
+        id: mark.id,
+        word_from: mark.word_from,
+        word_to: mark.word_to,
+        note: mark.note,
+      });
+      this.settled(entry, rev, local(stored));
+      // A resend after a lost answer gets the mark the server already held, with the note
+      // it had then: the note written since still has to go.
+      if (entry.op === 'none' && stored.note !== mark.note) {
+        entry.mark = { ...entry.mark, note: mark.note };
+        entry.op = 'note';
+      }
+    } else if (op === 'note') {
+      const stored = await this.gone(() => this.options.transport.setNote(mark.id, mark.note));
+      if (stored) this.settled(entry, rev, local(stored));
+      else this.entries.delete(mark.id);
+    } else {
+      await this.gone(() => this.options.transport.remove(mark.id));
+      this.entries.delete(mark.id);
+    }
+  }
+
+  /** The request finished: keep the server's mark unless the learner changed it since. */
+  private settled(entry: Entry, rev: number, stored: NewLocalMark): void {
+    entry.server = stored;
+    if (entry.rev === rev) {
+      entry.mark = stored;
+      entry.op = 'none';
+    } else if (entry.op === 'create') {
+      entry.op = 'note'; // created now; the newer note still has to go
+    }
+  }
+
+  /** Run a change to a mark; a mark the server no longer has resolves to undefined. */
+  private async gone<T>(request: () => Promise<T>): Promise<T | undefined> {
+    try {
+      return await request();
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'mark_not_found') return undefined;
+      throw error;
+    }
+  }
+
+  private onFailure(error: unknown, entry: Entry | undefined): void {
+    const failure = classifyFailure(error);
+    if (failure.kind === 'offline') {
+      this.setOffline();
+    } else if (failure.kind === 'retry') {
+      this.retries += 1;
+      const wait = failure.afterMs ?? this.options.backoffMs(this.retries);
+      this.status = { kind: 'retrying', retryAt: this.options.now() + wait };
+      this.schedule(wait);
+    } else if (error instanceof ApiError && error.code === 'mark_exists' && entry) {
+      this.entries.delete(entry.mark.id);
+      void this.reload();
+    } else if (error instanceof ApiError && error.problem.status === 401) {
+      // Signed out: nothing is refused, so every change stays here (and on the device)
+      // until the learner is back; the next change tries again.
+      this.status = { kind: 'failed', error };
+    } else {
+      // Refused for good: take the change back so the queue does not stick on it.
+      if (entry) this.takeBack(entry);
+      this.status = { kind: 'failed', error };
+      if (this.next()) this.schedule(this.options.debounceMs);
+    }
+  }
+
+  /** Undo a refused change: a new mark goes; a saved mark shows what the server holds. */
+  private takeBack(entry: Entry): void {
+    if (entry.op === 'create') {
+      this.entries.delete(entry.mark.id);
+    } else if (entry.server) {
+      entry.mark = entry.server;
+      entry.op = 'none';
+    } else {
+      entry.op = 'create'; // a removal of a mark never confirmed: it stays, and is sent again
+    }
+  }
+
+  /** Take the server's marks, keeping this tab's unsent changes on top. */
+  private async reload(): Promise<void> {
+    this.inFlight = true;
+    try {
+      const marks = await this.options.transport.list();
+      this.takeServerMarks(marks);
+      this.inFlight = false;
+      this.status = { kind: 'pending' };
+      this.emit();
+      await this.send();
+    } catch (error) {
+      this.inFlight = false;
+      this.onFailure(error, undefined);
+      this.emit();
+    }
+  }
+
+  /** The server's marks over the saved ones; this tab's unsent changes stay on top. */
+  private takeServerMarks(marks: SavedMark[]): void {
+    const onServer = new Set(marks.map((mark) => mark.id));
+    for (const mark of marks) {
+      const entry = this.entries.get(mark.id);
+      if (!entry) this.entries.set(mark.id, fromServer(mark));
+      else {
+        entry.server = local(mark);
+        if (entry.op === 'none') entry.mark = local(mark);
+      }
+    }
+    for (const [id, entry] of this.entries)
+      if (entry.op === 'none' && !onServer.has(id)) this.entries.delete(id);
+  }
+
+  private setOffline(): void {
+    this.status = { kind: 'offline' };
+    this.schedule(this.options.offlinePollMs);
+    this.emit();
+  }
+
+  private emit(): void {
+    this.snapshot = this.makeSnapshot();
+    for (const listener of this.listeners) listener();
+  }
+
+  private makeSnapshot(): MarkSyncSnapshot {
+    const marks = [...this.entries.values()]
+      .filter((entry) => entry.op !== 'delete')
+      .map((entry) => ({ ...entry.mark, saved: entry.op === 'none' }))
+      .sort((a, b) => a.at_ms - b.at_ms || a.word_from - b.word_from || a.word_to - b.word_to);
+    return { marks, status: this.status, restored: this.restored };
+  }
+
+  /** Lay the unsent changes kept on this device over the server's marks. */
+  private restore(): void {
+    const copy = this.readLocal();
+    if (!copy) return;
+    for (const { op, mark, attempted = false } of copy.ops) {
+      const entry = this.entries.get(mark.id);
+      if (op === 'create' && !entry) {
+        this.entries.set(mark.id, { mark, op: 'create', rev: 1, server: null, attempted });
+      } else if (!entry && op === 'delete' && attempted) {
+        // The page's list may predate a create that landed late: send the removal anyway.
+        this.entries.set(mark.id, { mark, op: 'delete', rev: 1, server: null, attempted });
+      } else if (entry && op === 'delete') {
+        entry.op = 'delete';
+        entry.rev = 1;
+      } else if (entry && entry.mark.note !== mark.note) {
+        entry.mark = { ...entry.mark, note: mark.note };
+        entry.op = 'note';
+        entry.rev = 1;
+      }
+      // Anything else is already on the server, or gone from it.
+    }
+    this.restored = this.next() !== undefined;
+    if (this.restored) this.status = { kind: 'pending' };
+    this.writeLocal();
+  }
+
+  private readLocal(): StoredCopy | null {
+    try {
+      const raw = this.options.storage?.getItem(this.options.storageKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Partial<StoredCopy>;
+      return Array.isArray(parsed.ops) ? (parsed as StoredCopy) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeLocal(): void {
+    const ops = [...this.entries.values()]
+      .filter((entry) => entry.op !== 'none')
+      .map((entry) => ({
+        op: entry.op as Exclude<Op, 'none'>,
+        mark: entry.mark,
+        ...(entry.attempted && !entry.server ? { attempted: true } : {}),
+      }));
+    try {
+      if (ops.length === 0) this.options.storage?.removeItem(this.options.storageKey);
+      else this.options.storage?.setItem(this.options.storageKey, JSON.stringify({ ops }));
+    } catch {
+      // Storage full or blocked: the server save still runs.
+    }
+  }
+}

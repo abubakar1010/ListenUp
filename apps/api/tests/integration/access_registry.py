@@ -35,6 +35,7 @@ the functions in `seed.py`. When a route needs data the fixture script does not
 make yet, add it to `seed.py` so every route and the local seed share it.
 """
 
+import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
@@ -245,6 +246,25 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         params=lambda w: {"session_id": w.a.sessions["dictation"]},
         owner_status=409,
         owner_code="step_locked",
+    ),
+    # -- marks (#58) -------------------------------------------------------------------
+    ("GET", "/api/v1/sessions/{session_id}/marks"): Owned(
+        "session_not_found", params=lambda w: {"session_id": w.a.sessions["transcript"]}
+    ),
+    ("POST", "/api/v1/sessions/{session_id}/marks"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["transcript"]},
+        body=lambda w: {"id": str(uuid.uuid4()), "word_from": 2, "word_to": 2},
+    ),
+    # B holds A's session and mark ids and still changes nothing.
+    ("PATCH", "/api/v1/sessions/{session_id}/marks/{mark_id}"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["transcript"], "mark_id": w.a.mark_id},
+        body=lambda w: {"note": "B was here"},
+    ),
+    ("DELETE", "/api/v1/sessions/{session_id}/marks/{mark_id}"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["transcript"], "mark_id": w.a.mark_id},
     ),
     # -- blind -------------------------------------------------------------------------
     ("GET", "/api/v1/sessions/{session_id}/blind"): Owned(

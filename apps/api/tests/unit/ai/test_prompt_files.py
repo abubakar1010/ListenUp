@@ -26,7 +26,7 @@ Grade the gist. Data is between {{{{DELIM}}}} markers.
 def write_prompt(root: Path, version: str, *, task="grade_gist", status="active", name=None):
     folder = root / task
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / "schema.json").write_text("{}")
+    (folder / f"{name or version}.schema.json").write_text(json.dumps({"title": version}))
     (folder / f"{name or version}.md").write_text(
         FRONT.format(task=task, version=version, status=status)
     )
@@ -65,6 +65,15 @@ def test_retired_version_can_be_loaded_by_version(tmp_path):
     write_prompt(tmp_path, "v1", status="retired")
     write_prompt(tmp_path, "v2")
     assert load_prompt("grade_gist", "v1", root=tmp_path).status == "retired"
+
+
+def test_each_version_keeps_its_own_output_schema(tmp_path):
+    """NFR-AI-5: the stored prompt version names the output format too, so a new schema
+    comes with a new version and a retired version keeps the schema it was used with."""
+    write_prompt(tmp_path, "v1", status="retired")
+    write_prompt(tmp_path, "v2")
+    assert load_prompt("grade_gist", "v1", root=tmp_path).output_schema == {"title": "v1"}
+    assert load_prompt("grade_gist", root=tmp_path).output_schema == {"title": "v2"}
 
 
 @pytest.mark.parametrize("task", ["../grade_gist", "Grade", "", "a/b", "unknown_task"])
@@ -139,7 +148,7 @@ def test_a_version_that_does_not_exist_is_refused(tmp_path):
 
 def test_missing_schema_is_refused(tmp_path):
     write_prompt(tmp_path, "v1")
-    (tmp_path / "grade_gist" / "schema.json").unlink()
+    (tmp_path / "grade_gist" / "v1.schema.json").unlink()
     with pytest.raises(PromptError, match="schema"):
         load_prompt("grade_gist", root=tmp_path)
 
@@ -148,4 +157,7 @@ def test_write_manifest_records_the_current_hashes(tmp_path):
     write_prompt(tmp_path, "v1")
     prompt_files.write_manifest(tmp_path)
     assert json.loads((tmp_path / "manifest.json").read_text()) == prompt_files.manifest(tmp_path)
-    assert set(prompt_files.manifest(tmp_path)) == {"grade_gist/schema.json", "grade_gist/v1.md"}
+    assert set(prompt_files.manifest(tmp_path)) == {
+        "grade_gist/v1.schema.json",
+        "grade_gist/v1.md",
+    }

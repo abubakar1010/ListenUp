@@ -3,10 +3,10 @@
 Every provider must return exactly these structures, and the gateway validates them before
 use. The overall score and level of a gist are not here: our code computes them from the
 dimension scores and the rubric weights (Architecture 5.4), never from model arithmetic.
-`ai/prompts/<task>/schema.json` is the JSON Schema of the model named here; a test fails
-when they differ. The input models bound what may reach a provider at every level: a
-key point id is a short label (`kp1`), not a database id, and no model has room for an
-account identifier.
+`ai/prompts/<task>/<active version>.schema.json` is the JSON Schema of the model named
+here; a test fails when they differ. The input models bound what may reach a provider at
+every level: a key point id is a short label (`kp1`), not a database id, and no model has
+room for an account identifier.
 """
 
 from typing import Annotated, Any, Literal, Self

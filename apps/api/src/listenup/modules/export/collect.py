@@ -16,6 +16,7 @@ from listenup.modules.content import service as content
 from listenup.modules.dictation import service as dictation
 from listenup.modules.identity import service as identity
 from listenup.modules.practice import service as practice
+from listenup.modules.review import service as review
 from listenup.modules.transcript import service as transcript
 from listenup.platform.export import Contributor, ExportPart, learner_rows
 
@@ -47,6 +48,7 @@ CONTRIBUTORS: tuple[Contributor, ...] = (
     practice.export_data,
     blind.export_data,
     dictation.export_data,
+    review.export_data,
     transcript.export_data,
     analytics.export_data,
     _own_data,
