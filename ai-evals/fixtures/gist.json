@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "id": "synthetic-gists-v1",
+  "kind": "synthetic",
+  "suite": "gist",
+  "source": "Invented by the runner authors. Not teacher-graded and not model-quality evidence.",
+  "cases": [
+    {
+      "id": "sleep-main",
+      "smoke": true,
+      "input": {
+        "transcript": "Sleep matters. Adults need eight hours. Screens late at night make sleep worse.",
+        "gist": "Sleep matters.",
+        "key_points": [
+          {
+            "id": "kp1",
+            "text": "Sleep matters.",
+            "kind": "main"
+          },
+          {
+            "id": "kp2",
+            "text": "Adults need eight hours.",
+            "kind": "supporting"
+          },
+          {
+            "id": "kp3",
+            "text": "Screens late at night hurt sleep.",
+            "kind": "supporting"
+          }
+        ]
+      },
+      "expected": {
+        "scores": {
+          "main_idea": 80,
+          "key_details": 60,
+          "accuracy": 100
+        },
+        "overall": 78,
+        "level": "Good"
+      }
+    },
+    {
+      "id": "sleep-paraphrase",
+      "input": {
+        "transcript": "Sleep matters. Adults need eight hours. Screens late at night make sleep worse.",
+        "gist": "Getting enough sleep is important.",
+        "key_points": [
+          {
+            "id": "kp1",
+            "text": "Sleep matters.",
+            "kind": "main"
+          }
+        ]
+      },
+      "expected": {
+        "scores": {
+          "main_idea": 80,
+          "key_details": 60,
+          "accuracy": 100
+        },
+        "overall": 78,
+        "level": "Good"
+      }
+    }
+  ]
+}
