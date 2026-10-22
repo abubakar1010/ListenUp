@@ -98,6 +98,25 @@ def test_usage_aggregates_30_utc_days_without_double_counting(
     assert response.status_code == 200, response.text
     assert response.headers["cache-control"] == "private, no-store"
     data = response.json()
+    # A complete allowlist catches future additions of learner text, media URLs,
+    # identifiers or raw accounting records, even when sentinels change.
+    assert set(data) == {"start_date", "end_date", "as_of", "providers"}
+    for provider in data["providers"]:
+        assert set(provider) == {"provider", "days", "quotas"}
+        for day in provider["days"]:
+            assert set(day) == {
+                "date",
+                "calls",
+                "input_tokens",
+                "output_tokens",
+                "audio_seconds",
+                "estimated_cost_usd",
+                "estimated_calls",
+            }
+        for quota in provider["quotas"]:
+            assert set(quota) == {"period", "calls", "tokens", "audio_seconds", "limits"}
+            if quota["limits"] is not None:
+                assert set(quota["limits"]) <= {"calls", "tokens", "audio_seconds"}
     assert data["start_date"] == "2026-10-01"
     assert data["end_date"] == "2026-10-30"
     hosted = next(p for p in data["providers"] if p["provider"] == "hosted")

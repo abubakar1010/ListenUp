@@ -79,7 +79,7 @@ Read the section for the area you are changing before you change it. The rules e
 
 ## Admin (ADR 0045)
 
-- Usage reports (ADR 0051) use `LISTENUP_ADMIN_REPORT_DATABASE_URL`, a separate
+- Usage reports (ADR 0052) use `LISTENUP_ADMIN_REPORT_DATABASE_URL`, a separate
   login granted only `listenup_readonly`. Never fall back to the API or worker
   connection. Read AI accounting only; quota configuration is allowlisted metadata,
   with no AI-layer import. Keep hypothetical costs, reserved usage, current

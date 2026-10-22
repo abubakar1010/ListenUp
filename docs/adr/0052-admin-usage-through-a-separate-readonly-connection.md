@@ -1,4 +1,4 @@
-# ADR 0051: Administrator usage reports through a separate read-only connection
+# ADR 0052: Administrator usage reports through a separate read-only connection
 
 - Status: Accepted (owner-approved #100 part 2 plan)
 - Date: 2026-10-22

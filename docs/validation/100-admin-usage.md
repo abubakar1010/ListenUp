@@ -1,7 +1,7 @@
 # #100 part 2: administrator usage reports
 
 Scope: usage only; #166 supplies the role and job view. Implements SRS 2.2 and
-NFR-AI-10. ADR 0051 documents the separate report connection and quota semantics.
+NFR-AI-10. ADR 0052 documents the separate report connection and quota semantics.
 Protected review, marks and AI-layer files are unchanged.
 
 ## Acceptance criteria and evidence
@@ -94,4 +94,33 @@ query an operator's reporting database.
 
 Deployment requires `LISTENUP_ADMIN_REPORT_DATABASE_URL` for a separate login
 granted only `listenup_readonly`; missing configuration intentionally yields 503
-only for the admin usage endpoint. See ADR 0051 for provisioning and limitations.
+only for the admin usage endpoint. See ADR 0052 for provisioning and limitations.
+
+## Codex continuation after merging main
+
+The remote branch already contained merge commit `cf39ba3` with current main
+`57ff878`; `git merge origin/main` reported already up to date. No rebase or
+force-push was used. The merge introduced a collision with legal-text ADR 0051;
+the usage decision is now ADR 0052, with its references updated.
+
+Strengthened `test_usage_aggregates_30_utc_days_without_double_counting` to assert
+an exact response-field allowlist at every level, including quota dimensions.
+This is passing characterization of existing privacy behavior, not a new
+behavior or a claimed red cycle. Documentation renumbering has no executable TDD
+requirement. The three open criteria remain mapped above: aggregate API, usage
+page/free quotas, and learner denial/content-free output.
+
+Actual continuation checks:
+
+- Initial focused run: 11 passed, 28 skipped because PostgreSQL was stopped;
+  this did not establish integration success. Started local PostgreSQL/S3/Mailpit.
+- `uv run --frozen ruff format --check .`, `ruff check .`, `mypy`, and
+  `lint-imports`: passed (six contracts).
+- With both required-service flags, focused admin, access, architecture and admin
+  configuration tests: **39 passed**, no skips.
+- Re-exported OpenAPI and regenerated the TypeScript client. Generated output is
+  unchanged. A web format check overlapping the export failed on raw JSON;
+  generation reformatted it, and the sequential lint/format/type checks passed.
+
+The prior backend test-first gap remains disclosed above. This continuation does
+not retroactively establish TDD or replace the required independent review.
