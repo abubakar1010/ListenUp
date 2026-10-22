@@ -6,6 +6,7 @@ None of them has a field for reference text: Dictation hides the transcript
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -104,3 +105,34 @@ class DictationAttemptView(BaseModel):
     status: AttemptStatus
     scoring_status: ScoringStatus | None = Field(description="Null until the attempt is submitted")
     result: DictationResult | None = Field(description="Null until `scoring_status` is scored")
+
+
+MAX_MARKS_PER_REQUEST = 2_500
+"""More than the words of a 15-minute passage at speaking pace, so "add all" fits in one."""
+
+
+class NewDictationMark(BaseModel):
+    """Words of the diff to add to the mark list. The browser names the mark (ADR 0047)."""
+
+    id: uuid.UUID
+    word_from: int = Field(ge=0, le=2**31 - 1, description="`index` of the first diff word")
+    word_to: int = Field(ge=0, le=2**31 - 1, description="`index` of the last diff word")
+
+
+class AddDictationMarks(BaseModel):
+    marks: list[NewDictationMark] = Field(min_length=1, max_length=MAX_MARKS_PER_REQUEST)
+
+
+class DictationMark(BaseModel):
+    """A mark on the words of the passage, as the diff needs it to show them as added."""
+
+    id: uuid.UUID
+    word_from: int
+    word_to: int
+    at_ms: int = Field(description="Absolute media time of the first word")
+    source: Literal["dictation", "manual"]
+    status: Literal["suggested", "confirmed"]
+
+
+class DictationMarks(BaseModel):
+    marks: list[DictationMark]

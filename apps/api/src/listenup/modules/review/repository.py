@@ -39,6 +39,7 @@ class NewMark:
     at_ms: int
     note: str | None
     source: str
+    status: str = "confirmed"
 
 
 async def insert(session: AsyncSession, mark: NewMark) -> MarkRow | None:
@@ -47,8 +48,9 @@ async def insert(session: AsyncSession, mark: NewMark) -> MarkRow | None:
         await session.execute(
             text(f"""
             INSERT INTO practice.marks
-              (id, session_id, user_id, word_from, word_to, at_ms, note, source)
-            VALUES (:id, :session_id, :user_id, :word_from, :word_to, :at_ms, :note, :source)
+              (id, session_id, user_id, word_from, word_to, at_ms, note, source, status)
+            VALUES (:id, :session_id, :user_id, :word_from, :word_to, :at_ms, :note, :source,
+                    :status)
             ON CONFLICT DO NOTHING
             RETURNING {_COLUMNS}
             """),
