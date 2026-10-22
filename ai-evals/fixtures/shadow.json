@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "id": "synthetic-shadow-v1",
+  "kind": "synthetic",
+  "suite": "shadow",
+  "source": "Invented numeric report samples only; no audio inference or teacher grades.",
+  "cases": [
+    {
+      "id": "synthetic-round",
+      "smoke": true,
+      "input": {
+        "recording": "external/recording.wav",
+        "reference_audio": "external/reference.wav",
+        "reference_text": "This is an invented example."
+      },
+      "expected": {
+        "scores": {
+          "timing": 50,
+          "pronunciation": 50,
+          "accent": 50,
+          "articulation": 50,
+          "fluency": 50,
+          "fillers": 50,
+          "completeness": 50
+        },
+        "overall": 50,
+        "filler_count": 2
+      },
+      "synthetic_runs": [
+        {
+          "scores": {
+            "timing": 50,
+            "pronunciation": 50,
+            "accent": 50,
+            "articulation": 50,
+            "fluency": 50,
+            "fillers": 50,
+            "completeness": 50
+          },
+          "overall": 50,
+          "filler_count": 2
+        },
+        {
+          "scores": {
+            "timing": 50,
+            "pronunciation": 50,
+            "accent": 50,
+            "articulation": 50,
+            "fluency": 50,
+            "fillers": 50,
+            "completeness": 50
+          },
+          "overall": 50,
+          "filler_count": 2
+        },
+        {
+          "scores": {
+            "timing": 50,
+            "pronunciation": 50,
+            "accent": 50,
+            "articulation": 50,
+            "fluency": 50,
+            "fillers": 50,
+            "completeness": 50
+          },
+          "overall": 50,
+          "filler_count": 2
+        }
+      ]
+    },
+    {
+      "id": "synthetic-round-extra",
+      "input": {
+        "recording": "external/extra.wav",
+        "reference_audio": "external/reference.wav",
+        "reference_text": "Another invented example."
+      },
+      "expected": {
+        "scores": {
+          "timing": 50,
+          "pronunciation": 50,
+          "accent": 50,
+          "articulation": 50,
+          "fluency": 50,
+          "fillers": 50,
+          "completeness": 50
+        },
+        "overall": 50,
+        "filler_count": 2
+      },
+      "synthetic_runs": [
+        {
+          "scores": {
+            "timing": 50,
+            "pronunciation": 50,
+            "accent": 50,
+            "articulation": 50,
+            "fluency": 50,
+            "fillers": 50,
+            "completeness": 50
+          },
+          "overall": 50,
+          "filler_count": 2
+        },
+        {
+          "scores": {
+            "timing": 50,
+            "pronunciation": 50,
+            "accent": 50,
+            "articulation": 50,
+            "fluency": 50,
+            "fillers": 50,
+            "completeness": 50
+          },
+          "overall": 50,
+          "filler_count": 2
+        },
+        {
+          "scores": {
+            "timing": 50,
+            "pronunciation": 50,
+            "accent": 50,
+            "articulation": 50,
+            "fluency": 50,
+            "fillers": 50,
+            "completeness": 50
+          },
+          "overall": 50,
+          "filler_count": 2
+        }
+      ]
+    }
+  ]
+}

@@ -22,6 +22,9 @@ dependencies = [
     "httpx>=0.27",
 ]
 
+[project.scripts]
+ai-evals = "listenup.ai.evals.cli:main"
+
 [project.optional-dependencies]
 # Self-hosted speech models for the media worker only (ADR 0028); the API, the default
 # worker and CI do without them. torch and torchaudio (wav2vec2 alignment) are installed

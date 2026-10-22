@@ -28,6 +28,14 @@ Read the section for the area you are changing before you change it. The rules e
 
 ## AI layer (ADRs 0028, 0037, 0041)
 
+- Evaluations (ADR 0051): `ai-evals` uses `listenup.ai.evals`; dataset/report format
+  version 1 and commands are documented in `ai-evals/README.md`. Keep threshold
+  values in configuration and synthetic limits scoped to synthetic data. Every AI
+  inference uses the public gateway with its eligibility and accounting. Synthetic
+  Shadow numeric samples check report mechanics only; live Shadow is unavailable
+  until a public scoring service exists. Never treat fixture PASS, fake output,
+  fallback-only success or an incomplete run as provider-acceptance evidence.
+
 - B2 alignment benchmarks import the production pure text helper from `ai/providers/alignment_text.py`; never expand contractions or normalize accents differently in the harness. Boundary validation matches text before measuring timestamps, reports unmatched coverage, and cannot pass incomplete hand labels. Alignment provenance includes window size and quantization, since both can change output for the same model (ADR 0034, NFR-AI-5).
 
 - AI (ADR 0028): callers use `get_gateway()` from `listenup.ai.gateway` and the types in `listenup/ai/ports.py`. Only `grading` and `transcript` may import `listenup.ai`, and vendor libraries only `ai/providers/` (import-linter and `tests/architecture/test_ai_boundaries.py`). Providers per role are listed in `listenup/ai/ai.yaml` (`LISTENUP_AI_CONFIG` overrides it; `ai.fake.yaml` selects the fakes, which production refuses). A new provider is one adapter in `ai/providers/` plus one line in `ai/registry.py`; contract tests replay `tests/contract/recordings/*.json`, recorded with `scripts/record_ai_contract.py`. Speech adapters decode audio with ffmpeg (`ai/providers/audio.py`) and hand samples to the library, never a file path to the library's own decoder (ADR 0034). Model sizes and settings are chosen by the spikes in `spikes/` and recorded in an ADR; a recording is made with the models and options in `ai.yaml`.
