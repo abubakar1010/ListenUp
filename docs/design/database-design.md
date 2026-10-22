@@ -626,11 +626,13 @@ CREATE SCHEMA ops;
 -- pending clips reserve 900 seconds each during admission checks.
 -- Export requests: 'export:user:<id>', at most 3 per UTC day (ADR 0030).
 CREATE UNLOGGED TABLE ops.rate_counters (
-  key          text NOT NULL,       -- 'login:ip:<ip>', 'login_fail:user:<id>', 'login_lock:user:<id>', 'intake:user:<id>'
+  key          text NOT NULL CHECK (char_length(key) <= 200),
+                                    -- 'login:ip:<ip>', 'login_fail:user:<id>', 'login_lock:user:<id>', 'intake:user:<id>'
   window_start timestamptz NOT NULL,
   count        int4 NOT NULL DEFAULT 0,
   PRIMARY KEY (key, window_start)
 );
+CREATE INDEX rate_counters_window_idx ON ops.rate_counters (window_start);
 
 CREATE TABLE ops.idempotency_keys (
   user_id      uuid NOT NULL REFERENCES identity.users ON DELETE CASCADE,
