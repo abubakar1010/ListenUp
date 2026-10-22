@@ -1,4 +1,4 @@
-# ADR 0052: Shared passage key points prefetched after transcription
+# ADR 0053: Shared passage key points prefetched after transcription
 
 - Status: Accepted
 - Date: 2026-10-22

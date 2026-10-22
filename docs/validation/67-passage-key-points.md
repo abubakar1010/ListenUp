@@ -7,6 +7,8 @@ merged. Dependencies #45/#66 are closed and `text_tasks.run_task` is available.
 PR #171 was open at implementation start, so the initial migration followed
 `104_consents`. It merged before this story: the branch is now synced with main
 `57ff878` and migration `67_key_points` follows **`58_marks`**.
+The latest sync additionally incorporates main `a3e4fe5` (the evaluation runner);
+the migration parent is unchanged.
 
 Claude Code is unavailable in this environment; implementation used Codex under
 the shared repository rules after the owner approved the plan. PostgreSQL 16,
@@ -158,3 +160,17 @@ remain intact. Production accounting code is unchanged; this corrects the test's
 clock assumption rather than retrying away a failure. Green: the accounting,
 key-point, migration and architecture selection passed **71 tests** (14.07 s).
 Ruff lint and formatting also pass; final CI outcomes are recorded on PR #184.
+
+## Evaluation-runner main sync
+
+While final CI was running, main merged #175 at `a3e4fe5`. Synced that main
+without rewriting history and renumbered this story's cache ADR to **0053**,
+leaving main's legal ADR 0051 and evaluation-runner ADR 0052 unchanged. No story
+runtime behavior or migration parent changed during this sync.
+
+After frozen dependency synchronization, Ruff lint/format (352 files), strict
+mypy (177 source files) and all six import contracts pass. The combined AI unit,
+AI-evaluation integration, accounting, key-point, migration and architecture
+selection passes **503 tests** (15.92 s). The new synthetic evaluation harness
+does not provide real-provider/model acceptance evidence; no provider or prompt
+was changed or enabled by this story. Final full CI remains the merge gate.
