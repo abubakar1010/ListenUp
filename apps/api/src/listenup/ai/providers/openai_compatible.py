@@ -200,6 +200,10 @@ class OpenAICompatibleTextAI:
 
     def _body(self, task: TextTask, input: Mapping[str, Any]) -> dict[str, Any]:
         spec = load_prompt(task.name, task.version, root=self._prompts_root)
+        if spec.status != "active":
+            # A retired version's schema would be sent while the reply is checked against
+            # today's model; old results are read from storage, never re-requested.
+            raise PermanentProviderError("prompt version is not active")
         messages = render_messages(spec, input)
         options = self._options
         body: dict[str, Any] = {
