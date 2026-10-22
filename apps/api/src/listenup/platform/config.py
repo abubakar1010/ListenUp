@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     environment: str = "local"
     database_url: str = "postgresql://listenup:listenup@localhost:5432/listenup"
     database_pool_size: int = 5
+    # Separate login granted only listenup_readonly; no fallback to the learner connection.
+    admin_report_database_url: str | None = None
     # Separate worker-role connection used only after the transcript service gate.
     # Production must supply its worker login; never grant the API role cache access.
     transcript_read_database_url: str = (

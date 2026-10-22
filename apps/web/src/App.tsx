@@ -21,6 +21,7 @@ const StartPlanPage = lazy(() => import('./features/session/StartPlanPage'));
 const SettingsPage = lazy(() => import('./features/account/SettingsPage'));
 const DeleteAccountPage = lazy(() => import('./features/account/DeleteAccountPage'));
 const JobsPage = lazy(() => import('./features/admin/JobsPage'));
+const UsagePage = lazy(() => import('./features/admin/UsagePage'));
 const LegalPage = lazy(() => import('./features/legal/LegalPage'));
 const NotFoundPage = lazy(() => import('./app/NotFoundPage'));
 const AccountDeletedPage = lazy(() => import('./features/account/AccountDeletedPage'));
@@ -104,6 +105,7 @@ export function App() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/delete-account" element={<DeleteAccountPage />} />
             <Route path="/admin/jobs" element={<JobsPage />} />
+            <Route path="/admin/usage" element={<UsagePage />} />
           </Route>
           <Route path="/sessions/:sessionId" element={<SessionPage />} />
         </Route>

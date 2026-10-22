@@ -316,6 +316,7 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     # -- library -----------------------------------------------------------------------
     ("GET", "/api/v1/library/contents"): Scoped(a_sees=lambda w: [w.a.content_id]),
     # -- admin -------------------------------------------------------------------------
+    ("GET", "/api/v1/admin/usage"): Admin(),
     ("GET", "/api/v1/admin/jobs"): Admin(),
     ("POST", "/api/v1/admin/jobs/{job_id}/retry"): Admin(params=lambda w: {"job_id": 1}),
 }
