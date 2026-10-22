@@ -40,6 +40,17 @@ Read the section for the area you are changing before you change it. The rules e
 
 - Text AI (#66, ADR 0046): call a task with `text_tasks.run_task(gateway, name, input, Model)`, which reads the version from the active prompt file, trims reference text to `gateway.text_input_budget(name)` and never trims learner text; do not call `generate` with a literal version or unfitted input. Record the returned `trimmed` fields with the result. Prompts are `ai/prompts/<task>/<version>.md` with its own `<version>.schema.json`; changing a released file, schema included, needs a new version and `write_manifest()`, and `tasks.py` must match the active version's schema. Learner text goes only in the delimited data block, only through fields the prompt file lists, shaped by the task's input model in `tasks.py` (`TASK_INPUTS`; pass key point ids as `kp1` to `kp6`, never stored ids). A new OpenAI-compatible server is a provider id in `registry.OPENAI_COMPATIBLE` plus an `ai.yaml` entry (`base_url`, `api_key_env` naming a `LISTENUP_AI_<NAME>_API_KEY` variable, never a key; https unless `local: true`, which must name this host or the private network as plain ASCII and resolve there at request time; the adapter ignores proxy variables, and tests that build a local adapter pass a fake `resolver`, see ADR 0046), disabled and unaccepted until its golden set passes. AI tests make no network call (`tests/network_guard.py`); record a real reply with `scripts/record_ai_contract.py text_ai`.
 
+## Grading references (ADR 0051)
+
+- Key points are prefetched by the transcript-ready hook on the `ai` lane. Queue
+  media id and exact passage bounds only; use the passage key for both producer
+  deduplication and the execution lock, and check the versioned cache under that
+  lock before inference. Call `text_tasks.run_task` and persist its prompt version
+  and provider/model/version provenance. Shared references use original transcript
+  words through `transcript.service.key_points_reference`, never learner overlays.
+  That boundary is worker-only; do not expose it through an API-role read or a
+  Blind response. Cache rows belong to media and cascade only with media deletion.
+
 ## Transcripts (ADR 0038)
 
 - Queue passage transcription through `transcript.service.queue_passage` in the plan-start transaction. Jobs use intake, a per-session unique key and per-media lock; all AI calls remain inside `transcript` through the existing gateway.

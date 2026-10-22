@@ -475,6 +475,14 @@ Blind and Dictation attempt rows use `own_rows`; the API has `SELECT, INSERT, UP
 
 Every grade row has a `status` that moves from pending to a final state, so the interface always knows whether to wait, show a result or offer a retry, and every row records which provider, model and prompt version produced it.
 
+The shared key-point cache contains completed results only, with no learner id or
+API-role table grant. Its constraints require a bounded nonnegative span, a nonempty
+prompt version and string provider/model/version provenance. The immutable
+`grading.valid_key_points(jsonb)` validator requires 3–6 points with ordered
+`kp1`–`kp6` labels, exactly one main idea first and supporting points afterward.
+Workers have explicit CRUD grants and the read-only role SELECT. Only media
+deletion cascades the cache ([ADR 0051](../adr/0051-shared-passage-key-point-cache.md)).
+
 ```sql
 CREATE SCHEMA grading;
 
