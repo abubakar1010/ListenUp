@@ -52,10 +52,15 @@ class Servers:
 
     def __call__(self, request):
         self.requests.append(request)
-        return httpx.Response(200, json=reply(self.answers[request.url.host]))
+        return httpx.Response(200, json=reply(self.answers[server_name(request)]))
 
     def hosts(self):
-        return [r.url.host for r in self.requests]
+        return [server_name(r) for r in self.requests]
+
+
+def server_name(request):
+    """The server a request names; a local name is connected to by its checked address."""
+    return request.headers["host"].split(":")[0]
 
 
 def hosted(**change):
