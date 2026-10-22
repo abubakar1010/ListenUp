@@ -15,7 +15,9 @@ export default function LegalPage({ document }: { document: ConsentKind }) {
   usePageTitle(name);
   const versions = useConsentVersions();
   const version = versions.data?.[document];
-  const text = version === undefined ? undefined : TEXTS[document][version];
+  // Own keys only: a label such as `constructor` must not find an inherited property.
+  const texts = TEXTS[document];
+  const text = version !== undefined && Object.hasOwn(texts, version) ? texts[version] : undefined;
 
   return (
     <main className="mx-auto flex max-w-reading flex-col gap-4 p-6">

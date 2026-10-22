@@ -54,3 +54,13 @@ test('links to app pages and web addresses, and leaves any other link as text', 
   expect(screen.queryByRole('link', { name: 'this' })).not.toBeInTheDocument();
   expect(screen.getByText(/^Read/)).toHaveTextContent('Read the source or this.');
 });
+
+test.each(['//evil.example/x', '/\\evil.example', 'HTTP:x', 'mailto:a@b.c'])(
+  'leaves the link target %s as text, since it is neither an app path nor a web address',
+  (href) => {
+    renderWithProviders(<LegalText source={`See [elsewhere](${href}).`} />);
+
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByText('See elsewhere.')).toBeInTheDocument();
+  },
+);

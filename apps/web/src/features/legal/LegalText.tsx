@@ -49,6 +49,8 @@ function renderBlock(block: string, key: number): ReactNode {
   return <p key={key}>{renderInline(lines.join(' '))}</p>;
 }
 
+// An app path starts with one `/`; `//host` and `/\host` would leave the app.
+const APP_PATH = /^\/(?![/\\])/;
 // A link target may hold one level of parentheses, as URLs sometimes do.
 const INLINE = /\*\*(.+?)\*\*|\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)/g;
 
@@ -60,7 +62,7 @@ function renderInline(text: string): ReactNode[] {
     const [, bold, label, href] = match;
     if (bold !== undefined) {
       parts.push(<strong key={match.index}>{bold}</strong>);
-    } else if (href.startsWith('/')) {
+    } else if (APP_PATH.test(href)) {
       parts.push(
         <Link key={match.index} to={href} className="text-accent underline">
           {label}

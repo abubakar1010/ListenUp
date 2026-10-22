@@ -2,7 +2,7 @@ import { screen } from '@testing-library/react';
 
 import { App } from '../../App';
 import { DOCUMENTS } from '../../auth/consentApi';
-import { SIGNED_OUT, jsonResponse, mockApi, renderWithProviders } from '../../test-utils';
+import { SIGNED_OUT, jsonResponse, mockApi, problem, renderWithProviders } from '../../test-utils';
 
 const VERSIONS = {
   terms: 'terms-2026-1',
@@ -48,9 +48,38 @@ test('the voice recording consent links to its own page', () => {
 });
 
 test('says why when the current versions cannot be loaded', async () => {
-  mockApi({ '/me': SIGNED_OUT });
+  mockApi({
+    '/me': SIGNED_OUT,
+    '/auth/consent-versions': () => problem(503, 'unavailable', 'ListenUp is unavailable.'),
+  });
   renderWithProviders(<App />, { route: '/terms' });
 
-  expect(await screen.findByRole('alert')).toHaveTextContent(`No mock for /auth/consent-versions.`);
+  expect(await screen.findByRole('alert')).toHaveTextContent('ListenUp is unavailable.');
   expect(screen.getByRole('heading', { level: 1, name: 'Terms of Service' })).toBeVisible();
+  expect(screen.queryByRole('note')).not.toBeInTheDocument();
 });
+
+test('shows no text while the current version is loading', async () => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
+    String(input).endsWith('/auth/consent-versions')
+      ? new Promise<Response>(() => {})
+      : Promise.resolve(SIGNED_OUT()),
+  );
+  renderWithProviders(<App />, { route: '/privacy' });
+
+  expect(await screen.findByText('Loading…')).toBeInTheDocument();
+  expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  expect(screen.queryByText(/^Version /)).not.toBeInTheDocument();
+});
+
+test.each(['constructor', 'toString', '__proto__'])(
+  'treats the label %s as a version with no text here',
+  async (label) => {
+    serve({ ...VERSIONS, terms: label });
+    renderWithProviders(<App />, { route: '/terms' });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      `The text of version ${label} is not available here.`,
+    );
+  },
+);
