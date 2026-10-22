@@ -84,3 +84,38 @@ def test_empty_label_directory_reports_a_failed_gate(
     report = json.loads((out / "spike-19-b2-boundaries.json").read_text())
     assert report["summary"]["hand-labelled windows"] == 0
     assert report["rows"][0]["meets_hand_label_gate"] is False
+
+
+def test_unlabelled_windows_fail_the_gate_and_are_listed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "words" / "model"
+    source.mkdir(parents=True)
+    (source / "done.json").write_text(
+        json.dumps({"window": [0, 10], "words": [{"word": "hello", "start": 0, "end": 1}]})
+    )
+    labels = tmp_path / "labels"
+    labels.mkdir()
+    (labels / "windows.json").write_text(
+        json.dumps(
+            {
+                "windows": {
+                    "a": {"passage": "done", "start_s": 0, "seconds": 10},
+                    "b": {"passage": "todo", "start_s": 0, "seconds": 10},
+                }
+            }
+        )
+    )
+    (labels / "done.labels.csv").write_text("hello,0,1\n")
+    out = tmp_path / "out"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["spike-compare", str(source.parent), "--labels", str(labels), "--out", str(out)],
+    )
+    main()
+    report = json.loads((out / "spike-19-b2-boundaries.json").read_text())
+    assert report["summary"]["unlabelled windows"] == "b"
+    row = report["rows"][0]
+    assert row["mean_ms"] == 0
+    assert row["meets_hand_label_gate"] is False

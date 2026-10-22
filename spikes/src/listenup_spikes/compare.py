@@ -48,8 +48,22 @@ def load_labels(folder: Path) -> dict[str, Words]:
     return out
 
 
+def unlabelled_windows(folder: Path, labels: dict[str, Words]) -> list[str]:
+    """Windows in the folder's windows.json whose passage has no imported labels."""
+    spec = folder / "windows.json"
+    if not spec.exists():
+        return []
+    windows = json.loads(spec.read_text())["windows"]
+    return sorted(name for name, w in windows.items() if not labels.get(w["passage"]))
+
+
 def _row(
-    name: str, errors: list[float], words: int, *, hand_labels: bool = False
+    name: str,
+    errors: list[float],
+    words: int,
+    *,
+    hand_labels: bool = False,
+    complete: bool = True,
 ) -> dict[str, object]:
     s = spread(errors) if errors else None
     matched = len(errors) // 2
@@ -67,7 +81,7 @@ def _row(
         "within_100ms": round(sum(e <= 100 for e in errors) / (2 * words), 3) if words else 0.0,
     }
     if hand_labels:
-        row["meets_hand_label_gate"] = bool(s and matched == words and s.mean <= 50)
+        row["meets_hand_label_gate"] = bool(complete and s and matched == words and s.mean <= 50)
     return row
 
 
@@ -112,9 +126,12 @@ def main() -> None:
         if not args.only or passage.startswith(args.only)
     }
     report.summary["hand-labelled windows"] = len(labels)
+    # A window left unlabelled cannot be excluded from a pass (ADR 0034).
+    missing = unlabelled_windows(args.labels, labels) if args.labels else []
+    report.summary["unlabelled windows"] = ", ".join(missing) or "none"
     report.summary["boundary_matching"] = "ordered text blocks; no timing cutoff; v2"
     report.summary["hand_label_gate"] = (
-        "all labelled words matched and mean boundary error <= 50 ms"
+        "every window labelled, all labelled words matched and mean boundary error <= 50 ms"
     )
     for name, words_of in sources.items():
         errors, compared = [], 0
@@ -122,7 +139,15 @@ def main() -> None:
             errors += boundary_errors_ms(words_of.get(passage, []), labelled)
             compared += len(labelled)
         if args.labels:
-            report.add(**_row(f"{name} vs hand labels", errors, compared, hand_labels=True))
+            report.add(
+                **_row(
+                    f"{name} vs hand labels",
+                    errors,
+                    compared,
+                    hand_labels=True,
+                    complete=not missing,
+                )
+            )
     for a, b in combinations(names, 2):
         errors, compared = [], 0
         for passage in sorted(sources[b]):
