@@ -3,6 +3,7 @@
 httpx.MockTransport stands in for the server, so no test opens a socket."""
 
 import json
+import shutil
 
 import httpx
 import pytest
@@ -10,7 +11,7 @@ import pytest
 from listenup.ai.config import ProviderEntry
 from listenup.ai.errors import PermanentProviderError, TransientProviderError
 from listenup.ai.ports import TextTask
-from listenup.ai.prompt_files import load_prompt, load_task
+from listenup.ai.prompt_files import PROMPTS_DIR, load_prompt, load_task
 from listenup.ai.providers import openai_compatible
 from listenup.ai.providers.openai_compatible import (
     OpenAICompatibleTextAI,
@@ -552,3 +553,65 @@ async def test_a_proxy_from_the_environment_is_not_used(monkeypatch):
     adapter = OpenAICompatibleTextAI(local_name_entry(), resolver=private_address)
     await grade(adapter)
     assert len(server.requests) == 1 and proxies == [None]
+
+
+# --- the request goes to the address that was checked (ADR 0046) -----------------------
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("address", "url_host"), [("172.18.0.5", "172.18.0.5"), ("fd00::5", "[fd00::5]")]
+)
+async def test_a_local_name_is_called_at_the_address_that_was_checked(address, url_host):
+    """Resolving again to connect would let a resolver answer the check with a private
+    address and the connection with a public one, so the checked address is the one used;
+    the name stays in the Host header and the TLS server name (NFR-AI-7)."""
+    adapter, server, asked = local_adapter([address, "10.0.0.9"])
+    await grade(adapter)
+    (request,) = server.requests
+    assert str(request.url) == f"http://{url_host}:11434/v1/chat/completions"
+    assert request.headers["host"] == "llm:11434"
+    assert request.extensions["sni_hostname"] == "llm"
+    assert asked == ["llm"]  # resolved once, for the check and the connection
+
+
+@pytest.mark.anyio
+async def test_an_address_literal_and_a_hosted_entry_keep_their_url():
+    servers = Server()
+    for change in (
+        dict(local=True, options={"base_url": "http://10.0.0.5:11434/v1"}),
+        dict(options={"base_url": "https://llm.example/v1"}),
+    ):
+        adapter = OpenAICompatibleTextAI(
+            entry_for(**change), transport=httpx.MockTransport(servers), environ={KEY: "k"}
+        )
+        await grade(adapter)
+    assert [str(r.url) for r in servers.requests] == [
+        "http://10.0.0.5:11434/v1/chat/completions",
+        "https://llm.example/v1/chat/completions",
+    ]
+    assert all("sni_hostname" not in r.extensions for r in servers.requests)
+
+
+# --- only the active prompt version is sent (ADR 0046) ----------------------------------
+
+
+@pytest.mark.anyio
+async def test_a_retired_prompt_version_is_never_sent(tmp_path):
+    """A retired version's schema would be sent while the reply is checked against today's
+    model, so only the active version reaches a provider; old results stay readable."""
+    root = tmp_path / "prompts"
+    shutil.copytree(PROMPTS_DIR, root)
+    folder = root / "grade_gist"
+    v1 = (folder / "v1.md").read_text()
+    (folder / "v2.md").write_text(v1.replace("version: v1", "version: v2"))
+    (folder / "v1.md").write_text(v1.replace("status: active", "status: retired"))
+    (folder / "v2.schema.json").write_text((folder / "v1.schema.json").read_text())
+    server = Server()
+    adapter = OpenAICompatibleTextAI(
+        entry_for(), transport=httpx.MockTransport(server), environ={KEY: "k"}, prompts_root=root
+    )
+    with pytest.raises(PermanentProviderError, match="not active"):
+        await grade(adapter, task=TextTask(name="grade_gist", version="v1"))
+    assert server.requests == []
+    assert (await grade(adapter, task=load_task("grade_gist", root=root))).prompt_version == "v2"

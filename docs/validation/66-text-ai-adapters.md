@@ -128,7 +128,7 @@ The owner asked to close the remaining trust in single-label names. A `local: tr
 | --- | --- |
 | `test_a_local_name_that_resolves_to_a_private_address_is_called` (3), `test_a_local_name_that_resolves_outside_the_private_network_gets_no_request` (5), `test_a_local_name_that_does_not_resolve_is_a_retryable_error`, `test_an_address_literal_and_a_hosted_entry_are_not_resolved`, `test_the_default_resolver_returns_the_addresses_of_a_name` | Red shown by mutants, because my first red run failed partly through a test bug and is not counted: no check at all fails **9**, accepting every address fails **4**, a permanent error for a failed lookup fails **1**, resolving hosted entries fails **1**. Green: `test_openai_compatible.py` **96 passed**, 100% line and branch coverage of the adapter; `tests/unit/ai`, `tests/contract`, the integration file and `tests/architecture` **372 passed** before the last test; `ruff`, `mypy` and `lint-imports` clean. |
 
-Limit: the check and the connection resolve separately, so it is not a defence against DNS rebinding.
+Limit: the check and the connection resolved separately, so it was not a defence against DNS rebinding. Closed after #173; see "Owner decisions after #173".
 
 ### Second review of the last two fix commits
 
@@ -142,3 +142,14 @@ A fresh review of `c9ca404` and `84264a1` found four gaps; all are fixed on this
 | `run_task(root=...)` could fit input to another folder than the adapters render from | parameter removed; `run_task` reads `PROMPTS_DIR`, and the version-bump test points both at one copy | existing `run_task` tests (refactor with no production caller, so no new red) | n/a | 5 passed |
 
 The first red run of the new tests also failed through a test bug (`api_key_env: None` is not a valid option); the helper was fixed and only the second run is counted above. Final checks: `tests/unit/ai`, `tests/contract`, the integration file and `tests/architecture` **378 passed**; `test_openai_compatible.py` **101 passed**; `openai_compatible.py` and `text_tasks.py` **100% lines and branches** from the unit tests; `ruff check`, `ruff format --check`, `mypy` (163 files) and `lint-imports` (6 kept) pass. Not run here: the full coverage suite with S3; CI is the check for it.
+
+## Owner decisions after #173
+
+The owner asked for the recommended answer to both #173 review questions. Branch `fix/66-local-ai-pinning-active-prompts` from `main` at `1a09aee`; commands from `apps/api` with `--no-cov`.
+
+| Decision | Named tests | Red | Green |
+| --- | --- | --- | --- |
+| A local name is resolved once and the request goes to the first checked address; the name stays in the `Host` header and as `sni_hostname`, so https local servers still verify their certificate (NFR-AI-7, DNS rebinding) | `test_a_local_name_is_called_at_the_address_that_was_checked` (IPv4 and IPv6), `test_an_address_literal_and_a_hosted_entry_keep_their_url` (characterization: passed before and after) | `test_openai_compatible.py`: **2 failed** (the request still went to `http://llm:11434`) | mutants "no pin" (2 failed), "no SNI" (2 failed) and "no Host header" (21 failed) die. The gateway tests' mock server now picks its reply by the `Host` header, as a real server does |
+| The adapter refuses a prompt version that is not active before sending (NFR-AI-4, NFR-AI-5) | `test_a_retired_prompt_version_is_never_sent` | **1 failed** (DID NOT RAISE) | mutant "no status check" (1 failed) dies |
+
+Final checks: `tests/unit/ai`, `tests/contract`, `tests/integration/test_text_ai_calls.py` and `tests/architecture` **382 passed**; `openai_compatible.py` **100% lines and branches** from `test_openai_compatible.py`; `ruff check`, `ruff format --check`, `mypy` (163 files) and `lint-imports` (6 kept) pass. Not run here: the S3 integration tests; CI is the check for them.
