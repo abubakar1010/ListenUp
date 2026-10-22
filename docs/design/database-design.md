@@ -481,7 +481,7 @@ prompt version and string provider/model/version provenance. The immutable
 `grading.valid_key_points(jsonb)` validator requires 3–6 points with ordered
 `kp1`–`kp6` labels, exactly one main idea first and supporting points afterward.
 Workers have explicit CRUD grants and the read-only role SELECT. Only media
-deletion cascades the cache ([ADR 0051](../adr/0051-shared-passage-key-point-cache.md)).
+deletion cascades the cache ([ADR 0052](../adr/0052-shared-passage-key-point-cache.md)).
 
 ```sql
 CREATE SCHEMA grading;

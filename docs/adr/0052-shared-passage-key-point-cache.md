@@ -1,4 +1,4 @@
-# ADR 0051: Shared passage key points prefetched after transcription
+# ADR 0052: Shared passage key points prefetched after transcription
 
 - Status: Accepted
 - Date: 2026-10-22
@@ -66,6 +66,6 @@ in force; this story enables no provider and claims no new model-quality evidenc
 Tests exercise the real gateway/adapter with deterministic HTTP replies and real
 PostgreSQL accounting, persistence and Procrastinate locks.
 
-The migration follows `104_consents` while PR #171 is open; if that PR merges
-first, change the parent to `58_marks` before this story merges. See the validation
-record for the final checked head and the actual-server latency deferral to #155.
+The migration follows `58_marks`, since PR #171 merged before this story. See
+the validation record for the checked migration chain and the actual-server
+latency deferral to #155.

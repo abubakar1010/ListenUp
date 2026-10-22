@@ -4,8 +4,9 @@
 
 Branch: `feat/67-passage-key-points`, based on main `1a09aee` after PR #173
 merged. Dependencies #45/#66 are closed and `text_tasks.run_task` is available.
-PR #171 was open at implementation start, so migration `67_key_points` follows
-`104_consents`; recheck before merge and use `58_marks` if #171 merges first.
+PR #171 was open at implementation start, so the initial migration followed
+`104_consents`. It merged before this story: the branch is now synced with main
+`57ff878` and migration `67_key_points` follows **`58_marks`**.
 
 Claude Code is unavailable in this environment; implementation used Codex under
 the shared repository rules after the owner approved the plan. PostgreSQL 16,
@@ -70,7 +71,8 @@ The original assertions were retained and the temporary copies restored.
 - `alembic heads`: one head, `67_key_points`; `upgrade head`, `check` (no drift),
   `downgrade -1` to `104_consents` and `upgrade head` again: passed. Integration
   migration tests also passed, including full downgrade, and backup restore tests
-  passed in the full suite. PR #171 was rechecked before commit and remains open.
+  passed in the full suite. PR #171 was still open at that initial commit; the
+  post-sync migration verification below supersedes that migration parent.
 - No API routes/OpenAPI contract or web code changed; generated client and web
   checks are not applicable. No excluded review/admin area was changed.
 - Existing extraction prompt/schema, manifest, adapters and provider acceptance
@@ -96,5 +98,22 @@ demonstrate the reference is committed before the three-minute attempt ends;
 fake HTTP replies and development-runner timings cannot establish this target.
 Missing or failed evidence blocks launch. No actual-server result is claimed here.
 
-Fresh-session independent review and required CI remain pre-merge gates; the
-owner merges the single PR for this story.
+## Main sync and merge authorization
+
+The owner explicitly authorized merging and confirmed that independent review
+had already been completed in this conversation. The branch merged current main
+`57ff878` without rewriting history. Excluded review/admin paths have no story
+diff against current main. ADR 0052 replaces this story's original ADR number
+0051 because main now owns ADR 0051 for versioned legal texts.
+
+After the sync, `test_history_is_linear` failed as expected: two heads,
+`58_marks` and `67_key_points`. Rechaining the story migration to `58_marks`
+made the migration/key-point/architecture selection green: **48 passed**.
+On a fresh scratch database, `alembic heads` reports only `67_key_points`;
+upgrade, drift check, downgrade to `58_marks` and upgrade again all pass.
+Ruff lint/format (338 files), strict mypy (170 files), all six import contracts
+and the uninstrumented performance test also pass after the sync.
+
+The full post-sync required-service suite and final CI outcomes are recorded on
+[PR #184](https://github.com/abubakar1010/ListenUp/pull/184). Merge requires passing
+CI; the actual-server latency deferral above remains unchanged.
