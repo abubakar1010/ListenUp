@@ -7,16 +7,18 @@ from dataclasses import replace
 import httpx
 import pytest
 
+from listenup.ai import text_tasks
 from listenup.ai.config import AIConfig, ProviderEntry, load_config
 from listenup.ai.errors import AIUnavailable
 from listenup.ai.gateway import AIGateway
 from listenup.ai.policy import CallContext
 from listenup.ai.ports import Role
 from listenup.ai.prompt_files import PROMPTS_DIR, load_prompt, load_task
-from listenup.ai.prompt_render import fit, serialized_size
+from listenup.ai.prompt_render import InputTooLarge, fit, serialized_size
 from listenup.ai.providers.openai_compatible import OpenAICompatibleTextAI, version_for
 from listenup.ai.registry import DEFAULT_REGISTRY, Registry
-from listenup.ai.tasks import EXAMPLES, GistGrade
+from listenup.ai.tasks import EXAMPLES, GistGrade, KeyPoints
+from listenup.ai.text_tasks import run_task
 
 HOSTED = "https://hosted.example/v1"
 LOCAL = "http://llm:11434/v1"
@@ -85,6 +87,11 @@ def local(**change):
     return ProviderEntry(**{**base, **change})
 
 
+async def compose_network(host):
+    """The fake resolver: every name is a Compose service on the private network."""
+    return ["172.18.0.5"]
+
+
 def build(servers, entries, *, tasks=None, environ=None, prompts_root=PROMPTS_DIR, **config):
     environ = {"LISTENUP_AI_TEST_API_KEY": "k"} if environ is None else environ
 
@@ -94,6 +101,7 @@ def build(servers, entries, *, tasks=None, environ=None, prompts_root=PROMPTS_DI
             transport=httpx.MockTransport(servers),
             environ=environ,
             prompts_root=prompts_root,
+            resolver=compose_network,
         )
 
     ids = {e.provider for e in entries}
@@ -203,6 +211,7 @@ def bump(root, new):
     text = (folder / f"{old}.md").read_text().replace(f"version: {old}", f"version: {new}")
     (folder / f"{old}.md").unlink()
     (folder / f"{new}.md").write_text(text)
+    (folder / f"{old}.schema.json").rename(folder / f"{new}.schema.json")
 
 
 @pytest.mark.anyio
@@ -317,3 +326,62 @@ def test_text_input_budget_with_no_provider_is_unavailable(fake_accounting):
     gateway = AIGateway(AIConfig(version=1, roles={}), registry=Registry())
     with pytest.raises(AIUnavailable):
         gateway.text_input_budget("grade_gist")
+
+
+# --- run_task: the one call for a task, with trimming built in (ADR 0046) ------------
+
+
+def sent_data(servers, index=-1):
+    content = json.loads(servers.requests[index].content)["messages"][1]["content"]
+    return json.loads(content.split("\n", 1)[1].rsplit("\n", 1)[0])
+
+
+@pytest.mark.anyio
+async def test_run_task_trims_over_budget_reference_text_and_reports_it(fake_accounting):
+    servers = Servers()
+    gateway = build(servers, [local(input_token_limit=900, prompt_token_budget=300)])
+    long_input = {**GRADE_INPUT, "transcript": "Sleep matters a lot. " * 200}
+    output = await run_task(gateway, "grade_gist", long_input, GistGrade, context=CONSENT)
+    assert output.trimmed == ("transcript",)
+    assert isinstance(output.result.value, GistGrade)
+    data = sent_data(servers)
+    assert serialized_size(data) <= gateway.text_input_budget("grade_gist")
+    assert data["transcript"].endswith("[truncated]") and data["gist"] == GRADE_INPUT["gist"]
+
+
+@pytest.mark.anyio
+async def test_run_task_sends_input_within_budget_unchanged(fake_accounting):
+    servers = Servers()
+    output = await run_task(build(servers, [local()]), "grade_gist", GRADE_INPUT, GistGrade)
+    assert output.trimmed == () and sent_data(servers) == GRADE_INPUT
+
+
+@pytest.mark.anyio
+async def test_run_task_refuses_long_learner_text_before_admission(fake_accounting):
+    servers = Servers()
+    gateway = build(servers, [local(input_token_limit=900, prompt_token_budget=300)])
+    with pytest.raises(InputTooLarge):
+        await run_task(gateway, "grade_gist", {**GRADE_INPUT, "gist": "word " * 200}, GistGrade)
+    assert servers.requests == [] and fake_accounting.calls == []  # no quota is spent
+
+
+@pytest.mark.anyio
+async def test_run_task_refuses_a_schema_of_another_task(fake_accounting):
+    servers = Servers()
+    with pytest.raises(ValueError, match="schema"):
+        await run_task(build(servers, [local()]), "grade_gist", GRADE_INPUT, KeyPoints)
+    assert servers.requests == [] and fake_accounting.calls == []
+
+
+@pytest.mark.anyio
+async def test_run_task_records_the_version_written_in_the_prompt_file(
+    tmp_path, monkeypatch, fake_accounting
+):
+    root = copy_prompts(tmp_path)
+    monkeypatch.setattr(text_tasks, "PROMPTS_DIR", root)  # where the adapters read too
+    gateway = build(Servers(), [local()], prompts_root=root)
+    first = await run_task(gateway, "grade_gist", GRADE_INPUT, GistGrade)
+    bump(root, "v2")
+    second = await run_task(gateway, "grade_gist", GRADE_INPUT, GistGrade)
+    assert (first.result.prompt_version, second.result.prompt_version) == ("v1", "v2")
+    assert [c["prompt"] for c in fake_accounting.calls] == ["v1", "v2"]

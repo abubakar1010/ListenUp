@@ -11,11 +11,14 @@ from listenup.ai.config import ProviderEntry
 from listenup.ai.errors import PermanentProviderError, TransientProviderError
 from listenup.ai.ports import TextTask
 from listenup.ai.prompt_files import load_prompt, load_task
+from listenup.ai.providers import openai_compatible
 from listenup.ai.providers.openai_compatible import (
     OpenAICompatibleTextAI,
+    _resolve,
     parse_options,
     version_for,
 )
+from listenup.ai.registry import DEFAULT_REGISTRY
 from listenup.ai.tasks import EXAMPLES, TASK_MODELS, GistGrade, KeyPoints
 
 KEY = "LISTENUP_AI_TEST_API_KEY"
@@ -163,7 +166,9 @@ async def test_no_authorization_header_without_an_api_key_option():
         provider="ollama", model="m", local=True, options={"base_url": "http://llm:11434/v1"}
     )
     server = Server()
-    adapter = OpenAICompatibleTextAI(entry, transport=httpx.MockTransport(server), environ={})
+    adapter = OpenAICompatibleTextAI(
+        entry, transport=httpx.MockTransport(server), environ={}, resolver=private_address
+    )
     await grade(adapter)
     assert "authorization" not in server.requests[0].headers
 
@@ -343,3 +348,207 @@ def test_unsafe_or_unknown_options_are_refused_at_construction(entry):
 def test_a_local_server_may_use_plain_http():
     options = parse_options(entry_for(local=True, options={"base_url": "http://llm:11434/v1/"}))
     assert options.base_url == "http://llm:11434/v1"
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://localhost:11434/v1",
+        "http://127.0.0.1:8080/v1",
+        "http://10.0.0.5:11434/v1",
+        "http://192.168.1.20:11434/v1",
+        "http://[::1]:11434/v1",
+        "http://[::ffff:10.0.0.1]:11434/v1",
+        "http://169.254.1.1:11434/v1",
+        "http://host.docker.internal:11434/v1",
+        "http://llm-1.localhost:11434/v1",
+        "http://LLM:11434/v1",
+    ],
+)
+def test_a_local_entry_may_reach_this_host_or_the_private_network(base_url):
+    assert parse_options(entry_for(local=True, options={"base_url": base_url})).base_url
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://api.groq.com/openai/v1",
+        "http://llm.example/v1",
+        "http://8.8.8.8:11434/v1",
+        "http://[2001:4860:4860::8888]:11434/v1",
+        "http://[::ffff:8.8.8.8]:11434/v1",  # IPv4-mapped
+        "http://[2002:808:808::]:11434/v1",  # 6to4 for 8.8.8.8
+        "http://[2001:0:4136:e378:8000:63bf:3fff:fdd2]:11434/v1",  # Teredo
+        "http://[64:ff9b:1::808:808]:11434/v1",  # local-use NAT64 for 8.8.8.8
+        "http://134744072:11434/v1",  # one number: 8.8.8.8 to the resolver
+        "http://0x08080808:11434/v1",
+        "http://1:11434/v1",
+        "http://evil\u3002com:11434/v1",  # ideographic full stop: httpx reads evil.com
+        "http://evil\uff0ecom:11434/v1",
+        "http://\u65e5\u672c:11434/v1",
+        "http://llm.:11434/v1",
+        "http://localhost.:11434/v1",
+        "http://llm_$x:11434/v1",
+        "http://a$.internal:11434/v1",
+        "http://010.1.1.1:11434/v1",  # httpx refuses it as an invalid URL
+    ],
+)
+def test_a_local_entry_cannot_name_a_public_server(base_url):
+    """`local: true` skips consent, retention and region checks (policy.eligible) and
+    allows plain http, so it must really be local: a public server is a hosted entry."""
+    with pytest.raises(ValueError, match="local"):
+        parse_options(entry_for(local=True, options={"base_url": base_url}))
+
+
+# --- a local name must resolve to this host or the private network ---------------------
+
+
+def local_adapter(addresses=None, error=None):
+    """A local entry on a Compose-style name, with a fake resolver and a recording server."""
+    server = Server()
+    asked: list[str] = []
+
+    async def resolver(host):
+        asked.append(host)
+        if error:
+            raise error
+        return addresses
+
+    adapter = OpenAICompatibleTextAI(
+        entry_for(local=True, options={"base_url": "http://llm:11434/v1"}),
+        transport=httpx.MockTransport(server),
+        environ={KEY: "k"},
+        resolver=resolver,
+    )
+    return adapter, server, asked
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("addresses", [["172.18.0.5"], ["127.0.0.1", "::1"], ["::ffff:10.0.0.2"]])
+async def test_a_local_name_that_resolves_to_a_private_address_is_called(addresses):
+    adapter, server, asked = local_adapter(addresses)
+    await grade(adapter)
+    assert asked == ["llm"] and len(server.requests) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "addresses",
+    [
+        ["8.8.8.8"],
+        ["172.18.0.5", "8.8.8.8"],
+        ["::ffff:8.8.8.8"],
+        ["2002:808:808::"],
+        ["64:ff9b:1::808:808"],
+        [],
+    ],
+)
+async def test_a_local_name_that_resolves_outside_the_private_network_gets_no_request(addresses):
+    """A single label can be completed by a resolver search domain, so it is checked where
+    it resolves, before any learner text is sent (NFR-AI-7)."""
+    adapter, server, _ = local_adapter(addresses)
+    with pytest.raises(PermanentProviderError):
+        await grade(adapter)
+    assert server.requests == []
+
+
+@pytest.mark.anyio
+async def test_a_local_name_that_does_not_resolve_is_a_retryable_error():
+    adapter, server, _ = local_adapter(error=OSError("no such host"))
+    with pytest.raises(TransientProviderError):
+        await grade(adapter)
+    assert server.requests == []
+
+
+@pytest.mark.anyio
+async def test_an_address_literal_and_a_hosted_entry_are_not_resolved():
+    resolved: list[str] = []
+
+    async def resolver(host):
+        resolved.append(host)
+        return ["8.8.8.8"]
+
+    for change in (
+        dict(local=True, options={"base_url": "http://10.0.0.5:11434/v1"}),
+        dict(options={"base_url": "https://llm.example/v1"}),
+    ):
+        adapter = OpenAICompatibleTextAI(
+            entry_for(**change),
+            transport=httpx.MockTransport(Server()),
+            environ={KEY: "k"},
+            resolver=resolver,
+        )
+        await grade(adapter)
+    assert resolved == []
+
+
+@pytest.mark.anyio
+async def test_the_default_resolver_returns_the_addresses_of_a_name():
+    assert {"127.0.0.1", "::1"} & set(await _resolve("localhost"))
+
+
+def local_name_entry():
+    """A local entry on a Compose service name, with no API key."""
+    return ProviderEntry(
+        provider="ollama", model="m", local=True, options={"base_url": "http://llm:11434/v1"}
+    )
+
+
+async def public_address(host):
+    return ["8.8.8.8"]
+
+
+async def private_address(host):
+    return ["172.18.0.5"]
+
+
+@pytest.mark.anyio
+async def test_the_registry_builds_a_local_adapter_that_checks_where_its_name_resolves(
+    monkeypatch,
+):
+    """The adapter the worker uses resolves a local name itself; no test seam turns the
+    check off in production (NFR-AI-7)."""
+    monkeypatch.setattr(openai_compatible, "_resolve", public_address)
+    adapter = DEFAULT_REGISTRY.text_ai["ollama"](local_name_entry())
+    with pytest.raises(PermanentProviderError, match="outside the private network"):
+        await grade(adapter)
+
+
+@pytest.mark.anyio
+async def test_a_local_name_is_resolved_even_with_a_custom_transport(monkeypatch):
+    """A caller that brings its own transport (a recorder, a retrying transport) still
+    gets the check: it belongs to the adapter, not to how it is wired."""
+    monkeypatch.setattr(openai_compatible, "_resolve", public_address)
+    server = Server()
+    adapter = OpenAICompatibleTextAI(local_name_entry(), transport=httpx.MockTransport(server))
+    with pytest.raises(PermanentProviderError):
+        await grade(adapter)
+    assert server.requests == []
+
+
+@pytest.mark.anyio
+async def test_a_proxy_from_the_environment_is_not_used(monkeypatch):
+    """The local check covers the server the entry names; a proxy from the environment
+    would receive the learner text instead, so proxy variables are ignored (NFR-AI-7)."""
+    for name in ("all_proxy", "http_proxy", "https_proxy"):
+        monkeypatch.setenv(name, "http://203.0.113.9:3128")
+        monkeypatch.setenv(name.upper(), "http://203.0.113.9:3128")
+    for name in ("no_proxy", "NO_PROXY"):
+        monkeypatch.delenv(name, raising=False)
+    proxies: list[object] = []
+    build_transport = httpx.AsyncHTTPTransport.__init__
+
+    def recording_init(self, *args, proxy=None, **kwargs):
+        proxies.append(proxy)
+        build_transport(self, *args, proxy=proxy, **kwargs)
+
+    server = Server()
+
+    async def send(self, request):
+        return server(request)
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "__init__", recording_init)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", send)
+    adapter = OpenAICompatibleTextAI(local_name_entry(), resolver=private_address)
+    await grade(adapter)
+    assert len(server.requests) == 1 and proxies == [None]
