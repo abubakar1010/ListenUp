@@ -170,3 +170,26 @@ async def _read(
 
 async def export_data(db: AsyncSession, learner: uuid.UUID) -> ExportPart:
     return ExportPart(tables=(await learner_rows(db, "content.transcript_corrections", learner),))
+
+
+async def key_points_reference(
+    worker: AsyncSession, media_id: uuid.UUID, span: tuple[int, int]
+) -> str | None:
+    """Worker-only original reference for shared key points (#67).
+
+    The ready hook authorizes the originating session before queueing the media/span.
+    This boundary requires a worker connection (the API has no cache grant), never
+    returns words to a route and never applies learner corrections to shared points.
+    None means deleted media; missing transcript coverage is retryable.
+    """
+    if not await content.media_exists_for_worker(worker, media_id):
+        return None
+    rows = await repository.overlapping(worker, media_id, span)
+    if missing_spans(span, [row.bounds for row in rows]):
+        raise ProblemError(409, "transcript_not_ready", "The passage transcript is not ready yet.")
+    return " ".join(
+        word
+        for row in rows
+        for i, word in enumerate(row.words)
+        if span[0] <= row.start_ms[i] < span[1]
+    )

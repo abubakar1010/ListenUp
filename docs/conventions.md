@@ -28,6 +28,14 @@ Read the section for the area you are changing before you change it. The rules e
 
 ## AI layer (ADRs 0028, 0037, 0041)
 
+- Evaluations (ADR 0052): `ai-evals` uses `listenup.ai.evals`; dataset/report format
+  version 1 and commands are documented in `ai-evals/README.md`. Keep threshold
+  values in configuration and synthetic limits scoped to synthetic data. Every AI
+  inference uses the public gateway with its eligibility and accounting. Synthetic
+  Shadow numeric samples check report mechanics only; live Shadow is unavailable
+  until a public scoring service exists. Never treat fixture PASS, fake output,
+  fallback-only success or an incomplete run as provider-acceptance evidence.
+
 - B2 alignment benchmarks import the production pure text helper from `ai/providers/alignment_text.py`; never expand contractions or normalize accents differently in the harness. Boundary validation matches text before measuring timestamps, reports unmatched coverage, and cannot pass incomplete hand labels. Alignment provenance includes window size and quantization, since both can change output for the same model (ADR 0034, NFR-AI-5).
 
 - AI (ADR 0028): callers use `get_gateway()` from `listenup.ai.gateway` and the types in `listenup/ai/ports.py`. Only `grading` and `transcript` may import `listenup.ai`, and vendor libraries only `ai/providers/` (import-linter and `tests/architecture/test_ai_boundaries.py`). Providers per role are listed in `listenup/ai/ai.yaml` (`LISTENUP_AI_CONFIG` overrides it; `ai.fake.yaml` selects the fakes, which production refuses). A new provider is one adapter in `ai/providers/` plus one line in `ai/registry.py`; contract tests replay `tests/contract/recordings/*.json`, recorded with `scripts/record_ai_contract.py`. Speech adapters decode audio with ffmpeg (`ai/providers/audio.py`) and hand samples to the library, never a file path to the library's own decoder (ADR 0034). Model sizes and settings are chosen by the spikes in `spikes/` and recorded in an ADR; a recording is made with the models and options in `ai.yaml`.
@@ -39,6 +47,18 @@ Read the section for the area you are changing before you change it. The rules e
 - Register content-free deployment version resolvers in `Registry.versions`; never use an inference response as the source of a log version. Unregistered adapters log NULL versions, and registered versions must match result provenance. Normalize Whisper timestamp jitter only inside its adapter (at most 100 ms per timestamp); the gateway keeps strict containment checks. Assessment words must match reference indexes/text, and sounds must remain ordered inside their word (ADR 0041).
 
 - Text AI (#66, ADR 0046): call a task with `text_tasks.run_task(gateway, name, input, Model)`, which reads the version from the active prompt file, trims reference text to `gateway.text_input_budget(name)` and never trims learner text; do not call `generate` with a literal version or unfitted input. Record the returned `trimmed` fields with the result. Prompts are `ai/prompts/<task>/<version>.md` with its own `<version>.schema.json`; changing a released file, schema included, needs a new version and `write_manifest()`, and `tasks.py` must match the active version's schema. Learner text goes only in the delimited data block, only through fields the prompt file lists, shaped by the task's input model in `tasks.py` (`TASK_INPUTS`; pass key point ids as `kp1` to `kp6`, never stored ids). A new OpenAI-compatible server is a provider id in `registry.OPENAI_COMPATIBLE` plus an `ai.yaml` entry (`base_url`, `api_key_env` naming a `LISTENUP_AI_<NAME>_API_KEY` variable, never a key; https unless `local: true`, which must name this host or the private network as plain ASCII and resolve there at request time, connecting to the checked address; the adapter ignores proxy variables and sends only the active prompt version, and tests that build a local adapter pass a fake `resolver`, see ADR 0046), disabled and unaccepted until its golden set passes. AI tests make no network call (`tests/network_guard.py`); record a real reply with `scripts/record_ai_contract.py text_ai`.
+
+## Grading references (ADR 0053)
+
+- Key points are prefetched by the transcript-ready hook on the `ai` lane. Queue
+  media id and exact passage bounds only; use the passage key for both producer
+  deduplication and the execution lock, and check the versioned cache under that
+  lock before inference. Call `text_tasks.run_task` and persist its prompt version
+  and provider/model/version provenance, with returned trimming field names in
+  `provider_info.trimmed_fields`. Shared references use original transcript
+  words through `transcript.service.key_points_reference`, never learner overlays.
+  That boundary is worker-only; do not expose it through an API-role read or a
+  Blind response. Cache rows belong to media and cascade only with media deletion.
 
 ## Transcripts (ADR 0038)
 
