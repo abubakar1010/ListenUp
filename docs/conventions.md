@@ -137,8 +137,10 @@ Read the section for the area you are changing before you change it. The rules e
   `features/review/markSync.ts`, which keeps unsent changes per session in localStorage.
   There, only a refused *new* mark is taken back; a refused note change or removal puts the
   server's version back, and a create that was ever sent is removed with a DELETE even when
-  its answer was lost. The limits (at most 20 words; not only removed words) are kept in
-  both `domain/marks.py` and `selection.ts`.
+  its answer was lost; a note written after a lost answer follows the resend as a PATCH.
+  Test fakes of the marks API answer a resent create with the stored mark, as the API
+  does. The limits (at most 20 words; not only removed words) are kept in both
+  `domain/marks.py` and `selection.ts`.
 
 ## Media sandbox and scanning (ADR 0049)
 

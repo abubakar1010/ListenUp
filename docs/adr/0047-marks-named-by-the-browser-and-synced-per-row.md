@@ -46,7 +46,9 @@ policy and explicit `listenup_api` grants, and are in the data export.
   a 401 keeps every change on the device and the next change tries again. A create is
   marked as attempted when it is sent, because its answer may be lost after the server
   stored it: removing such a mark still sends the DELETE (a 404 is fine), and the mark is
-  dropped without a request only when no create was ever sent. `mark_exists` reloads
+  dropped without a request only when no create was ever sent. A resent create answers
+  with the mark as the server first stored it, so a note written since then follows as a
+  note change. `mark_exists` reloads
   the list, so the other tab's marks, notes and removals show. The saved list is read
   each time Transcript opens and is not kept in the query cache.
 - Keyboard (UI-4): on a word, Left and Right move, Shift with an arrow extends the
@@ -64,7 +66,10 @@ policy and explicit `listenup_api` grants, and are in the data export.
 
 A create can be resent any number of times without doubling a mark or an analytics
 event, with no idempotency row. A client could choose an id that is already taken;
-that is refused and costs nothing else. Two tabs editing one note overwrite each other
+that is refused and costs nothing else. The primary key spans every learner while
+row-level security hides other learners' rows, so an id already used in another account
+is refused with `mark_id_taken` too; with random v4 ids this reveals nothing useful and
+needs no further handling. Two tabs editing one note overwrite each other
 silently, which is acceptable for an optional note.
 
 Owner decisions (2026-10-20):
