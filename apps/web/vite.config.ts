@@ -18,6 +18,8 @@ export default defineConfig({
     // The API runs on port 8000 (Docker Compose); the browser only ever calls /api.
     // LISTENUP_API_URL points the proxy at another API, for example a second checkout.
     proxy: { '/api': process.env.LISTENUP_API_URL ?? 'http://localhost:8000' },
+    // The legal texts are imported from docs/legal at the repository root (ADR 0051).
+    fs: { allow: ['.', '../../docs/legal'] },
   },
   test: {
     environment: 'jsdom',
