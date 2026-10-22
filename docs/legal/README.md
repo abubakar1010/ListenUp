@@ -54,7 +54,7 @@ Checked against `main` at `2800167` on 2026-10-22.
 | Withdrawing voice consent stops new recordings only | ADR 0048 ("until then the withdrawal dialog promises only that new rounds will not record"); `ConsentsSection.tsx` |
 | Shadow can be skipped | CLAUDE.md (Card and Shadow can be skipped after confirmation); FR-SH-7 |
 | No third-party analytics; cookies only for sign-in and CSRF | ADR 0035; the only cookies are the session cookie (`identity/service.py`), the Google sign-in flow cookie `listenup_oidc` (`identity/oidc.py`) and the CSRF cookie (`platform/csrf.py`) |
-| Takedown notices reviewed, content removed or disabled, the learner told and able to reply; accounts that break the terms may be closed with a reason | SRS 2.2 (the Administrator handles abuse and takedown requests); Architecture 4.1 (`admin`: takedown records) and 9.2 (`POST /admin/takedowns`). **Not built yet**: see owner note 11 |
+| Takedown notices reviewed, content removed or disabled, the learner told and able to reply; accounts that break the terms may be closed with a reason | SRS 2.2 (the Administrator handles abuse and takedown requests); Architecture 4.1 (`admin`: takedown records) and 9.2 (`POST /admin/takedowns`). **Not built yet** (#105, #181): see owner note 11 |
 
 ## Owner notes: where the code and the stated value differ
 
@@ -70,7 +70,7 @@ The owner chose to state the design value and track the gap (#103 plan approval,
 8. **Expired unconfirmed uploads**: nothing deletes the stored file of an upload that was never confirmed; the policy says only that it is not added to the library.
 9. **Login session rows** (with IP and user agent): no clean-up of expired rows was found; the policy says only that a session lasts at most 30 days.
 10. **The sources disagree on what hosted text AI may receive.** SRS FR-BL-13 lists the transcript, key points and gist; `ai/tasks.py` also sends Shadow round measures and flagged words (`shadow_feedback`, with `groq` as its fallback in `ai.yaml`). The privacy policy discloses both. The owner must either amend FR-BL-13 or remove `groq` from `shadow_feedback`, and then update the policy.
-11. **Takedown handling and account closure are not built.** `modules/admin` has no takedown records or `POST /admin/takedowns`, no story tracks them yet, and nothing tells a learner why content was removed or an account closed. The terms describe the intended process; a story must build it before launch.
+11. **Takedown handling and account closure are not built.** `modules/admin` has no takedown records or `POST /admin/takedowns`, and nothing tells a learner why content was removed or an account closed. The terms describe the intended process. #105 builds recording a takedown, removing the media for every learner, blocking it from being added again and telling affected learners; #181 builds the learner's reply to a removal and the suspension or closure of an account with its reason. Both must be done before launch, and each must cite its settings and code in the table above.
 
 ## Questions for the legal adviser
 
