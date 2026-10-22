@@ -40,6 +40,8 @@ def accounts(api_role_url: str, migrated_url: str) -> Iterator[AdminFactory]:
     opened: list[TestClient] = []
 
     def make(admin: bool = True, verified: bool = True, **settings: Any) -> TestClient:
+        # Never inherit an operator's real report connection in application tests.
+        settings.setdefault("admin_report_database_url", None)
         email = f"Admin-{uuid.uuid4().hex}@Example.com"
         listed = (" learner@example.com", email.lower()) if admin else ()
         app = create_app(

@@ -67,6 +67,11 @@ report login and verifies no identity reads or accounting writes.
 
 ## Final validation
 
+The admin client fixture explicitly disables inherited report configuration unless
+a test supplies its own connection. With an unusable operator report URL injected,
+all 23 admin integration tests still passed, proving tests do not accidentally
+query an operator's reporting database.
+
 - Backend format, lint, strict types and six import contracts passed.
 - Frontend lint, format, types, 389 tests with coverage, production build and
   bundle budget passed (124.6 kB initial JavaScript gzip; 200 kB cap).
