@@ -128,3 +128,33 @@ code; the interrupted pre-metadata run is not claimed as a passing check.
 The full post-sync required-service suite and final CI outcomes are recorded on
 [PR #184](https://github.com/abubakar1010/ListenUp/pull/184). Merge requires passing
 CI; the actual-server latency deferral above remains unchanged.
+
+## CI clock-boundary test correction
+
+The final code passed the PR CI run (39851950333), including changed-line
+coverage. Its duplicate push run (39851941550) failed the existing
+`test_admission_racing_settlement_observes_committed_capacity[admit]`: the query
+returned a fourth, empty quota bucket instead of three rows. This test precedes
+the new key-point tests and uses no key-point code.
+
+Diagnosis: accounting records minute/day/month buckets. If the second admission
+crosses a minute boundary, it correctly creates another minute row, including a
+zero-usage row when daily quota refuses the admission. The serialization test
+assumed the wall clock stayed inside the first ticket's minute.
+
+Controlled reproduction used a temporary copy of the original test and made the
+second admission's `_now` return `ticket.created_at + timedelta(minutes=1)`.
+Both admission-order cases failed deterministically with the same additional
+bucket (2 failed, 19 deselected). The initial exact-node selection missed the
+temporary copy's AnyIO parameter suffix and ran no tests; the subsequent `-k
+admission_racing` command is the counted reproduction.
+
+The test now reads the database clock once and supplies two distinct, ordered
+timestamps within that minute. A first correction used the identical ticket
+timestamp and exposed an ordering tie (1 failed, 70 passed); the final clock
+sequence preserves the original chronological assertion as well. Real PostgreSQL
+locks, transaction races, quota limits, refund checks and all original assertions
+remain intact. Production accounting code is unchanged; this corrects the test's
+clock assumption rather than retrying away a failure. Green: the accounting,
+key-point, migration and architecture selection passed **71 tests** (14.07 s).
+Ruff lint and formatting also pass; final CI outcomes are recorded on PR #184.
