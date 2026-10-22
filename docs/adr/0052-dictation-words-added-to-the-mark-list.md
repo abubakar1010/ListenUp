@@ -1,6 +1,6 @@
 # ADR 0052: Dictation words are added to the mark list from the stored diff
 
-- Status: Proposed in the #55 pull request
+- Status: Accepted by the owner in the #55 pull request (2026-10-22)
 - Date: 2026-10-22
 - Implements: FR-DI-6, FR-TR-2 (data), and the data side of FR-TR-3 and AT-4
 - Builds on: ADRs 0019, 0021, 0042, 0044 and 0047
