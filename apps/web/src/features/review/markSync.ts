@@ -297,6 +297,12 @@ export class MarkSync {
         note: mark.note,
       });
       this.settled(entry, rev, local(stored));
+      // A resend after a lost answer gets the mark the server already held, with the note
+      // it had then: the note written since still has to go.
+      if (entry.op === 'none' && stored.note !== mark.note) {
+        entry.mark = { ...entry.mark, note: mark.note };
+        entry.op = 'note';
+      }
     } else if (op === 'note') {
       const stored = await this.gone(() => this.options.transport.setNote(mark.id, mark.note));
       if (stored) this.settled(entry, rev, local(stored));

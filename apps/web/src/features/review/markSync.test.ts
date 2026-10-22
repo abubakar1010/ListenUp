@@ -34,8 +34,12 @@ function refusal(status: number, code: string, extra: Record<string, unknown> = 
 function fakeServer(initial: SavedMark[] = []) {
   const marks = new Map(initial.map((mark) => [mark.id, mark]));
   const transport = {
+    // Like the API: a resend of a stored id answers with the stored mark, note and all,
+    // and changes nothing (ON CONFLICT DO NOTHING, ADR 0047).
     create: vi.fn(
       async (mark: { id: string; word_from: number; word_to: number; note: string | null }) => {
+        const existing = marks.get(mark.id);
+        if (existing) return existing;
         const stored = { ...saved(mark.id, mark.word_from, mark.note), word_to: mark.word_to };
         marks.set(mark.id, stored);
         return stored;
@@ -481,6 +485,40 @@ test('that_removal_survives_a_reload_even_when_the_page_loaded_before_the_create
   expect(again.getSnapshot().marks).toEqual([]);
   await vi.runOnlyPendingTimersAsync();
   expect(server.marks.has('m1')).toBe(false);
+});
+
+test('a_note_written_after_a_lost_create_answer_still_reaches_the_server', async () => {
+  const server = fakeServer();
+  lostAnswer(server);
+  const sync = make(server.transport);
+  sync.add({ id: 'm1', word_from: 2, word_to: 2, at_ms: 2000, note: null });
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(server.marks.get('m1')).toMatchObject({ note: null });
+  sync.setNote('m1', 'sounds like one word');
+  await vi.advanceTimersByTimeAsync(60_000);
+  // The resent create answers with the stored mark and its old note: the note follows.
+  expect(server.transport.setNote).toHaveBeenCalledWith('m1', 'sounds like one word');
+  expect(server.marks.get('m1')).toMatchObject({ note: 'sounds like one word' });
+  expect(sync.getSnapshot().marks).toMatchObject([
+    { id: 'm1', note: 'sounds like one word', saved: true },
+  ]);
+  expect(sync.getSnapshot().status.kind).toBe('saved');
+});
+
+test('that_note_survives_a_reload_before_the_resend', async () => {
+  const server = fakeServer();
+  lostAnswer(server);
+  const storage = memoryStorage();
+  const sync = make(server.transport, storage);
+  sync.add({ id: 'm1', word_from: 2, word_to: 2, at_ms: 2000, note: null });
+  await vi.advanceTimersByTimeAsync(2000);
+  sync.setNote('m1', 'linking');
+  closeTab();
+  const again = make(server.transport, storage, []); // the list that loaded the page lacks m1
+  await vi.runOnlyPendingTimersAsync();
+  await vi.runOnlyPendingTimersAsync();
+  expect(server.marks.get('m1')).toMatchObject({ note: 'linking' });
+  expect(again.getSnapshot().marks).toMatchObject([{ id: 'm1', note: 'linking', saved: true }]);
 });
 
 // -- reloading the list ----------------------------------------------------------------------
