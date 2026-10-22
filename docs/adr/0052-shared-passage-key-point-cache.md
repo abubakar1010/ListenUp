@@ -45,7 +45,9 @@ entry; they are not learner identifiers.
 The handler reads the active version for cache lookup and uses ADR 0046's
 `text_tasks.run_task` for fitting reference input and inference. It stores the
 returned prompt version and provider/model/version provenance rather than
-inventing them. The existing released extraction prompt/schema and manifest need
+inventing them. `provider_info.trimmed_fields` records the task helper's returned
+field names (including an empty list when nothing was trimmed), so a reference
+extracted from shortened text is identifiable. The existing released extraction prompt/schema and manifest need
 no change. A new active prompt version creates a separate cache entry; results
 are never overwritten by another learner or version. The idempotent insert is a
 final safety net, not a replacement for the job lock.

@@ -32,23 +32,21 @@ async def extract_key_points(deps: JobDeps, media_id: str, start_ms: int, end_ms
         return
     if not passage.strip():
         raise PermanentError("The passage contains no transcribed words")
-    result = (
-        await text_tasks.run_task(
-            get_gateway(),
-            EXTRACT_KEY_POINTS,
-            {"transcript": passage},
-            KeyPoints,
-        )
-    ).result
+    output = await text_tasks.run_task(
+        get_gateway(),
+        EXTRACT_KEY_POINTS,
+        {"transcript": passage},
+        KeyPoints,
+    )
+    result = output.result
+    provenance = {**result.provenance.model_dump(), "trimmed_fields": list(output.trimmed)}
     points = [
         dict(id=f"kp{i}", **point.model_dump())
         for i, point in enumerate(result.value.key_points, 1)
     ]
     try:
         async with deps.database.transaction() as db:
-            await repository.store(
-                db, media, span, result.prompt_version, points, result.provenance.model_dump()
-            )
+            await repository.store(db, media, span, result.prompt_version, points, provenance)
     except IntegrityError as error:
         # The cache has exactly one FK: media. A deletion during inference wins.
         if getattr(error.orig, "sqlstate", None) != "23503":

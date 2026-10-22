@@ -1,6 +1,7 @@
 """Worker-only shared cache; no API-role grant or learner-specific reference."""
 
 import uuid
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import Range, insert
@@ -28,7 +29,7 @@ async def store(
     span: tuple[int, int],
     version: str,
     points: list[dict[str, str]],
-    provenance: dict[str, str],
+    provenance: dict[str, Any],
 ) -> None:
     await db.execute(
         insert(KeyPoints)

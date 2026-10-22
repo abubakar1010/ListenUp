@@ -114,6 +114,17 @@ upgrade, drift check, downgrade to `58_marks` and upgrade again all pass.
 Ruff lint/format (338 files), strict mypy (170 files), all six import contracts
 and the uninstrumented performance test also pass after the sync.
 
+Current main's Text AI convention also requires the helper's `trimmed` fields to
+be recorded with the result. Added
+`test_records_reference_trimming_with_the_cached_result` for both shortened and
+unchanged reference inputs. Actual Red: the focused test command failed twice
+with `KeyError: 'trimmed_fields'`; the first fixture budget did not actually
+trigger trimming and was corrected before counting Red. Minimal implementation
+stores the returned field names in `provider_info.trimmed_fields`. Green: the
+key-point/migration/architecture selection passed **50 tests**. Ruff and strict
+mypy also pass. The final full required-service run was restarted for this final
+code; the interrupted pre-metadata run is not claimed as a passing check.
+
 The full post-sync required-service suite and final CI outcomes are recorded on
 [PR #184](https://github.com/abubakar1010/ListenUp/pull/184). Merge requires passing
 CI; the actual-server latency deferral above remains unchanged.

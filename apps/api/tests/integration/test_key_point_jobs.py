@@ -115,6 +115,7 @@ def ai(database, monkeypatch):
         accounting=PostgresAccounting(database),
     )
     monkeypatch.setattr(jobs, "get_gateway", lambda: gateway)
+    server.gateway = gateway
     return server
 
 
@@ -487,3 +488,19 @@ async def test_invalid_job_bounds_are_permanent_without_an_ai_call(database, cli
     with pytest.raises(PermanentError):
         await jobs.extract_key_points(JobDeps(database, None, 1), str(clip[0]), 1000, 1000)
     assert ai.calls == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("budget, expected", [(50, ["transcript"]), (1000, [])])
+async def test_records_reference_trimming_with_the_cached_result(
+    database, migrated_url, learner, clip, ai, monkeypatch, budget, expected
+):
+    # Exercise the caller with a smaller advertised gateway input budget; the real
+    # helper, adapter, validation and accounting still handle the fitted request.
+    monkeypatch.setattr(ai.gateway, "text_input_budget", lambda task: budget)
+    session = await start(database, learner, clip[1])
+    await ready(database, learner, session)
+    await work()
+    row = stored(migrated_url, clip[0])[0]
+    assert ("[truncated]" in ai.inputs[0]["messages"][1]["content"]) == bool(expected)
+    assert row[2]["trimmed_fields"] == expected
