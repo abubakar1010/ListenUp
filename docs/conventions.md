@@ -38,6 +38,8 @@ Read the section for the area you are changing before you change it. The rules e
 
 - Register content-free deployment version resolvers in `Registry.versions`; never use an inference response as the source of a log version. Unregistered adapters log NULL versions, and registered versions must match result provenance. Normalize Whisper timestamp jitter only inside its adapter (at most 100 ms per timestamp); the gateway keeps strict containment checks. Assessment words must match reference indexes/text, and sounds must remain ordered inside their word (ADR 0041).
 
+- Text AI (#66, ADR 0046): get the task and version from `prompt_files.load_task(name)`, never a literal; trim reference text with `prompt_render.fit(spec, input, gateway.text_input_budget(task))` before `generate`, and never trim learner text. Prompts are `ai/prompts/<task>/<version>.md` with a `schema.json` per task; changing a released file needs a new version and `write_manifest()`, and `tasks.py` must match `schema.json`. Learner text goes only in the delimited data block, only through fields the prompt file lists, shaped by the task's input model in `tasks.py` (`TASK_INPUTS`; pass key point ids as `kp1` to `kp6`, never stored ids). A new OpenAI-compatible server is a provider id in `registry.OPENAI_COMPATIBLE` plus an `ai.yaml` entry (`base_url`, `api_key_env` naming a `LISTENUP_AI_<NAME>_API_KEY` variable, never a key; https unless `local: true`), disabled and unaccepted until its golden set passes. AI tests make no network call (`tests/network_guard.py`); record a real reply with `scripts/record_ai_contract.py text_ai`.
+
 ## Transcripts (ADR 0038)
 
 - Queue passage transcription through `transcript.service.queue_passage` in the plan-start transaction. Jobs use intake, a per-session unique key and per-media lock; all AI calls remain inside `transcript` through the existing gateway.
@@ -60,6 +62,7 @@ Read the section for the area you are changing before you change it. The rules e
 - Every way of signing in ends in `Accounts.complete_sign_in` (`modules/identity/service.py`), which owns the restore step of an account waiting for deletion (409 `account_pending_deletion` until the learner sends `restore: true`). Google sign-in (#32) must call it too.
 - A disabled account reaches nothing: `identity.resolve_auth_session` returns a learner only while `users.status = 'active'`. Background work that must not run for a deleted account checks `identity.service.account_is_active` (the export build does).
 - The purge (`identity.purge_account`) deletes storage under `users/<id>/` first, then the `identity.users` row, then performs a final prefix sweep before it marks the request completed. A failed final sweep leaves the request at `storage_deleted`; retries preserve its earlier row-count report. Every learner table must be deleted with the user (a foreign key to `identity.users`, or to a parent that has one, with `ON DELETE CASCADE`), so a new table needs no purge code; `test_account_deletion.py` fails while any row with the learner's `user_id` survives. A module that keeps a learner's files outside `users/<id>/` needs its own step in the purge. Rate counters about a learner use keys ending in `:user:<id>` (`user_key` in `platform/rate_limit.py`), which the purge removes.
+- Consents (#104, ADR 0048): every account is created with terms and privacy rows for the current `LISTENUP_TERMS_VERSION` and `LISTENUP_PRIVACY_VERSION`; a new sign-up path calls `Accounts.check_sign_up_consent` before creating the account and `record_sign_up_consent` after. A newer label reaches the learner as `Me.consents_required` and is accepted with `POST /me/consents`; until then `CurrentLearner` refuses with 403 `consent_required`. Only routes a learner who declines still needs (profile, consents, export, deletion, events) take `SignedInLearner`; every other route uses `CurrentLearner`. A module that records voice checks `identity.service.require_voice_consent(session, learner, settings)` with the app's settings (403 `voice_consent_required`) before each new round; only `voice_recording` can be withdrawn. Never write `identity.consents` from another module.
 - Password reset and account deletion both lock live reset-token rows before the learner's `identity.users` row. Keep that order when either flow changes; the concurrency regression in `test_account_deletion.py` proves they cannot deadlock.
 
 ## Analytics (ADR 0035)
@@ -87,7 +90,7 @@ Read the section for the area you are changing before you change it. The rules e
 - The passage picker (#42, ADR 0026) draws the server's peaks without wavesurfer.js: the rules are pure functions in `src/features/session/passage.ts`, the state is the reducer in `passageState.ts`, and the handles are `role="slider"` elements in `Waveform.tsx`. Playwright does not follow redirects for routed requests, so e2e fakes answer `/api/v1/media/{id}` and `/peaks` directly.
 - Drafts and marks save through `src/lib/autosave` (`useAutosave`, `SaveStatus`): a local copy at once, a server save 2 s after the last edit on the server's version, `SaveConflict` on a stale version (ADR 0025). The Dictation player's control policy is `src/features/dictation/policy.ts`; Blind's playback policy and heartbeat protocol are in `src/features/blind/listen.ts`, and it reports a leave with `api(..., {keepalive: true})` because sendBeacon cannot send the CSRF header.
 - Clip notices (`src/features/content/ClipNotices.tsx`) turn `content.ready` into a polite live-region notice that never takes focus and waits while a `/sessions/` page is open. Upload refusals map to messages in `src/features/library/refusals.ts`.
-- Account settings live at `/settings` (`src/features/account/SettingsPage.tsx`); each section is its own component (`DataExportSection.tsx`, `DeleteAccountSection.tsx`).
+- Account settings live at `/settings` (`src/features/account/SettingsPage.tsx`); each section is its own component (`DataExportSection.tsx`, `ConsentsSection.tsx`, `DeleteAccountSection.tsx`). `RequireAuth` shows `auth/ConsentPrompt.tsx` instead of a signed-in page while `me.consents_required` is not empty, except `/settings` and `/settings/delete-account`, and on a `/sessions/` page only after a request was refused with `consent_required` (ADR 0048); consent hooks live in `src/auth/consentApi.ts`.
 
 ## Google authentication (ADRs 0039, 0040)
 
@@ -136,3 +139,27 @@ Read the section for the area you are changing before you change it. The rules e
   server's version back, and a create that was ever sent is removed with a DELETE even when
   its answer was lost. The limits (at most 20 words; not only removed words) are kept in
   both `domain/marks.py` and `selection.ts`.
+
+## Media sandbox and scanning (ADR 0049)
+
+- Uploads call `content.scanner.Scanner.scan` before fingerprint deduplication or
+  ffprobe/ffmpeg. The default is fail-closed ClamAV with fresh signatures. Caller
+  tests inject a fake; the Docker contract exercises the real engine with a tiny
+  EICAR database and separately checks production freshness refusal.
+- All media-pool jobs, including future jobs, run through the platform process
+  supervisor. Keep CPU work and tools in that job's process group; detaching is
+  denied. `LISTENUP_MEDIA_JOB_MEMORY_MB` and `LISTENUP_MEDIA_JOB_CPU_SECONDS` set
+  budgets; wall time comes from the job's lane spec. A killed job settles through
+  `on_give_up` immediately; transient errors retain normal retries. Temporary
+  files belong under `LISTENUP_MEDIA_SCRATCH_DIR`, which is unique per job.
+- Deploy media with Docker Engine 28+ using the Compose `media-data` isolated
+  internal bridge. Do not attach the API, an egress proxy, or the host network to
+  it. Only scratch is writable; provision model/signature volumes using their
+  separate services and mount them read-only for workers. Run
+  `python infra/scripts/check-media-sandbox.py <media-image>` after infra changes
+  on a disposable/local stack; it starts dev DB/storage and an API canary on :8000.
+
+- Media launchers retain orphan CPU as child subreapers and deny SIGCHLD disposition
+  changes as well as detachment. Do not bypass this with auto-reaping. `/dev/shm`
+  and `/dev/mqueue` must stay read-only. Media telemetry uses queued OTLP export
+  through DB to the default pool; never add a collector route to media-data.

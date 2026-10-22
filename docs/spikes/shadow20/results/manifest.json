@@ -1,0 +1,200 @@
+[
+  {
+    "pair": "01",
+    "prompt": "a0001.wav",
+    "text": "Author of the danger trail, Philip Steels, etc.",
+    "original_speaker": "bdl",
+    "good_speaker": "slt",
+    "skipped_word": "trail",
+    "skip_interval_s": [
+      1.28,
+      1.56
+    ],
+    "inserted_fillers": 2,
+    "poor_synthetic": true,
+    "hashes": {
+      "original": "2594562568c97203d6c3c2c2ff87b9a7c62389100a014934ab0ad39d15af0384",
+      "good": "7862eb2cccb56875910f6bf46f9b8d26dac36e7672829aabe3956b0837ae122e",
+      "poor": "5c8b300e1312455a6c195582be374c4ee12152a57b800b6d44d1f17e1733b142",
+      "late": "4b4871d2cf6cf713033bb91d4e58c1b7a93e56be45ecc7dcd485d9d29a9476b5",
+      "lowpass": "ffda8b391dba27d7b2daf7989afcc7b6f2ec4756ff294f50ff10facdb9ac7b36",
+      "skip": "dc9b9f3490eb4290e0c54f16cd41759b42af38e339aa532ccbe1e1128730eacb",
+      "fill": "902c1f461e2cd9ee942530f7b0e643830bfba3457f55a86e457a59b0deba3d7a"
+    }
+  },
+  {
+    "pair": "02",
+    "prompt": "a0002.wav",
+    "text": "Not at this particular case, Tom, apologized Whittemore.",
+    "original_speaker": "slt",
+    "good_speaker": "clb",
+    "skipped_word": "case",
+    "skip_interval_s": [
+      1.4,
+      1.68
+    ],
+    "inserted_fillers": 2,
+    "poor_synthetic": true,
+    "hashes": {
+      "original": "d09c9367d7e756cb5f6854d4e8a279e6e6e543fafeb4d04b32757c639f7f38d3",
+      "good": "032ffd806fdae5b3173ee944479f064d5662ed042d6ffdb24c0091311d1c04be",
+      "poor": "be9d741601a151368c722e66cae4a6e7185edbb90e4a1244f50a6de634a39fcf",
+      "late": "27f78200ab8cf86b689cdab732ebfeaf136b75bf9ff46145eebbe3df1faaeeda",
+      "lowpass": "8625fbbe15abccffca10703c384245f5fac83077a99637df9161d4a446f5cf71",
+      "skip": "50a28e50d2f98aec54d3dad42405bd1dcb3ed6b46d87b18a58832bb7adc19202",
+      "fill": "5dbe12bdd0f0c02be9b397e08ba166a201d632c8ea6a86986a0570c140cdf22f"
+    }
+  },
+  {
+    "pair": "03",
+    "prompt": "a0003.wav",
+    "text": "For the twentieth time that evening the two men shook hands.",
+    "original_speaker": "clb",
+    "good_speaker": "bdl",
+    "skipped_word": "evening",
+    "skip_interval_s": [
+      1.48,
+      1.76
+    ],
+    "inserted_fillers": 2,
+    "poor_synthetic": true,
+    "hashes": {
+      "original": "224c1376c65a65720b75a51bb1df12ded17b306b828c3133fc01d0a8875e8507",
+      "good": "6bf2ec5e40a8a01a690d7aa5d1aa3a1489baae614850c7a716bf00092b005028",
+      "poor": "7add9510101bd68440466fb2ef71102a13783d9996d835c7b1f703d2fb97f42b"
+    }
+  },
+  {
+    "pair": "04",
+    "prompt": "a0004.wav",
+    "text": "Lord, but I'm glad to see you again, Phil.",
+    "original_speaker": "bdl",
+    "good_speaker": "slt",
+    "skipped_word": "to",
+    "skip_interval_s": [
+      1.18,
+      1.24
+    ],
+    "inserted_fillers": 2,
+    "poor_synthetic": true,
+    "hashes": {
+      "original": "9014c7af0c450ffab8a64f211559ed6eb61d1eb6c8a8288cca40325e64f702e7",
+      "good": "2a653cf74346ff24690f8a2abcff5091b81463f277b0062c851031a293f25167",
+      "poor": "50608752d7f7f0817c4a112595c9ddddad7b1640076292056eede2d919a03615"
+    }
+  },
+  {
+    "pair": "05",
+    "prompt": "a0006.wav",
+    "text": "God bless 'em, I hope I'll go on seeing them forever.",
+    "original_speaker": "slt",
+    "good_speaker": "clb",
+    "skipped_word": "i'll",
+    "skip_interval_s": [
+      1.56,
+      1.68
+    ],
+    "inserted_fillers": 2,
+    "poor_synthetic": true,
+    "hashes": {
+      "original": "69b800a69455e35d05162b78b69446294ace69be903693ffd02ccd0150f17d66",
+      "good": "46dd336de731d43302abf1b07ade33befa6a5bad77748e7292f879c7efe370d0",
+      "poor": "814db30962013843dfa235d9541c9271c3bcf2e86712e73b7fc8592635d79ddc"
+    }
+  },
+  {
+    "pair": "06",
+    "prompt": "a0007.wav",
+    "text": "And you always want to see it in the superlative degree.",
+    "original_speaker": "clb",
+    "good_speaker": "bdl",
+    "skipped_word": "see",
+    "skip_interval_s": [
+      1.14,
+      1.32
+    ],
+    "inserted_fillers": 2,
+    "poor_synthetic": true,
+    "hashes": {
+      "original": "5f4889086ba5224423b053c956acaa2b14d96e53e231c7817524472a2d4b3ad4",
+      "good": "d324b72f14c530d4f6caaf7bac20b669d8d181d03ced45f19a028003ae01ebab",
+      "poor": "71e9718d8dc4274de6b30848237a7291695198fcbf3d86d041bb07d667f978ba"
+    }
+  },
+  {
+    "pair": "07",
+    "prompt": "a0009.wav",
+    "text": "He turned sharply, and faced Gregson across the table.",
+    "original_speaker": "bdl",
+    "good_speaker": "slt",
+    "skipped_word": "faced",
+    "skip_interval_s": [
+      1.34,
+      1.58
+    ],
+    "inserted_fillers": 2,
+    "poor_synthetic": true,
+    "hashes": {
+      "original": "cadf1036a3a7c5b2c5abcf0f9818b5abebd2bcb0b8969fa92ea923d2fa793266",
+      "good": "198d856649b370c483609bdc61558e515c6349210e6dd755e975ab1d2e468936",
+      "poor": "28511f5159c7c49c74617374e453c673a91c00f11a7ba5919505f2a8cfcd44c5"
+    }
+  },
+  {
+    "pair": "08",
+    "prompt": "a0010.wav",
+    "text": "I'm playing a single hand in what looks like a losing game.",
+    "original_speaker": "slt",
+    "good_speaker": "clb",
+    "skipped_word": "what",
+    "skip_interval_s": [
+      1.88,
+      2.02
+    ],
+    "inserted_fillers": 2,
+    "poor_synthetic": true,
+    "hashes": {
+      "original": "8a2e6c72b933f737ca476eabcbee309f312ff7db4d58138db4f13648c1f426a6",
+      "good": "cd89b9b6847554708c94a0a0f935a934e755f666b7b2647fa957c1b537c3b66e",
+      "poor": "095e0f4217eb2f7657cbf174ffaf5fa0027217234ce8c43da97658fcfd9bff86"
+    }
+  },
+  {
+    "pair": "09",
+    "prompt": "a0011.wav",
+    "text": "If I ever needed a fighter in my life I need one now.",
+    "original_speaker": "clb",
+    "good_speaker": "bdl",
+    "skipped_word": "in",
+    "skip_interval_s": [
+      1.48,
+      1.52
+    ],
+    "inserted_fillers": 2,
+    "poor_synthetic": true,
+    "hashes": {
+      "original": "553ccc7e724b3b760b9367d3d3a35aab3215dc2aec970dd55ae31196bdb2fae0",
+      "good": "e556b2e886cbaeab47e3fa2317ff5ca965136870e6b79c0eb8fcb33038c202de",
+      "poor": "2937f76b64a7a8f50f6978a3f196e0544b203618af3936f6c57aac7daeed16e0"
+    }
+  },
+  {
+    "pair": "10",
+    "prompt": "a0012.wav",
+    "text": "Gregson shoved back his chair and rose to his feet.",
+    "original_speaker": "bdl",
+    "good_speaker": "slt",
+    "skipped_word": "and",
+    "skip_interval_s": [
+      1.74,
+      1.8
+    ],
+    "inserted_fillers": 2,
+    "poor_synthetic": true,
+    "hashes": {
+      "original": "4f8965996031522087c32b0321ef62c925dc6055ec76087a2725f51cb8db84ae",
+      "good": "c29a511741798a6386a7611a20c505e4d45741b838deacbd7dccca8444e0237d",
+      "poor": "9d73e59013baff2f104f510087dbed0c40e3962955535cdde049dfc8bf59a175"
+    }
+  }
+]

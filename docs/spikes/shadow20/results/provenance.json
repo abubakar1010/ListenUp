@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-20",
+  "host": "managed cloud container, not stage-0",
+  "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+  "visible_cpus": 3,
+  "cpu_quota": "200000 100000",
+  "memory_kib": "MemTotal:       10207492 kB",
+  "python": "3.12.14",
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+  "torch_threads": 2,
+  "gpu_used": false,
+  "ffmpeg": "ffmpeg version 7.1.5-0+deb13u1 Copyright (c) 2000-2026 the FFmpeg developers",
+  "base_commit": "4efc10132ad668b907f681c04079425daa33b122",
+  "corpus_revision": "b88ad416e092c4dfdffc6071f4b8e2d057a160f9",
+  "phoneme_revision": "ae45363bf3413b374fecd9dc8bc1df0e24c3b7f4",
+  "whisper_revision": "d1d751a5f8271d482d14ca55d9e2deeebbae577f",
+  "review_fix_evaluation": {
+    "date": "2026-10-20",
+    "prototype_parent_commit": "b9d36ef477954dcbe11778dd8186673d4e0509fd",
+    "policy": "timing needs two unambiguous matches; whole-passage GOP needs complete candidate-word corroboration and valid alignment/phone evidence; unknown is not missed",
+    "prototype_sha256": {
+      "experiment.py": "13b3e90e8a67e11a80d815085f6389e5150d0cebdad31507d0d74124af7c2065",
+      "measures.py": "b6e927fc3cd5040f3b3149d1c1273e8d3272a0b0da9fe1a89a82be5e384989c2",
+      "summarize.py": "a5826f211d50a42726fab64680b63783522a245e5681f5b3104786da3c5f1368",
+      "fetch.py": "f4557f8ce2885f31b251fb587cd8e10b3f5d73bf13e9606216e91e1a9fd40169"
+    },
+    "result_sha256": {
+      "results-fp32.json": "73d42c515efdf1aa49cca9dc15e1fb8bee03700bbc9edc599095b74251aa9c93",
+      "results-int8.json": "3593805727dc2cfb7fc765e973cb3119fe95bf346ec67de61d974273296cb49d"
+    },
+    "commands": [
+      "OMP_NUM_THREADS=2 work/review169/venv/bin/python docs/spikes/shadow20/experiment.py run --data work/review169/data --out work/review169/fixed-results-fp32.json",
+      "OMP_NUM_THREADS=2 work/review169/venv/bin/python docs/spikes/shadow20/experiment.py run --data work/review169/data --phone-int8 --out work/review169/fixed-results-int8.json"
+    ],
+    "serialization": "Committed result arrays compact one JSON object per pair; inference output is pretty printed. Parsed values are identical.",
+    "majority_pairs": {
+      "fp32": 2,
+      "int8": 2
+    },
+    "asr_note": "These two runs agree, but poor clips 02/10 differ from the parent commit under unchanged Whisper settings. Historical 23-filler hallucination is retained in git history; repeatability is not established."
+  }
+}

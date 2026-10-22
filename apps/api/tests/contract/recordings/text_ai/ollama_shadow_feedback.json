@@ -1,0 +1,46 @@
+{
+  "provider": "ollama",
+  "task": "shadow_feedback",
+  "synthetic": true,
+  "note": "Hand-authored in the server's documented response shape (no key or network was available). It proves request and response mapping, not model quality (NFR-AI-6). Replace with the output of scripts/record_ai_contract.py text_ai.",
+  "input": {
+    "round": 2,
+    "measures": {
+      "timing": 72,
+      "articulation": 64
+    },
+    "flagged_words": [
+      "asked",
+      "months"
+    ]
+  },
+  "expect": {
+    "path": "/v1/chat/completions",
+    "sends_key": false
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "chatcmpl-synthetic-2",
+      "object": "chat.completion",
+      "created": 1760000000,
+      "system_fingerprint": "fp_ollama",
+      "model": "qwen3:4b-instruct",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"feedback\": \"Your pace was close to the speaker. Work on the ends of words.\", \"top_fixes\": [\"Say the final sound of 'asked'.\"]}"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 598,
+        "completion_tokens": 102,
+        "total_tokens": 700
+      }
+    }
+  }
+}

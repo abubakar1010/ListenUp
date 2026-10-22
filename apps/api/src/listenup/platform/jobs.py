@@ -138,6 +138,7 @@ class JobGate(Protocol):
 @dataclass
 class _Runtime:
     database: Database | None = None
+    isolate_media: bool = False
 
 
 _runtime = _Runtime()
@@ -151,9 +152,10 @@ REQUEST_ID_ARG = "_request_id"
 GATE_RETRY_SECONDS = 10
 
 
-def configure_runtime(database: Database) -> None:
+def configure_runtime(database: Database, *, isolate_media: bool = False) -> None:
     """Called once by each worker process (and by tests) before jobs run."""
     _runtime.database = database
+    _runtime.isolate_media = isolate_media
 
 
 def set_gate(lane: Lane, gate: JobGate | None) -> None:
@@ -293,9 +295,17 @@ async def run_handler(name: str, deps: JobDeps, /, **args: Any) -> Any:
     ordinary error; settling here, outside the timeout, covers it as well.
     """
     entry = _registry[name]
+    from listenup.platform.media_sandbox import MediaProcessFailed, run_job
+
     try:
+        if _runtime.isolate_media:
+            return await run_job(name, deps, args, entry.spec.timeout.total_seconds())
         async with asyncio.timeout(entry.spec.timeout.total_seconds()):
             return await entry.handler(deps, **args)
+    except MediaProcessFailed:
+        if entry.on_give_up is not None:
+            await entry.on_give_up(deps, **args)
+        raise
     except (PermanentError, Reschedule):
         raise
     except Exception:

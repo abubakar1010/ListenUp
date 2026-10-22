@@ -13,7 +13,7 @@ from alembic import op
 from migrations.rls import disable_own_rows, enable_own_rows
 
 revision = "58_marks"
-down_revision = "57_transcript_corrections"
+down_revision = "104_consents"
 branch_labels = None
 depends_on = None
 

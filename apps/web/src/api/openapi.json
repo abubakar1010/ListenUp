@@ -202,6 +202,84 @@
         "title": "ConfirmUpload",
         "type": "object"
       },
+      "ConsentKind": {
+        "enum": ["terms", "privacy", "voice_recording"],
+        "title": "ConsentKind",
+        "type": "string"
+      },
+      "ConsentRecord": {
+        "properties": {
+          "current": {
+            "description": "True when this is the version in force now.",
+            "title": "Current",
+            "type": "boolean"
+          },
+          "granted_at": {
+            "format": "date-time",
+            "title": "Granted At",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ConsentKind"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "withdrawn_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withdrawn At"
+          }
+        },
+        "required": ["kind", "version", "granted_at", "withdrawn_at", "current"],
+        "title": "ConsentRecord",
+        "type": "object"
+      },
+      "ConsentVersions": {
+        "properties": {
+          "privacy": {
+            "title": "Privacy",
+            "type": "string"
+          },
+          "terms": {
+            "title": "Terms",
+            "type": "string"
+          },
+          "voice_recording": {
+            "title": "Voice Recording",
+            "type": "string"
+          }
+        },
+        "required": ["terms", "privacy", "voice_recording"],
+        "title": "ConsentVersions",
+        "type": "object"
+      },
+      "Consents": {
+        "properties": {
+          "consents": {
+            "description": "Every version accepted, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/ConsentRecord"
+            },
+            "title": "Consents",
+            "type": "array"
+          },
+          "current": {
+            "$ref": "#/components/schemas/ConsentVersions"
+          }
+        },
+        "required": ["current", "consents"],
+        "title": "Consents",
+        "type": "object"
+      },
       "ContentDetail": {
         "description": "One item, with what its page needs to show and play it.",
         "properties": {
@@ -437,23 +515,6 @@
         },
         "required": ["items", "next_cursor"],
         "title": "ContentList",
-        "type": "object"
-      },
-      "Credentials": {
-        "properties": {
-          "email": {
-            "maxLength": 320,
-            "title": "Email",
-            "type": "string"
-          },
-          "password": {
-            "maxLength": 1000,
-            "title": "Password",
-            "type": "string"
-          }
-        },
-        "required": ["email", "password"],
-        "title": "Credentials",
         "type": "object"
       },
       "DailyAudio": {
@@ -965,6 +1026,22 @@
         "title": "GistSubmitted",
         "type": "object"
       },
+      "GrantConsent": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ConsentKind"
+          },
+          "version": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": ["kind", "version"],
+        "title": "GrantConsent",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1352,6 +1429,15 @@
       },
       "Me": {
         "properties": {
+          "consents_required": {
+            "description": "Documents whose current version the learner has not accepted yet (#104). Accept each with POST /me/consents before going on.",
+            "items": {
+              "enum": ["terms", "privacy"],
+              "type": "string"
+            },
+            "title": "Consents Required",
+            "type": "array"
+          },
           "deletion_grace_days": {
             "description": "Days a deleted account can be restored before its data is removed.",
             "title": "Deletion Grace Days",
@@ -1382,7 +1468,14 @@
             "type": "string"
           }
         },
-        "required": ["id", "email", "display_name", "email_verified", "deletion_grace_days"],
+        "required": [
+          "id",
+          "email",
+          "display_name",
+          "email_verified",
+          "deletion_grace_days",
+          "consents_required"
+        ],
         "title": "Me",
         "type": "object"
       },
@@ -1502,6 +1595,49 @@
         "enum": ["playing", "buffering", "interrupted", "resuming", "ended"],
         "title": "PlayerState",
         "type": "string"
+      },
+      "Registration": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 1000,
+            "title": "Password",
+            "type": "string"
+          },
+          "privacy_version": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The privacy policy version the learner accepted; it must be current.",
+            "title": "Privacy Version"
+          },
+          "terms_version": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The terms of service version the learner accepted (#104); it must be the current one from GET /auth/consent-versions.",
+            "title": "Terms Version"
+          }
+        },
+        "required": ["email", "password"],
+        "title": "Registration",
+        "type": "object"
       },
       "RestoreGoogle": {
         "properties": {
@@ -2086,6 +2222,16 @@
         "enum": ["left_page", "reload", "seek", "missed_heartbeat", "too_fast", "interrupted"],
         "title": "VoidReason",
         "type": "string"
+      },
+      "WithdrawConsent": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ConsentKind"
+          }
+        },
+        "required": ["kind"],
+        "title": "WithdrawConsent",
+        "type": "object"
       }
     }
   },
@@ -2163,6 +2309,26 @@
         },
         "summary": "Retry Job",
         "tags": ["admin"]
+      }
+    },
+    "/api/v1/auth/consent-versions": {
+      "get": {
+        "description": "The document versions a learner accepts now, for the sign-up form (#104).",
+        "operationId": "current_consent_versions_api_v1_auth_consent_versions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentVersions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Current Consent Versions",
+        "tags": ["identity"]
       }
     },
     "/api/v1/auth/login": {
@@ -2340,6 +2506,7 @@
     },
     "/api/v1/auth/oidc/google/start": {
       "get": {
+        "description": "Start Google sign-in. A new account is created only when the flow carries the\ncurrent terms and privacy versions the learner accepted (#104); without them the\ncallback refuses with reason `consent` and creates nothing.",
         "operationId": "start_api_v1_auth_oidc_google_start_get",
         "parameters": [
           {
@@ -2361,6 +2528,40 @@
               "enum": ["login", "reauth"],
               "title": "Purpose",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "terms_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 20,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Terms Version"
+            }
+          },
+          {
+            "in": "query",
+            "name": "privacy_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 20,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Privacy Version"
             }
           }
         ],
@@ -2458,12 +2659,13 @@
     },
     "/api/v1/auth/register": {
       "post": {
+        "description": "Create an account. The learner must accept the current terms and privacy\nversions: 422 `consent_required` without them, 409 `consent_version_changed` when\nthey changed meanwhile (#104).",
         "operationId": "register_api_v1_auth_register_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Credentials"
+                "$ref": "#/components/schemas/Registration"
               }
             }
           },
@@ -3300,6 +3502,104 @@
           }
         },
         "summary": "Me",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/me/consents": {
+      "get": {
+        "description": "The learner's consents for the settings page (#104).",
+        "operationId": "my_consents_api_v1_me_consents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Consents"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "My Consents",
+        "tags": ["identity"]
+      },
+      "post": {
+        "description": "Accept the current version of a document (#104): a changed terms or privacy\npolicy on sign-in, or voice recording before Shadow. A version that is not current\nanswers 409 `consent_version_changed`. Granting again changes nothing.",
+        "operationId": "grant_consent_api_v1_me_consents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantConsent"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Consents"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Grant Consent",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/me/consents/withdraw": {
+      "post": {
+        "description": "Withdraw voice-recording consent (FR-SH-17): sets `withdrawn_at`, and new Shadow\nrounds are refused until the learner agrees again. Terms and privacy answer 409\n`consent_not_withdrawable`.",
+        "operationId": "withdraw_consent_api_v1_me_consents_withdraw_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawConsent"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Consents"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Withdraw Consent",
         "tags": ["identity"]
       }
     },

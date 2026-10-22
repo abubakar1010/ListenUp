@@ -241,10 +241,10 @@ ADR 0041 completes the gateway with atomic persistent minute/day/month admission
 
 ### 7.3 Prompts and outputs
 
-- Prompts live in `ai/prompts/<task>/<version>.md` next to a JSON Schema for the output. Tasks in the MVP: `extract_key_points`, `grade_gist`, `shadow_feedback`.
+- Prompts live in `ai/prompts/<task>/<version>.md` (front matter names the version, status and allowed input fields) next to a `schema.json` for the output; exactly one version per task is active, a manifest of hashes locks released files, and the version recorded with a result is read from the active file ([ADR 0046](../adr/0046-text-ai-adapter-and-versioned-prompts.md)). Tasks in the MVP: `extract_key_points`, `grade_gist`, `shadow_feedback`.
 - Every stored result records the task and prompt version, so old and new results can be told apart.
 - Learner text is always passed inside a delimited data block, and the instructions say to treat it as data. Scores the product shows are computed by our code from the model's dimension scores, never taken as free text.
-- Text AI providers are written against the **OpenAI-compatible chat API** where possible. Many hosted services and local servers (Ollama, llama.cpp, vLLM) speak it, so one adapter covers many vendors.
+- Text AI providers are written against the **OpenAI-compatible chat API** where possible. Many hosted services and local servers (Ollama, llama.cpp, vLLM) speak it, so one adapter covers many vendors (`ai/providers/openai_compatible.py`, registered as `groq`, `ollama` and `openai-compatible`).
 
 ### 7.4 Evaluation before any switch
 
@@ -435,7 +435,7 @@ The largest risks are learner voice data, untrusted uploads and untrusted text s
 | --- | --- |
 | Reading another learner's data | Every query is scoped by `user_id` from the session; an integration test calls every endpoint as a second user and expects 404 |
 | Leaked media links | Private bucket; signed URLs expire in minutes; Blind URLs are bound to one attempt |
-| Malicious uploads | Size limit before upload, ffprobe validation, ffmpeg re-encoding in a sandboxed worker container with no network access to internal services |
+| Malicious uploads | Size limit before upload, ffprobe validation, ffmpeg re-encoding in a sandboxed worker container with access only to required storage and database services; no API or other internal-service route (ADR 0049) |
 | yt-dlp or ffmpeg exploits | Media worker runs as a non-root user with a read-only filesystem except its scratch directory, and with CPU, memory and time limits per job |
 | Prompt injection in gists | Delimited data blocks, fixed output schema, range checks, scores computed by our code |
 | Credential attacks | Argon2id hashes, login rate limits, account sign-in lock for 15 minutes after 5 failed attempts, session rotation on login, secure cookies, CSRF tokens |
@@ -453,7 +453,7 @@ The largest risks are learner voice data, untrusted uploads and untrusted text s
 ### 12.3 Observability
 
 - Structured JSON logs with a request id that follows a request into the jobs it creates.
-- OpenTelemetry traces across API, queue and workers; metrics for job wait time, job duration, failure rate, AI latency and remaining free quota per provider.
+- OpenTelemetry traces across API, queue and workers; metrics for job wait time, job duration, failure rate, AI latency and remaining free quota per provider. Isolated media processes relay content-free OTLP through the database queue to the default pool, which alone contacts collectors (ADR 0049).
 - Alerts on: job backlog growing, a provider quota at or below 25% remaining (ADR 0037/0041), grading failure rate over 5%, error rate spikes.
 - Errors go to an error tracker through its open SDK, swappable like any other adapter.
 

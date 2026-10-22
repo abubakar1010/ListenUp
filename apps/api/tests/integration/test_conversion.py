@@ -684,3 +684,117 @@ def test_a_real_upload_is_converted_and_plays_with_range_requests(
         assert httpx.get(real.signed_download(added.source_key).url).status_code == 404
     finally:
         use_storage(None)
+
+
+@pytest.mark.parametrize("code", ["upload_infected", "upload_unreadable"])
+def test_scanner_refusal_deletes_original_and_fails_before_probe(
+    client: TestClient,
+    storage: FakeStorage,
+    migrated_url: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    code: str,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from listenup.modules.content.scanner import use_scanner
+    from listenup.platform.errors import ProblemError
+
+    # Standard harmless antivirus test file; never executable malware.
+    eicar = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+    source = tmp_path / "eicar.mp3"
+    source.write_bytes(eicar)
+    added = add_file(client, storage, source, migrated_url)
+
+    class Flagged:
+        async def scan(self, path: Path) -> None:
+            assert path.read_bytes() == eicar
+            raise ProblemError(422, code, "Upload a clean, readable file.")
+
+    use_scanner(Flagged())
+    probe_spy = AsyncMock(side_effect=AssertionError("must scan before parsing"))
+    monkeypatch.setattr(jobs.ffmpeg, "probe", probe_spy)
+    with pytest.raises(PermanentError) as refused:
+        run_job(migrated_url, added)
+    assert isinstance(refused.value.__cause__, ProblemError)
+    assert refused.value.__cause__.code == code
+    row = media_row(migrated_url, added.media_id)
+    assert row is not None and row["status"] == "failed" and row["error_code"] == code
+    assert added.source_key not in storage.objects
+    probe_spy.assert_not_awaited()
+    detail = client.get(f"/api/v1/contents/{added.content_id}").json()
+    assert detail["status"] == "failed" and detail["error_code"] == code
+    assert detail["error_detail"] and detail["media_url"] is None
+    # Retry cleans up safely and cannot parse a refused original.
+    run_job(migrated_url, added)
+
+
+@pytest.mark.parametrize(
+    "script,seconds,memory,cpu",
+    [
+        ("import time; time.sleep(30)", 0.2, 128, 5),
+        ("x=bytearray(512*1024*1024)", 5, 128, 5),
+        ("while True: pass", 5, 128, 1),
+    ],
+)
+def test_over_budget_process_fails_queue_job_and_upload_on_first_attempt(
+    client: TestClient,
+    storage: FakeStorage,
+    migrated_url: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    script: str,
+    seconds: float,
+    memory: int,
+    cpu: int,
+) -> None:
+    import sys
+
+    import procrastinate
+
+    from listenup.platform import media_sandbox
+
+    # Substitute only the child workload: the OS limit, process kill, supervisor,
+    # Procrastinate settlement and persisted upload state are all real.
+    async def workload(*args, **kwargs):
+        await media_sandbox.run_process(
+            [sys.executable, "-c", script],
+            b"",
+            seconds=seconds,
+            memory_mb=memory,
+            cpu_seconds=cpu,
+        )
+
+    monkeypatch.setattr(media_sandbox, "run_job", workload)
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute("DELETE FROM procrastinate.procrastinate_jobs")
+    source = tmp_path / "input.mp3"
+    source.write_bytes(b"untrusted upload")
+    added = add_file(client, storage, source, migrated_url)
+
+    async def run():
+        database = Database(conninfo_to_url(migrated_url), pool_size=2)
+        monkeypatch.setattr(platform_jobs._runtime, "database", database)
+        monkeypatch.setattr(platform_jobs._runtime, "isolate_media", True)
+        connector = procrastinate.PsycopgConnector(conninfo=migrated_url)
+        try:
+            with platform_jobs.app.replace_connector(connector):
+                async with platform_jobs.app.open_async():
+                    await platform_jobs.app.run_worker_async(
+                        queues=["intake"],
+                        wait=False,
+                        install_signal_handlers=False,
+                    )
+        finally:
+            await database.dispose()
+
+    asyncio.run(run())
+    row = media_row(migrated_url, added.media_id)
+    assert row is not None and row["status"] == "failed"
+    assert row["error_code"] == "processing_failed"
+    with psycopg.connect(migrated_url) as conn:
+        queued = conn.execute(
+            "SELECT status, attempts FROM procrastinate.procrastinate_jobs WHERE task_name = %s",
+            [jobs.CONVERT_UPLOAD],
+        ).fetchall()
+    assert queued == [("failed", 1)]

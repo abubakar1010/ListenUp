@@ -90,7 +90,11 @@ class GoogleOIDC:
         return token
 
     async def start(
-        self, request: Request, next_path: str, user_id: uuid.UUID | None = None
+        self,
+        request: Request,
+        next_path: str,
+        user_id: uuid.UUID | None = None,
+        consent: dict[str, str | None] | None = None,
     ) -> RedirectResponse:
         async with self.client() as client:
             browser, nonce, verifier = new_token(), new_token(), new_token()
@@ -104,6 +108,8 @@ class GoogleOIDC:
                     "user": str(user_id) if user_id else None,
                     "session": self.session_hash(request),
                     "started": int(time.time()),
+                    # The document versions accepted on the sign-up page (#104).
+                    "consent": consent or {},
                 },
                 user_id,
             )

@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from listenup.main import create_app
 from listenup.platform.config import Settings
-from tests.integration.conftest import with_csrf
+from tests.integration.conftest import accepted_consents, with_csrf
 
 PASSWORD = "correct horse battery"
 
@@ -47,7 +47,9 @@ def unique_email() -> str:
 
 
 def register(client: TestClient, email: str, password: str = PASSWORD) -> object:
-    return client.post("/api/v1/auth/register", json={"email": email, "password": password})
+    return client.post(
+        "/api/v1/auth/register", json={"email": email, "password": password, **accepted_consents()}
+    )
 
 
 def login(client: TestClient, email: str, password: str = PASSWORD) -> object:

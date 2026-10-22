@@ -45,6 +45,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/auth/consent-versions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Current Consent Versions
+     * @description The document versions a learner accepts now, for the sign-up form (#104).
+     */
+    get: operations['current_consent_versions_api_v1_auth_consent_versions_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/auth/login': {
     parameters: {
       query?: never;
@@ -126,7 +146,12 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Start */
+    /**
+     * Start
+     * @description Start Google sign-in. A new account is created only when the flow carries the
+     *     current terms and privacy versions the learner accepted (#104); without them the
+     *     callback refuses with reason `consent` and creates nothing.
+     */
     get: operations['start_api_v1_auth_oidc_google_start_get'];
     put?: never;
     post?: never;
@@ -185,7 +210,12 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Register */
+    /**
+     * Register
+     * @description Create an account. The learner must accept the current terms and privacy
+     *     versions: 422 `consent_required` without them, 409 `consent_version_changed` when
+     *     they changed meanwhile (#104).
+     */
     post: operations['register_api_v1_auth_register_post'];
     delete?: never;
     options?: never;
@@ -507,6 +537,54 @@ export interface paths {
      *     account before then.
      */
     delete: operations['delete_me_api_v1_me_delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/consents': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * My Consents
+     * @description The learner's consents for the settings page (#104).
+     */
+    get: operations['my_consents_api_v1_me_consents_get'];
+    put?: never;
+    /**
+     * Grant Consent
+     * @description Accept the current version of a document (#104): a changed terms or privacy
+     *     policy on sign-in, or voice recording before Shadow. A version that is not current
+     *     answers 409 `consent_version_changed`. Granting again changes nothing.
+     */
+    post: operations['grant_consent_api_v1_me_consents_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/consents/withdraw': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Withdraw Consent
+     * @description Withdraw voice-recording consent (FR-SH-17): sets `withdrawn_at`, and new Shadow
+     *     rounds are refused until the learner agrees again. Terms and privacy answer 409
+     *     `consent_not_withdrawable`.
+     */
+    post: operations['withdraw_consent_api_v1_me_consents_withdraw_post'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -1063,6 +1141,47 @@ export interface components {
       upload_id: string;
     };
     /**
+     * ConsentKind
+     * @enum {string}
+     */
+    ConsentKind: 'terms' | 'privacy' | 'voice_recording';
+    /** ConsentRecord */
+    ConsentRecord: {
+      /**
+       * Current
+       * @description True when this is the version in force now.
+       */
+      current: boolean;
+      /**
+       * Granted At
+       * Format: date-time
+       */
+      granted_at: string;
+      kind: components['schemas']['ConsentKind'];
+      /** Version */
+      version: string;
+      /** Withdrawn At */
+      withdrawn_at: string | null;
+    };
+    /** ConsentVersions */
+    ConsentVersions: {
+      /** Privacy */
+      privacy: string;
+      /** Terms */
+      terms: string;
+      /** Voice Recording */
+      voice_recording: string;
+    };
+    /** Consents */
+    Consents: {
+      /**
+       * Consents
+       * @description Every version accepted, newest first.
+       */
+      consents: components['schemas']['ConsentRecord'][];
+      current: components['schemas']['ConsentVersions'];
+    };
+    /**
      * ContentDetail
      * @description One item, with what its page needs to show and play it.
      */
@@ -1180,13 +1299,6 @@ export interface components {
        * @description Pass as `cursor` for the next page
        */
       next_cursor: string | null;
-    };
-    /** Credentials */
-    Credentials: {
-      /** Email */
-      email: string;
-      /** Password */
-      password: string;
     };
     /**
      * DailyAudio
@@ -1483,6 +1595,12 @@ export interface components {
       /** Session Version */
       session_version: number;
     };
+    /** GrantConsent */
+    GrantConsent: {
+      kind: components['schemas']['ConsentKind'];
+      /** Version */
+      version: string;
+    };
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -1676,6 +1794,11 @@ export interface components {
     /** Me */
     Me: {
       /**
+       * Consents Required
+       * @description Documents whose current version the learner has not accepted yet (#104). Accept each with POST /me/consents before going on.
+       */
+      consents_required: ('terms' | 'privacy')[];
+      /**
        * Deletion Grace Days
        * @description Days a deleted account can be restored before its data is removed.
        */
@@ -1752,6 +1875,23 @@ export interface components {
      * @enum {string}
      */
     PlayerState: 'playing' | 'buffering' | 'interrupted' | 'resuming' | 'ended';
+    /** Registration */
+    Registration: {
+      /** Email */
+      email: string;
+      /** Password */
+      password: string;
+      /**
+       * Privacy Version
+       * @description The privacy policy version the learner accepted; it must be current.
+       */
+      privacy_version?: string | null;
+      /**
+       * Terms Version
+       * @description The terms of service version the learner accepted (#104); it must be the current one from GET /auth/consent-versions.
+       */
+      terms_version?: string | null;
+    };
     /** RestoreGoogle */
     RestoreGoogle: {
       /** Restore */
@@ -2080,6 +2220,10 @@ export interface components {
      * @enum {string}
      */
     VoidReason: 'left_page' | 'reload' | 'seek' | 'missed_heartbeat' | 'too_fast' | 'interrupted';
+    /** WithdrawConsent */
+    WithdrawConsent: {
+      kind: components['schemas']['ConsentKind'];
+    };
   };
   responses: never;
   parameters: never;
@@ -2157,6 +2301,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  current_consent_versions_api_v1_auth_consent_versions_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ConsentVersions'];
         };
       };
     };
@@ -2308,6 +2472,8 @@ export interface operations {
       query?: {
         next?: string;
         purpose?: 'login' | 'reauth';
+        terms_version?: string | null;
+        privacy_version?: string | null;
       };
       header?: never;
       path?: never;
@@ -2406,7 +2572,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['Credentials'];
+        'application/json': components['schemas']['Registration'];
       };
     };
     responses: {
@@ -3047,6 +3213,92 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['DeletionScheduled'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  my_consents_api_v1_me_consents_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Consents'];
+        };
+      };
+    };
+  };
+  grant_consent_api_v1_me_consents_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['GrantConsent'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Consents'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  withdraw_consent_api_v1_me_consents_withdraw_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['WithdrawConsent'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Consents'];
         };
       };
       /** @description Validation Error */

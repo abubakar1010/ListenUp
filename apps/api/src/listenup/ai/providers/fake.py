@@ -26,6 +26,7 @@ from listenup.ai.ports import (
     TranscriptSegment,
     WordScore,
 )
+from listenup.ai.tasks import EXAMPLES
 
 PROVIDER = "fake"
 VERSION = "1"
@@ -131,7 +132,8 @@ class FakeSpeechAssessment:
 
 
 class FakeTextAI:
-    """Returns the response registered for the task, or the schema's defaults."""
+    """Returns the response registered for the task, else the example of the three Text AI
+    tasks (tasks.EXAMPLES)."""
 
     def __init__(self, entry: ProviderEntry) -> None:
         self._entry = entry
@@ -141,7 +143,9 @@ class FakeTextAI:
     ) -> TextGeneration[T]:
         await asyncio.sleep(0)
         try:
-            value = output_schema.model_validate(_text_responses.get(task.name, {}))
+            value = output_schema.model_validate(
+                _text_responses.get(task.name, EXAMPLES.get(task.name, {}))
+            )
         except ValidationError as exc:
             raise ValueError(
                 f"fake text AI has no valid response for task {task.name!r}; "

@@ -22,6 +22,7 @@ from listenup.modules.blind import service as blind
 from listenup.modules.dictation import service as dictation
 from listenup.modules.practice import service as practice
 from listenup.modules.practice.service import Entry, Passage, Step
+from listenup.platform.config import Settings
 from listenup.platform.database import Database
 
 CLIP_MS = 120_000
@@ -97,7 +98,25 @@ def create_learner(
             "INSERT INTO identity.users (id, email, password_hash) VALUES (%s, %s, %s)",
             [user_id, email or f"seed-{user_id}@example.com", password_hash],
         )
+    # Every account holds the current terms and privacy versions it signed up with (#104).
+    add_consents(owner_url, user_id, ("terms", "privacy"))
     return user_id
+
+
+def add_consents(owner_url: str, user_id: uuid.UUID, kinds: tuple[str, ...]) -> None:
+    """Consent to the current (default) version of each kind (#104)."""
+    settings = Settings()
+    versions = {
+        "terms": settings.terms_version,
+        "privacy": settings.privacy_version,
+        "voice_recording": settings.voice_consent_version,
+    }
+    with psycopg.connect(owner_url, autocommit=True) as conn:
+        for kind in kinds:
+            conn.execute(
+                "INSERT INTO identity.consents (user_id, kind, version) VALUES (%s, %s, %s)",
+                [user_id, kind, versions[kind]],
+            )
 
 
 def add_clip(
@@ -240,6 +259,7 @@ def seed_learner_data(owner_url: str, user_id: uuid.UUID) -> SeededLearner:
     )
     export_id = add_ready_export(owner_url, user_id)
     mark_id = add_mark(owner_url, user_id, sessions["transcript"])
+    add_consents(owner_url, user_id, ("voice_recording",))
     return SeededLearner(
         user_id=user_id,
         content_id=content_id,
