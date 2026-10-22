@@ -227,29 +227,37 @@ class OpenAICompatibleTextAI:
         body["messages"] = messages
         return body
 
-    async def _check_resolved(self) -> None:
+    async def _check_resolved(self) -> str | None:
         """A local entry skips the consent, retention and region checks, so the name it
         uses must lead to this host or the private network, whatever a resolver search
-        domain makes of a single label. Checked before any learner text is sent."""
+        domain makes of a single label. Checked before any learner text is sent; returns
+        the address to connect to, so the connection cannot resolve to another one."""
         if self._resolved_host is None:
-            return
+            return None
         try:
             addresses = await self._resolver(self._resolved_host)
         except OSError:
             raise TransientProviderError("local text AI host did not resolve") from None
         if not addresses or not all(_is_local_address(ipaddress.ip_address(a)) for a in addresses):
             raise PermanentProviderError("local text AI host resolves outside the private network")
+        return addresses[0]
 
     async def _post(self, body: dict[str, Any], headers: dict[str, str]) -> Any:
-        await self._check_resolved()
-        url = f"{self._options.base_url}/chat/completions"
+        url = httpx.URL(f"{self._options.base_url}/chat/completions")
+        extensions: dict[str, Any] = {}
+        if (address := await self._check_resolved()) is not None:
+            # Connect to the checked address; the name stays in the Host header and the TLS
+            # server name, so an https local server still proves its certificate.
+            headers = {**headers, "Host": url.netloc.decode("ascii")}
+            extensions["sni_hostname"] = url.host
+            url = url.copy_with(host=address)
         try:
             # trust_env=False: a proxy from the environment would receive the learner text
             # instead of the server checked above (NFR-AI-7).
             async with httpx.AsyncClient(
                 transport=self._transport, timeout=self._entry.timeout_seconds, trust_env=False
             ) as client:
-                response = await client.post(url, json=body, headers=headers)
+                response = await client.post(url, json=body, headers=headers, extensions=extensions)
         except httpx.TimeoutException:
             raise TimeoutError("text AI request timed out") from None
         except httpx.TransportError:

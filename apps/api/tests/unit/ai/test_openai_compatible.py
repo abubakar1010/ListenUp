@@ -552,3 +552,41 @@ async def test_a_proxy_from_the_environment_is_not_used(monkeypatch):
     adapter = OpenAICompatibleTextAI(local_name_entry(), resolver=private_address)
     await grade(adapter)
     assert len(server.requests) == 1 and proxies == [None]
+
+
+# --- the request goes to the address that was checked (ADR 0046) -----------------------
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("address", "url_host"), [("172.18.0.5", "172.18.0.5"), ("fd00::5", "[fd00::5]")]
+)
+async def test_a_local_name_is_called_at_the_address_that_was_checked(address, url_host):
+    """Resolving again to connect would let a resolver answer the check with a private
+    address and the connection with a public one, so the checked address is the one used;
+    the name stays in the Host header and the TLS server name (NFR-AI-7)."""
+    adapter, server, asked = local_adapter([address, "10.0.0.9"])
+    await grade(adapter)
+    (request,) = server.requests
+    assert str(request.url) == f"http://{url_host}:11434/v1/chat/completions"
+    assert request.headers["host"] == "llm:11434"
+    assert request.extensions["sni_hostname"] == "llm"
+    assert asked == ["llm"]  # resolved once, for the check and the connection
+
+
+@pytest.mark.anyio
+async def test_an_address_literal_and_a_hosted_entry_keep_their_url():
+    servers = Server()
+    for change in (
+        dict(local=True, options={"base_url": "http://10.0.0.5:11434/v1"}),
+        dict(options={"base_url": "https://llm.example/v1"}),
+    ):
+        adapter = OpenAICompatibleTextAI(
+            entry_for(**change), transport=httpx.MockTransport(servers), environ={KEY: "k"}
+        )
+        await grade(adapter)
+    assert [str(r.url) for r in servers.requests] == [
+        "http://10.0.0.5:11434/v1/chat/completions",
+        "https://llm.example/v1/chat/completions",
+    ]
+    assert all("sni_hostname" not in r.extensions for r in servers.requests)
