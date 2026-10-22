@@ -873,6 +873,56 @@ export interface paths {
     patch: operations['change_entry_api_v1_sessions__session_id__entry_patch'];
     trace?: never;
   };
+  '/api/v1/sessions/{session_id}/marks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Marks
+     * @description The session's marks in audio order (NFR-REL-1: they come back after a reload).
+     */
+    get: operations['list_marks_api_v1_sessions__session_id__marks_get'];
+    put?: never;
+    /**
+     * Create Mark
+     * @description Mark a word or phrase (FR-TR-2). The browser names the mark with a new id, so
+     *     a create resent after a lost connection answers 200 with the stored mark instead
+     *     of making a second one (ADR 0047). The server sets the audio time from the words.
+     */
+    post: operations['create_mark_api_v1_sessions__session_id__marks_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/marks/{mark_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Remove Mark
+     * @description Remove the mark. A second removal answers 404 `mark_not_found`.
+     */
+    delete: operations['remove_mark_api_v1_sessions__session_id__marks__mark_id__delete'];
+    options?: never;
+    head?: never;
+    /**
+     * Change Mark Note
+     * @description Replace the mark's note; an empty or null note removes it.
+     */
+    patch: operations['change_mark_note_api_v1_sessions__session_id__marks__mark_id__patch'];
+    trace?: never;
+  };
   '/api/v1/sessions/{session_id}/steps/{step}/skip': {
     parameters: {
       query?: never;
@@ -1695,6 +1745,52 @@ export interface components {
        */
       next_cursor: string | null;
     };
+    /** Mark */
+    Mark: {
+      /** At Ms */
+      at_ms: number;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Note */
+      note: string | null;
+      /**
+       * Session Id
+       * Format: uuid
+       */
+      session_id: string;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: 'dictation' | 'manual';
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'suggested' | 'confirmed';
+      /** Word From */
+      word_from: number;
+      /** Word To */
+      word_to: number;
+    };
+    /** MarkList */
+    MarkList: {
+      /** Marks */
+      marks: components['schemas']['Mark'][];
+    };
+    /** MarkNote */
+    MarkNote: {
+      /** Note */
+      note: string | null;
+    };
     /** Me */
     Me: {
       /**
@@ -1718,6 +1814,23 @@ export interface components {
        * Format: uuid
        */
       id: string;
+    };
+    /**
+     * NewMark
+     * @description A mark the learner just made. The browser names it, so a resend is harmless.
+     */
+    NewMark: {
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Note */
+      note?: string | null;
+      /** Word From */
+      word_from: number;
+      /** Word To */
+      word_to: number;
     };
     /**
      * PassageRange
@@ -3767,6 +3880,227 @@ export interface operations {
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
         };
+      };
+    };
+  };
+  list_marks_api_v1_sessions__session_id__marks_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MarkList'];
+        };
+      };
+      /** @description `not_signed_in` */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_mark_api_v1_sessions__session_id__marks_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['NewMark'];
+      };
+    };
+    responses: {
+      /** @description The same mark, sent again */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Mark'];
+        };
+      };
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Mark'];
+        };
+      };
+      /** @description `not_signed_in` */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked`, `transcript_not_ready`, `transcript_failed`, `mark_exists` (with `mark_id`) or `mark_id_taken` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `mark_out_of_range`, `mark_no_words`, `mark_too_long` or `note_too_long` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  remove_mark_api_v1_sessions__session_id__marks__mark_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+        mark_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `not_signed_in` */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `session_not_found` or `mark_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  change_mark_note_api_v1_sessions__session_id__marks__mark_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+        mark_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MarkNote'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Mark'];
+        };
+      };
+      /** @description `not_signed_in` */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `session_not_found` or `mark_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `note_too_long` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

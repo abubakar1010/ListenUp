@@ -10,8 +10,9 @@ change, so the event and the change commit or roll back together:
 - `record_listen_started`: practice (`start_attempt`, Blind and Dictation).
 - `record_blind_abandoned`: blind (an attempt voided).
 - `record_dictation_replays`: dictation (`submit`, #54).
-- `record_mark_created`, `record_card_created`, `record_shadow_round_completed`: the
-  marks, Card and Shadow features, not built yet.
+- `record_mark_created`: review (`create_mark`, #58).
+- `record_card_created`, `record_shadow_round_completed`: the Card and Shadow
+  features, not built yet.
 
 Each occurrence is recorded once: a repeat of the same (event, subject, step) is
 ignored by the table's unique key. The functions take plain values, and this module
