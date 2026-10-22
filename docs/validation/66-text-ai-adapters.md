@@ -59,7 +59,7 @@ A fresh-session review found no blocker and seven low-severity findings; all sev
 
 After the fixes: `ruff format --check`, `ruff check`, `mypy` (153 files) and `lint-imports` (6 kept) pass. The full coverage run with both required-service flags (moto again for S3) gives **1460 passed, 2 failed**: the same two tests named above, which fail identically on a clean `main` with moto (rechecked by the reviewer). Changed-line coverage is **100%** against both the PR base (342 lines) and the pre-fix head (37 lines). `pytest -m performance`: 1 passed.
 
-The earlier review suggested per-version schemas, stricter deployment trust and automatic fitting in `generate`. These are optional follow-ups, not requirements changed by this PR: ADR 0046 already specifies one task schema, operator-controlled local entries and explicit fitting before gateway admission. This revision preserves those decisions and does not enable a provider.
+The review's three owner questions (per-version schemas, how far `local: true` is trusted, automatic fitting) were first kept as follow-ups. The owner then decided all three; see "Owner decisions" at the end, which supersedes that choice.
 
 ## Not verified
 
@@ -93,3 +93,52 @@ The fix returns the existing marker-only refusal when no complete word fits; an 
 - `docker compose config --quiet` and `docker compose --profile llm config --quiet` passed. PostgreSQL 16 and actual SeaweedFS are running for the required-service coverage suite; local PostgreSQL client tools are version 16.15 from the official image.
 - The full required-service coverage command, inventory check, changed-line gate and final-head CI outcomes are reported in PR #168. Historical moto failures above do not represent the final verification environment.
 - No new route or database schema: migrations and access-registry additions are not applicable. No web source changes: web behavior checks run in required CI. Real-service model-quality acceptance remains a provider activation gate; no provider is enabled by this revision.
+
+## Owner decisions on the review questions
+
+The owner delegated the three open review questions and took these decisions; ADR 0046, Architecture 7.3 and the AI layer conventions now state them. Commands from `apps/api` with `--no-cov`.
+
+| Decision | Named tests | Red | Green |
+| --- | --- | --- | --- |
+| Each prompt version has its own `<version>.schema.json`, so the stored prompt version names the output format and a retired version keeps its schema (NFR-AI-4, NFR-AI-5) | `test_each_version_keeps_its_own_output_schema`; the version-bump tests in `test_text_gateway.py` and `test_text_ai_calls.py` move the schema with the prompt | `test_prompt_files.py`: **5 failed, 20 passed** (the loader read one `schema.json` per task) | the v1 schemas moved unchanged (manifest hashes identical); `tests/unit/ai`, `tests/contract` and the integration file **325 passed** |
+| A `local: true` entry must name this host or the private network (Compose service name, `localhost`, `.internal`, loopback, private or link-local address), because local entries skip consent, retention and region checks and may use http (NFR-AI-7) | `test_a_local_entry_may_reach_this_host_or_the_private_network` (6), `test_a_local_entry_cannot_name_a_public_server` (4) | `-k local_entry`: **4 failed, 6 passed** | **335 passed** |
+| `text_tasks.run_task` is the one call for a task: active version, fit to `text_input_budget`, then `generate`; an over-long learner text is refused before admission. `generate` and admission from #64 are unchanged (NFR-AI-4, System Design 7.3) | `test_run_task_trims_over_budget_reference_text_and_reports_it`, `test_run_task_sends_input_within_budget_unchanged`, `test_run_task_refuses_long_learner_text_before_admission`, `test_run_task_refuses_a_schema_of_another_task`, `test_run_task_records_the_version_written_in_the_prompt_file` | collection error: no `listenup.ai.text_tasks` | **344 passed** with `tests/architecture`; mutant "send unfitted input" fails `test_run_task_trims_...` |
+
+These decisions arrived after PR #168 was merged, so they follow on branch `feat/66-text-ai-review-decisions` from `main` at `943ca8d`. Final checks on that code: `ruff format --check`, `ruff check`, `mypy` (158 files) and `lint-imports` (6 kept) pass. The full coverage run with both required-service flags (moto for S3, as no SeaweedFS was available) gives **1520 passed, 2 failed**: `test_three_minute_passage_real_storage_decode_and_configured_gateway` and `test_a_real_upload_is_private_bound_to_its_size_and_confirmed`, the two that fail identically on a clean `main` with moto (see above); CI with SeaweedFS is the check for them. Changed-line coverage of that code was reported as **100%** (34 lines) against the #168 merge `943ca8d`; the later review fixes below replace the host check, so their own coverage is stated there. `pytest -m performance`: 1 passed. No route, schema, migration or web change.
+
+
+## Review fixes after the owner decisions
+
+An independent review of this branch found that `_is_local_host` could be passed by names the HTTP client sends to a public server (operator configuration only, but the rule exists to stop that), and that three of its branches were untested. Fixed on this branch; the host rule itself is unchanged.
+
+| Finding | Fix | Red | Green |
+| --- | --- | --- | --- |
+| `evil。com` (ideographic full stop), `134744072` and `0x08080808` (one number the resolver reads as 8.8.8.8), and 6to4 or Teredo addresses passed as local | the host must be ASCII and equal to the one `httpx.URL` reads; a single label that `inet_aton` accepts is refused; 6to4, Teredo and public IPv4-mapped addresses are refused | `-k local_entry`: **9 failed, 17 passed** | `test_openai_compatible.py` **85 passed**; coverage of `openai_compatible.py` **100% lines and branches** |
+| `is_loopback`, `is_link_local` and `.localhost` untested (mutants survived) | the redundant checks are folded into `is_private`; tests added for `x.localhost`, `169.254.1.1`, `LLM` and mapped private addresses | mutants "accept any address" (3 failed) and "drop `.localhost`" (1 failed) now die | same run |
+| Dependence on a Python `ipaddress` release for IPv4-mapped addresses | explicit `ipv4_mapped` unwrapping | not killable on this interpreter, which already handles it; kept as a guard for older patch releases | n/a |
+| Coverage base misnamed | corrected above | n/a | n/a |
+
+Two further mutants survive by design: dropping the `isascii` check or the `urlsplit`/httpx host comparison alone, because each covers the other. Not re-run here: the full coverage suite with S3 (no S3 server available); CI is the check for it.
+
+### Resolution check for single-label names
+
+The owner asked to close the remaining trust in single-label names. A `local: true` entry on a name is now resolved before each request and refused unless every address is private (`OpenAICompatibleTextAI._check_resolved`, NFR-AI-7); the injected `resolver` and a test transport keep tests off the network.
+
+| Named tests | Evidence |
+| --- | --- |
+| `test_a_local_name_that_resolves_to_a_private_address_is_called` (3), `test_a_local_name_that_resolves_outside_the_private_network_gets_no_request` (5), `test_a_local_name_that_does_not_resolve_is_a_retryable_error`, `test_an_address_literal_and_a_hosted_entry_are_not_resolved`, `test_the_default_resolver_returns_the_addresses_of_a_name` | Red shown by mutants, because my first red run failed partly through a test bug and is not counted: no check at all fails **9**, accepting every address fails **4**, a permanent error for a failed lookup fails **1**, resolving hosted entries fails **1**. Green: `test_openai_compatible.py` **96 passed**, 100% line and branch coverage of the adapter; `tests/unit/ai`, `tests/contract`, the integration file and `tests/architecture` **372 passed** before the last test; `ruff`, `mypy` and `lint-imports` clean. |
+
+Limit: the check and the connection resolve separately, so it is not a defence against DNS rebinding.
+
+### Second review of the last two fix commits
+
+A fresh review of `c9ca404` and `84264a1` found four gaps; all are fixed on this branch. Commands from `apps/api` with `--no-cov` unless stated.
+
+| Finding | Fix | Named tests | Red | Green |
+| --- | --- | --- | --- | --- |
+| The resolution check ran only when no transport was passed, and no test covered the worker's wiring: the mutant `self._resolver = resolver` passed every test | the adapter always resolves a local name; tests that build a local adapter inject a fake resolver | `test_the_registry_builds_a_local_adapter_that_checks_where_its_name_resolves`, `test_a_local_name_is_resolved_even_with_a_custom_transport` | `test_openai_compatible.py`: the custom-transport test failed (DID NOT RAISE); the registry test passed as a characterization test | the old wiring now fails 1 test and "no default resolver" fails 2 |
+| httpx read proxy variables, so a proxy could receive learner text instead of the checked server | `trust_env=False` | `test_a_proxy_from_the_environment_is_not_used` | failed: a transport was built with `Proxy('http://203.0.113.9:3128')` | restoring `trust_env` fails it |
+| Local-use NAT64 (`64:ff9b:1::/48`) counted as private | refused in the base URL and in resolved addresses | new cases in `test_a_local_entry_cannot_name_a_public_server` and `test_a_local_name_that_resolves_outside_the_private_network_gets_no_request` | 2 failed | dropping the check fails both |
+| `run_task(root=...)` could fit input to another folder than the adapters render from | parameter removed; `run_task` reads `PROMPTS_DIR`, and the version-bump test points both at one copy | existing `run_task` tests (refactor with no production caller, so no new red) | n/a | 5 passed |
+
+The first red run of the new tests also failed through a test bug (`api_key_env: None` is not a valid option); the helper was fixed and only the second run is counted above. Final checks: `tests/unit/ai`, `tests/contract`, the integration file and `tests/architecture` **378 passed**; `test_openai_compatible.py` **101 passed**; `openai_compatible.py` and `text_tasks.py` **100% lines and branches** from the unit tests; `ruff check`, `ruff format --check`, `mypy` (163 files) and `lint-imports` (6 kept) pass. Not run here: the full coverage suite with S3; CI is the check for it.
