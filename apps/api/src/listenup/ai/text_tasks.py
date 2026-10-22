@@ -9,7 +9,6 @@ refuses anything over budget, whoever calls it.
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -35,14 +34,15 @@ async def run_task[T: BaseModel](
     output_schema: type[T],
     *,
     context: CallContext | None = None,
-    root: Path = PROMPTS_DIR,
 ) -> TaskOutput[T]:
     """Raises `InputTooLarge` when even trimmed reference text leaves no room, and
-    `AIUnavailable` when no provider produced a valid result."""
+    `AIUnavailable` when no provider produced a valid result. Prompts come from
+    `PROMPTS_DIR`, the folder the adapters render from, so the input is fitted to the
+    prompt that is sent; there is no other folder to pass."""
     if TASK_MODELS.get(name) is not output_schema:
         raise ValueError("output schema does not belong to the task")
-    task = load_task(name, root=root)
-    spec = load_prompt(name, task.version, root=root)
+    task = load_task(name, root=PROMPTS_DIR)
+    spec = load_prompt(name, task.version, root=PROMPTS_DIR)
     fitted = fit(spec, input, gateway.text_input_budget(name))
     result = await gateway.generate(task, fitted.input, output_schema, context=context)
     return TaskOutput(result, fitted.trimmed)

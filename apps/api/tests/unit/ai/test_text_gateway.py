@@ -7,6 +7,7 @@ from dataclasses import replace
 import httpx
 import pytest
 
+from listenup.ai import text_tasks
 from listenup.ai.config import AIConfig, ProviderEntry, load_config
 from listenup.ai.errors import AIUnavailable
 from listenup.ai.gateway import AIGateway
@@ -373,11 +374,14 @@ async def test_run_task_refuses_a_schema_of_another_task(fake_accounting):
 
 
 @pytest.mark.anyio
-async def test_run_task_records_the_version_written_in_the_prompt_file(tmp_path, fake_accounting):
+async def test_run_task_records_the_version_written_in_the_prompt_file(
+    tmp_path, monkeypatch, fake_accounting
+):
     root = copy_prompts(tmp_path)
+    monkeypatch.setattr(text_tasks, "PROMPTS_DIR", root)  # where the adapters read too
     gateway = build(Servers(), [local()], prompts_root=root)
-    first = await run_task(gateway, "grade_gist", GRADE_INPUT, GistGrade, root=root)
+    first = await run_task(gateway, "grade_gist", GRADE_INPUT, GistGrade)
     bump(root, "v2")
-    second = await run_task(gateway, "grade_gist", GRADE_INPUT, GistGrade, root=root)
+    second = await run_task(gateway, "grade_gist", GRADE_INPUT, GistGrade)
     assert (first.result.prompt_version, second.result.prompt_version) == ("v1", "v2")
     assert [c["prompt"] for c in fake_accounting.calls] == ["v1", "v2"]
