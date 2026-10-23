@@ -311,6 +311,14 @@ test('submitting shows the waiting message, then the diff with labels, at 360 px
   await page.goto('/sessions/s-1');
 
   await page.getByRole('button', { name: 'Submit for scoring' }).click();
+  // Submitting asks once (UX-27); the safe action has focus and sits first on mobile.
+  const dialog = page.getByRole('dialog', { name: 'Submit your Dictation?' });
+  await expect(dialog).toContainText('You typed 4 words.');
+  const keep = dialog.getByRole('button', { name: 'Keep typing' });
+  const send = dialog.getByRole('button', { name: 'Submit' });
+  await expect(keep).toBeFocused();
+  expect((await keep.boundingBox())!.y).toBeLessThan((await send.boundingBox())!.y);
+  await send.click();
 
   await expect(page.getByText(/Scoring when the transcript is ready/)).toBeVisible();
   // No diff, so no reference text, before the score.
