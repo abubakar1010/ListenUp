@@ -299,3 +299,97 @@ test('replay_in_leading_silence_starts_first_line_and_paused_seek_stays_paused',
   expect(audioTime).toBe(280);
   expect(audio.paused).toBe(true);
 });
+
+test('finishing_Transcript_refreshes_the_plan_and_opens_Card', async () => {
+  let finished = false;
+  let resolve!: (response: Response) => void;
+  renderReview({
+    [`GET /sessions/${SESSION.id}`]: () =>
+      jsonResponse(200, finished ? sessionFixture({ entry: 'dictation', done: 2 }) : SESSION),
+    [`POST ${PATH}/complete`]: () =>
+      new Promise<Response>((r) => {
+        resolve = r;
+      }),
+  });
+  await ready();
+  fireEvent.click(screen.getByRole('button', { name: 'Finish Transcript' }));
+  expect(await screen.findByRole('button', { name: 'Finishing Transcript…' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await act(async () => {
+    finished = true;
+    resolve(new Response(null, { status: 204 }));
+  });
+  expect(
+    await screen.findByRole('heading', { name: `Card: ${SESSION.content_title}` }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Skip Card' })).toBeEnabled();
+});
+
+test('completion_failure_keeps_Transcript_and_allows_retry', async () => {
+  renderReview({ [`POST ${PATH}/complete`]: problem(503, 'unavailable', 'Please try later.') });
+  await ready();
+  fireEvent.click(screen.getByRole('button', { name: 'Finish Transcript' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Please try later.');
+  expect(screen.getByRole('button', { name: 'Finish Transcript' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Jump to Hello' })).toBeInTheDocument();
+});
+
+test('completion_with_a_lost_response_reloads_the_persisted_plan_and_opens_Card', async () => {
+  let finished = false;
+  renderReview({
+    [`GET /sessions/${SESSION.id}`]: () =>
+      jsonResponse(200, finished ? sessionFixture({ entry: 'dictation', done: 2 }) : SESSION),
+    [`POST ${PATH}/complete`]: () => {
+      finished = true;
+      throw new TypeError('Lost completion response');
+    },
+  });
+  await ready();
+  fireEvent.click(screen.getByRole('button', { name: 'Finish Transcript' }));
+  expect(
+    await screen.findByRole('heading', { name: `Card: ${SESSION.content_title}` }),
+  ).toBeInTheDocument();
+});
+
+test('repeated_finish_activation_during_a_request_sends_only_one_completion', async () => {
+  let count = 0;
+  let resolve!: (response: Response) => void;
+  renderReview({
+    [`POST ${PATH}/complete`]: () => {
+      count += 1;
+      return new Promise<Response>((r) => {
+        resolve = r;
+      });
+    },
+  });
+  await ready();
+  const finish = screen.getByRole('button', { name: 'Finish Transcript' });
+  fireEvent.click(finish);
+  fireEvent.click(finish);
+  await act(async () => {});
+  expect(count).toBe(1);
+  const busy = await screen.findByRole('button', { name: 'Finishing Transcript…' });
+  expect(busy).toHaveAccessibleDescription('Finishing Transcript. Please wait.');
+  fireEvent.click(busy);
+  expect(screen.getByText('Finishing Transcript. Please wait.')).toHaveFocus();
+  expect(count).toBe(1);
+  await act(async () => resolve(problem(503, 'unavailable', 'Please try later.')));
+});
+
+test('completion_retries_send_the_same_submission_key', async () => {
+  const keys: (string | undefined)[] = [];
+  renderReview({
+    [`POST ${PATH}/complete`]: (call) => {
+      keys.push(call.headers['Idempotency-Key']);
+      return problem(503, 'unavailable', 'Please try later.');
+    },
+  });
+  await ready();
+  fireEvent.click(screen.getByRole('button', { name: 'Finish Transcript' }));
+  await screen.findByRole('alert');
+  fireEvent.click(screen.getByRole('button', { name: 'Finish Transcript' }));
+  await act(async () => {});
+  expect(keys).toEqual([`transcript-${SESSION.id}`, `transcript-${SESSION.id}`]);
+});

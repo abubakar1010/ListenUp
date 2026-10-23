@@ -9,6 +9,7 @@ from listenup.modules.review.domain.marks import (
     MarkTooLong,
     MarkWithoutWords,
     NoteTooLong,
+    check_length,
     clean_note,
     place_mark,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "MarkTooLong",
     "MarkWithoutWords",
     "NoteTooLong",
+    "check_length",
     "clean_note",
     "place_mark",
 ]

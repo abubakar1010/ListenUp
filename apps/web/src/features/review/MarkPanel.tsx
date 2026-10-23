@@ -16,6 +16,7 @@ export function MarkPanel({
   phrase,
   mark,
   wordCount,
+  markCount,
   status,
   announcement,
   focusNote,
@@ -30,6 +31,7 @@ export function MarkPanel({
   /** The mark with exactly the selected words, if any. */
   mark: LocalMark | undefined;
   wordCount: number;
+  markCount: number;
   status: MarkSyncStatus;
   announcement: string;
   /** True when the note field should take focus (the M key on a marked word). */
@@ -47,6 +49,11 @@ export function MarkPanel({
   // scrolls with the page (360 px screens would lose much of the transcript).
   const sticky = !mark;
   useStickyClearance(section, sticky);
+  const [announcedCount, setAnnouncedCount] = useState(markCount);
+  useEffect(() => {
+    const timer = setTimeout(() => setAnnouncedCount(markCount), 1000);
+    return () => clearTimeout(timer);
+  }, [markCount]);
   return (
     <section
       ref={section}
@@ -56,6 +63,9 @@ export function MarkPanel({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-bold">Mark what you did not hear</h3>
+        <p>
+          {markCount} {markCount === 1 ? 'mark' : 'marks'}
+        </p>
         <span aria-hidden={status.kind === 'failed' || undefined}>
           <SaveStatus status={status} noun="Marks" className="text-body-s" />
         </span>
@@ -108,13 +118,11 @@ export function MarkPanel({
         </>
       )}
       <p role="status" className="sr-only">
-        {announcement}
+        <span>
+          {announcedCount} {announcedCount === 1 ? 'mark' : 'marks'}.
+        </span>{' '}
+        <span>{status.kind === 'failed' ? saveStatusText(status, 'Marks') : announcement}</span>
       </p>
-      {status.kind === 'failed' && (
-        <p role="alert" className="sr-only">
-          {saveStatusText(status, 'Marks')}
-        </p>
-      )}
     </section>
   );
 }

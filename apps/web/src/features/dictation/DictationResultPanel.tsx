@@ -1,14 +1,22 @@
 import { ApiError } from '../../api/client';
 import { ErrorPanel } from '../../components/ErrorPanel';
-import { useDictationResult } from './api';
+import { type OpenMarkList, useDictationResult } from './api';
 import { DictationDiff } from './DictationDiff';
+import { DictationMarks } from './DictationMarks';
 
 /**
  * The learner's Dictation result on the session page (FR-DI-5). A submission made before
  * the transcript is ready waits, and the diff replaces the message when `dictation.scored`
- * arrives on the event stream (guards.tsx), without a reload.
+ * arrives on the event stream (guards.tsx), without a reload. Its missed and wrong words
+ * can then be added to the mark list (#55).
  */
-export function DictationResultPanel({ sessionId }: { sessionId: string }) {
+export function DictationResultPanel({
+  sessionId,
+  markList,
+}: {
+  sessionId: string;
+  markList?: OpenMarkList;
+}) {
   const result = useDictationResult(sessionId);
   if (result.isError) {
     if (result.error instanceof ApiError && result.error.code === 'attempt_not_found') return null;
@@ -25,7 +33,10 @@ export function DictationResultPanel({ sessionId }: { sessionId: string }) {
         Your Dictation
       </h2>
       {view.result ? (
-        <DictationDiff result={view.result} />
+        <>
+          <DictationDiff result={view.result} />
+          <DictationMarks attemptId={view.id} items={view.result.items} markList={markList} />
+        </>
       ) : view.scoring_status === 'scoring_unavailable' ? (
         <p role="status" className="text-ink-muted">
           We could not score this Dictation because the transcript is unavailable. Your text is

@@ -50,6 +50,15 @@ Read the section for the area you are changing before you change it. The rules e
 
 ## Grading references (ADR 0053)
 
+- Gist grades (#68, ADR 0054): queue through `grading.service.queue_gist` in the
+  submission transaction. The job reads Blind data through `blind.service` and
+  original transcript words through `transcript.service`; never import their
+  repositories. Use the per-attempt queue lock, update pending rows conditionally
+  and publish `grade.ready` with the attempt id in that result transaction.
+  Overall scores and level thresholds come from the active prompt version's
+  `<version>.rubric.json`; a rubric change needs a new version and manifest.
+  Preserve provider/model/deployment/prompt/rubric versions and reference trimming.
+
 - Key points are prefetched by the transcript-ready hook on the `ai` lane. Queue
   media id and exact passage bounds only; use the passage key for both producer
   deduplication and the execution lock, and check the versioned cache under that
@@ -157,7 +166,8 @@ Read the section for the area you are changing before you change it. The rules e
   compatibility exports. Transcript supplies sentence replay and keyboard handling.
   Readiness/failure events invalidate the named review query; pending reads also poll.
 - Marks (#58, ADR 0047): `review` owns `practice.marks`; other modules reach marks only
-  through `review/service.py`. Every mark route calls `require_reached(TRANSCRIPT)` first.
+  through `review/service.py`. Every Transcript mark route calls
+  `require_reached(TRANSCRIPT)` first.
   A new mark carries a browser-made id and is one `INSERT ... ON CONFLICT DO NOTHING`, so
   a resend answers 200 with the same mark; never wrap it in `run_once`. The server
   derives `at_ms` and the phrase from the passage words. Tags (#61), the list and count
@@ -169,6 +179,33 @@ Read the section for the area you are changing before you change it. The rules e
   Test fakes of the marks API answer a resent create with the stored mark, as the API
   does. The limits (at most 20 words; not only removed words) are kept in both
   `domain/marks.py` and `selection.ts`.
+- Dictation marks (#55, ADR 0055): the scored diff stores `mark_candidates` (diff
+  version 2), and `POST /dictation/attempts/{id}/marks` adds candidate words or runs
+  through `review.service.add_dictation_marks` (`source = 'dictation'`, `suggested`),
+  with no Transcript gate and no passage read. Words already marked give back their mark
+  rather than `mark_exists`. The run rule is `dictation/domain/marks.candidate_range` and
+  `features/dictation/marks.ts`; the 20-word limit stays review's `check_length`.
+  `candidate_range` refuses a range longer than the diff's candidates before walking it,
+  so no request walks further than the diff. Beside an open transcript the Dictation
+  panel reads and adds through Transcript's `MarkSync` (`markList`, `takeSaved`), so the
+  page keeps one mark list.
+
+- Mark list/count (#60) read the same `useMarkSync` snapshot as word highlights.
+  List rows use native buttons for playback; E opens the note, Delete removes with
+  Undo. Keep the list outside the sticky selection panel so it can grow at 360 px.
+  `POST /sessions/{id}/transcript/complete` calls `review.service.finish_transcript`,
+  which uses `practice.service.require_step` and `complete_step` in the request
+  transaction. The browser waits for mark sync before finishing and reloads the
+  authoritative plan after completion (or a lost completion response).
+  Completion follows the existing submission idempotency rule: the browser sends
+  `transcript-{sessionId}` as its `Idempotency-Key`; the route wraps the shared
+  transition in `run_once` and returns a bodyless 204 on first success and replay.
+  Authentication, ownership and CSRF still apply. Finish uses guarded
+  `aria-disabled` with a focusable, linked reason while saving or completing.
+  Mark counts update visually at once; their counter announcement is debounced
+  one second in the panel's single polite region (UX-22). Undo cancels only a
+  deletion that was never sent; an attempted deletion may need recreation after
+  a lost response. Refused deletions preserve the known saved mark and note.
 
 ## Media sandbox and scanning (ADR 0049)
 

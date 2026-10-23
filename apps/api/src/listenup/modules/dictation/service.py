@@ -14,10 +14,12 @@
 Nothing here returns reference text before submission: Dictation hides the transcript
 (FR-DI-3, FR-TX-5). `submit` (#54) stores the text, finishes the attempt and completes the
 step; the scoring job (`jobs.py`, ADR 0042) fills the score columns of the same row.
+`add_marks` (#55, FR-DI-6) adds missed or wrong words of the scored diff to the mark
+list, through `review.service` (Architecture 4.3).
 """
 
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -28,7 +30,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from listenup.modules.analytics import service as analytics
 from listenup.modules.content import service as content
 from listenup.modules.dictation import repository
+from listenup.modules.dictation.domain.marks import NotACandidate, candidate_range
 from listenup.modules.dictation.domain.scoring import (
+    MarkCandidate,
     ReferenceWord,
     WordStatus,
     reference_from_arrays,
@@ -36,6 +40,7 @@ from listenup.modules.dictation.domain.scoring import (
 )
 from listenup.modules.practice import service as practice
 from listenup.modules.practice.service import Attempt, AttemptStatus, Passage, Step
+from listenup.modules.review import service as review
 from listenup.platform.errors import ProblemError
 from listenup.platform.events import EventType, publish
 from listenup.platform.export import ExportPart, learner_rows
@@ -47,10 +52,13 @@ __all__ = [
     "AttemptView",
     "DictationWork",
     "Draft",
+    "NewMark",
     "TranscriptUnavailable",
+    "add_marks",
     "export_data",
     "get_attempt",
     "latest_attempt",
+    "list_marks",
     "on_transcript_failed",
     "on_transcript_ready",
     "open_attempt",
@@ -390,6 +398,73 @@ async def _view(db: AsyncSession, attempt: Attempt) -> AttemptView:
     ):
         return AttemptView(attempt, row.scoring_status, _result(row.diff, row.accuracy))
     return AttemptView(attempt, row.scoring_status, None)
+
+
+@dataclass(frozen=True)
+class NewMark:
+    """Words of the diff the learner adds to the mark list; the browser names the mark."""
+
+    id: uuid.UUID
+    word_from: int
+    word_to: int
+
+
+def _candidates(diff: dict[str, Any]) -> list[MarkCandidate]:
+    """The stored mark candidates; a diff from before #55 (version 1) has none."""
+    return [
+        MarkCandidate(c["word_index"], c["word"], WordStatus(c["status"]), c["at_ms"], c["end_ms"])
+        for c in diff.get("mark_candidates", [])
+    ]
+
+
+async def _dictation_attempt(db: AsyncSession, attempt_id: uuid.UUID) -> Attempt:
+    try:
+        attempt = await practice.get_attempt(db, attempt_id)
+    except ProblemError:
+        raise _not_found() from None
+    if attempt.mode is not Step.DICTATION:
+        raise _not_found()
+    return attempt
+
+
+async def add_marks(
+    db: AsyncSession, attempt_id: uuid.UUID, marks: Sequence[NewMark]
+) -> list[review.Mark]:
+    """Add missed or wrong words of the scored diff to the mark list (#55, FR-DI-6).
+
+    Each entry is one word or a run of words next to each other that were all missed
+    or wrong; it takes the audio time of its first word from the diff. Words already
+    marked give back their mark, so adding twice never doubles one. One refused entry
+    refuses the request. Refusals: 404 `attempt_not_found`; 409 `attempt_not_scored`
+    and `mark_id_taken`; 422 `not_a_mark_candidate` and `mark_too_long`.
+    """
+    attempt = await _dictation_attempt(db, attempt_id)
+    row = await repository.get_submission(db, attempt.id)
+    if row is None or row.scoring_status != repository.SCORED or row.diff is None:
+        raise ProblemError(
+            409, "attempt_not_scored", "Words can be added to your marks once this is scored."
+        )
+    candidates = _candidates(row.diff)
+    placed = []
+    for mark in marks:
+        try:
+            place = candidate_range(candidates, mark.word_from, mark.word_to)
+        except NotACandidate:
+            raise ProblemError(
+                422,
+                "not_a_mark_candidate",
+                "Only missed or wrong words can be added to your marks.",
+            ) from None
+        placed.append(
+            review.DictationMark(mark.id, mark.word_from, mark.word_to, place.at_ms, place.phrase)
+        )
+    return await review.add_dictation_marks(db, attempt.user_id, attempt.session_id, placed)
+
+
+async def list_marks(db: AsyncSession, attempt_id: uuid.UUID) -> list[review.Mark]:
+    """The marks of the attempt's session, so the diff shows the words already added."""
+    attempt = await _dictation_attempt(db, attempt_id)
+    return await review.session_marks(db, attempt.session_id)
 
 
 async def record_listen_started(db: AsyncSession, attempt_id: uuid.UUID) -> None:

@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRef } from 'react';
 
 import { api, ApiError } from '../../api/client';
 import type { components } from '../../api/schema';
 import { SaveConflict, type SaveResult } from '../../lib/autosave';
+import type { Range } from '../review/selection';
 import { SESSIONS_KEY, SESSIONS_LIST_KEY, sessionKey } from '../session/api';
 
 export type DictationAttempt = components['schemas']['DictationAttempt'];
@@ -108,6 +110,81 @@ export function useSubmitDictation(sessionId: string, attemptId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: sessionKey(sessionId) });
       void queryClient.invalidateQueries({ queryKey: SESSIONS_LIST_KEY });
+    },
+  });
+}
+
+export type DictationMark = components['schemas']['DictationMark'];
+type DictationMarks = components['schemas']['DictationMarks'];
+
+export const dictationMarksKey = (attemptId: string) =>
+  [...SESSIONS_KEY, 'dictation-marks', attemptId] as const;
+
+const marksPath = (attemptId: string) =>
+  `/dictation/attempts/${encodeURIComponent(attemptId)}/marks`;
+
+/**
+ * A mark list the page already keeps, such as Transcript's `MarkSync` (#55). The Dictation
+ * result shows its marks as added and hands it the marks it adds, so both agree.
+ */
+export interface OpenMarkList {
+  marks: Range[];
+  take: (marks: DictationMark[]) => void;
+}
+
+/**
+ * The session's marks, so the diff shows which words are already added (#55). Not read
+ * while the page keeps its own list (`enabled: false`).
+ */
+export function useDictationMarks(attemptId: string, enabled = true) {
+  return useQuery({
+    queryKey: dictationMarksKey(attemptId),
+    queryFn: async () => (await api<DictationMarks>(marksPath(attemptId))).marks,
+    enabled,
+  });
+}
+
+/**
+ * Add words of the diff to the mark list (FR-DI-6). The browser names each mark and a
+ * range keeps its id until it is added, so a retry after a lost answer is the same mark
+ * (ADR 0047); words that are already marked come back as the mark they have.
+ */
+export function useAddDictationMarks(
+  attemptId: string,
+  onAdded?: (marks: DictationMark[]) => void,
+) {
+  const queryClient = useQueryClient();
+  const ids = useRef(new Map<string, string>());
+  const idFor = (range: Range) => {
+    const key = `${range.word_from}-${range.word_to}`;
+    let id = ids.current.get(key);
+    if (!id) {
+      id = crypto.randomUUID();
+      ids.current.set(key, id);
+    }
+    return id;
+  };
+  return useMutation({
+    mutationFn: async (ranges: Range[]) =>
+      (
+        await api<DictationMarks>(marksPath(attemptId), {
+          method: 'POST',
+          body: {
+            marks: ranges.map(({ word_from, word_to }) => ({
+              id: idFor({ word_from, word_to }),
+              word_from,
+              word_to,
+            })),
+          },
+        })
+      ).marks,
+    onSuccess: (marks) => {
+      queryClient.setQueryData<DictationMark[]>(dictationMarksKey(attemptId), (known = []) => {
+        const byId = new Map(known.map((mark) => [mark.id, mark]));
+        for (const mark of marks) byId.set(mark.id, mark);
+        return [...byId.values()];
+      });
+      onAdded?.(marks);
     },
   });
 }

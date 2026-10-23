@@ -304,6 +304,8 @@ test('submitting shows the waiting message, then the diff with labels, at 360 px
             : view('waiting_transcript', null),
       });
     }
+    if (path === '/dictation/attempts/attempt-1/marks')
+      return route.fulfill({ json: { marks: [] } });
     return route.fallback();
   });
   await page.goto('/sessions/s-1');
@@ -319,6 +321,86 @@ test('submitting shows the waiting message, then the diff with labels, at 360 px
   const diff = page.getByRole('list', { name: 'Word by word' });
   await expect(diff).toContainText('Wrong');
   await expect(diff).toContainText('you typed plan');
+  const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(scrollWidth).toBeLessThanOrEqual(360);
+});
+
+test('missed words go to the mark list by keyboard alone (FR-DI-6, #55)', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await fakeApi(page, newServer());
+  const marks: { id: string; word_from: number; word_to: number }[] = [];
+  const posted: unknown[] = [];
+  const answer = (m: { id: string; word_from: number; word_to: number }) => ({
+    ...m,
+    at_ms: 1000 * (m.word_from + 1),
+    source: 'dictation',
+    status: 'suggested',
+  });
+  await page.route('**/api/v1/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace('/api/v1', '');
+    if (path === '/sessions/s-1') {
+      return route.fulfill({
+        json: {
+          ...SESSION,
+          version: 1,
+          open_step: 'transcript',
+          open_position: 2,
+          steps: SESSION.steps.map((s, i) => ({
+            ...s,
+            status: i === 0 ? 'done' : i === 1 ? 'open' : 'locked',
+          })),
+        },
+      });
+    }
+    if (path === '/sessions/s-1/dictation/attempt') {
+      return route.fulfill({
+        json: {
+          id: 'attempt-1',
+          session_id: 's-1',
+          status: 'submitted',
+          scoring_status: 'scored',
+          result: {
+            accuracy: 40,
+            counts: { correct: 2, spelling_slip: 0, wrong: 1, missing: 2, extra: 0 },
+            items: [
+              { index: 0, status: 'correct', word: 'Cities', typed: 'Cities' },
+              { index: 1, status: 'missing', word: 'plant', typed: '' },
+              { index: 2, status: 'correct', word: 'street', typed: 'street' },
+              { index: 3, status: 'missing', word: 'trees', typed: '' },
+              { index: 4, status: 'wrong', word: 'to', typed: 'two' },
+            ],
+          },
+        },
+      });
+    }
+    if (path === '/dictation/attempts/attempt-1/marks') {
+      if (request.method() === 'GET') return route.fulfill({ json: { marks: marks.map(answer) } });
+      const body = request.postDataJSON() as { marks: typeof marks };
+      posted.push(body);
+      marks.push(...body.marks);
+      return route.fulfill({ json: { marks: body.marks.map(answer) } });
+    }
+    return route.fallback();
+  });
+  await page.goto('/sessions/s-1');
+
+  const addAll = page.getByRole('button', { name: 'Add all' });
+  await addAll.focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Add “plant” to marks' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: '“plant” added to marks' })).toBeFocused();
+
+  await addAll.focus();
+  await page.keyboard.press('Space');
+
+  await expect(page.getByRole('button', { name: 'All added' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '“trees to” added to marks' })).toBeVisible();
+  expect(posted).toEqual([
+    { marks: [{ id: expect.any(String), word_from: 1, word_to: 1 }] },
+    { marks: [{ id: expect.any(String), word_from: 3, word_to: 4 }] },
+  ]);
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(scrollWidth).toBeLessThanOrEqual(360);
 });

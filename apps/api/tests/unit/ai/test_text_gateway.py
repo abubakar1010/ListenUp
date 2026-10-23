@@ -226,10 +226,16 @@ async def test_changing_the_prompt_version_in_the_file_changes_the_recorded_vers
     root = copy_prompts(tmp_path)
     gateway = build(Servers(), [local()], prompts_root=root)
     first = await gateway.generate(load_task("grade_gist", root=root), GRADE_INPUT, GistGrade)
-    bump(root, "v2")
+    bump(root, "vnext")
     second = await gateway.generate(load_task("grade_gist", root=root), GRADE_INPUT, GistGrade)
-    assert (first.prompt_version, second.prompt_version) == ("v1", "v2")
-    assert [c["prompt"] for c in fake_accounting.calls] == ["v1", "v2"]
+    assert (first.prompt_version, second.prompt_version) == (
+        load_task("grade_gist").version,
+        "vnext",
+    )
+    assert [c["prompt"] for c in fake_accounting.calls] == [
+        load_task("grade_gist").version,
+        "vnext",
+    ]
 
 
 def test_shipped_text_entries_are_disabled_until_accepted():
@@ -386,7 +392,13 @@ async def test_run_task_records_the_version_written_in_the_prompt_file(
     monkeypatch.setattr(text_tasks, "PROMPTS_DIR", root)  # where the adapters read too
     gateway = build(Servers(), [local()], prompts_root=root)
     first = await run_task(gateway, "grade_gist", GRADE_INPUT, GistGrade)
-    bump(root, "v2")
+    bump(root, "vnext")
     second = await run_task(gateway, "grade_gist", GRADE_INPUT, GistGrade)
-    assert (first.result.prompt_version, second.result.prompt_version) == ("v1", "v2")
-    assert [c["prompt"] for c in fake_accounting.calls] == ["v1", "v2"]
+    assert (first.result.prompt_version, second.result.prompt_version) == (
+        load_task("grade_gist").version,
+        "vnext",
+    )
+    assert [c["prompt"] for c in fake_accounting.calls] == [
+        load_task("grade_gist").version,
+        "vnext",
+    ]

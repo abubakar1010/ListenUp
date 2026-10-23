@@ -550,3 +550,132 @@ test('a_refused_removal_of_a_mark_never_confirmed_puts_it_back_and_sends_it_agai
   expect(server.transport.create).toHaveBeenCalledTimes(2);
   expect(sync.getSnapshot().marks[0]).toMatchObject({ saved: true });
 });
+
+test('saved_marks_made_elsewhere_on_the_page_are_taken_without_sending_or_overwriting', async () => {
+  // The Dictation result inside Transcript adds marks through its own route (#55).
+  const { transport } = fakeServer([saved('m1', 0)]);
+  const storage = memoryStorage();
+  const sync = make(transport, storage, [saved('m1', 0)]);
+  sync.setNote('m1', 'local note');
+  sync.takeSaved([saved('m1', 0, 'older note'), saved('d1', 2, 'from another tab')]);
+  expect(sync.getSnapshot().marks.map((mark) => [mark.id, mark.note, mark.saved])).toEqual([
+    ['m1', 'local note', false],
+    ['d1', 'from another tab', true],
+  ]);
+  expect(storage.items.get(KEY) ?? '').not.toContain('d1');
+  expect(transport.create).not.toHaveBeenCalled();
+  sync.stop();
+});
+
+test('undo_during_an_in_flight_delete_recreates_the_mark_with_its_note', async () => {
+  const mark = saved('m1', 2, 'linking');
+  const server = fakeServer([mark]);
+  let finishDelete!: () => void;
+  server.transport.remove = vi.fn(async (id: string) => {
+    await new Promise<void>((resolve) => {
+      finishDelete = resolve;
+    });
+    server.marks.delete(id);
+  });
+  const sync = make(server.transport, memoryStorage(), [mark]);
+  sync.remove(mark.id);
+  await vi.advanceTimersByTimeAsync(2000);
+  sync.add(mark); // Undo while DELETE is still on its way.
+  finishDelete();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().marks).toMatchObject([{ id: 'm1', note: 'linking', saved: true }]);
+  expect(server.marks.get('m1')).toMatchObject({ note: 'linking' });
+});
+
+test('remove_undo_remove_before_saving_still_deletes_the_saved_mark', async () => {
+  const mark = saved('m1', 2, 'linking');
+  const server = fakeServer([mark]);
+  const sync = make(server.transport, memoryStorage(), [mark]);
+  sync.remove(mark.id);
+  sync.add(mark); // Undo before the original DELETE was sent.
+  sync.remove(mark.id);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().marks).toEqual([]);
+  expect(server.marks.has(mark.id)).toBe(false);
+});
+
+test('undo_cancels_an_unsent_saved_deletion_without_a_refusable_create', async () => {
+  const mark = saved('m1', 2, 'linking');
+  const server = fakeServer([mark]);
+  server.transport.create.mockRejectedValue(refusal(403, 'consent_required'));
+  const sync = make(server.transport, memoryStorage(), [mark]);
+  sync.remove(mark.id);
+  sync.add(mark);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().marks).toMatchObject([{ id: mark.id, note: 'linking', saved: true }]);
+  expect(sync.getSnapshot().hasPendingChanges).toBe(false);
+  expect(server.transport.create).not.toHaveBeenCalled();
+  expect(server.transport.remove).not.toHaveBeenCalled();
+  expect(server.marks.get(mark.id)).toEqual(mark);
+});
+
+test('a_refused_note_after_undo_restores_the_known_server_mark_and_note', async () => {
+  const mark = saved('m1', 2, 'saved note');
+  const server = fakeServer([mark]);
+  server.transport.create.mockRejectedValue(refusal(403, 'forbidden'));
+  server.transport.setNote.mockRejectedValue(refusal(403, 'forbidden'));
+  const sync = make(server.transport, memoryStorage(), [mark]);
+  sync.setNote(mark.id, 'unsaved note');
+  const removed = sync.getSnapshot().marks[0]!;
+  sync.remove(mark.id);
+  sync.add(removed);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().marks).toMatchObject([
+    { id: mark.id, note: 'saved note', saved: true },
+  ]);
+  expect(sync.getSnapshot().hasPendingChanges).toBe(false);
+  expect(server.marks.get(mark.id)).toEqual(mark);
+});
+
+test.each(['undo', 'note', 'remove'])(
+  'undo_of_an_in_flight_refused_delete_preserves_the_saved_mark_after_%s',
+  async (next) => {
+    const mark = saved('m1', 2, 'linking');
+    const server = fakeServer([mark]);
+    let refuseDelete!: (error: unknown) => void;
+    server.transport.remove = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          refuseDelete = reject;
+        }),
+    );
+    server.transport.create.mockRejectedValue(refusal(403, 'forbidden'));
+    const sync = make(server.transport, memoryStorage(), [mark]);
+    sync.remove(mark.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    sync.add(mark);
+    if (next === 'note') {
+      server.transport.setNote.mockRejectedValue(refusal(403, 'forbidden'));
+      sync.setNote(mark.id, 'unsaved note');
+    } else if (next === 'remove') sync.remove(mark.id);
+    refuseDelete(refusal(403, 'forbidden'));
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(sync.getSnapshot().marks).toMatchObject([{ id: mark.id, note: 'linking', saved: true }]);
+    expect(sync.getSnapshot().hasPendingChanges).toBe(false);
+    expect(server.transport.create).not.toHaveBeenCalled();
+    expect(server.marks.get(mark.id)).toEqual(mark);
+  },
+);
+
+test('undo_after_a_lost_delete_response_recreates_the_persisted_mark_and_note', async () => {
+  const mark = saved('m1', 2, 'linking');
+  const server = fakeServer([mark]);
+  server.transport.remove = vi.fn(async (id: string) => {
+    server.marks.delete(id);
+    throw new TypeError('Lost DELETE response');
+  });
+  const sync = make(server.transport, memoryStorage(), [mark]);
+  sync.remove(mark.id);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(server.marks.has(mark.id)).toBe(false);
+  sync.add(mark);
+  sync.flush();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(server.marks.get(mark.id)).toEqual(mark);
+  expect(sync.getSnapshot().marks).toMatchObject([{ id: mark.id, note: 'linking', saved: true }]);
+});

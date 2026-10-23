@@ -1,12 +1,14 @@
-"""Queue shared passage references; gist grading is a separate story (#67)."""
+"""Queue private gist grading and shared passage references (FR-BL-6/14)."""
 
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.content import service as content
+from listenup.modules.grading import repository
 from listenup.modules.practice import service as practice
 from listenup.platform.errors import ProblemError
+from listenup.platform.export import ExportPart, learner_rows
 from listenup.platform.jobs import enqueue
 
 EXTRACT_KEY_POINTS = "grading.extract_key_points"
@@ -34,3 +36,27 @@ async def on_transcript_ready(db: AsyncSession, learner: uuid.UUID, session_id: 
         start_ms=left,
         end_ms=right,
     )
+
+
+GRADE_GIST = "grading.grade_gist"
+
+
+async def queue_gist(db: AsyncSession, learner: uuid.UUID, attempt_id: uuid.UUID) -> None:
+    """Submission and pending result/job commit together; inference never runs here."""
+    # API processes register the handler before enqueue, as the transcript service does.
+    from listenup.modules.grading.jobs import GRADE_GIST_JOB
+
+    await repository.ensure_pending(db, learner, attempt_id)
+    key = f"gist-grade:{attempt_id}"
+    await enqueue(
+        db,
+        GRADE_GIST_JOB,
+        unique_key=key,
+        lock=key,
+        attempt_id=str(attempt_id),
+        user_id=str(learner),
+    )
+
+
+async def export_data(db: AsyncSession, learner: uuid.UUID) -> ExportPart:
+    return ExportPart(tables=(await learner_rows(db, "grading.gist_grades", learner),))

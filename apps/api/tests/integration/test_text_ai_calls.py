@@ -76,12 +76,15 @@ async def test_editing_the_prompt_version_changes_the_version_stored_with_the_ca
             accounting=PostgresAccounting(db),
         )
         first = await gateway.generate(load_task("grade_gist", root=root), INPUT, GistGrade)
-        old = root / "grade_gist" / "v1.md"
-        (root / "grade_gist" / "v2.md").write_text(
-            old.read_text().replace("version: v1", "version: v2")
+        original_version = first.prompt_version
+        old = root / "grade_gist" / f"{original_version}.md"
+        (root / "grade_gist" / "vnext.md").write_text(
+            old.read_text().replace(f"version: {original_version}", "version: vnext")
         )
         old.unlink()
-        (root / "grade_gist" / "v1.schema.json").rename(root / "grade_gist" / "v2.schema.json")
+        (root / "grade_gist" / f"{original_version}.schema.json").rename(
+            root / "grade_gist" / "vnext.schema.json"
+        )
         second = await gateway.generate(load_task("grade_gist", root=root), INPUT, GistGrade)
         with psycopg.connect(migrated_url) as conn:
             rows = conn.execute(
@@ -91,6 +94,12 @@ async def test_editing_the_prompt_version_changes_the_version_stored_with_the_ca
             ).fetchall()
     finally:
         await db.dispose()
-    assert (first.prompt_version, second.prompt_version) == ("v1", "v2")
+    assert (first.prompt_version, second.prompt_version) == (
+        load_task("grade_gist").version,
+        "vnext",
+    )
     stored_version = "openai-chat-v1; structured=json_schema; deployment=digest-1"
-    assert rows == [("v1", stored_version, "ok", 90, 30), ("v2", stored_version, "ok", 90, 30)]
+    assert rows == [
+        (original_version, stored_version, "ok", 90, 30),
+        ("vnext", stored_version, "ok", 90, 30),
+    ]

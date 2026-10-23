@@ -46,12 +46,17 @@ def place_mark(
     """Where the mark sits in the audio and the words it covers."""
     if not 0 <= word_from <= word_to < len(words):
         raise MarkOutOfRange(f"words {word_from} to {word_to} are not in the passage")
-    if word_to - word_from + 1 > MAX_MARK_WORDS:
-        raise MarkTooLong(f"a mark covers at most {MAX_MARK_WORDS} words")
+    check_length(word_from, word_to)
     phrase = " ".join(word for word in words[word_from : word_to + 1] if word)
     if not phrase:
         raise MarkWithoutWords("those words were all removed from the transcript")
     return MarkPlace(at_ms=starts_ms[word_from], phrase=phrase)
+
+
+def check_length(word_from: int, word_to: int) -> None:
+    """A mark is a word or a phrase: at most MAX_MARK_WORDS words, wherever it is made."""
+    if word_to - word_from + 1 > MAX_MARK_WORDS:
+        raise MarkTooLong(f"a mark covers at most {MAX_MARK_WORDS} words")
 
 
 def clean_note(note: str | None) -> str | None:

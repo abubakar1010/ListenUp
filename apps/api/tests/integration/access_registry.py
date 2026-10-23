@@ -256,6 +256,11 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         params=lambda w: {"session_id": w.a.sessions["transcript"]},
         body=lambda w: {"id": str(uuid.uuid4()), "word_from": 2, "word_to": 2},
     ),
+    ("POST", "/api/v1/sessions/{session_id}/transcript/complete"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["transcript"]},
+        owner_status=204,
+    ),
     # B holds A's session and mark ids and still changes nothing.
     ("PATCH", "/api/v1/sessions/{session_id}/marks/{mark_id}"): Owned(
         "session_not_found",
@@ -315,6 +320,15 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         "attempt_not_found",
         params=lambda w: {"attempt_id": w.a.dictation_attempt_id},
         body=lambda w: {"text": "B was here", "version": 0, "replay_count": 0},
+    ),
+    # B holds A's attempt id and adds nothing to A's marks (#55).
+    ("POST", "/api/v1/dictation/attempts/{attempt_id}/marks"): Owned(
+        "attempt_not_found",
+        params=lambda w: {"attempt_id": w.a.dictation_attempt_id},
+        body=lambda w: {"marks": [{"id": str(uuid.uuid4()), "word_from": 0, "word_to": 0}]},
+    ),
+    ("GET", "/api/v1/dictation/attempts/{attempt_id}/marks"): Owned(
+        "attempt_not_found", params=lambda w: {"attempt_id": w.a.dictation_attempt_id}
     ),
     # -- media -------------------------------------------------------------------------
     ("GET", "/api/v1/media/{media_object_id}"): Owned(
