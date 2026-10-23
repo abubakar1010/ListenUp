@@ -190,6 +190,23 @@ Read the section for the area you are changing before you change it. The rules e
   panel reads and adds through Transcript's `MarkSync` (`markList`, `takeSaved`), so the
   page keeps one mark list.
 
+- Mark list/count (#60) read the same `useMarkSync` snapshot as word highlights.
+  List rows use native buttons for playback; E opens the note, Delete removes with
+  Undo. Keep the list outside the sticky selection panel so it can grow at 360 px.
+  `POST /sessions/{id}/transcript/complete` calls `review.service.finish_transcript`,
+  which uses `practice.service.require_step` and `complete_step` in the request
+  transaction. The browser waits for mark sync before finishing and reloads the
+  authoritative plan after completion (or a lost completion response).
+  Completion follows the existing submission idempotency rule: the browser sends
+  `transcript-{sessionId}` as its `Idempotency-Key`; the route wraps the shared
+  transition in `run_once` and returns a bodyless 204 on first success and replay.
+  Authentication, ownership and CSRF still apply. Finish uses guarded
+  `aria-disabled` with a focusable, linked reason while saving or completing.
+  Mark counts update visually at once; their counter announcement is debounced
+  one second in the panel's single polite region (UX-22). Undo cancels only a
+  deletion that was never sent; an attempted deletion may need recreation after
+  a lost response. Refused deletions preserve the known saved mark and note.
+
 ## Media sandbox and scanning (ADR 0049)
 
 - Uploads call `content.scanner.Scanner.scan` before fingerprint deduplication or

@@ -115,6 +115,12 @@ async def list_marks(db: AsyncSession, session_id: uuid.UUID) -> list[schemas.Ma
     return await session_marks(db, session_id)
 
 
+async def finish_transcript(db: AsyncSession, session_id: uuid.UUID) -> None:
+    """FR-PL-4: finish Transcript and open Card in the request's transaction."""
+    session = await practice.require_step(db, session_id, practice.Step.TRANSCRIPT)
+    await practice.complete_step(db, session, practice.Step.TRANSCRIPT)
+
+
 async def create_mark(
     db: AsyncSession,
     worker_database: Database,

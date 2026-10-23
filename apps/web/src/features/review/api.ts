@@ -1,13 +1,32 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { components } from '../../api/schema';
-import { SESSIONS_KEY } from '../session/api';
+import { LIBRARY_KEY } from '../library/useLibrary';
+import { SESSIONS_KEY, SESSIONS_LIST_KEY, sessionKey } from '../session/api';
 import type { MarkTransport, SavedMark } from './markSync';
 
 export type TranscriptReview = components['schemas']['TranscriptReview'];
 export type TranscriptLine = components['schemas']['TranscriptLine'];
 export const REVIEW_KEY = [...SESSIONS_KEY, 'transcript'] as const;
 export const transcriptKey = (id: string) => [...REVIEW_KEY, id] as const;
+
+export function useFinishTranscript(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api<void>(`/sessions/${encodeURIComponent(id)}/transcript/complete`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': `transcript-${id}` },
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: sessionKey(id) });
+      void client.invalidateQueries({ queryKey: SESSIONS_LIST_KEY });
+      void client.invalidateQueries({ queryKey: LIBRARY_KEY });
+    },
+    // A lost answer may already have opened Card; reload the authoritative plan.
+    onError: () => client.invalidateQueries({ queryKey: sessionKey(id) }),
+  });
+}
 
 export function useTranscript(id: string) {
   return useQuery({

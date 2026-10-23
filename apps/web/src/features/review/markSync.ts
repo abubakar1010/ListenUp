@@ -60,6 +60,8 @@ export type MarkSyncStatus = AutosaveStatus<never>;
 export interface MarkSyncSnapshot {
   marks: LocalMark[];
   status: MarkSyncStatus;
+  /** Includes pending removals, which are absent from the visible marks. */
+  hasPendingChanges: boolean;
   /** True when this visit started from unsent changes kept on this device. */
   restored: boolean;
 }
@@ -92,6 +94,8 @@ interface Entry {
    * the server may hold the mark and a removal has to be sent too.
    */
   attempted: boolean;
+  /** A lost DELETE response may still mean the server removed this mark. */
+  deleteAttempted?: boolean;
 }
 
 interface StoredCopy {
@@ -174,12 +178,24 @@ export class MarkSync {
   // -- writing --------------------------------------------------------------------------
 
   add(mark: NewLocalMark): void {
+    const previous = this.entries.get(mark.id);
+    // Undo of a queued deletion cancels it. Keep the server snapshot so a refused
+    // unsaved note rolls back to the saved mark, rather than removing it as new.
+    if (previous?.op === 'delete' && previous.server && !previous.deleteAttempted) {
+      previous.mark = { ...mark };
+      previous.op = mark.note === previous.server.note ? 'none' : 'note';
+      previous.rev += 1;
+      this.changed();
+      return;
+    }
     this.entries.set(mark.id, {
       mark: { ...mark },
       op: 'create',
       rev: 1,
       server: null,
-      attempted: false,
+      // Undo may replace a queued deletion of a mark the server already holds.
+      // Removing it again must still DELETE, even before this create is sent.
+      attempted: previous !== undefined && (previous.attempted || previous.server !== null),
     });
     this.changed();
   }
@@ -196,6 +212,7 @@ export class MarkSync {
   remove(id: string): void {
     const entry = this.entries.get(id);
     if (!entry || entry.op === 'delete') return;
+    entry.deleteAttempted = false;
     entry.rev += 1;
     // A create that was never sent leaves nothing behind. One that was sent may have
     // reached the server even though its answer was lost, so the removal must be sent.
@@ -319,8 +336,11 @@ export class MarkSync {
       if (stored) this.settled(entry, rev, local(stored));
       else this.entries.delete(mark.id);
     } else {
+      entry.deleteAttempted = true;
       await this.gone(() => this.options.transport.remove(mark.id));
-      this.entries.delete(mark.id);
+      // Undo can replace this entry while DELETE is in flight. Keep that new create
+      // queued until deletion settles, then recreate the mark (including its note).
+      if (this.entries.get(mark.id) === entry) this.entries.delete(mark.id);
     }
   }
 
@@ -371,6 +391,16 @@ export class MarkSync {
 
   /** Undo a refused change: a new mark goes; a saved mark shows what the server holds. */
   private takeBack(entry: Entry): void {
+    const current = this.entries.get(entry.mark.id);
+    if (current && current !== entry && entry.server) {
+      // A refused in-flight DELETE left the saved mark intact. Undo may have
+      // replaced its entry: reuse that known snapshot instead of recreating it.
+      current.server = entry.server;
+      if (current.op === 'create')
+        current.op = current.mark.note === entry.server.note ? 'none' : 'note';
+      else this.takeBack(current);
+      return;
+    }
     if (entry.op === 'create') {
       this.entries.delete(entry.mark.id);
     } else if (entry.server) {
@@ -429,7 +459,12 @@ export class MarkSync {
       .filter((entry) => entry.op !== 'delete')
       .map((entry) => ({ ...entry.mark, saved: entry.op === 'none' }))
       .sort((a, b) => a.at_ms - b.at_ms || a.word_from - b.word_from || a.word_to - b.word_to);
-    return { marks, status: this.status, restored: this.restored };
+    return {
+      marks,
+      status: this.status,
+      hasPendingChanges: this.next() !== undefined,
+      restored: this.restored,
+    };
   }
 
   /** Lay the unsent changes kept on this device over the server's marks. */
