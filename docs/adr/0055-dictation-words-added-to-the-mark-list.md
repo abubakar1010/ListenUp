@@ -1,4 +1,4 @@
-# ADR 0054: Dictation words are added to the mark list from the stored diff
+# ADR 0055: Dictation words are added to the mark list from the stored diff
 
 - Status: Accepted by the owner in the #55 pull request (2026-10-22)
 - Date: 2026-10-22

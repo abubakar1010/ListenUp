@@ -179,7 +179,7 @@ Read the section for the area you are changing before you change it. The rules e
   Test fakes of the marks API answer a resent create with the stored mark, as the API
   does. The limits (at most 20 words; not only removed words) are kept in both
   `domain/marks.py` and `selection.ts`.
-- Dictation marks (#55, ADR 0054): the scored diff stores `mark_candidates` (diff
+- Dictation marks (#55, ADR 0055): the scored diff stores `mark_candidates` (diff
   version 2), and `POST /dictation/attempts/{id}/marks` adds candidate words or runs
   through `review.service.add_dictation_marks` (`source = 'dictation'`, `suggested`),
   with no Transcript gate and no passage read. Words already marked give back their mark
