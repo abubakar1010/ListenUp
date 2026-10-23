@@ -1,7 +1,7 @@
 # ADR 0050: Shadow measures model choices and go/no-go
 
-- Status: Proposed for owner review
-- Date: 2026-10-20
+- Status: Accepted
+- Date: 2026-10-23
 - Follow-up to: [ADR 0010](0010-self-hosted-speech-pipeline-for-recordings.md)
 - Related: [ADR 0034](0034-speech-models-chosen-by-spikes-b1-and-b2.md)
 - Evidence: [spike #20](../spikes/20-shadow-measures.md), its per-pair tables,
@@ -89,6 +89,28 @@ exclude accent from overall. Test clean voices, digital copies/mixes and real
 loudspeaker/room echoes before treating a leakage screen as reliable. Reuse the
 methods only after #21/#22 and these quality gates; do not copy notebook transforms
 into application code as approved scoring policy.
+
+## Owner decision
+
+Accepted by the owner on 2026-10-23:
+
+- **Q1 — Accept the no-go.** The seven Shadow measures are not shipped as
+  calibrated grades on the current evidence. Self-hosted research continues;
+  ADR 0010 stands, with no hosted speech provider.
+- **Q2 — Option a: launch gate, not build gate.** Build Shadow rounds, recording,
+  replay and plan completion (#78, #79, #81, #87) now. Until grading passes
+  #21 (B3 latency on the stage-0 server), #22 (B4 filler recall) and #110
+  (calibration against the teacher golden set, which needs #107), learners see
+  "Feedback unavailable" after each round and the plan still completes. This
+  follows the FR-BL-11 principle: "grading never blocks the learner". The MVP
+  does not launch without Shadow grading; no SRS or PRD requirement changes.
+  Rounds do not wait for the reference profile; "preparing" applies only where
+  grading needs the profile.
+- **Q3 — Build #76 now with the limited reference profile.** Use word alignment
+  with the model accepted in ADR 0034, plus Parselmouth pitch and intensity
+  only, storing model and version provenance. Phone-level GOP for the reference
+  speaker is deferred to #80. #76 retains #45 and no longer depends on #20;
+  #79 depends only on #77, while #82 depends on #76 for grading.
 
 ## Consequences
 
