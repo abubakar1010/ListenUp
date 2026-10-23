@@ -69,7 +69,7 @@ export function DictationMarks({
         </button>
       </div>
       <p className="text-body-s text-ink-muted">
-        Missed and wrong words wait in Transcript, where you confirm them for your cards and Shadow.
+        Words you add appear with your marks in Transcript.
       </p>
       <ul aria-label="Missed and wrong words" className="flex flex-col gap-2">
         {runs.map((run) => {

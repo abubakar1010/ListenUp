@@ -112,6 +112,8 @@ test('adding 2 of 5 missed words sends those two and shows them as added', async
   expect(marks.map((m) => m.word_from)).toEqual([1, 5]);
   for (const other of ['trees', 'air', 'summer.']) expect(await addButton(other)).toBeVisible();
   expect(screen.getByRole('status')).toHaveTextContent('Added “cool” to your marks.');
+  // Only what is true today: confirming Dictation marks comes with #59/#60.
+  expect(screen.getByText('Words you add appear with your marks in Transcript.')).toBeVisible();
 });
 
 test('words added before, here or in Transcript, show as added after a reload', async () => {
