@@ -169,6 +169,210 @@ All 36 wireframe boards have a final board on the [UI canvas](https://claude.ai/
 | Shadow | H01 to H08 | Below 60 s, over 90 s, whole passage when 30 to 60 s, consent with 90-day retention, mic blocked, too quiet, leak, no mic, count-in, saved, save failed, between rounds with tip, no tip, pending, partial, accent guidance block, written feedback failed, ready, word compare, drop shown neutral, unavailable, late toast, comparison writing and unavailable |
 | Finish and settings | I01, I02 | Pending tile, skipped tiles, cards made with Shadow skipped (still complete), export preparing, ready, expired, deletion steps 1 and 2 with the 7-day date, switched off, explicit restore confirmation on sign-in, keep it deleted, restored, deleted after 7 days |
 
+## ADR 0033 follow-up specification — 2026-10-23 (#117)
+
+**Publication status: unpublished.** This section specifies the requested visual
+revision; it does not claim the Final UI has been edited. Claude Code and the
+Claude Artifact tools were unavailable in this session. The existing Final UI,
+design system v2 and wireframes could not be inspected or updated. Publish these
+states into the existing Final UI, preserving the base boards, before marking the
+design follow-up complete. The repository log remains the decision source of truth.
+
+### Comparison with current main
+
+Read against main `c298108e1bb0cd0dff3f67b366419aa7a19982da`, before making
+these decisions. This is source and existing-test review, not a live screen-reader
+or browser audit. No application implementation is changed by this specification.
+
+| Area | What main builds | Gap the revised boards must label |
+| --- | --- | --- |
+| D02 leave warning | `features/blind/BlindStep.tsx` uses router blocking, including Back. “Leave Blind?” offers “Stay” and “Leave Blind”; playback continues. Navigation waits for the void request; failure stays in the dialog with Retry. `components/ConfirmDialog.tsx` focuses the safe action, traps Tab and handles Escape/scrim. | Busy dialogs disable both buttons, potentially losing usable focus; background content is not made inert. The component switches to a centred dialog at 640 px, while UX-18 specifies 768 px. Specify completion while the dialog is open and destination focus explicitly. |
+| D04 completed listen/gist | The gist unlocks only after server acknowledgement. Reload of a completed listen opens the gist without voiding it. `GistForm.tsx` saves an attempt-keyed local draft after a 500 ms debounce, restores it on mount and focuses the textarea. | Immediate departure can cancel the pending local write. Storage failure silently removes “Draft saved”; there is no save-failure explanation or restored-draft announcement. Do not promise server draft sync. |
+| Whole-clip player | `content/ContentPage.tsx` renders a native audio/video player with a media URL. The media API checks ownership, then returns 409 `blind_in_progress` for unfinished listens on the learner's copies of that media. | No dedicated blocked-player UI or client handling of that media refusal. A native player failure does not expose the API's actionable reason. Do not claim an existing signed storage URL is revoked (ADR 0033). |
+| B01 intake | `library/AddClipPage.tsx` shows counted minutes (visually capped at the allowance), the local reset time, and processing concurrency. `library/refusals.ts` distinguishes counted-limit and pending-clip refusals; `content/intakeStatus.ts` names queue/stage feedback. | No numeric reservation row, no admission-checking state, and no automatic allowance recheck at reset on this page. Choose a file still opens at the limit; refusal follows selection and uses error-red alert styling. Keep server admission authoritative. |
+| A01/I02 restore | `auth/AuthForm.tsx` and `auth/GoogleRestore.tsx` ask explicitly, offer “Restore my account” / “Keep it deleted” and start on Keep it deleted. Password decline clears the password without signing in; Google decline sends `restore: false`. Account pages display the deletion date locally. | UX-34's older “Restore as primary” wording conflicts with the shipped safe-action emphasis. Google uses generic “Saving…” while pending. Its kept-deleted state lacks a next action; success/refusal focus and announcements need explicit design. |
+
+Paths above are relative to `apps/web/src` except the media API, which is
+`apps/api/src/listenup/modules/content/api.py` and the Blind service it calls.
+These are follow-up implementation gaps, not changes authorized in this slice.
+
+### New decisions
+
+All decisions below refine [ADR 0033](../adr/0033-design-review-policy-resolutions.md),
+keep UI-1 to UI-5, NFR-USE-2 and NFR-USE-3, and introduce no product rule changes.
+
+| ID | Decision | Why | Alternative considered | Serves |
+| --- | --- | --- | --- | --- |
+| UX-37 | D02 uses the shipped leave copy and safe-action emphasis for every in-app departure, including Browser Back. Playback and heartbeats continue while deciding. Leave waits for acknowledgement; completion during the dialog changes the consequence before confirmation. | A warning must describe the consequence at the time of action and never manufacture a pause. | Void immediately on Back; pause behind the sheet; continue showing a stale destructive warning | FR-BL-3, SR-5, UI-1 to UI-5, NFR-USE-2, NFR-USE-3 |
+| UX-38 | D04 distinguishes “Listen complete” from device-only gist storage. Show saving, saved, restored and failed-storage states. Preserve the final edit on departure; no promise of cross-device text recovery. | The completed listen is server-owned; unsubmitted writing currently is not. | “Everything saved” without naming where; a warning that incorrectly says the completed listen will end | FR-BL-3, FR-BL-4, SR-5, UI-1 to UI-5, NFR-USE-2, NFR-USE-3 |
+| UX-39 | The whole-clip player slot becomes a labelled lock card during `blind_in_progress`, without playback controls. Explain how to continue in the original Blind tab, and offer “Check again” without taking over that attempt. | Prevent a broken native player and avoid interrupting an attempt in another tab. | Grey playback controls; auto-opening or restarting Blind from a second tab | FR-BL-3, UI-1 to UI-5, NFR-USE-2, NFR-USE-3 |
+| UX-40 | B01 separates counted minutes, reserved minutes and admission. Show a caution at the limit and the server reset locally; recheck admission after reset or reservation changes. Never reject a crossing clip by browser duration. | A reservation is temporary capacity, not audio already added; a clock reaching zero is not server permission. | One combined “used” value; remaining-minutes refusal; local-midnight reset | FR-CI-3, UX-36, UI-1 to UI-5, NFR-USE-2, NFR-USE-3 |
+| UX-41 | Keep it deleted is the initially focused, accent-filled safe action; Restore my account is the explicit secondary action, matching main. This supersedes UX-34's primary-action emphasis only. Neither sign-in nor dismissal restores. | Preserve the deletion schedule until the learner deliberately changes it. | Auto-restore; focus Restore; use destructive red for restoring | FR-ACC-4, DR-1, UX-34, UI-1 to UI-5, NFR-USE-2, NFR-USE-3 |
+
+### Layout and interaction handoff for the existing Final UI
+
+Add each state below at **360 and 1280 CSS px in both themes**, using the v2
+tokens mirrored in `apps/web/src/index.css`. These token values are available in
+main; parity with the current published v2 artifact remains unverified.
+At 360 use 16 px page gutters (328 px content), 16 px card padding, stacked
+44 px minimum actions and wrapping dates. At 1280 retain the 1120 px practice
+container and 320 px side panel (UX-14); intake retains its shipped 800 px maximum.
+Dialogs are bottom sheets below 768 px, with 24 px padding and safe-area space;
+desktop dialogs are centred, at most 448 px. Long sheets scroll within the viewport.
+Use body 16/24, helper 14/20 and heading 20/28; page titles are 24/32 mobile,
+28/36 desktop. Do not add novel tokens or colour-only meanings. Each state keeps
+the base board's rule line, progress/player placement and English copy.
+
+**D02 — leave sheet/dialog (UX-37).** Title “Leave Blind?”; body “Leaving now
+ends this Blind attempt. Playback keeps going while you decide.” At 360 show
+Stay above Leave Blind; desktop shows Leave Blind then Stay on the right. Use
+the same sheet for links and Browser Back, never a second browser-history entry
+per cancelled Back. Focus Stay on open; Tab/Shift+Tab wrap; Enter/Space activate
+the focused button; Escape and scrim choose Stay. Make background UI inert without
+stopping the audio. Stay returns focus to the initiating control, or the practice
+heading when Back has no in-page opener. A labelled/described modal supplies the
+opening announcement; do not duplicate it in a live region.
+
+Leave changes its label to “Leaving…” and reports “Ending your Blind attempt…”
+politely. Keep focus on a focusable aria-disabled action while awaiting the server;
+ignore duplicate activation and dismissal until settlement. Failure retains the
+dialog, announces “We could not confirm leaving. Try again.” and exposes Retry;
+do not navigate. An attempt already voided uses the ended-state reason, not a
+claim that playback continues. After acknowledged leave, focus the destination
+heading. If server completion arrives first, replace the warning with “Your listen
+is complete. Leaving will keep it.” and announce that once, politely; leaving must
+then preserve completion. External hide/close/reload cannot guarantee this custom
+sheet and still ends an unfinished listen under ADR 0033.
+
+**D04 — complete, saving and returned gist (UX-38).** Keep the locked player
+with “Listen complete” and the normal gist form; never show replay. During server
+completion acknowledgement show “Saving your listen. Keep this screen open.” with
+a polite status; gist/navigation unlock only after acknowledgement. Then focus
+Your gist and include “Your listen is complete. You can return to write your gist.”
+as its description. Under the textarea show “Saving draft on this device…” then
+“Draft saved on this device”. On return use “Draft restored on this device” and
+announce once with the textarea description. Ordinary saved updates remain quiet;
+announce sentence-count changes politely after a one-second debounce.
+
+Leave/reload after acknowledgement has no attempt-ending warning and retains the
+same completed attempt. Persist the latest text before in-app departure and flush
+pending writes for reload; do not describe the current debounce as guaranteed
+durability. If browser storage fails, show “Your listen is kept, but this draft
+could not be saved on this device. Copy your text before leaving.” Announce once
+politely, keep the text selectable/editable and provide Retry save. If leaving
+would lose that text, offer a distinct “Leave without saving your gist?” sheet
+with Stay / Leave without saving; a native unload prompt is best effort only.
+The gist's existing sentence validation and focusable Submit remain unchanged.
+
+**Whole-clip blocked variant (UX-39).** In the clip page's player slot show a lock
+icon, “Whole-clip playback is unavailable” and “Finish or leave the Blind listen
+before playing this clip. If it is open in another tab, return to that tab.” Keep
+the title and Library link. Replace the player and all its shortcuts/controls;
+the attempt-bound Blind player is unaffected. Show Check again with a linked
+reason, not a fabricated session link (the current refusal exposes no target).
+On initial load the heading is read in normal order. On a failed user play/check,
+announce the reason politely and focus the lock-card heading if the player was
+removed. Check again retains focus and says “Checking playback…”; still blocked
+announces once, without moving focus. After a successful check, restore the player
+without autoplay, announce “Whole-clip playback is available” and focus its play
+control if the check action was replaced. A network failure keeps the card and
+offers Retry. Another learner's media must still produce the ordinary not-found
+state; do not reveal anyone else's attempt. Browser playback must distinguish the
+API refusal from a generic media error before this state can ship.
+
+**B01/B02 — admission and reservations (UX-40).** Under the storage meter use a
+sunken panel with three separate lines: “90 of 120 minutes of new audio added
+today”; “30 minutes reserved for 2 clips being prepared”; “The count starts again
+at 06:00 tomorrow (your local time).” This example is for Asia/Dhaka and a server
+reset of `2026-10-24T00:00:00Z`; never hard-code 06:00. Add “Each pending clip
+reserves 15 minutes. Each ready clip counts up to 15 minutes.” Use server values
+and show actual counted usage even when a crossing clip takes it above 120; cap
+only a decorative meter. At 360 all lines wrap in order; desktop may align values
+in rows, without separating a value from its label.
+
+Draw these variants: allowance loading (“Checking today's allowance…”); admission
+in flight (“Checking whether this clip can be added…”); admitted/uploading;
+pending reservation with the existing queue/stage text; temporary reservation
+refusal (“Wait for your clips in progress”); counted limit reached; checking again
+after reset; check failed with Retry. At 119 counted minutes and no reservations,
+a crossing clip is accepted whole when the server admits it; at 90 counted plus
+30 reserved it must wait. Pending reservations can be released before midnight;
+do not promise the learner must always wait until reset. At refusal retain
+“You can still practise clips in your library” and a Library link.
+
+At a known limit, Choose a file stays focusable with aria-disabled and a visible,
+linked reason; activation focuses that reason instead of opening the picker.
+Drop and confirmation use the same server-backed admission rule. During checking
+retain focus on the initiating control, prevent duplicate requests and mark only
+the status panel busy. Announce checking and the eventual reservation/admission
+outcome politely once, outside the busy subtree. Automatic stage/reset updates
+never move focus or auto-open a picker. Recheck the server at its supplied reset,
+on return to the page, and after reservation changes; show checking until confirmed.
+Format the reset instant using the learner's current zone (including DST/date
+rollover), never calculate local midnight. Do not announce a ticking countdown.
+B02 reuses these variants only when YouTube intake is enabled; keep D10 intact.
+
+**A01/I02 — grace-period choice (UX-41).** Use the same restore sheet/dialog for
+password and Google sign-in: “Restore your account?”; “Your account will be
+deleted for good on {local full date and time}. Restore it to sign in and keep your
+library and practice data.” Show Keep it deleted above Restore my account on
+mobile; desktop puts Keep it deleted right-most. This is not a second deletion
+confirmation and must not say the schedule will move by another seven days.
+Focus Keep it deleted, trap Tab, and make the background inert. Escape/scrim follow
+Keep it deleted. Announce via the dialog name/description once. No playback keys
+or global shortcuts act while any modal in this revision is open.
+
+Draw pending Restore (“Restoring…”), pending decline (“Keeping it deleted…”),
+recoverable failure, restored, kept deleted and grace-expired/refused. Busy actions
+retain focus with aria-disabled; disable repeat activation/dismissal. Failure stays
+in the dialog with the server's explanation, a polite announcement and Retry;
+restoration is never assumed successful. Restore success focuses the authenticated
+destination heading and announces “Your account is restored.” Keep it deleted
+leaves the schedule unchanged, clears authentication continuation state and goes
+to a signed-out confirmation with the same date and Go to sign in; focus its
+heading and announce “Your account stays deleted. You are not signed in.”
+An expired/refused restoration shows the server's normal sign-in error and focuses
+that message, with Go to sign in. Never unlock practice based on the displayed
+clock. The server's atomic status/deadline check decides restoration. The already
+deleted-after-grace state must not offer Restore.
+
+### Contrast evidence and outstanding visual verification
+
+Computed with WCAG relative sRGB luminance from main's v2 token mirror (rounded
+to two decimals). The proposed states use these pairs at full opacity in both
+themes. Text requires 4.5:1; meaningful boundaries, icons and focus require 3:1.
+The light/dark values below are numerical checks, not a rendered-board pass.
+
+| Foreground / background | Light | Dark | AA check |
+| --- | --- | --- | --- |
+| ink / surface-raised | 16.84:1 | 13.87:1 | Pass (4.5:1) |
+| ink-muted / surface-raised | 6.82:1 | 6.96:1 | Pass (4.5:1) |
+| ink-muted / surface-sunken | 5.62:1 | 8.01:1 | Pass (4.5:1) |
+| on-accent / accent | 7.70:1 | 8.35:1 | Pass (4.5:1) |
+| on-accent / accent-hover | 9.96:1 | 10.19:1 | Pass (4.5:1) |
+| accent / surface-raised | 7.70:1 | 7.85:1 | Pass (4.5:1) |
+| accent / surface-sunken | 6.34:1 | 9.03:1 | Pass (4.5:1) |
+| warning / surface-raised | 6.06:1 | 8.14:1 | Pass (3:1) |
+| danger / surface-raised | 6.57:1 | 7.22:1 | Pass (4.5:1) |
+| line-strong / surface-raised | 4.13:1 | 5.04:1 | Pass (3:1) |
+| line-strong / surface-sunken | 3.40:1 | 5.80:1 | Pass (3:1) |
+
+Use ink/ink-muted on raised or sunken panels; accent/on-accent for safe actions;
+warning only for caution icons, danger only for real errors, and line-strong for
+control boundaries. Decorative line may separate sections but cannot be the only
+control boundary. The 3 px focus ring with 2 px offset lies against raised/sunken
+surfaces, including around an accent button. A locked card uses an icon plus
+words, not colour alone. Reduced motion removes sheet and status transitions;
+no new motion occurs near active Blind audio.
+
+Publication checklist, still open: add all variants above to the existing Final
+UI in both sizes/themes; inspect clipping, wrapping, 200% zoom, keyboard-open
+mobile layouts and focus visibility; compare against the actual v2 artifact;
+verify focus trapping/inert background and announcements in the browser with a
+screen reader. Existing test evidence is listed in the follow-up PR, not presented
+as validation of these unimplemented designs. Keep #117 open for publication and
+implementation-time reviews.
+
 ## Self-review (WCAG 2.2 AA and the 10 heuristics)
 
 Every board was checked before hand-off; what failed was fixed in the boards and the design system.
