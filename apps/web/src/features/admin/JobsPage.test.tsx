@@ -42,6 +42,17 @@ test('an admin sees the backlog of every lane and the failed jobs', async () => 
   expect(document.title).toBe('Jobs · ListenUp');
 });
 
+test('each table scrolls in its own named region that the keyboard can reach', async () => {
+  mockRoutes({ 'GET /admin/jobs': () => jsonResponse(200, { lanes: LANES, failed: [FAILED] }) });
+  renderWithProviders(<JobsPage />);
+
+  const backlog = await screen.findByRole('region', { name: 'Backlog table' });
+  const failed = screen.getByRole('region', { name: 'Failed jobs table' });
+  for (const region of [backlog, failed]) expect(region).toHaveAttribute('tabindex', '0');
+  expect(within(backlog).getByRole('table')).toBeInTheDocument();
+  expect(within(failed).getByRole('table')).toBeInTheDocument();
+});
+
 test('retrying a job queues it again, says so and reloads the list', async () => {
   let failed = [FAILED];
   const { calls } = mockRoutes({
