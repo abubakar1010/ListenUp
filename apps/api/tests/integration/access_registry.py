@@ -256,6 +256,11 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         params=lambda w: {"session_id": w.a.sessions["transcript"]},
         body=lambda w: {"id": str(uuid.uuid4()), "word_from": 2, "word_to": 2},
     ),
+    ("POST", "/api/v1/sessions/{session_id}/transcript/complete"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["transcript"]},
+        owner_status=204,
+    ),
     # B holds A's session and mark ids and still changes nothing.
     ("PATCH", "/api/v1/sessions/{session_id}/marks/{mark_id}"): Owned(
         "session_not_found",

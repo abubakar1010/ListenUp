@@ -283,7 +283,7 @@ test('a_refused_mark_is_taken_back_with_the_reason', async () => {
   fireEvent.click(within(panel()).getByRole('button', { name: 'Mark' }));
   await afterDebounce();
   expect(word('Hello')).not.toHaveAccessibleDescription('Marked');
-  expect(within(panel()).getByRole('alert')).toHaveTextContent(/Not saved\./);
+  expect(within(panel()).getByRole('status')).toHaveTextContent(/Not saved\./);
 });
 
 test('the_marks_load_error_offers_a_retry', async () => {
@@ -386,7 +386,7 @@ test('a_refusal_is_announced_to_a_screen_reader', async () => {
   fireEvent.click(word('Hello'));
   fireEvent.click(within(panel()).getByRole('button', { name: 'Mark' }));
   await afterDebounce();
-  expect(within(panel()).getByRole('alert')).toHaveTextContent(
+  expect(within(panel()).getByRole('status')).toHaveTextContent(
     'Not saved. Mark a word or a short phrase.',
   );
 });
@@ -501,4 +501,142 @@ test('the_panel_follows_the_page_while_words_are_chosen_and_scrolls_away_while_a
   expect(panel()).toHaveAttribute('data-sticky', 'false');
   fireEvent.keyDown(word('Hello'), { key: 'Escape' });
   expect(panel()).toHaveAttribute('data-sticky', 'true');
+});
+
+test('mark_list_is_in_audio_order_and_selecting_a_mark_seeks_and_highlights_its_words', async () => {
+  renderMarking({}, [
+    serverMark({ id: 'late', word_from: 2, word_to: 2, at_ms: 140125 }),
+    serverMark({ id: 'early', word_from: 0, word_to: 1 }),
+  ]);
+  await ready();
+  expect(screen.getByText('2 marks')).toBeInTheDocument();
+  const list = screen.getByRole('list', { name: 'Your marks' });
+  const rows = within(list).getAllByRole('listitem');
+  expect(rows[0]).toHaveTextContent('Hello world.');
+  expect(rows[1]).toHaveTextContent('Again.');
+  fireEvent.click(within(rows[1]!).getByRole('button', { name: /Play mark/ }));
+  expect(document.querySelector('audio')!.currentTime).toBe(140.125);
+  expect(word('Again.')).toHaveClass('outline-mark-strong');
+  expect(within(panel()).getByText('“Again.”')).toBeInTheDocument();
+});
+
+test('mark_count_and_empty_list_update_before_the_server_saves_additions_and_removals', async () => {
+  const { calls } = renderMarking();
+  const hello = await ready();
+  expect(screen.getByText('0 marks')).toBeInTheDocument();
+  expect(
+    screen.getByText('No marks yet. Choose a word to mark a sound you missed.'),
+  ).toBeInTheDocument();
+  fireEvent.keyDown(hello, { key: 'm' });
+  expect(screen.getByText('1 mark')).toBeInTheDocument();
+  expect(screen.getByRole('list', { name: 'Your marks' })).toHaveTextContent('Hello');
+  fireEvent.click(within(panel()).getByRole('button', { name: 'Remove mark' }));
+  expect(screen.getByText('0 marks')).toBeInTheDocument();
+  expect(screen.queryByRole('list', { name: 'Your marks' })).not.toBeInTheDocument();
+  expect(sent(calls, 'POST')).toEqual([]);
+});
+
+test('list_keyboard_edit_delete_and_undo_preserve_the_mark_and_note', async () => {
+  renderMarking({}, [serverMark({ id: 'early', word_to: 1, note: 'linking' })]);
+  await ready();
+  const row = within(screen.getByRole('list', { name: 'Your marks' })).getByRole('button', {
+    name: /Play mark/,
+  });
+  row.focus();
+  fireEvent.keyDown(row, { key: 'e' });
+  expect(screen.getByRole('textbox', { name: 'Note (optional)' })).toHaveFocus();
+  expect(screen.getByRole('textbox', { name: 'Note (optional)' })).toHaveValue('linking');
+  row.focus();
+  fireEvent.keyDown(row, { key: 'Delete' });
+  expect(screen.getByText('0 marks')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+  expect(screen.getByText('1 mark')).toBeInTheDocument();
+  expect(
+    within(screen.getByRole('list', { name: 'Your marks' })).getByText('linking'),
+  ).toBeInTheDocument();
+  await afterDebounce();
+  expect(screen.getByText('1 mark')).toBeInTheDocument();
+});
+
+test('finish_waits_for_saved_marks_including_pending_removals', async () => {
+  renderMarking({ [`DELETE ${MARKS}/early`]: new Response(null, { status: 204 }) }, [
+    serverMark({ id: 'early' }),
+  ]);
+  const hello = await ready();
+  const finish = screen.getByRole('button', { name: 'Finish Transcript' });
+  expect(finish).not.toHaveAttribute('aria-disabled', 'true');
+  fireEvent.keyDown(hello, { key: 'm' });
+  fireEvent.click(within(panel()).getByRole('button', { name: 'Remove mark' }));
+  expect(finish).toHaveAttribute('aria-disabled', 'true');
+  expect(screen.getByText('Wait for your marks to save before finishing.')).toBeInTheDocument();
+  await afterDebounce();
+  expect(finish).not.toHaveAttribute('aria-disabled', 'true');
+});
+
+test('a_refused_removal_restores_the_count_and_does_not_trap_Transcript_completion', async () => {
+  renderMarking({ [`DELETE ${MARKS}/early`]: problem(403, 'forbidden', 'Removal refused.') }, [
+    serverMark({ id: 'early' }),
+  ]);
+  await ready();
+  fireEvent.click(
+    within(screen.getByRole('list', { name: 'Your marks' })).getByRole('button', {
+      name: 'Remove mark Hello',
+    }),
+  );
+  expect(screen.getByText('0 marks')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Finish Transcript' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await afterDebounce();
+  expect(screen.getByText('1 mark')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Finish Transcript' })).not.toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+});
+
+test('finish_waiting_for_marks_stays_focusable_and_explains_why_without_completing', async () => {
+  const { calls } = renderMarking();
+  const hello = await ready();
+  fireEvent.keyDown(hello, { key: 'm' });
+  const finish = screen.getByRole('button', { name: 'Finish Transcript' });
+  expect(finish).not.toBeDisabled();
+  expect(finish).toHaveAttribute('aria-disabled', 'true');
+  expect(finish).toHaveAccessibleDescription('Wait for your marks to save before finishing.');
+  finish.focus();
+  expect(finish).toHaveFocus();
+  fireEvent.click(finish);
+  expect(screen.getByText('Wait for your marks to save before finishing.')).toHaveFocus();
+  expect(calls.filter((call) => call.path.endsWith('/transcript/complete'))).toEqual([]);
+  await afterDebounce();
+  expect(finish).not.toHaveAttribute('aria-disabled', 'true');
+});
+
+test('undo_keeps_the_saved_count_and_note_when_a_create_would_be_refused', async () => {
+  const mark = serverMark({ id: 'kept', note: 'linking' });
+  const { calls, server } = renderMarking(
+    {
+      [`POST ${MARKS}`]: problem(403, 'forbidden', 'Saving refused.'),
+    },
+    [mark],
+  );
+  await ready();
+  fireEvent.click(
+    within(screen.getByRole('list', { name: 'Your marks' })).getByRole('button', {
+      name: 'Remove mark Hello',
+    }),
+  );
+  expect(screen.getByText('0 marks')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+  expect(screen.getByText('1 mark')).toBeInTheDocument();
+  await afterDebounce();
+  expect(screen.getByText('1 mark')).toBeInTheDocument();
+  expect(
+    within(screen.getByRole('list', { name: 'Your marks' })).getByText('linking'),
+  ).toBeInTheDocument();
+  expect(server.marks.get(mark.id)).toEqual(mark);
+  expect(sent(calls, 'POST')).toEqual([]);
+  expect(sent(calls, 'DELETE')).toEqual([]);
 });

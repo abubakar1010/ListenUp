@@ -46,6 +46,12 @@ const AUDIO = wav();
 test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   const marks: Record<string, unknown>[] = [];
+  let session = SESSION;
+  let completionRequests = 0;
+  let releaseMarkSave!: () => void;
+  const markSaveGate = new Promise<void>((resolve) => {
+    releaseMarkSave = resolve;
+  });
   await page.route('**/api/v1/**', async (route) => {
     const req = route.request();
     const path = new URL(req.url()).pathname.replace('/api/v1', '');
@@ -60,7 +66,22 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
           consents_required: [],
         },
       });
-    if (path === '/sessions/s-57') return route.fulfill({ json: SESSION });
+    if (path === '/sessions/s-57') return route.fulfill({ json: session });
+    if (path === '/sessions/s-57/transcript/complete' && req.method() === 'POST') {
+      completionRequests += 1;
+      expect(req.headers()['idempotency-key']).toBe('transcript-s-57');
+      session = {
+        ...SESSION,
+        version: 2,
+        open_step: 'card',
+        open_position: 3,
+        steps: SESSION.steps.map((step) => ({
+          ...step,
+          status: step.step === 'transcript' ? 'done' : step.step === 'card' ? 'open' : step.status,
+        })),
+      };
+      return route.fulfill({ status: 204 });
+    }
     if (path === '/sessions/s-57/dictation/attempt')
       return route.fulfill({ status: 404, json: { code: 'attempt_not_found' } });
     if (path === '/sessions/s-57/transcript')
@@ -87,6 +108,7 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
       });
     // A server that keeps the marks it is sent (#58).
     if (path === '/sessions/s-57/marks' && req.method() === 'POST') {
+      await markSaveGate;
       const body = req.postDataJSON() as { id: string; word_from: number; word_to: number };
       const mark = {
         ...body,
@@ -97,14 +119,21 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
         status: 'confirmed',
         created_at: '2026-10-19T00:00:00Z',
       };
-      marks.push(mark);
-      return route.fulfill({ status: 201, json: mark });
+      const existing = marks.find((item) => item['id'] === body.id);
+      if (!existing) marks.push(mark);
+      return route.fulfill({ status: existing ? 200 : 201, json: existing ?? mark });
     }
     if (req.method() === 'PATCH' && /^\/sessions\/s-57\/marks\/[^/]+$/.test(path)) {
       const mark = marks.find((m) => path.endsWith(`/${String(m['id'])}`));
       if (!mark) return route.fulfill({ status: 404, json: { code: 'mark_not_found' } });
       mark['note'] = (req.postDataJSON() as { note: string | null }).note;
       return route.fulfill({ json: mark });
+    }
+    if (req.method() === 'DELETE' && /^\/sessions\/s-57\/marks\/[^/]+$/.test(path)) {
+      const index = marks.findIndex((m) => path.endsWith(`/${String(m['id'])}`));
+      if (index < 0) return route.fulfill({ status: 404, json: { code: 'mark_not_found' } });
+      marks.splice(index, 1);
+      return route.fulfill({ status: 204 });
     }
     if (path === '/sessions/s-57/marks') return route.fulfill({ json: { marks } });
     if (path === '/media/m-57') {
@@ -173,6 +202,19 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await expect(second).toHaveAccessibleDescription('Marked');
   const panel = page.getByRole('region', { name: 'Mark words' });
   await expect(panel).toContainText('“Hello. Again.”');
+  // UX-10: pending saves keep Finish in the native Tab order and explain the block.
+  const waitingFinish = page.getByRole('button', { name: 'Finish Transcript', exact: true });
+  await second.focus();
+  await page.keyboard.press('Tab');
+  await expect(waitingFinish).toBeFocused();
+  await expect(waitingFinish).toHaveAttribute('aria-disabled', 'true');
+  await expect(waitingFinish).toHaveAccessibleDescription(
+    'Wait for your marks to save before finishing.',
+  );
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('Wait for your marks to save before finishing.')).toBeFocused();
+  expect(completionRequests).toBe(0);
+  releaseMarkSave();
   await expect(panel).toContainText('Marks saved', { timeout: 5000 });
   expect(marks).toMatchObject([{ word_from: 0, word_to: 1 }]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -202,4 +244,37 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Jump to Again.' })).toHaveAccessibleDescription(
     'Marked',
   );
+  // #60 / AT-4: activate the list's native button by keyboard against real media.
+  await expect(page.getByText('1 mark', { exact: true })).toBeVisible();
+  const list = page.getByRole('list', { name: 'Your marks' });
+  const row = list.getByRole('button', { name: /Play mark/ });
+  await page.getByRole('slider', { name: 'Seek' }).fill('20000');
+  await row.focus();
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(() => page.locator('audio').evaluate((el: HTMLAudioElement) => el.currentTime))
+    .toBeLessThan(2);
+  await expect(first).toHaveClass(/outline-mark-strong/);
+  await expect(second).toHaveClass(/outline-mark-strong/);
+  await page.keyboard.press('e');
+  await expect(page.getByRole('textbox', { name: 'Note (optional)' })).toBeFocused();
+  await page.getByRole('textbox', { name: 'Note (optional)' }).fill('x'.repeat(500));
+  await row.focus(); // blur saves the long note
+  await expect(list).toContainText('x'.repeat(500));
+  await page.keyboard.press('Delete');
+  await expect(page.getByText('0 marks', { exact: true })).toBeVisible();
+  await expect(first).toBeFocused();
+  const undo = page.getByRole('button', { name: 'Undo', exact: true });
+  await undo.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('1 mark', { exact: true })).toBeVisible();
+  await expect(list).toContainText('x'.repeat(500));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const finish = page.getByRole('button', { name: 'Finish Transcript', exact: true });
+  await expect(finish).toBeEnabled({ timeout: 5000 });
+  await finish.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: 'Card: Transcript practice' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Skip Card', exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
