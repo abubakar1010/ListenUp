@@ -55,6 +55,13 @@ function fakeServer(initial: SavedMark[] = []) {
     remove: vi.fn(async (id: string) => {
       if (!marks.delete(id)) throw refusal(404, 'mark_not_found');
     }),
+    confirm: vi.fn(async (id: string) => {
+      const mark = marks.get(id);
+      if (!mark) throw refusal(404, 'mark_not_found');
+      const changed = { ...mark, status: 'confirmed' as const };
+      marks.set(id, changed);
+      return changed;
+    }),
     list: vi.fn(async () => [...marks.values()]),
   } satisfies MarkTransport;
   return { marks, transport };
@@ -432,7 +439,7 @@ test('a_signed_out_learner_keeps_every_change_on_the_device_and_nothing_is_retri
   await vi.advanceTimersByTimeAsync(2000);
   expect(sync.getSnapshot().marks).toMatchObject([{ id: 'm1', note: 'weak form', saved: false }]);
   expect(sync.getSnapshot().status).toMatchObject({ kind: 'failed' });
-  expect(JSON.parse(storage.items.get(KEY)!)).toMatchObject({ ops: [{ op: 'note' }] });
+  expect(JSON.parse(storage.items.get(KEY)!)).toMatchObject({ ops: [{ op: 'update' }] });
   await vi.advanceTimersByTimeAsync(60_000);
   expect(transport.setNote).toHaveBeenCalledTimes(1);
   // The next change is a fresh attempt, and the kept note goes with it.
@@ -678,4 +685,126 @@ test('undo_after_a_lost_delete_response_recreates_the_persisted_mark_and_note', 
   await vi.advanceTimersByTimeAsync(0);
   expect(server.marks.get(mark.id)).toEqual(mark);
   expect(sync.getSnapshot().marks).toMatchObject([{ id: mark.id, note: 'linking', saved: true }]);
+});
+
+// -- Dictation marks: confirm or remove (#59, FR-TR-3) ------------------------------------
+
+function suggested(id: string, word_from: number): SavedMark {
+  return { ...saved(id, word_from), source: 'dictation', status: 'suggested' };
+}
+
+test('dictation_marks_keep_their_source_and_status_on_screen', () => {
+  const { transport } = fakeServer();
+  const sync = make(transport, memoryStorage(), [suggested('d1', 1)]);
+  sync.takeSaved([{ ...suggested('d2', 3) }]);
+  sync.add({ id: 'm1', word_from: 5, word_to: 5, at_ms: 5000, note: null });
+  expect(
+    sync.getSnapshot().marks.map(({ id, source, status }) => ({ id, source, status })),
+  ).toEqual([
+    { id: 'd1', source: 'dictation', status: 'suggested' },
+    { id: 'd2', source: 'dictation', status: 'suggested' },
+    { id: 'm1', source: 'manual', status: 'confirmed' },
+  ]);
+});
+
+test('confirming_a_dictation_mark_shows_at_once_and_is_saved_within_a_second', async () => {
+  const { transport, marks } = fakeServer([suggested('d1', 1)]);
+  const storage = memoryStorage();
+  const sync = make(transport, storage, [suggested('d1', 1)]);
+  sync.confirm('d1');
+  expect(sync.getSnapshot().marks[0]).toMatchObject({ status: 'confirmed', saved: false });
+  expect(JSON.parse(storage.items.get(KEY)!)).toMatchObject({
+    ops: [{ op: 'update', mark: { id: 'd1', status: 'confirmed' } }],
+  });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(transport.confirm).toHaveBeenCalledWith('d1');
+  expect(transport.setNote).not.toHaveBeenCalled();
+  expect(marks.get('d1')!.status).toBe('confirmed');
+  expect(sync.getSnapshot().marks[0]).toMatchObject({ status: 'confirmed', saved: true });
+  expect(storage.items.has(KEY)).toBe(false);
+});
+
+test('removing_a_mark_is_saved_within_a_second', async () => {
+  const { transport, marks } = fakeServer([suggested('d1', 1)]);
+  const sync = make(transport, memoryStorage(), [suggested('d1', 1)]);
+  sync.remove('d1');
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(transport.remove).toHaveBeenCalledWith('d1');
+  expect(marks.has('d1')).toBe(false);
+  expect(sync.getSnapshot().status.kind).toBe('saved');
+});
+
+test('confirming_a_mark_already_confirmed_sends_nothing', async () => {
+  const { transport } = fakeServer([saved('m1', 1)]);
+  const sync = make(transport, memoryStorage(), [saved('m1', 1)]);
+  sync.confirm('m1');
+  sync.confirm('unknown');
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(transport.confirm).not.toHaveBeenCalled();
+  expect(sync.getSnapshot().hasPendingChanges).toBe(false);
+});
+
+test('an_unsent_confirmation_survives_a_reload_and_is_sent_then', async () => {
+  const { transport, marks } = fakeServer([suggested('d1', 1)]);
+  const storage = memoryStorage();
+  online = false;
+  make(transport, storage, [suggested('d1', 1)]).confirm('d1');
+  closeTab();
+  online = true;
+  const again = make(transport, storage, [suggested('d1', 1)]);
+  expect(again.getSnapshot()).toMatchObject({
+    restored: true,
+    marks: [{ id: 'd1', status: 'confirmed', saved: false }],
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(transport.confirm).toHaveBeenCalledWith('d1');
+  expect(marks.get('d1')!.status).toBe('confirmed');
+});
+
+test('a_confirmation_and_a_note_on_one_mark_both_reach_the_server', async () => {
+  const { transport, marks } = fakeServer([suggested('d1', 1)]);
+  const sync = make(transport, memoryStorage(), [suggested('d1', 1)]);
+  sync.setNote('d1', 'linking');
+  sync.confirm('d1');
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(marks.get('d1')).toMatchObject({ note: 'linking', status: 'confirmed' });
+  expect(sync.getSnapshot().marks[0]).toMatchObject({
+    note: 'linking',
+    status: 'confirmed',
+    saved: true,
+  });
+});
+
+test('a_refused_confirmation_shows_the_mark_as_the_server_holds_it', async () => {
+  const { transport } = fakeServer([suggested('d1', 1)]);
+  transport.confirm.mockRejectedValueOnce(refusal(409, 'step_locked'));
+  const sync = make(transport, memoryStorage(), [suggested('d1', 1)]);
+  sync.confirm('d1');
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(sync.getSnapshot().marks[0]).toMatchObject({ status: 'suggested', saved: true });
+  expect(sync.getSnapshot().status.kind).toBe('failed');
+});
+
+test('a_mark_removed_elsewhere_drops_its_confirmation', async () => {
+  const { transport, marks } = fakeServer([suggested('d1', 1)]);
+  const sync = make(transport, memoryStorage(), [suggested('d1', 1)]);
+  marks.delete('d1');
+  sync.confirm('d1');
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(ids(sync)).toEqual([]);
+  expect(sync.getSnapshot().status.kind).toBe('saved');
+});
+
+test('an_unsent_note_on_a_dictation_mark_survives_a_reload_and_leaves_it_to_confirm', async () => {
+  const { transport, marks } = fakeServer([suggested('d1', 1)]);
+  const storage = memoryStorage();
+  online = false;
+  make(transport, storage, [suggested('d1', 1)]).setNote('d1', 'weak form');
+  closeTab();
+  online = true;
+  const again = make(transport, storage, [suggested('d1', 1)]);
+  expect(again.getSnapshot().marks[0]).toMatchObject({ note: 'weak form', status: 'suggested' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(transport.confirm).not.toHaveBeenCalled();
+  expect(marks.get('d1')).toMatchObject({ note: 'weak form', status: 'suggested' });
 });

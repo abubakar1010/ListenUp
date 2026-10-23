@@ -3,13 +3,15 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   MarkSync,
   type MarkSyncOptions,
+  type MarkDraft,
   type MarkSyncSnapshot,
   type NewLocalMark,
 } from './markSync';
 
 export interface MarkSyncHandle extends MarkSyncSnapshot {
-  add: (mark: NewLocalMark) => void;
+  add: (mark: MarkDraft) => void;
   setNote: (id: string, note: string | null) => void;
+  confirm: (id: string) => void;
   remove: (id: string) => void;
   takeSaved: (marks: NewLocalMark[]) => void;
 }
@@ -29,6 +31,7 @@ export function useMarkSync(options: MarkSyncOptions): MarkSyncHandle {
     ...snapshot,
     add: (mark) => sync.add(mark),
     setNote: (id, note) => sync.setNote(id, note),
+    confirm: (id) => sync.confirm(id),
     remove: (id) => sync.remove(id),
     takeSaved: (marks) => sync.takeSaved(marks),
   };

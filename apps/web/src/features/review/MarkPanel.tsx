@@ -23,6 +23,7 @@ export function MarkPanel({
   onSelect,
   onMark,
   onNote,
+  onConfirm,
   onRemove,
   onNoteFocused,
 }: {
@@ -39,6 +40,7 @@ export function MarkPanel({
   onSelect: (selection: Selection) => void;
   onMark: () => void;
   onNote: (id: string, note: string | null) => void;
+  onConfirm: (id: string) => void;
   onRemove: (id: string) => void;
   onNoteFocused: () => void;
 }) {
@@ -112,6 +114,7 @@ export function MarkPanel({
               focus={focusNote}
               onFocused={onNoteFocused}
               onSave={(note) => onNote(mark.id, note)}
+              onConfirm={() => onConfirm(mark.id)}
               onRemove={() => onRemove(mark.id)}
             />
           )}
@@ -132,12 +135,14 @@ function NoteEditor({
   focus,
   onFocused,
   onSave,
+  onConfirm,
   onRemove,
 }: {
   mark: LocalMark;
   focus: boolean;
   onFocused: () => void;
   onSave: (note: string | null) => void;
+  onConfirm: () => void;
   onRemove: () => void;
 }) {
   const [draft, setDraft] = useState(mark.note ?? '');
@@ -151,6 +156,11 @@ function NoteEditor({
   const id = `mark-note-${mark.id}`;
   return (
     <div className="flex flex-col gap-2">
+      {mark.source === 'dictation' && (
+        <p className="text-body-s font-bold">
+          {mark.status === 'suggested' ? 'From Dictation, not confirmed yet.' : 'From Dictation.'}
+        </p>
+      )}
       <label htmlFor={id} className="font-bold">
         Note (optional)
       </label>
@@ -165,6 +175,18 @@ function NoteEditor({
         className="rounded-sm border border-line p-2"
       />
       <div className="flex flex-wrap gap-2">
+        {mark.status === 'suggested' && (
+          <button
+            type="button"
+            className={buttonClass('primary')}
+            onClick={() => {
+              onConfirm();
+              field.current?.focus(); // the button goes once the mark is confirmed
+            }}
+          >
+            Confirm mark
+          </button>
+        )}
         <button type="button" className={buttonClass('secondary')} onClick={save}>
           Save note
         </button>

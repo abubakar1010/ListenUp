@@ -67,6 +67,11 @@ export function markTransport(sessionId: string): MarkTransport {
     create: (mark) => api<SavedMark>(path, { method: 'POST', body: mark }),
     setNote: (id, note) =>
       api<SavedMark>(`${path}/${encodeURIComponent(id)}`, { method: 'PATCH', body: { note } }),
+    confirm: (id) =>
+      api<SavedMark>(`${path}/${encodeURIComponent(id)}/status`, {
+        method: 'PUT',
+        body: { status: 'confirmed' },
+      }),
     remove: (id) => api<void>(`${path}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     list: async () => (await api<MarkList>(path)).marks,
   };
