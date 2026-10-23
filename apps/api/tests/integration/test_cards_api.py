@@ -151,3 +151,22 @@ def test_mark_from_another_session_cannot_be_used(client, card_session, clip, ap
     response = create(client, card_session, mark_id=mark["id"])
     assert response.status_code == 404 and response.json()["code"] == "mark_not_found"
     assert client.get("/api/v1/cards").json()["cards"] == []
+
+
+@pytest.mark.parametrize("action", ["create", "delete", "complete"])
+def test_card_mutations_require_csrf(client, card_session, action):
+    card = create(client, card_session).json()
+    path = f"/api/v1/sessions/{card_session[0]}/cards"
+    if action == "create":
+        response = client.post(
+            path,
+            json={"mark_id": card_session[1], "written_form": "a", "heard_form": "b"},
+            headers={"X-CSRF-Token": "wrong"},
+        )
+    elif action == "delete":
+        response = client.delete(f"/api/v1/cards/{card['id']}", headers={"X-CSRF-Token": "wrong"})
+    else:
+        response = client.post(path + "/complete", headers={"X-CSRF-Token": "wrong"})
+    assert response.status_code == 403 and response.json()["code"] == "csrf_failed"
+    assert len(client.get("/api/v1/cards").json()["cards"]) == 1
+    assert client.get(f"/api/v1/sessions/{card_session[0]}").json()["open_step"] == "card"
