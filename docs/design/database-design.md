@@ -634,18 +634,26 @@ CREATE SCHEMA ops;
 -- The conversion transaction counts a playable clip at most 900 seconds once;
 -- pending clips reserve 900 seconds each during admission checks.
 -- Export requests: 'export:user:<id>', at most 3 per UTC day (ADR 0030).
+-- Keys are '<name>:<ip|user|email>:<value>' (platform/rate_limit.py), at most 200 characters,
+-- so an email is stored as its SHA-256 hex. Current names: login, google, register, upload
+-- (ip and user), password_reset (ip and email), password_reset_confirm, login_fail,
+-- login_lock, intake, export.
+-- The table has no foreign key to identity.users: account deletion removes the learner's
+-- rows with rate_limit.forget_learner (key LIKE '%:user:<id>', identity/jobs.py, DR-1),
+-- so every per-learner key must end ':user:<id>'.
 CREATE UNLOGGED TABLE ops.rate_counters (
-  key          text NOT NULL,       -- 'login:ip:<ip>', 'login_fail:user:<id>', 'login_lock:user:<id>', 'intake:user:<id>'
+  key          text NOT NULL CHECK (char_length(key) <= 200),
   window_start timestamptz NOT NULL,
   count        int4 NOT NULL DEFAULT 0,
   PRIMARY KEY (key, window_start)
 );
+CREATE INDEX rate_counters_window_idx ON ops.rate_counters (window_start);
 
 CREATE TABLE ops.idempotency_keys (
   user_id      uuid NOT NULL REFERENCES identity.users ON DELETE CASCADE,
-  key          text NOT NULL CHECK (char_length(key) <= 100),
+  key          text NOT NULL CHECK (char_length(key) BETWEEN 1 AND 100),
   request_hash bytea NOT NULL,       -- same key with a different body is rejected
-  status_code  int2,
+  status_code  int2,                 -- NULL while the first request is still running
   response     jsonb,
   created_at   timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, key)
@@ -935,7 +943,7 @@ Analytics events cascade on account deletion and are included in the learner's e
 | Login sessions | Expired | `auth_sessions_expires_idx` |
 | One-time tokens | Used or expired for 7 days | `one_time_tokens` |
 | Idempotency keys | 24 hours | `idempotency_keys_age_idx` |
-| Rate counters | Windows older than 1 day | primary key range |
+| Rate counters | Windows older than 1 day | `rate_counters_window_idx` |
 | Export archives | Seven days after ready; delete object and mark request expired, retaining the row ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)) | `export.expire_archive`, queued transactionally when the archive becomes ready |
 | AI call log | 90 days | Drop the monthly partition |
 
