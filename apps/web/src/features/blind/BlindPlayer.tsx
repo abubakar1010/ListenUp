@@ -111,7 +111,7 @@ export function BlindPlayer({
               step={5}
               value={Math.round(volume * 100)}
               onChange={(event) => onVolume(Number(event.target.value) / 100)}
-              className="w-28 accent-accent"
+              className="h-11 w-28 cursor-pointer accent-accent md:h-6"
             />
           </label>
         )}

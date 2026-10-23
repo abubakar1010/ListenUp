@@ -329,8 +329,9 @@ test('a learner opens a ready clip from the library and plays it', async ({ page
     await expect(page).toHaveURL('/contents/content-1');
     await expect(page).toHaveTitle('Why cities plant street trees · ListenUp');
     await expect(page.getByRole('status')).toHaveText('Ready to play.');
-    const player = page.getByLabel('Play Why cities plant street trees');
-    await expect(player).toHaveAttribute('controls', '');
+    // Audio plays in the shared player (#198), with the hidden element behind it.
+    const player = page.locator('audio');
+    await expect(player).not.toHaveAttribute('controls', '');
 
     // The player follows the redirect to storage and reads the file's length.
     await expect
@@ -347,9 +348,23 @@ test('a learner opens a ready clip from the library and plays it', async ({ page
     expect(seeked).toBeCloseTo(2, 1);
     expect(storage.ranges.length).toBeGreaterThan(0);
 
-    // The native controls are reachable from the keyboard.
-    await player.focus();
-    await expect(player).toBeFocused();
+    // The controls are reachable from the keyboard, with the visible focus ring.
+    const play = page.getByRole('button', { name: 'Play', exact: true });
+    await page.getByRole('button', { name: 'Back 5 seconds' }).focus();
+    await page.keyboard.press('Tab');
+    await expect(play).toBeFocused();
+    const ring = await play.evaluate((el) => getComputedStyle(el).outlineStyle);
+    expect(ring).not.toBe('none');
+
+    // At 360 px the back link starts on the same edge as the title.
+    await page.setViewportSize({ width: 360, height: 740 });
+    const back = (await page
+      .getByRole('link', { name: 'Library' })
+      .last()
+      .locator('svg')
+      .boundingBox())!;
+    const title = (await page.getByRole('heading', { level: 1 }).boundingBox())!;
+    expect(Math.abs(back.x - title.x)).toBeLessThanOrEqual(2);
   } finally {
     await storage.close();
   }
