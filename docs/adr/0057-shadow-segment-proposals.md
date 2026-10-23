@@ -1,4 +1,4 @@
-# 0056: Persist Shadow proposals and enforce their span in PostgreSQL
+# 0057: Persist Shadow proposals and enforce their span in PostgreSQL
 
 Status: Accepted (story #77; D8 was approved by product).
 
@@ -19,7 +19,8 @@ Marks are read exclusively through `review.service.list_marks`.
 
 GET resumes the saved segment or persists a first system proposal. PUT replaces
 its bounds and records `chosen_by = learner` and the mark count at selection.
-Requests serialize on the learner's session row, then recheck the Shadow step,
+Requests use `practice.service.lock_session` to serialize on the learner's
+session row, then recheck the Shadow step,
 so concurrent first entry and adjustment cannot overwrite a learner selection.
 The row lock also orders selection against session transitions.
 
@@ -45,5 +46,5 @@ The proposal may include fewer than 90 seconds when the passage is shorter, and
 has millisecond boundaries when necessary to include a mark at a half-open edge.
 Mark counts describe the saved selection, rather than changing while the learner
 drags a handle. The future round implementation owns setting the lock, not this
-segment screen. Database Design §5/§8.2 owners must synchronize the exact DDL,
-grants, composite ownership and strengthened lock; D8 prose is already in main.
+segment screen. Database Design §5/§8.2 now mirrors the finite-range DDL, grants/RLS,
+composite ownership and strengthened lock; the existing D8 prose is unchanged.

@@ -48,7 +48,7 @@ Commands below run in `apps/api` unless prefixed with `apps/web`.
 
 ## Review and document ownership
 
-ADR 0056 records selection, persistence and database locking. The owners should
+ADR 0057 records selection, persistence and database locking. The owners should
 verify/synchronize D8 at these existing source lines (they already contain D8
 wording in current main): `docs/design/srs.md:63` (C3), `:229` (FR-SH-1), `:439`
 (AT-6); `docs/design/database-design.md:438` (table), `:470` (round relationship),
@@ -92,3 +92,36 @@ Final check outcomes and changed-line coverage are recorded in the PR.
   Dictation behavior and Shadow/access boundaries. CI reruns the full final tree.
   Changed backend coverage: **100% (122/122 executable lines)**; completeness
   check passes. No changed Shadow executable line is uncovered.
+
+## Review remediation
+
+- Synced current main `58ac0c3`; it adds no migration. Renumbered the Shadow
+  decision to ADR 0057 because main now owns ADR 0056 for the B2 caption path.
+- Moved session locking into `practice.repository` behind
+  `practice.service.lock_session`. Shadow no longer reads practice tables.
+  This preserves behavior, so the concurrency examples are characterization,
+  not fabricated test-first Red evidence.
+- Added `test_concurrent_segment_operations_serialize`, using separate restricted
+  API-role transactions and observing PostgreSQL lock waits. Four cases cover
+  proposal/proposal, choice/proposal, proposal/choice and skip/choice. Assertions
+  check persisted bounds, one row, learner choice preservation and the existing
+  `session_closed` refusal after Shadow is skipped.
+- Characterization initially passed three cases; the fourth used the wrong
+  expected code (`step_locked` rather than `session_closed`). Correcting that
+  expectation is test setup correction, not behavioral Red. After the boundary
+  refactor, the focused Shadow/session/architecture command passed **57 tests**.
+- Mutation validation in an isolated archived copy: removing the original session
+  lock made all **four** concurrency cases fail (duplicate insertion or bypassing
+  the session transition). The production checkout was not mutated.
+- Populated both learners' Shadow segments in
+  `test_export_holds_every_learner_table_and_only_the_learners_data`; its focused
+  run passed and verifies actual bounds, metadata and exclusion of the other
+  learner's segment. This characterizes existing export behavior.
+- Synchronized Database Design §5/§8.2 with the accepted migration: finite ranges,
+  containment, composite ownership, explicit API grants/RLS and the immutable
+  lock, including refusal to clear it. SRS C3/FR-SH-1/AT-6 and UX D8 already agree.
+  Documentation renumbering/synchronization changes no behavior and needs no Red.
+- Ruff format/check, mypy (187 files) and all six import contracts passed.
+  Full final-tree required-service coverage and CI are in progress; their final
+  outcomes will be recorded before handoff. Web runtime code is unchanged by this
+  remediation; the review's 52 component and five browser checks remain applicable.

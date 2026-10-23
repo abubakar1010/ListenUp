@@ -231,7 +231,7 @@ Read the section for the area you are changing before you change it. The rules e
   and `/dev/mqueue` must stay read-only. Media telemetry uses queued OTLP export
   through DB to the default pool; never add a collector route to media-data.
 
-## Shadow segments (ADR 0056)
+## Shadow segments (ADR 0057)
 
 - `shadow/domain/segment.py` owns proposal and span validation. Marks are read only
   through `review.service.list_marks`; mode endpoints require `Step.SHADOW`.
