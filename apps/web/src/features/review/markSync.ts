@@ -464,9 +464,10 @@ export class MarkSync {
       // A refused in-flight DELETE left the saved mark intact. Undo may have
       // replaced its entry: reuse that known snapshot instead of recreating it.
       current.server = entry.server;
-      if (current.op === 'create')
+      if (current.op === 'create') {
+        current.mark = { ...entry.server, note: current.mark.note };
         current.op = differs(current.mark, entry.server) ? 'update' : 'none';
-      else this.takeBack(current);
+      } else this.takeBack(current);
       return;
     }
     if (entry.op === 'create') {

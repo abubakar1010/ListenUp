@@ -808,3 +808,32 @@ test('an_unsent_note_on_a_dictation_mark_survives_a_reload_and_leaves_it_to_conf
   expect(transport.confirm).not.toHaveBeenCalled();
   expect(marks.get('d1')).toMatchObject({ note: 'weak form', status: 'suggested' });
 });
+
+test('undo_of_a_refused_inflight_dictation_deletion_restores_the_saved_source_and_status', async () => {
+  const initial = {
+    ...saved('d1', 0, 'linking'),
+    source: 'dictation',
+    status: 'suggested',
+  } as const;
+  const { transport } = fakeServer([initial]);
+  let reject!: (error: unknown) => void;
+  transport.remove.mockImplementationOnce(
+    () =>
+      new Promise((_, fail) => {
+        reject = fail;
+      }),
+  );
+  const sync = make(transport, memoryStorage(), [initial]);
+  const mark = sync.getSnapshot().marks[0]!;
+  sync.remove(mark.id);
+  sync.flush();
+  sync.add(mark);
+  reject(refusal(403, 'forbidden'));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sync.getSnapshot().marks[0]).toMatchObject({
+    source: 'dictation',
+    status: 'suggested',
+    note: 'linking',
+    saved: true,
+  });
+});
