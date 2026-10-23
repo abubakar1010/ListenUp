@@ -8,7 +8,7 @@ The B2 results report how far each aligner's word boundaries are from a human's.
 | `other-m-1688` | `ls-other-1688-142285` | LibriSpeech test-other, male reader | 65 to 125 s |
 | `accented-es-20090218` | `vp-accented-20090218-0900-plenary-13-en` | VoxPopuli, Spanish-accented MEP | 65 to 125 s |
 
-**Status (2026-10-22): not labelled yet.** All three `words` tiers are empty, so the B2 gate fails (ADR 0055). `spike-compare` lists unlabelled windows and fails the gate until every window in `windows.json` is labelled.
+**Status (2026-10-22): not labelled yet.** All three `words` tiers are empty, so the B2 gate fails (ADR 0055). `spike-compare` lists incomplete windows and fails the gate until every window in `windows.json` is covered: words, plus `<pause>` intervals, with no unlabelled stretch over 3 s.
 
 `windows.json` defines the windows. Each `NAME.TextGrid` here is a template with an empty `words` tier and a `hint` tier. The hint holds the reference text of the utterances that overlap the window, as text only, with no times from any model, so the labels do not lean towards any of the systems they measure.
 
@@ -32,7 +32,7 @@ This writes `data/labels/NAME.wav` (60 s each) and leaves the templates here unt
 ## Label (about 30 to 40 minutes per window in Praat)
 
 1. Open `data/labels/NAME.wav` and `docs/spikes/b2-labels/NAME.TextGrid` in Praat, select both, and choose **View & Edit**.
-2. In the `words` tier, put a boundary at the start and the end of every word you hear completely inside the window, and type the word as heard into its interval. Leave silences and pauses empty. Skip a word cut off at either edge of the window.
+2. In the `words` tier, put a boundary at the start and the end of every word you hear completely inside the window, and type the word as heard into its interval. Leave short silences empty. Mark a pause longer than 3 s as an interval with the text `<pause>`; otherwise the window counts as incomplete. Skip a word cut off at either edge of the window.
 3. Place boundaries where the word's sound begins and ends. Use the spectrogram, not just the waveform: include a plosive's burst, and end a word where its voicing or friction stops. Where two words run together with no gap, share one boundary.
 4. Save the TextGrid (text file, long format) over the template.
 
@@ -49,6 +49,6 @@ The import writes `PASSAGE.labels.csv` here (word, start, end, in the passage fi
 Use newly generated model output from the corrected B2 harness (see the B2 report).
 Comparison matches ordered text blocks without using timestamps to choose matches.
 Review repeated or ambiguous excerpts, inspect `words_unmatched` and `coverage`, and
-require `meets_hand_label_gate: true`: all labelled words must match and their mean
+require `meets_hand_label_gate: true` and `incomplete windows: none`: all labelled words must match and their mean
 boundary error must be <= 50 ms. A missing passage, zero matches, or empty label set
 cannot pass. Do not accept a low matched-only mean when coverage is incomplete.

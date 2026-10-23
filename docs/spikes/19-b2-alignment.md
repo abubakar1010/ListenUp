@@ -83,7 +83,7 @@ Alignment of a 3-minute passage costs about 0.18 x 185 = 33 core-s. System Desig
 
 **No mean word-boundary error can be reported: none of the three windows has been labelled.** The committed TextGrids in [`b2-labels/`](b2-labels/README.md) are still the templates `spike-labelkit make` writes: each `words` tier is one empty interval over the whole 60 s, and only the `hint` tier (reference text) has content. No `*.labels.csv` file exists. Labelling needs a person listening in Praat (about 30 to 40 minutes per window, steps in the README); it cannot be produced from any model without measuring the systems against themselves.
 
-The corrected harness was run on the committed label set (container below, 2026-10-22, commit on this branch):
+The corrected harness was run on the committed label set on the managed cloud container, 2026-10-23, with no model output. The raw report is [`data/b2-v2/spike-19-b2-hand-labels.json`](data/b2-v2/spike-19-b2-hand-labels.json):
 
 ```sh
 cd spikes
@@ -91,16 +91,24 @@ uv run --no-sync spike-labelkit import ../docs/spikes/b2-labels/windows.json ../
 # clean-f-1221.TextGrid: no words labelled yet
 # other-m-1688.TextGrid: no words labelled yet
 # accented-es-20090218.TextGrid: no words labelled yet
-uv run --no-sync spike-compare <words> --labels ../docs/spikes/b2-labels --out <out>
+mkdir -p <empty>/words
+uv run --no-sync spike-compare <empty>/words --labels ../docs/spikes/b2-labels \
+  --name spike-19-b2-hand-labels --out ../docs/spikes/data/b2-v2
 ```
 
-| Comparison | Hand-labelled windows | Unlabelled windows | Words compared | Mean | Coverage | `meets_hand_label_gate` |
+| Comparison | Hand-labelled windows | Incomplete windows | Words compared | Mean | Coverage | `meets_hand_label_gate` |
 | --- | --- | --- | --- | --- | --- | --- |
-| English base, 30 s windows, int8 vs hand labels | 0 of 3 | `accented-es-20090218`, `clean-f-1221`, `other-m-1688` | 0 | none | 0.0 | **false** |
+| no model output vs hand labels | 0 of 3 | `accented-es-20090218`, `clean-f-1221`, `other-m-1688` | 0 | none | 0.0 | **false** |
 
-The model-output folder for this run was empty: with no labels the row is the same for any model output, so no new alignment run was spent on it. Model output must be regenerated with the corrected harness (Reproduce, below) when the labels exist; until then, every boundary figure in this report is historical agreement between systems, not accuracy.
+No alignment run was spent on this: with no labels, the gate fails whatever the model outputs. Model output must be regenerated with the corrected harness (Reproduce, below) once the labels exist. Until then, every boundary figure in this report is historical agreement between systems, not accuracy.
 
-**Harness fix in the same change.** The gate previously counted only the label CSVs present, so labelling one window of three could pass on a third of the sample. `spike-compare` now reads `windows.json` from the label folder, lists unlabelled windows in the report summary (`unlabelled windows`) and fails the gate while any remain (`test_unlabelled_windows_fail_the_gate_and_are_listed`).
+**Harness fixes in the same change.** The gate used to count only the label CSVs that existed, so labelling one window of three, or a few words of each window, could pass on part of the sample. `spike-compare` now:
+- refuses a hand-label run without `windows.json` beside the labels, or with two windows on one passage;
+- counts a window as labelled only when its words, plus any intervals marked `<pause>`, leave no unlabelled stretch over 3 s, and lists the rest as `incomplete windows`;
+- checks only the windows `--only` selects;
+- writes a failing `no model output` row when there is no model output.
+
+The tests are in `spikes/tests/test_boundary_comparison.py`.
 
 **Gate status: not met (no evidence).** Under ADR 0034's condition the caption path does not ship ([ADR 0055](../adr/0055-b2-caption-path-hand-label-result.md), accepted 2026-10-23). The windows are labelled by hand before YouTube intake's flag is turned on; until the gate passes, captioned videos are transcribed. The `MMS_FA` fallback is withdrawn (noncommercial licence, ADR 0037).
 
