@@ -58,3 +58,37 @@ API grants/RLS and immutable lock. Source line references are for this PR's base
 
 Fresh-session independent review and passing required CI remain owner merge gates.
 Final check outcomes and changed-line coverage are recorded in the PR.
+
+## Final verification
+
+- Synced main through `8dd1a67` (#55); no new migration was introduced, so the
+  revision remains based on `68_gist_grades`. OpenAPI export and client generation
+  after that sync produced no additional diff.
+- Post-sync focused backend checks: **230 passed** (Dictation marks/domain,
+  Shadow domain/API/database, cross-learner access).
+- Backend Ruff format/check, mypy (**187 files**) and all **6** import contracts
+  passed. Alembic upgrade/check and downgrade/upgrade passed; the post-sync drift
+  check again reported no new operations and one head, `77_shadow_segments`.
+- Current-main web suite: **516 passed in 51 files**. Coverage: **95.74% lines**,
+  **88.52% branches** overall; **93% changed executable lines** (40/43).
+  Coverage completeness resolves every runtime source file. The three uncovered
+  changed lines are the existing waveform's pointer dispatch and retry callbacks
+  for segment/content loading; keyboard bounds, persistence, refusal and races
+  have direct tests. Pointer behavior also runs in the existing picker browser suite.
+- Current-main Playwright suite: **42 passed**. Shadow tests additionally use a
+  generated WAV with range requests to check replay from the segment start and
+  stopping at the segment end. Short-passage checks distinguish segment handles
+  from the audio seek slider.
+- Web lint, Prettier, TypeScript, production build and size check passed; initial
+  JavaScript is **124.7 kB gzip**, below the **200 kB** budget.
+- `uv run pytest -m performance --no-cov -q`: **1 passed**, 1,995 deselected.
+- The earlier focused boundary/export combination had one export-expiry failure
+  (`test_early_expiry_keeps_a_future_job`); its isolated rerun passed. The full
+  backend run passed that check; no export expiry code changed.
+
+- Full required-service backend coverage command: **1,964 passed**, 1 deselected,
+  no skips, in 837.31 seconds. It started on the #60 baseline before the #55 sync;
+  the **230** post-sync focused tests independently covered the newly merged
+  Dictation behavior and Shadow/access boundaries. CI reruns the full final tree.
+  Changed backend coverage: **100% (122/122 executable lines)**; completeness
+  check passes. No changed Shadow executable line is uncovered.
