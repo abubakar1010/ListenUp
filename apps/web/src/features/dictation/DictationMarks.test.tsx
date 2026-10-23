@@ -215,3 +215,16 @@ test('a failed read of the marks shows the problem with a retry', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('Something broke.');
   expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
 });
+
+test('a run with a word already added alone adds only its other words, as add all does', async () => {
+  const { posts } = fakeMarks([{ id: 'm-1', word_from: 5, word_to: 5 }]);
+  renderMarks(A_RUN);
+
+  fireEvent.click(await addButton('to cool'));
+  await added('to');
+
+  expect(posts().map((call) => (call.body as { marks: Stored[] }).marks)).toEqual([
+    [{ id: expect.any(String), word_from: 4, word_to: 4 }],
+  ]);
+  expect(await added('to cool')).toBeVisible();
+});

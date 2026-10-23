@@ -1,5 +1,5 @@
 import type { DiffItem } from './api';
-import { candidateRuns, isAdded, rangesToAddAll } from './marks';
+import { candidateRuns, isAdded, isRunAdded, rangesToAddAll } from './marks';
 
 const word = (index: number, status: DiffItem['status'], text = `w${index}`): DiffItem => ({
   index,
@@ -82,4 +82,13 @@ describe('add all', () => {
       { word_from: 7, word_to: 8 },
     ]);
   });
+});
+
+test('a run counts as added as one mark or when every word is added alone', () => {
+  const [run] = candidateRuns([word(1, 'missing'), word(2, 'wrong')]);
+
+  expect(isRunAdded([mark(1, 2)], run)).toBe(true);
+  expect(isRunAdded([mark(1), mark(2)], run)).toBe(true);
+  expect(isRunAdded([mark(1)], run)).toBe(false);
+  expect(isRunAdded([], run)).toBe(false);
 });

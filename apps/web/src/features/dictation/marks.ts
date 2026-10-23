@@ -38,6 +38,14 @@ export function isAdded(marks: Range[], range: Range): boolean {
   return marks.some((mark) => sameRange(mark, range));
 }
 
+/** The run is added: as one mark, or every one of its words alone. */
+export function isRunAdded(marks: Range[], run: Run): boolean {
+  return (
+    isAdded(marks, run) ||
+    run.words.every((w) => isAdded(marks, { word_from: w.index!, word_to: w.index! }))
+  );
+}
+
 /**
  * "Add all": each run as one mark, unless it is added already, as a whole or word by
  * word. A run with some words added alone adds its other words alone, so no word gets a
@@ -46,7 +54,7 @@ export function isAdded(marks: Range[], range: Range): boolean {
 export function rangesToAddAll(runs: Run[], marks: Range[]): Range[] {
   const ranges: Range[] = [];
   for (const run of runs) {
-    if (isAdded(marks, run)) continue;
+    if (isRunAdded(marks, run)) continue;
     const single = run.words.map((w) => ({ word_from: w.index!, word_to: w.index! }));
     const alone = single.filter((range) => isAdded(marks, range));
     if (alone.length === 0) ranges.push({ word_from: run.word_from, word_to: run.word_to });

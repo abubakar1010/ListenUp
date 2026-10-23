@@ -4,7 +4,7 @@ import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import type { Range } from '../review/selection';
 import { type DiffItem, useAddDictationMarks, useDictationMarks } from './api';
-import { candidateRuns, isAdded, rangesToAddAll } from './marks';
+import { candidateRuns, isAdded, isRunAdded, rangesToAddAll, type Run } from './marks';
 
 const quoted = (text: string) => `“${text}”`;
 
@@ -34,6 +34,9 @@ export function DictationMarks({ attemptId, items }: { attemptId: string; items:
   const addRange = (range: Range, phrase: string) => {
     if (!isAdded(known, range)) submit([range], `Added ${quoted(phrase)} to your marks.`);
   };
+  // A run follows the add-all rule: words already added alone keep their own marks.
+  const addRun = (run: Run, phrase: string) =>
+    submit(rangesToAddAll([run], known), `Added ${quoted(phrase)} to your marks.`);
 
   return (
     <section aria-labelledby="dictation-marks" className="flex flex-col gap-3">
@@ -73,11 +76,11 @@ export function DictationMarks({ attemptId, items }: { attemptId: string; items:
               </span>
               <AddButton
                 phrase={phrase}
-                added={isAdded(known, run)}
+                added={isRunAdded(known, run)}
                 busy={add.isPending}
-                onAdd={() => addRange(run, phrase)}
+                onAdd={() => addRun(run, phrase)}
               >
-                {isAdded(known, run) ? 'Added' : 'Add'}
+                {isRunAdded(known, run) ? 'Added' : 'Add'}
               </AddButton>
               {run.words.length > 1 && (
                 <span className="flex flex-wrap items-center gap-2 text-body-s">
