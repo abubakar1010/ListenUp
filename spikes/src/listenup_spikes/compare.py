@@ -38,7 +38,14 @@ def load_source(folder: Path) -> dict[str, Words]:
     return out
 
 
+Window = tuple[str, float, float]  # passage, start_s, end_s in the passage file's time
+
+PAUSE = "<pause>"  # a labelled stretch with no speech; covers the window but is not a word
+MAX_GAP_S = 3.0  # longest unlabelled stretch a window may keep (edges, cut-off words)
+
+
 def load_labels(folder: Path) -> dict[str, Words]:
+    """Passage name to its labelled intervals, pause markers included."""
     out = {}
     for path in sorted(folder.glob("*.labels.csv")):
         with path.open() as f:
@@ -48,8 +55,46 @@ def load_labels(folder: Path) -> dict[str, Words]:
     return out
 
 
+def load_windows(folder: Path) -> dict[str, Window]:
+    """The windows.json beside the labels; a hand-label comparison cannot run without it."""
+    spec = folder / "windows.json"
+    if not spec.exists():
+        raise SystemExit(f"{spec} is missing: hand labels are checked against their windows")
+    windows: dict[str, Window] = {}
+    for name, w in json.loads(spec.read_text())["windows"].items():
+        if any(passage == w["passage"] for passage, _, _ in windows.values()):
+            raise SystemExit(f"two windows use passage {w['passage']}; labels are per passage")
+        start = float(w["start_s"])
+        windows[name] = (w["passage"], start, start + float(w["seconds"]))
+    return windows
+
+
+def incomplete_windows(windows: dict[str, Window], labels: dict[str, Words]) -> list[str]:
+    """Windows whose labels leave more than MAX_GAP_S unlabelled anywhere, or have no words.
+
+    A window counts as labelled only when its words (and marked pauses) cover it, so a
+    few labelled words cannot stand in for the whole window (ADR 0034, ADR 0055).
+    """
+    out = []
+    for name, (passage, start, end) in windows.items():
+        rows = sorted(labels.get(passage, []), key=lambda r: r[1])
+        edge, gap = start, 0.0
+        for _, s, e in rows:
+            gap = max(gap, s - edge)
+            edge = max(edge, e)
+        gap = max(gap, end - edge)
+        if not any(w != PAUSE for w, _, _ in rows) or gap > MAX_GAP_S:
+            out.append(name)
+    return sorted(out)
+
+
 def _row(
-    name: str, errors: list[float], words: int, *, hand_labels: bool = False
+    name: str,
+    errors: list[float],
+    words: int,
+    *,
+    hand_labels: bool = False,
+    complete: bool = True,
 ) -> dict[str, object]:
     s = spread(errors) if errors else None
     matched = len(errors) // 2
@@ -67,7 +112,7 @@ def _row(
         "within_100ms": round(sum(e <= 100 for e in errors) / (2 * words), 3) if words else 0.0,
     }
     if hand_labels:
-        row["meets_hand_label_gate"] = bool(s and matched == words and s.mean <= 50)
+        row["meets_hand_label_gate"] = bool(complete and s and matched == words and s.mean <= 50)
     return row
 
 
@@ -106,24 +151,44 @@ def main() -> None:
     report = Report(args.name, columns)
     report.summary["passages"] = args.only or "all"
 
-    labels = {
-        passage: words
-        for passage, words in (load_labels(args.labels) if args.labels else {}).items()
-        if not args.only or passage.startswith(args.only)
+    windows = {
+        name: w
+        for name, w in (load_windows(args.labels) if args.labels else {}).items()
+        if not args.only or w[0].startswith(args.only)
     }
-    report.summary["hand-labelled windows"] = len(labels)
+    rows_of = load_labels(args.labels) if args.labels else {}
+    passages = {passage for passage, _, _ in windows.values()}
+    labels = {
+        passage: [r for r in rows_of.get(passage, []) if r[0] != PAUSE] for passage in passages
+    }
+    # A window left unlabelled or partly labelled cannot be excluded from a pass (ADR 0034).
+    missing = incomplete_windows(windows, rows_of)
+    report.summary["hand-labelled windows"] = len(windows) - len(missing)
+    report.summary["incomplete windows"] = ", ".join(missing) or "none"
     report.summary["boundary_matching"] = "ordered text blocks; no timing cutoff; v2"
     report.summary["hand_label_gate"] = (
-        "all labelled words matched and mean boundary error <= 50 ms"
+        f"every window labelled (no unlabelled gap over {MAX_GAP_S:g} s), all labelled words"
+        " matched and mean boundary error <= 50 ms"
     )
+    if args.labels and not sources:
+        # No model output is a failed gate, never an empty report.
+        sources = {"no model output": {}}
     for name, words_of in sources.items():
         errors, compared = [], 0
         for passage, labelled in labels.items():
             errors += boundary_errors_ms(words_of.get(passage, []), labelled)
             compared += len(labelled)
         if args.labels:
-            report.add(**_row(f"{name} vs hand labels", errors, compared, hand_labels=True))
-    for a, b in combinations(names, 2):
+            report.add(
+                **_row(
+                    f"{name} vs hand labels",
+                    errors,
+                    compared,
+                    hand_labels=True,
+                    complete=not missing,
+                )
+            )
+    for a, b in combinations([n for n in names if n in sources], 2):
         errors, compared = [], 0
         for passage in sorted(sources[b]):
             errors += boundary_errors_ms(sources[a].get(passage, []), sources[b][passage])
