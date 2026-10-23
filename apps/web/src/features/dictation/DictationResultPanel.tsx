@@ -1,6 +1,8 @@
 import { ApiError } from '../../api/client';
+import { useState } from 'react';
 import { ErrorPanel } from '../../components/ErrorPanel';
-import { type OpenMarkList, useDictationResult } from './api';
+import { type DiffItem, type OpenMarkList, useDictationResult } from './api';
+import { CorrectionDialog } from './CorrectionDialog';
 import { DictationDiff } from './DictationDiff';
 import { DictationMarks } from './DictationMarks';
 
@@ -18,6 +20,7 @@ export function DictationResultPanel({
   markList?: OpenMarkList;
 }) {
   const result = useDictationResult(sessionId);
+  const [editing, setEditing] = useState<DiffItem | null>(null);
   if (result.isError) {
     if (result.error instanceof ApiError && result.error.code === 'attempt_not_found') return null;
     return <ErrorPanel error={result.error} onRetry={() => void result.refetch()} />;
@@ -34,8 +37,16 @@ export function DictationResultPanel({
       </h2>
       {view.result ? (
         <>
-          <DictationDiff result={view.result} />
+          <DictationDiff result={view.result} onCorrect={setEditing} />
           <DictationMarks attemptId={view.id} items={view.result.items} markList={markList} />
+          {editing && (
+            <CorrectionDialog
+              sessionId={sessionId}
+              attemptId={view.id}
+              item={editing}
+              onClose={() => setEditing(null)}
+            />
+          )}
         </>
       ) : view.scoring_status === 'scoring_unavailable' ? (
         <p role="status" className="text-ink-muted">

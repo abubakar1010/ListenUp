@@ -27,6 +27,7 @@ class PassageTranscript:
     # Preserve provenance for every contributing cache row, never invent a merged provider.
     provenance: list[dict[str, str]]
     edited_word_indices: list[int] = field(default_factory=list)
+    word_sources: list[tuple[uuid.UUID, int]] = field(default_factory=list)
 
 
 ReadyHook = Callable[[AsyncSession, uuid.UUID, uuid.UUID], Awaitable[None]]
@@ -98,12 +99,14 @@ async def reference_for_scoring(
 ) -> PassageTranscript:
     """The passage words for scoring a Dictation submission (FR-DI-5, FR-TX-5).
 
-    Only the Dictation scoring job calls it. Dictation hides the transcript, so the
+    Dictation scoring and disputes call it. Dictation hides the transcript, so the
     words go into the stored diff and never into a response before submission; the gate
-    is that the learner has reached Dictation rather than Transcript. The seam where
-    the learner's own corrections will apply (#56) is the caller, `dictation.service`.
+    is that the learner has reached Dictation rather than Transcript. Apply only this
+    learner's overlay, preserving word identities and timings (FR-TX-4).
     """
-    return await _read(db, worker_database, learner, session_id, practice.Step.DICTATION)
+    return await _read(
+        db, worker_database, learner, session_id, practice.Step.DICTATION, apply_corrections=True
+    )
 
 
 async def _read(
@@ -145,6 +148,7 @@ async def _read(
     sentences: list[int] = []
     provenance: list[dict[str, str]] = []
     edited: list[int] = []
+    sources: list[tuple[uuid.UUID, int]] = []
     previous_reference = ""
     for row in rows:
         provenance.append({"origin": row.origin, **row.provider_info})
@@ -158,6 +162,7 @@ async def _read(
             ):
                 sentences.append(len(words))
             identity = (row.id, i)
+            sources.append(identity)
             if identity in overlays:
                 edited.append(len(words))
             words.append(overlays.get(identity, word))
@@ -165,7 +170,34 @@ async def _read(
             starts.append(row.start_ms[i])
             ends.append(min(row.end_ms[i], span[1]))
             confidence.append(row.confidence[i])
-    return PassageTranscript(words, starts, ends, confidence, sentences, provenance, edited)
+    return PassageTranscript(
+        words, starts, ends, confidence, sentences, provenance, edited, sources
+    )
+
+
+async def lock_corrections(db: AsyncSession, learner: uuid.UUID) -> None:
+    """Serialize a learner's scoring and disputes across attempts sharing cache words."""
+    await repository.lock_corrections(db, learner)
+
+
+async def correct_word(
+    db: AsyncSession,
+    worker_database: Database,
+    learner: uuid.UUID,
+    session_id: uuid.UUID,
+    word_index: int,
+    corrected_text: str,
+) -> PassageTranscript:
+    """Authorized passage index to cache-local identity, never a client-supplied cache id."""
+    session = await practice.get_session(db, session_id)
+    await content.retain_content(db, learner, session.content_id)
+    passage = await reference_for_scoring(db, worker_database, learner, session_id)
+    if not 0 <= word_index < len(passage.words):
+        raise ProblemError(422, "word_out_of_range", "Choose a reference word from this diff.")
+    source, index = passage.word_sources[word_index]
+    await repository.correct_word(db, learner, source, index, corrected_text)
+    passage.words[word_index] = corrected_text
+    return passage
 
 
 async def export_data(db: AsyncSession, learner: uuid.UUID) -> ExportPart:

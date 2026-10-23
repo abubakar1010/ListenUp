@@ -260,6 +260,33 @@ def learner_tables(migrated_url: str) -> set[str]:
     return {str(row[0]) for row in rows}
 
 
+def test_export_includes_disputed_reference_only_for_its_learner(
+    make_client: ClientFactory, storage: FakeStorage, migrated_url: str
+) -> None:
+    from tests.integration.test_dictation_disputes import dispute, share_clip
+    from tests.integration.test_dictation_marks import scored_attempt
+    from tests.integration.test_sessions_api import add_clip
+
+    client = make_client(
+        transcript_read_database_url=conninfo_to_url(migrated_url)
+        + "?options=-c%20role%3Dlistenup_worker"
+    )
+    other = make_client()
+    user = learner_id(client)
+    clip = add_clip(migrated_url, user)
+    attempt = scored_attempt(client, migrated_url, clip, "cap", ["cat"])
+    share_clip(client, other, attempt, migrated_url)
+    assert dispute(client, attempt["id"]).status_code == 200
+    for actor, expected in [(client, ["cap"]), (other, [])]:
+        started = request_export(actor)
+        run_build(migrated_url, started["id"], learner_id(actor))
+        with read_archive(storage, learner_id(actor), started["id"]) as archive:
+            exported = json.loads(archive.read("data.json"))
+        corrections = exported["tables"]["content.transcript_corrections"]
+        assert [row["corrected_text"] for row in corrections] == expected
+        assert all(row["user_id"] == user for row in corrections)
+
+
 def test_export_holds_every_learner_table_and_only_the_learners_data(
     make_client: ClientFactory, storage: FakeStorage, migrated_url: str
 ) -> None:

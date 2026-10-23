@@ -322,6 +322,13 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         body=lambda w: {"text": "B was here", "version": 0, "replay_count": 0},
     ),
     # B holds A's attempt id and adds nothing to A's marks (#55).
+    ("POST", "/api/v1/dictation/attempts/{attempt_id}/disputes"): Owned(
+        "attempt_not_found",
+        params=lambda w: {"attempt_id": w.a.dictation_attempt_id},
+        body=lambda w: {"word_index": 0, "corrected_text": "cap"},
+        owner_status=409,
+        owner_code="attempt_not_scored",
+    ),
     ("POST", "/api/v1/dictation/attempts/{attempt_id}/marks"): Owned(
         "attempt_not_found",
         params=lambda w: {"attempt_id": w.a.dictation_attempt_id},

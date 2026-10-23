@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, text
-from sqlalchemy.dialects.postgresql import Range
+from sqlalchemy.dialects.postgresql import Range, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.transcript.domain.spans import Span
@@ -40,6 +40,27 @@ async def corrections(
         )
     )
     return {(row.passage_transcript_id, row.word_index): row.corrected_text for row in rows}
+
+
+async def lock_corrections(db: AsyncSession, learner: uuid.UUID) -> None:
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"transcript-corrections:{learner}"},
+    )
+
+
+async def correct_word(
+    db: AsyncSession, learner: uuid.UUID, transcript_id: uuid.UUID, index: int, value: str
+) -> None:
+    statement = insert(TranscriptCorrection).values(
+        user_id=learner, passage_transcript_id=transcript_id, word_index=index, corrected_text=value
+    )
+    await db.execute(
+        statement.on_conflict_do_update(
+            index_elements=["user_id", "passage_transcript_id", "word_index"],
+            set_={"corrected_text": value},
+        )
+    )
 
 
 async def store(db: AsyncSession, media_id: uuid.UUID, span: Span, packed: Packed) -> None:
