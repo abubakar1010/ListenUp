@@ -247,6 +247,24 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         owner_status=409,
         owner_code="step_locked",
     ),
+    ("POST", "/api/v1/sessions/{session_id}/cards"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["card"]},
+        body=lambda w: {
+            "mark_id": str(w.a.mark_id),
+            "written_form": "could have",
+            "heard_form": "kuduv",
+        },
+    ),
+    ("POST", "/api/v1/sessions/{session_id}/cards/complete"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["card"]},
+    ),
+    ("GET", "/api/v1/cards"): Scoped(a_sees=lambda w: [w.a.card_id]),
+    ("DELETE", "/api/v1/cards/{card_id}"): Owned(
+        "card_not_found",
+        params=lambda w: {"card_id": w.a.card_id},
+    ),
     # -- marks (#58) -------------------------------------------------------------------
     ("GET", "/api/v1/sessions/{session_id}/marks"): Owned(
         "session_not_found", params=lambda w: {"session_id": w.a.sessions["transcript"]}
