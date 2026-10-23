@@ -94,6 +94,10 @@ services:
 
   api:
     <<: *backend
+    # Reporting credentials belong only to the API, never to either worker pool.
+    environment:
+      <<: *backend-env
+      LISTENUP_ADMIN_REPORT_DATABASE_URL: ${LISTENUP_ADMIN_REPORT_DATABASE_URL:-}
     build:
       context: ../..
       dockerfile: infra/docker/backend.Dockerfile

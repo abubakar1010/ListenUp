@@ -6,6 +6,7 @@ import type { components } from '../../api/schema';
 export type JobsOverview = components['schemas']['JobsOverview'];
 export type LaneBacklog = components['schemas']['LaneBacklog'];
 export type FailedJob = components['schemas']['FailedJob'];
+export type UsageOverview = components['schemas']['UsageOverview'];
 type RetriedJob = components['schemas']['RetriedJob'];
 
 const JOBS_KEY = ['admin', 'jobs'] as const;
@@ -21,6 +22,15 @@ export function useJobsOverview() {
     queryKey: JOBS_KEY,
     queryFn: () => api<JobsOverview>('/admin/jobs'),
     retry: (failures, error) => !isNotAdmin(error) && failures < 2,
+  });
+}
+
+/** Aggregate-only usage, isolated by the same account-scoped query cache as jobs. */
+export function useUsageOverview() {
+  return useQuery({
+    queryKey: ['admin', 'usage'],
+    queryFn: () => api<UsageOverview>('/admin/usage'),
+    retry: false,
   });
 }
 

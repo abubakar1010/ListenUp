@@ -4,13 +4,15 @@ Every route takes `CurrentAdmin`: a learner who is not an administrator gets 404
 """
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
 from listenup.modules.admin import service
 from listenup.modules.admin.service import CurrentAdmin
+from listenup.modules.admin.usage import UsageOverview
+from listenup.platform.clock import server_now
 from listenup.platform.database import DbSession
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -50,6 +52,21 @@ class RetriedJob(BaseModel):
 NOT_FOUND: dict[int | str, dict[str, Any]] = {
     404: {"description": "Not an administrator (`not_found`)"}
 }
+
+
+@router.get("/usage", responses={**NOT_FOUND, 503: {"description": "Reporting unavailable"}})
+async def usage_overview(
+    admin: CurrentAdmin,
+    request: Request,
+    response: Response,
+    now: Annotated[datetime, Depends(server_now)],
+) -> UsageOverview:
+    """Content-free daily usage for the last 30 UTC dates and current quota consumption."""
+    overview = await service.usage_overview(
+        request.app.state.admin_report_database, request.app.state.settings.ai_config, now
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return overview
 
 
 @router.get("/jobs", responses=NOT_FOUND)

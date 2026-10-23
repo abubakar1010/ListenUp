@@ -582,6 +582,20 @@ class TranscriptionSource:
     playback_key: str
 
 
+async def media_exists_for_worker(db: AsyncSession, media_id: uuid.UUID) -> bool:
+    """Worker-only liveness check for shared derived caches (#67).
+
+    No media details are returned. Request paths still authorize through the
+    learner's content; workers use this only after an authorized job was queued.
+    """
+    return bool(
+        await db.scalar(
+            text("SELECT EXISTS (SELECT 1 FROM content.media_objects WHERE id=:id)"),
+            {"id": media_id},
+        )
+    )
+
+
 async def transcription_source(
     db: AsyncSession, learner: uuid.UUID, content_id: uuid.UUID
 ) -> TranscriptionSource:

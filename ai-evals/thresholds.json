@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "scope": "teacher",
+  "gist_level_bounds": null,
+  "rules": {
+    "gist": {"max_range.overall": {"max": 10}},
+    "shadow": {
+      "max_range.timing": {"max": 10},
+      "max_range.pronunciation": {"max": 10},
+      "max_range.accent": {"max": 10},
+      "max_range.articulation": {"max": 10},
+      "max_range.fluency": {"max": 10},
+      "max_range.fillers": {"max": 10},
+      "max_range.completeness": {"max": 10},
+      "filler_count_max_error": {"max": 1}
+    }
+  }
+}
