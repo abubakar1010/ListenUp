@@ -2,8 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '../../api/client';
 import type { components } from '../../api/schema';
-import { SESSIONS_KEY, SESSIONS_LIST_KEY, sessionKey } from '../session/api';
+import { SESSIONS_KEY, SESSIONS_LIST_KEY } from '../session/api';
 import { LIBRARY_KEY } from '../library/useLibrary';
+
+export const GIST_GRADE_KEY = ['sessions', 'gist-grade'] as const;
 
 export type BlindAttempt = components['schemas']['BlindAttempt'];
 export type BlindStep = components['schemas']['BlindStep'];
@@ -60,7 +62,7 @@ export function voidAttempt(
  * Submit the gist. One Idempotency-Key per attempt, so a retry after a lost answer
  * returns the first answer instead of a refusal.
  */
-export function useSubmitGist(sessionId: string, attemptId: string) {
+export function useSubmitGist(attemptId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (text: string) =>
@@ -70,8 +72,7 @@ export function useSubmitGist(sessionId: string, attemptId: string) {
         headers: { 'Idempotency-Key': `gist-${attemptId}` },
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: sessionKey(sessionId) });
-      void queryClient.invalidateQueries({ queryKey: blindKey(sessionId) });
+      // Continue refreshes the active session after the learner has seen the result.
       void queryClient.invalidateQueries({ queryKey: SESSIONS_LIST_KEY });
       void queryClient.invalidateQueries({ queryKey: LIBRARY_KEY });
     },

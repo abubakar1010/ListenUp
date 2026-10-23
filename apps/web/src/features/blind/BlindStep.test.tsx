@@ -338,3 +338,39 @@ test('a listen heard to the end shows the gist form, with no replay', async () =
   expect(screen.queryByRole('button', { name: 'Start listening' })).toBeNull();
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Your gist' })).toHaveFocus());
 });
+
+test('submission keeps feedback visible until Continue opens the next step', async () => {
+  let submitted = false;
+  mockRoutes({
+    [SESSION]: () => jsonResponse(200, sessionFixture({ entry: 'both', done: submitted ? 1 : 0 })),
+    [BLIND]: jsonResponse(
+      200,
+      blindStepFixture(attemptFixture({ listen_complete: true, position_ms: 280000 })),
+    ),
+    'POST /blind/attempts/attempt-1/gist': () => {
+      submitted = true;
+      return jsonResponse(201, {
+        attempt: attemptFixture({ status: 'submitted' }),
+        open_step: 'dictation',
+        session_version: 1,
+      });
+    },
+    'GET /gists/attempt-1/grade': jsonResponse(200, {
+      status: 'ready',
+      overall: 80,
+      level: 'good',
+      dimension_scores: { main_idea: 90 },
+      captured_count: 2,
+      total_count: 3,
+    }),
+  });
+  renderBlind();
+  fireEvent.change(await screen.findByRole('textbox', { name: 'Your gist' }), {
+    target: { value: 'This is the idea. Here is another detail. I heard this too.' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Submit gist' }));
+  expect(await screen.findByText('80 / 100')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Continue to Dictation' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Continue to Dictation' }));
+  expect(await screen.findByRole('heading', { name: /Dictation:/ })).toBeInTheDocument();
+});

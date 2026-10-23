@@ -1,8 +1,11 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { AlertIcon, CheckIcon } from '../../components/icons';
+import { sessionKey } from '../session/api';
+import { GistFeedback } from './GistFeedback';
 import { useSubmitGist } from './api';
 import { MAX_GIST_CHARS, MIN_SENTENCES, countSentences, sentenceStatus } from './gist';
 
@@ -33,12 +36,13 @@ function writeDraft(attemptId: string, text: string): boolean {
  * device, so leaving and coming back loses nothing.
  */
 export function GistForm({ sessionId, attemptId }: { sessionId: string; attemptId: string }) {
+  const queryClient = useQueryClient();
   const [text, setText] = useState(() => readDraft(attemptId));
   const [saved, setSaved] = useState(false);
   const [tried, setTried] = useState(0);
   const box = useRef<HTMLTextAreaElement>(null);
   const message = useRef<HTMLParagraphElement>(null);
-  const submit = useSubmitGist(sessionId, attemptId);
+  const submit = useSubmitGist(attemptId);
   const ids = { box: useId(), count: useId(), error: useId() };
   const count = countSentences(text);
   const ready = count >= MIN_SENTENCES && text.trim().length <= MAX_GIST_CHARS;
@@ -62,6 +66,20 @@ export function GistForm({ sessionId, attemptId }: { sessionId: string; attemptI
     }
     submit.mutate(text, { onSuccess: () => writeDraft(attemptId, '') });
   }
+
+  if (submit.isSuccess)
+    return (
+      <div className="flex flex-col gap-4">
+        <GistFeedback attemptId={attemptId} context="blind" />
+        <button
+          type="button"
+          className={buttonClass('primary')}
+          onClick={() => void queryClient.invalidateQueries({ queryKey: sessionKey(sessionId) })}
+        >
+          Continue to {submit.data.open_step === 'dictation' ? 'Dictation' : 'Transcript'}
+        </button>
+      </div>
+    );
 
   const tooLong = text.trim().length > MAX_GIST_CHARS;
   return (

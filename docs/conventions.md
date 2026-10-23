@@ -230,3 +230,17 @@ Read the section for the area you are changing before you change it. The rules e
   changes as well as detachment. Do not bypass this with auto-reaping. `/dev/shm`
   and `/dev/mqueue` must stay read-only. Media telemetry uses queued OTLP export
   through DB to the default pool; never add a collector route to media-data.
+
+## Gist feedback (ADR 0054, #69)
+
+- `blind.service.read_grade` authorizes the attempt and derives D4 disclosure from
+  the current plan. With Dictation in the plan and Transcript still locked, the
+  response omits written feedback, gist and key-point identities/text entirely.
+  Blind-only and reached Transcript reads include the full result.
+- `grading.service.read_gist_grade` reads the grade's exact shared reference through
+  the existing worker-role `transcript_database`, after the learner's attempt has
+  been authorized. Never grant the API role access to `grading.key_points`.
+- Web grade keys include the display context so the Blind summary cannot mask
+  Transcript details. `grade.ready` and reconnect invalidate gist-grade queries;
+  pending reads also poll. Submission keeps the result visible until Continue
+  refreshes the session. #70 owns unavailable/delayed/retry behavior.

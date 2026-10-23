@@ -530,6 +530,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/gists/{attempt_id}/grade': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Gist Grade
+     * @description D4: details are absent until Transcript opens when Dictation follows.
+     */
+    get: operations['get_gist_grade_api_v1_gists__attempt_id__grade_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/health': {
     parameters: {
       query?: never;
@@ -1736,12 +1756,45 @@ export interface components {
        */
       name: string;
     };
+    /** GistFeedback */
+    GistFeedback: {
+      /** Captured Count */
+      captured_count?: number | null;
+      /** Dimension Scores */
+      dimension_scores?: {
+        [key: string]: number;
+      } | null;
+      /** Feedback */
+      feedback?: string | null;
+      /** Gist */
+      gist?: string | null;
+      /** Key Points */
+      key_points?: components['schemas']['GistKeyPoint'][] | null;
+      /** Level */
+      level?: ('needs_work' | 'fair' | 'good' | 'excellent') | null;
+      /** Overall */
+      overall?: number | null;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'pending' | 'ready';
+      /** Total Count */
+      total_count?: number | null;
+    };
     /** GistIn */
     GistIn: {
       /**
        * Text
        * @description Three sentences or more
        */
+      text: string;
+    };
+    /** GistKeyPoint */
+    GistKeyPoint: {
+      /** Captured */
+      captured: boolean;
+      /** Text */
       text: string;
     };
     /** GistSubmitted */
@@ -3456,6 +3509,44 @@ export interface operations {
         content: {
           'text/event-stream': string;
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_gist_grade_api_v1_gists__attempt_id__grade_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GistFeedback'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Validation Error */
       422: {

@@ -393,3 +393,37 @@ test('completion_retries_send_the_same_submission_key', async () => {
   await act(async () => {});
   expect(keys).toEqual([`transcript-${SESSION.id}`, `transcript-${SESSION.id}`]);
 });
+
+test.each(['blind', 'both'] as const)(
+  'full gist grade beside Transcript on %s path',
+  async (entry) => {
+    renderReview({
+      'GET /sessions/session-1': jsonResponse(
+        200,
+        sessionFixture({ entry, done: entry === 'both' ? 2 : 1 }),
+      ),
+      'GET /sessions/session-1/blind': jsonResponse(200, {
+        attempt: { id: 'gist-1', status: 'submitted' },
+      }),
+      'GET /gists/gist-1/grade': jsonResponse(200, {
+        status: 'ready',
+        overall: 80,
+        level: 'good',
+        dimension_scores: { main_idea: 90 },
+        captured_count: 1,
+        total_count: 2,
+        gist: 'I heard this gist.',
+        feedback: 'Full written feedback.',
+        key_points: [
+          { text: 'Main point', captured: true },
+          { text: 'Other point', captured: false },
+        ],
+      }),
+    });
+    await ready();
+    const aside = screen.getByRole('complementary', { name: 'Side panel' });
+    expect(await within(aside).findByText('I heard this gist.')).toBeInTheDocument();
+    expect(within(aside).getByText('Full written feedback.')).toBeInTheDocument();
+    expect(within(aside).getByText(/Missed: Other point/)).toBeInTheDocument();
+  },
+);
