@@ -44,6 +44,7 @@ from listenup.modules.blind.domain import (
     judge,
 )
 from listenup.modules.content import service as content
+from listenup.modules.grading import service as grading
 from listenup.modules.practice import service as practice
 from listenup.modules.practice.service import Attempt, AttemptStatus, Step, StepStatus
 from listenup.platform.errors import ProblemError
@@ -53,9 +54,7 @@ from listenup.platform.storage import Storage
 
 logger = logging.getLogger(__name__)
 
-GRADE_GIST_JOB = "grading.grade_gist"
-"""The job that will grade a submitted gist (FR-BL-6). It does not exist yet: grading
-waits for the AI gateway (#64, ADR 0009) and #68, so `submit_gist` does not queue it."""
+GRADE_GIST_JOB = grading.GRADE_GIST
 
 
 @dataclass(frozen=True)
@@ -334,9 +333,7 @@ async def submit_gist(
     row = await repository.save(db, attempt.id, row.listen, gist_text=gist)
     submitted = await practice.finish_attempt(db, attempt.id, AttemptStatus.SUBMITTED)
     advanced = await practice.complete_step(db, session, Step.BLIND)
-    # TODO(#68): queue GRADE_GIST_JOB here, in this transaction, once the AI gateway
-    # exists (`enqueue(db, GRADE_GIST_JOB, attempt_id=...)`). Grading never blocks the
-    # plan, so the step is complete whatever happens to it.
+    await grading.queue_gist(db, attempt.user_id, attempt.id)
     return GistSubmitted(_view(submitted, row), advanced.open_step, advanced.version)
 
 
@@ -353,3 +350,28 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
         order_by="attempt_id",
     )
     return ExportPart(tables=(table,))
+
+
+@dataclass(frozen=True)
+class GistForGrading:
+    gist: str
+    media_id: uuid.UUID
+    span: tuple[int, int]
+
+
+async def gist_for_grading(
+    db: AsyncSession, learner: uuid.UUID, attempt_id: uuid.UUID
+) -> GistForGrading | None:
+    """Worker boundary: only this learner's submitted, nonempty Blind gist."""
+    attempt, row = await _load(db, attempt_id)
+    if attempt.user_id != learner or attempt.status is not AttemptStatus.SUBMITTED:
+        return None
+    if not row.gist_text:
+        return None
+    session = await practice.get_session(db, attempt.session_id)
+    item = await content.get_content(db, learner, session.content_id)
+    return GistForGrading(
+        row.gist_text,
+        item.media_object_id,
+        (session.passage.start_ms, session.passage.end_ms),
+    )

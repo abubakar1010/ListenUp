@@ -1,8 +1,11 @@
 {
   "extract_key_points/v1.md": "c58a32e6a057b5acc4a98335389421d2463cac295e3595bceb871d1f54e82825",
   "extract_key_points/v1.schema.json": "b01698f8ee6c0ba1a30a5c1090d2dd9436b37875eacb303bc19e69ace94d0f51",
-  "grade_gist/v1.md": "df26a4225bebe95e44adda7dd1aa93b18e482da65c4704315283d9ba2924858b",
+  "grade_gist/v1.md": "a2433fb415782dbfc6a19208929c8d7c3da5ca1f52d5ca75a67868e8032bbcfe",
   "grade_gist/v1.schema.json": "ad6e1bc8e0d01d70d5f36fdd3755189ab156b5e15a1e128cc113f9fcd6284ccc",
+  "grade_gist/v2.md": "cfed4049a650cee17f88a94de57a23b6e82b788232f6f957a391a2175ddb47b9",
+  "grade_gist/v2.rubric.json": "20730bc30e26a95c722a43f23486d9fb63753a95feafd24985b4fc3ee964f403",
+  "grade_gist/v2.schema.json": "ad6e1bc8e0d01d70d5f36fdd3755189ab156b5e15a1e128cc113f9fcd6284ccc",
   "shadow_feedback/v1.md": "fc276ae35564d78d3b7d93ec642e4b39a1a12a95387b9095e3254cf444a4387e",
   "shadow_feedback/v1.schema.json": "ef1ea04ff414426a02a1e00eb2f92afc39b012879ec209e1193b752a164c5eca"
 }

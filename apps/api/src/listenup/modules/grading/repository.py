@@ -3,11 +3,11 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import Range, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from listenup.modules.grading.models import KeyPoints
+from listenup.modules.grading.models import GistGrade, KeyPoints
 from listenup.platform.ids import uuid7
 
 
@@ -43,3 +43,38 @@ async def store(
         )
         .on_conflict_do_nothing(index_elements=["media_object_id", "span", "prompt_version"])
     )
+
+
+async def ensure_pending(db: AsyncSession, learner: uuid.UUID, attempt: uuid.UUID) -> None:
+    await db.execute(
+        insert(GistGrade)
+        .values(attempt_id=attempt, user_id=learner)
+        .on_conflict_do_nothing(index_elements=["attempt_id"])
+    )
+
+
+async def grade(db: AsyncSession, learner: uuid.UUID, attempt: uuid.UUID) -> GistGrade | None:
+    return await db.scalar(
+        select(GistGrade).where(GistGrade.attempt_id == attempt, GistGrade.user_id == learner)
+    )
+
+
+async def finish_grade(
+    db: AsyncSession, learner: uuid.UUID, attempt: uuid.UUID, values: dict[str, Any]
+) -> bool:
+    result = await db.scalar(
+        update(GistGrade)
+        .where(
+            GistGrade.attempt_id == attempt,
+            GistGrade.user_id == learner,
+            GistGrade.status == "pending",
+        )
+        .values(
+            **values,
+            status="ready",
+            updated_at=func.now(),
+            attempts_made=GistGrade.attempts_made + 1,
+        )
+        .returning(GistGrade.attempt_id)
+    )
+    return result is not None

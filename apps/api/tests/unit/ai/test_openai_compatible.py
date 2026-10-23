@@ -300,10 +300,10 @@ async def test_missing_api_key_sends_nothing():
 @pytest.mark.parametrize(
     ("task", "input", "schema"),
     [
-        (TextTask("grade_gist", "v1"), {**GRADE_INPUT, "user_id": "u-1"}, GistGrade),
-        (TextTask("grade_gist", "v1"), {"gist": "only"}, GistGrade),
+        (load_task("grade_gist"), {**GRADE_INPUT, "user_id": "u-1"}, GistGrade),
+        (load_task("grade_gist"), {"gist": "only"}, GistGrade),
         (TextTask("grade_gist", "v99"), GRADE_INPUT, GistGrade),
-        (TextTask("grade_gist", "v1"), GRADE_INPUT, KeyPoints),
+        (load_task("grade_gist"), GRADE_INPUT, KeyPoints),
         (TextTask("unknown", "v1"), GRADE_INPUT, GistGrade),
     ],
 )
@@ -603,15 +603,16 @@ async def test_a_retired_prompt_version_is_never_sent(tmp_path):
     root = tmp_path / "prompts"
     shutil.copytree(PROMPTS_DIR, root)
     folder = root / "grade_gist"
-    v1 = (folder / "v1.md").read_text()
-    (folder / "v2.md").write_text(v1.replace("version: v1", "version: v2"))
-    (folder / "v1.md").write_text(v1.replace("status: active", "status: retired"))
-    (folder / "v2.schema.json").write_text((folder / "v1.schema.json").read_text())
+    old = load_task("grade_gist", root=root).version
+    original = (folder / f"{old}.md").read_text()
+    (folder / "vnext.md").write_text(original.replace(f"version: {old}", "version: vnext"))
+    (folder / f"{old}.md").write_text(original.replace("status: active", "status: retired"))
+    (folder / "vnext.schema.json").write_text((folder / f"{old}.schema.json").read_text())
     server = Server()
     adapter = OpenAICompatibleTextAI(
         entry_for(), transport=httpx.MockTransport(server), environ={KEY: "k"}, prompts_root=root
     )
     with pytest.raises(PermanentProviderError, match="not active"):
-        await grade(adapter, task=TextTask(name="grade_gist", version="v1"))
+        await grade(adapter, task=TextTask(name="grade_gist", version=old))
     assert server.requests == []
-    assert (await grade(adapter, task=load_task("grade_gist", root=root))).prompt_version == "v2"
+    assert (await grade(adapter, task=load_task("grade_gist", root=root))).prompt_version == "vnext"
