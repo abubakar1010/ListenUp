@@ -196,6 +196,36 @@ Paths above are relative to `apps/web/src` except the media API, which is
 `apps/api/src/listenup/modules/content/api.py` and the Blind service it calls.
 These are follow-up implementation gaps, not changes authorized in this slice.
 
+### Continuation check against main — 2026-10-23
+
+Rechecked against fetched main `8dd1a679371d8fd68b59acb73cfc3fb4879ee71b`
+(the earlier comparison used `c298108`). The source files behind all five rows
+above are unchanged: BlindStep, GistForm, ConfirmDialog, ContentPage,
+AddClipPage, intake refusals/status, AuthForm, GoogleRestore and the v2 token
+mirror. The media API is also unchanged. The recorded implementation gaps and
+the 640/768 px dialog breakpoint difference therefore remain open.
+
+Main now queues gist grading from `blind/service.py` after submission (#68,
+ADR 0054); it also adds the review mark count/list (#60) and Dictation mark
+creation (#55, ADR 0055). These changes do not implement the ADR 0033 visual
+states or resolve the gaps above. This comparison is source inspection, not a
+rendered comparison with the Final UI.
+
+The continuation session found no Claude Artifact/Claude Docs editor among
+available tools, and plugin searches for “Claude” and “Claude Artifacts” found
+no usable integration. The published design system v2 and Final UI could not be
+inspected, edited or published. No replacement artifact was created. Publication
+status above is unchanged; no new 360/1280 light/dark board, keyboard, focus,
+announcement or rendered AA verification is claimed. Resume publication in a
+session with authenticated access to the existing artifacts.
+
+Validation of this documentation-only continuation: branch-name and
+`git diff --check` checks passed. Existing characterization tests were rerun with
+`cd apps/web && ./node_modules/.bin/vitest run src/features/blind/BlindStep.test.tsx src/features/blind/GistForm.test.tsx src/features/library/AddClipPage.test.tsx src/features/library/refusals.test.ts src/auth/AuthForm.test.tsx src/features/content/ContentPage.test.tsx`:
+6 files, 60 tests passed on the PR branch. The relevant tested UI files match
+main; this is not a full-main test run or verification of unpublished states.
+TDD is inapplicable because no executable behavior changed (docs/testing.md).
+
 ### New decisions
 
 All decisions below refine [ADR 0033](../adr/0033-design-review-policy-resolutions.md),
