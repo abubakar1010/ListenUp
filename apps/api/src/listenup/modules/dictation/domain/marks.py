@@ -25,9 +25,13 @@ def candidate_range(
     candidates: Sequence[MarkCandidate], word_from: int, word_to: int
 ) -> CandidateRange:
     """The audio time and words of `word_from` to `word_to`, if every one is a candidate."""
-    by_index = {candidate.word_index: candidate for candidate in candidates}
     if word_to < word_from:
         raise NotACandidate(f"words {word_from} to {word_to} run backwards")
+    # A range longer than the candidates cannot be all candidates. Checking that first
+    # bounds the walk below by the diff, whatever `word_to` the request carries.
+    if word_to - word_from + 1 > len(candidates):
+        raise NotACandidate(f"words {word_from} to {word_to} are not all missed or wrong")
+    by_index = {candidate.word_index: candidate for candidate in candidates}
     covered = [by_index.get(index) for index in range(word_from, word_to + 1)]
     words = [candidate for candidate in covered if candidate is not None]
     if len(words) != len(covered):

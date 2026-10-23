@@ -4,6 +4,8 @@ Only wrong or missing words are mark candidates (ADR 0019): a mark added from th
 covers one of them, or a run of them next to each other in the passage.
 """
 
+import time
+
 import pytest
 
 from listenup.modules.dictation.domain import (
@@ -56,3 +58,15 @@ def test_a_range_with_any_other_word_is_refused(word_from: int, word_to: int):
 def test_a_diff_without_candidates_refuses_every_range():
     with pytest.raises(NotACandidate):
         candidate_range((), 0, 0)
+
+
+def test_a_huge_range_is_refused_without_walking_it():
+    """Review of #186: a range far beyond the passage is refused at once.
+
+    The schema allows `word_to` up to 2**31 - 1, and one request carries 2,500 ranges,
+    so a check that walks the range first can exhaust the API's memory and CPU.
+    """
+    started = time.perf_counter()
+    with pytest.raises(NotACandidate):
+        candidate_range(CANDIDATES, 0, 20_000_000)
+    assert time.perf_counter() - started < 0.05

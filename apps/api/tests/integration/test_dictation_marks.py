@@ -7,6 +7,7 @@ inserts nothing, and words that are already marked give back the mark they have
 (UNIQUE session_id, word_from, word_to).
 """
 
+import time
 import uuid
 from collections.abc import Iterator
 from typing import Any
@@ -304,3 +305,17 @@ def test_a_request_holds_one_to_2500_marks(
     response = add(client, attempt["id"], *(mark(1) for _ in range(count)))
 
     assert response.status_code == 422, response.text
+
+
+def test_ranges_far_beyond_the_passage_are_refused_at_once(
+    client: TestClient, attempt: dict[str, Any], migrated_url: str
+) -> None:
+    """Review of #186: the largest ranges the schema allows cost nothing to refuse."""
+    started = time.perf_counter()
+
+    response = add(client, attempt["id"], *(mark(0, 2**31 - 1) for _ in range(2_500)))
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "not_a_mark_candidate"
+    assert time.perf_counter() - started < 5
+    assert rows(migrated_url, attempt["session_id"]) == []
