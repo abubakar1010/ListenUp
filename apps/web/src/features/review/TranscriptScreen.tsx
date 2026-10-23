@@ -11,6 +11,7 @@ import {
 import { ApiError } from '../../api/client';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
+import type { OpenMarkList } from '../dictation/api';
 import { DictationResultPanel } from '../dictation/DictationResultPanel';
 import { PassagePlayerControls } from '../media/PassagePlayerControls';
 import { actionFor, stepSpeed } from '../media/playerPolicy';
@@ -19,10 +20,17 @@ import type { Session } from '../session/api';
 import { PracticeLayout } from '../session/PracticeLayout';
 import { STEP_RULES } from '../session/plan';
 import { formatClock } from '../session/time';
-import { markTransport, useMarks, useTranscript, type TranscriptReview } from './api';
+import {
+  markTransport,
+  useFinishTranscript,
+  useMarks,
+  useTranscript,
+  type TranscriptReview,
+} from './api';
 import { currentLine } from './line';
 import { MarkPanel } from './MarkPanel';
-import type { SavedMark } from './markSync';
+import { MarkList } from './MarkList';
+import type { LocalMark, SavedMark } from './markSync';
 import {
   extend,
   growFrom,
@@ -85,11 +93,14 @@ function Layout({
   session,
   progress,
   player,
+  markList,
   children,
 }: {
   session: Session;
   progress: ReactNode;
   player: ReactNode;
+  /** The transcript's own marks, once it is open, for the Dictation result to share. */
+  markList?: OpenMarkList;
   children: ReactNode;
 }) {
   return (
@@ -105,7 +116,7 @@ function Layout({
     >
       <p className="text-body-s">Transcript can't be skipped: it shows what you missed.</p>
       {session.steps.some((step) => step.step === 'dictation' && step.status === 'done') && (
-        <DictationResultPanel sessionId={session.id} />
+        <DictationResultPanel sessionId={session.id} markList={markList} />
       )}
       {children}
     </PracticeLayout>
@@ -141,11 +152,16 @@ function TranscriptWork({
   };
   const controls = { ...player, replays, replay: replayLine };
   usePlayerKeys(controls);
-  const marking = useMarking(session.id, data, marks);
+  const marking = useMarking(session.id, data, marks, jump);
+  const finish = useFinishTranscript(session.id);
+  const finishReason = useRef<HTMLParagraphElement>(null);
+  const finishStarted = useRef(false);
+  const finishBlocked = !marking.saved || finish.isPending;
   return (
     <Layout
       session={session}
       progress={progress}
+      markList={marking.markList}
       player={
         <PassagePlayerControls
           audioRef={audio}
@@ -171,6 +187,7 @@ function TranscriptWork({
         </p>
       </details>
       {marking.panel}
+      {marking.list}
       {data.lines.length === 0 ? (
         <p>No speech was found in this passage.</p>
       ) : (
@@ -212,6 +229,34 @@ function TranscriptWork({
           ))}
         </ol>
       )}
+      {finishBlocked && (
+        <p id="finish-transcript-reason" ref={finishReason} tabIndex={-1}>
+          {finish.isPending
+            ? 'Finishing Transcript. Please wait.'
+            : 'Wait for your marks to save before finishing.'}
+        </p>
+      )}
+      {finish.isError && <ErrorPanel error={finish.error} />}
+      <button
+        type="button"
+        className={buttonClass('primary', 'self-start')}
+        aria-disabled={finishBlocked || undefined}
+        aria-describedby={finishBlocked ? 'finish-transcript-reason' : undefined}
+        onClick={() => {
+          if (finishBlocked || finishStarted.current) finishReason.current?.focus();
+          else {
+            // Mutation notifications render asynchronously; guard rapid activation now.
+            finishStarted.current = true;
+            finish.mutate(undefined, {
+              onSettled: () => {
+                finishStarted.current = false;
+              },
+            });
+          }
+        }}
+      >
+        {finish.isPending ? 'Finishing Transcript…' : 'Finish Transcript'}
+      </button>
     </Layout>
   );
 }
@@ -229,7 +274,12 @@ function covers(range: Range, word: number): boolean {
  * word (or the mark around it), Shift grows the selection, and the Mark button or the M
  * key marks it at once. `MarkSync` keeps the mark on this device and saves it.
  */
-function useMarking(sessionId: string, data: TranscriptReview, saved: SavedMark[]) {
+function useMarking(
+  sessionId: string,
+  data: TranscriptReview,
+  saved: SavedMark[],
+  jump: (atMs: number) => void,
+) {
   const words = useMemo(() => data.lines.flatMap((line) => line.words), [data]);
   const sync = useMarkSync({
     storageKey: `listenup:marks:${sessionId}`,
@@ -243,6 +293,7 @@ function useMarking(sessionId: string, data: TranscriptReview, saved: SavedMark[
   const announce = (text: string) =>
     setAnnouncement((previous) => (previous === text ? `${text}\u00a0` : text));
   const [focusNote, setFocusNote] = useState(false);
+  const [removed, setRemoved] = useState<LocalMark | null>(null);
   const wordRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const marked = useMemo(() => {
     const indices = new Set<number>();
@@ -318,6 +369,15 @@ function useMarking(sessionId: string, data: TranscriptReview, saved: SavedMark[
     return true;
   };
 
+  const removeMark = (id: string) => {
+    const mark = sync.marks.find((item) => item.id === id);
+    if (!mark) return;
+    setRemoved(mark);
+    sync.remove(id);
+    announce('Mark removed.');
+    focusWord(mark.word_from);
+  };
+
   const onNoteFocused = useCallback(() => setFocusNote(false), []);
 
   const panel = (
@@ -333,6 +393,7 @@ function useMarking(sessionId: string, data: TranscriptReview, saved: SavedMark[
         phrase={range ? phraseOf(range) : ''}
         mark={current}
         wordCount={words.length}
+        markCount={sync.marks.length}
         status={sync.status}
         announcement={announcement}
         focusNote={focusNote}
@@ -343,11 +404,7 @@ function useMarking(sessionId: string, data: TranscriptReview, saved: SavedMark[
           focusWord(selection.focus);
         }}
         onNote={sync.setNote}
-        onRemove={(id) => {
-          sync.remove(id);
-          announce('Mark removed.');
-          if (selection) focusWord(selection.focus);
-        }}
+        onRemove={removeMark}
         onNoteFocused={onNoteFocused}
       />
     </>
@@ -355,11 +412,50 @@ function useMarking(sessionId: string, data: TranscriptReview, saved: SavedMark[
 
   return {
     panel,
+    saved: !sync.hasPendingChanges,
+    list: (
+      <>
+        <MarkList
+          marks={sync.marks}
+          phraseOf={phraseOf}
+          onPlay={(mark) => {
+            setSelection({ anchor: mark.word_from, focus: mark.word_to });
+            setFocusNote(false);
+            jump(mark.at_ms);
+          }}
+          onEdit={(mark) => {
+            setSelection({ anchor: mark.word_from, focus: mark.word_to });
+            setFocusNote(true);
+          }}
+          onRemove={(mark) => removeMark(mark.id)}
+        />
+        {removed && !sync.marks.some((mark) => mark.id === removed.id) && (
+          <div className="flex flex-wrap items-center gap-2">
+            <p>Mark removed. You can undo this removal.</p>
+            <button
+              type="button"
+              className={buttonClass('secondary')}
+              onClick={() => {
+                sync.add(removed);
+                setRemoved(null);
+                announce('Mark restored.');
+                focusWord(removed.word_from);
+              }}
+            >
+              Undo
+            </button>
+          </div>
+        )}
+      </>
+    ),
     wordRefs,
     onWordKey,
     choose,
     isMarked: (index: number) => marked.has(index),
     isSelected: (index: number) => (range ? covers(range, index) : false),
+    // Marks added from the Dictation result join this list, and words marked here show
+    // as added there (#55): one list on the page, so the two never disagree.
+    markList: { marks: sync.marks, take: sync.takeSaved } satisfies OpenMarkList,
     describedBy: (index: number) =>
       marked.has(index) ? MARKED : range && covers(range, index) ? SELECTED : undefined,
   };

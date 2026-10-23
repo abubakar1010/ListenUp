@@ -382,7 +382,7 @@ CREATE TABLE practice.dictation_attempts (
   draft_version  int4 NOT NULL DEFAULT 0 CHECK (draft_version >= 0),
   submitted_text text CHECK (char_length(submitted_text) <= 20000),
   scoring_status text CHECK (scoring_status IN ('waiting_transcript', 'scoring_unavailable', 'scored')),
-  diff           jsonb,                  -- per reference word: status and what was typed
+  diff           jsonb,                  -- per reference word: status and what was typed; mark candidates with audio time (version 2, ADR 0055)
   accuracy       numeric(5,2) CHECK (accuracy BETWEEN 0 AND 100),
   scored_at      timestamptz,
   updated_at     timestamptz NOT NULL DEFAULT now(),

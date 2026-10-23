@@ -4,10 +4,16 @@ Marks (#58, FR-TR-2, ADR 0047) are this module's own rows in `practice.marks`. E
 mark route passes the Transcript gate (`practice.require_reached`) first. A new mark
 is named by the browser and saved with one INSERT; its audio time and phrase come
 from the passage words, never from the browser. Later stories add to these
-functions: tags (#61), the mark list and count (#60), Dictation pre-fill (#55, #59).
+functions: tags (#61), the mark list and count (#60), Dictation pre-fill (#59).
+
+Marks added from the Dictation diff (#55, FR-DI-6) come through `add_dictation_marks`:
+the dictation module places them from its stored diff and checks its own attempt, so
+they need neither the Transcript gate nor the passage read.
 """
 
 import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass
 from itertools import pairwise
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +27,7 @@ from listenup.modules.review.domain import (
     MarkRuleError,
     MarkTooLong,
     MarkWithoutWords,
+    check_length,
     clean_note,
     place_mark,
 )
@@ -28,6 +35,9 @@ from listenup.modules.transcript import service as transcript
 from listenup.platform.database import Database
 from listenup.platform.errors import ProblemError
 from listenup.platform.export import ExportPart, learner_rows
+
+Mark = schemas.Mark
+"""A stored mark as the API shows it; other modules name the type through this service."""
 
 
 async def read_transcript(
@@ -102,7 +112,13 @@ def _mark_not_found() -> ProblemError:
 async def list_marks(db: AsyncSession, session_id: uuid.UUID) -> list[schemas.Mark]:
     """The session's marks in audio order, for showing them again after a reload."""
     await practice.require_reached(db, session_id, practice.Step.TRANSCRIPT)
-    return [_mark(row) for row in await repository.list_for_session(db, session_id)]
+    return await session_marks(db, session_id)
+
+
+async def finish_transcript(db: AsyncSession, session_id: uuid.UUID) -> None:
+    """FR-PL-4: finish Transcript and open Card in the request's transaction."""
+    session = await practice.require_step(db, session_id, practice.Step.TRANSCRIPT)
+    await practice.complete_step(db, session, practice.Step.TRANSCRIPT)
 
 
 async def create_mark(
@@ -155,6 +171,81 @@ async def create_mark(
             409, "mark_exists", "These words are already marked.", mark_id=str(other.id)
         )
     raise ProblemError(409, "mark_id_taken", "This mark id is already in use.")
+
+
+@dataclass(frozen=True)
+class DictationMark:
+    """A mark the learner adds from the Dictation diff, placed by the dictation module.
+
+    `at_ms` and `phrase` come from the scored diff, which the server made from the
+    passage words, never from the browser.
+    """
+
+    id: uuid.UUID
+    word_from: int
+    word_to: int
+    at_ms: int
+    phrase: str
+
+
+async def add_dictation_marks(
+    db: AsyncSession, learner: uuid.UUID, session_id: uuid.UUID, marks: Sequence[DictationMark]
+) -> list[schemas.Mark]:
+    """Add marks from the Dictation diff (#55, FR-DI-6); one stored mark per entry, in order.
+
+    The caller has checked that the session is the learner's and that these words were
+    scored as missed or wrong. A new mark is `source = 'dictation'` and `suggested`, for
+    the learner to confirm in Transcript (FR-TR-3). Words that are already marked, by
+    either path, give back the mark they have, and a resend gives back the same mark, so
+    adding twice never makes a duplicate. Refusals: 422 `mark_too_long`, 409
+    `mark_id_taken` (the id belongs to other words).
+    """
+    added: list[schemas.Mark] = []
+    for new in marks:
+        try:
+            check_length(new.word_from, new.word_to)
+        except MarkRuleError as error:
+            raise _refused(error) from error
+        row = await repository.insert(
+            db,
+            repository.NewMark(
+                id=new.id,
+                session_id=session_id,
+                user_id=learner,
+                word_from=new.word_from,
+                word_to=new.word_to,
+                at_ms=new.at_ms,
+                note=None,
+                source="dictation",
+                status="suggested",
+            ),
+        )
+        if row is not None:
+            await analytics.record_mark_created(db, learner, session_id, row.id, phrase=new.phrase)
+        else:
+            row = await _existing(db, session_id, new.id, new.word_from, new.word_to)
+        added.append(_mark(row))
+    return added
+
+
+async def _existing(
+    db: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UUID, word_from: int, word_to: int
+) -> repository.MarkRow:
+    """The mark a refused INSERT ran into: the same mark resent, or one on these words."""
+    same = await repository.get(db, mark_id)
+    if same and (same.session_id, same.word_from, same.word_to) == (session_id, word_from, word_to):
+        return same
+    if same is None and (other := await repository.find_range(db, session_id, word_from, word_to)):
+        return other
+    raise ProblemError(409, "mark_id_taken", "This mark id is already in use.")
+
+
+async def session_marks(db: AsyncSession, session_id: uuid.UUID) -> list[schemas.Mark]:
+    """The session's marks in audio order, for a caller that has authorized the session.
+
+    The Dictation diff uses it to show which words are already added (#55).
+    """
+    return [_mark(row) for row in await repository.list_for_session(db, session_id)]
 
 
 async def change_note(

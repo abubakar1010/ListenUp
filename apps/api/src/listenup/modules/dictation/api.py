@@ -2,6 +2,8 @@
 
 The rules live in `service.py`; these routes only translate. Submission is
 `POST /dictation/attempts/{id}/submit` (#54); the score arrives later (ADR 0042).
+Words of the scored diff go to the mark list with `POST /dictation/attempts/{id}/marks`
+(#55).
 """
 
 import uuid
@@ -12,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from listenup.modules.dictation import schemas, service
 from listenup.modules.identity.service import CurrentLearner
+from listenup.modules.review import service as review
 from listenup.platform.database import DbSession
 from listenup.platform.idempotency import IdempotencyKeyHeader, request_fingerprint, run_once
 
@@ -196,3 +199,46 @@ async def get_session_attempt(
     The Dictation result stays on the session page while the plan moves on to Transcript.
     """
     return _view_response(await service.latest_attempt(db, session_id))
+
+
+def _marks_response(marks: list[review.Mark]) -> JSONResponse:
+    body = schemas.DictationMarks(
+        marks=[schemas.DictationMark.model_validate(m, from_attributes=True) for m in marks]
+    )
+    return JSONResponse(
+        body.model_dump(mode="json"), headers={"Cache-Control": "private, no-store"}
+    )
+
+
+@router.post(
+    "/dictation/attempts/{attempt_id}/marks",
+    response_model=schemas.DictationMarks,
+    responses={
+        404: {"description": "`attempt_not_found`"},
+        409: {"description": "`attempt_not_scored` or `mark_id_taken`"},
+        422: {"description": "`not_a_mark_candidate` or `mark_too_long`"},
+    },
+)
+async def add_marks(
+    attempt_id: uuid.UUID, body: schemas.AddDictationMarks, learner: CurrentLearner, db: DbSession
+) -> JSONResponse:
+    """Add missed or wrong words of the scored diff to the mark list (FR-DI-6).
+
+    Each entry is a word or a run of words next to each other that were all missed or
+    wrong, at most 20. The answer has one mark per entry, in order: words that are already
+    marked give back the mark they have and a resend gives back the same mark, so adding
+    twice never makes a duplicate. The browser-made `id` is the idempotency key, so no
+    `Idempotency-Key` is needed (ADR 0047). One refused entry refuses the request.
+    """
+    marks = [service.NewMark(m.id, m.word_from, m.word_to) for m in body.marks]
+    return _marks_response(await service.add_marks(db, attempt_id, marks))
+
+
+@router.get(
+    "/dictation/attempts/{attempt_id}/marks",
+    response_model=schemas.DictationMarks,
+    responses={404: {"description": "`attempt_not_found`"}},
+)
+async def list_marks(attempt_id: uuid.UUID, learner: CurrentLearner, db: DbSession) -> JSONResponse:
+    """The marks of the attempt's session in audio order, to show the words already added."""
+    return _marks_response(await service.list_marks(db, attempt_id))
