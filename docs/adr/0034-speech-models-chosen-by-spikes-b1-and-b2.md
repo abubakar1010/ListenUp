@@ -1,6 +1,6 @@
 # ADR 0034: Speech models chosen by spikes B1 and B2
 
-- Status: Accepted (numbers indicative until rerun on the stage 0 server, #16)
+- Status: Accepted (numbers indicative until rerun on the stage 0 server, #16); caption-path condition reported by [ADR 0056](0056-b2-caption-path-hand-label-result.md): not met, so the caption path does not ship; the `MMS_FA` fallback is withdrawn
 - Date: 2026-10-05
 - Source: spikes [#18](https://github.com/abubakar1010/ListenUp/issues/18) (B1) and [#19](https://github.com/abubakar1010/ListenUp/issues/19) (B2); results in [`docs/spikes/18-b1-transcription.md`](../spikes/18-b1-transcription.md) and [`docs/spikes/19-b2-alignment.md`](../spikes/19-b2-alignment.md); [SRS FR-TX-1, FR-TX-2, FR-TR-1, NFR-PERF-2, NFR-PERF-4, NFR-AI-3, OI-2, OI-3](https://claude.ai/code/artifact/fd47a9cb-6515-4fde-a232-3ab8cc14f0dd); [System Design 2.2, 3.2, 5, 12.1](https://claude.ai/code/artifact/98274889-96ba-4424-afad-c2cd056206e2); ADR 0028
 
@@ -58,7 +58,7 @@ actually emitted when recorded, and future recordings use the expanded version s
 
 Running a 3-minute passage through the model in one pass is what made alignment expensive (self-attention grows with the square of the length); windows and int8 do not move the boundaries (99.2% within 50 ms of the whole-passage, full-precision run). The two independently trained aligners agree to a median of 20 ms (one frame) and a p90 of 40 ms, 95.6% within 50 ms, a little less on parliamentary speech outside the English model's training domain (93%). The adapter now supports both kinds of torchaudio bundle (the MMS aligner and the English ASR models) through `forced_align`, with optional windows and int8.
 
-**The caption path ships with YouTube intake, behind its feature flag (OQ-6, ADR 0011).** When a video has creator captions, the captions covering the passage are force-aligned instead of transcribed: 0.18 core-s per audio-s against 0.54 for `small.en` (a third, not System Design 5.1's estimated fifth). Condition: the hand-labelled check prepared in `docs/spikes/b2-labels/` must show a mean word-boundary error of at most 50 ms before the flag is turned on; if it does not, `MMS_FA` in 30 s windows (0.58) is the fallback and the path still saves compute.
+**The caption path ships with YouTube intake, behind its feature flag (OQ-6, ADR 0011).** When a video has creator captions, the captions covering the passage are force-aligned instead of transcribed: 0.18 core-s per audio-s against 0.54 for `small.en` (a third, not System Design 5.1's estimated fifth). Condition: the hand-labelled check prepared in `docs/spikes/b2-labels/` must show a mean word-boundary error of at most 50 ms before the flag is turned on; if it does not, `MMS_FA` in 30 s windows (0.58) is the fallback and the path still saves compute. *Superseded in part by [ADR 0056](0056-b2-caption-path-hand-label-result.md): the gate is not met, so the caption path does not ship until it passes, and the `MMS_FA` fallback is withdrawn (noncommercial licence, ADR 0037).*
 
 **Decoding.** Both speech adapters decode audio with ffmpeg (`listenup/ai/providers/audio.py`) and hand samples to the library. faster-whisper 1.2.1's own decoder calls PyAV with an argument PyAV 19 removed, and the lock pairs exactly those versions, so the adapter as written by ADR 0028 failed on every file.
 
@@ -73,4 +73,4 @@ Running a 3-minute passage through the model in one pass is what made alignment 
 - int8 quantisation may change the per-letter posteriors that Shadow's measures read; spike #20 checks them with this setting.
 - The Dictation tokenizer does not equate title abbreviations ("Mr" and "mister", "Dr", "St"), which Whisper writes abbreviated; a follow-up in the dictation module removes these false marks.
 - Every number is from a cloud container and is rerun on stage 0 with the same harness (`spikes/`) before it becomes a commitment; the ADR is amended if the choice changes.
-- Until the three hand-labelled windows are done, the boundary figures are agreement between systems, not accuracy; the labels are added to `docs/spikes/19-b2-alignment.md` and to this ADR.
+- Until the three hand-labelled windows are done, the boundary figures are agreement between systems, not accuracy; the labels are added to `docs/spikes/19-b2-alignment.md`, and the result is recorded in [ADR 0056](0056-b2-caption-path-hand-label-result.md) and its successor.
