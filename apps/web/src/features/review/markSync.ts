@@ -102,7 +102,7 @@ interface StoredCopy {
   ops: { op: Exclude<Op, 'none'>; mark: NewLocalMark; attempted?: boolean }[];
 }
 
-function fromServer(mark: SavedMark): Entry {
+function fromServer(mark: SavedMark | NewLocalMark): Entry {
   return { mark: local(mark), op: 'none', rev: 0, server: local(mark), attempted: false };
 }
 
@@ -219,6 +219,17 @@ export class MarkSync {
     if (entry.op === 'create' && !entry.attempted) this.entries.delete(id);
     else entry.op = 'delete';
     this.changed();
+  }
+
+  /**
+   * Marks the server already holds that were made elsewhere on this page: the Dictation
+   * result beside the transcript adds them through its own route (#55). Nothing is sent,
+   * and a mark this tab already has keeps this tab's version.
+   */
+  takeSaved(marks: NewLocalMark[]): void {
+    const fresh = marks.filter((mark) => !this.entries.has(mark.id));
+    for (const mark of fresh) this.entries.set(mark.id, fromServer(mark));
+    if (fresh.length > 0) this.emit();
   }
 
   /** Send now instead of after the debounce. */

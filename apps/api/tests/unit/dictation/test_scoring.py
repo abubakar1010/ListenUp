@@ -186,7 +186,7 @@ def test_diff_json_round_trips_through_json() -> None:
     result = score("Hello there friend", "hello chair um friend")
     document = json.loads(json.dumps(result.diff_json()))
     assert document == {
-        "version": 1,
+        "version": 2,
         "slips_count_as_correct": True,
         "words": [
             {"index": 0, "word": "Hello", "status": "correct", "typed": "hello"},
@@ -194,6 +194,10 @@ def test_diff_json_round_trips_through_json() -> None:
             {"index": 2, "word": "friend", "status": "correct", "typed": "friend"},
         ],
         "extras": [{"typed": "um", "before_index": 2}],
+        # FR-DI-6 (#55): the stored candidates give a Dictation mark its audio time.
+        "mark_candidates": [
+            {"word_index": 1, "word": "there", "status": "wrong", "at_ms": 400, "end_ms": 700}
+        ],
     }
     assert json.loads(json.dumps(result.mark_candidates[0].to_json())) == {
         "word_index": 1,

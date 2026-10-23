@@ -24,7 +24,8 @@ from listenup.modules.dictation.domain.normalize import Token, tokenize, tokeniz
 # Set this to False to count only exact words. See ADR 0019.
 SPELLING_SLIPS_COUNT_AS_CORRECT: Final = True
 
-DIFF_VERSION: Final = 1
+DIFF_VERSION: Final = 2
+"""2 (#55) adds `mark_candidates`, which give a mark added from the diff its audio time."""
 
 
 class WordStatus(StrEnum):
@@ -112,12 +113,13 @@ class DictationScore:
 
     def diff_json(self) -> dict[str, object]:
         """The value for practice.dictation_attempts.diff: per reference word, status and
-        what was typed, plus the extra words."""
+        what was typed, plus the extra words and the mark candidates (FR-DI-6)."""
         return {
             "version": DIFF_VERSION,
             "slips_count_as_correct": SPELLING_SLIPS_COUNT_AS_CORRECT,
             "words": [word.to_json() for word in self.words],
             "extras": [extra.to_json() for extra in self.extras],
+            "mark_candidates": [mark.to_json() for mark in self.mark_candidates],
         }
 
 

@@ -551,6 +551,22 @@ test('a_refused_removal_of_a_mark_never_confirmed_puts_it_back_and_sends_it_agai
   expect(sync.getSnapshot().marks[0]).toMatchObject({ saved: true });
 });
 
+test('saved_marks_made_elsewhere_on_the_page_are_taken_without_sending_or_overwriting', async () => {
+  // The Dictation result inside Transcript adds marks through its own route (#55).
+  const { transport } = fakeServer([saved('m1', 0)]);
+  const storage = memoryStorage();
+  const sync = make(transport, storage, [saved('m1', 0)]);
+  sync.setNote('m1', 'local note');
+  sync.takeSaved([saved('m1', 0, 'older note'), saved('d1', 2, 'from another tab')]);
+  expect(sync.getSnapshot().marks.map((mark) => [mark.id, mark.note, mark.saved])).toEqual([
+    ['m1', 'local note', false],
+    ['d1', 'from another tab', true],
+  ]);
+  expect(storage.items.get(KEY) ?? '').not.toContain('d1');
+  expect(transport.create).not.toHaveBeenCalled();
+  sync.stop();
+});
+
 test('undo_during_an_in_flight_delete_recreates_the_mark_with_its_note', async () => {
   const mark = saved('m1', 2, 'linking');
   const server = fakeServer([mark]);

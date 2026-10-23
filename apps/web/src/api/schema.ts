@@ -454,6 +454,36 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/dictation/attempts/{attempt_id}/marks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Marks
+     * @description The marks of the attempt's session in audio order, to show the words already added.
+     */
+    get: operations['list_marks_api_v1_dictation_attempts__attempt_id__marks_get'];
+    put?: never;
+    /**
+     * Add Marks
+     * @description Add missed or wrong words of the scored diff to the mark list (FR-DI-6).
+     *
+     *     Each entry is a word or a run of words next to each other that were all missed or
+     *     wrong, at most 20. The answer has one mark per entry, in order: words that are already
+     *     marked give back the mark they have and a resend gives back the same mark, so adding
+     *     twice never makes a duplicate. The browser-made `id` is the idempotency key, so no
+     *     `Idempotency-Key` is needed (ADR 0047). One refused entry refuses the request.
+     */
+    post: operations['add_marks_api_v1_dictation_attempts__attempt_id__marks_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/dictation/attempts/{attempt_id}/submit': {
     parameters: {
       query?: never;
@@ -1079,6 +1109,11 @@ export interface components {
      * @enum {string}
      */
     Action: 'continue' | 'resume' | 'stop';
+    /** AddDictationMarks */
+    AddDictationMarks: {
+      /** Marks */
+      marks: components['schemas']['NewDictationMark'][];
+    };
     /**
      * AttemptStatus
      * @enum {string}
@@ -1559,6 +1594,46 @@ export interface components {
       status: components['schemas']['AttemptStatus'];
     };
     /**
+     * DictationMark
+     * @description A mark on the words of the passage, as the diff needs it to show them as added.
+     */
+    DictationMark: {
+      /**
+       * At Ms
+       * @description Absolute media time of the first word
+       */
+      at_ms: number;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Note
+       * @description The learner's own note, so an open Transcript can take the mark as it is
+       */
+      note: string | null;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: 'dictation' | 'manual';
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'suggested' | 'confirmed';
+      /** Word From */
+      word_from: number;
+      /** Word To */
+      word_to: number;
+    };
+    /** DictationMarks */
+    DictationMarks: {
+      /** Marks */
+      marks: components['schemas']['DictationMark'][];
+    };
+    /**
      * DictationPassage
      * @description The part of the clip the player may play, in milliseconds, [start_ms, end_ms).
      */
@@ -1896,6 +1971,27 @@ export interface components {
        * Format: uuid
        */
       id: string;
+    };
+    /**
+     * NewDictationMark
+     * @description Words of the diff to add to the mark list. The browser names the mark (ADR 0047).
+     */
+    NewDictationMark: {
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Word From
+       * @description `index` of the first diff word
+       */
+      word_from: number;
+      /**
+       * Word To
+       * @description `index` of the last diff word
+       */
+      word_to: number;
     };
     /**
      * NewMark
@@ -3203,6 +3299,91 @@ export interface operations {
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
         };
+      };
+    };
+  };
+  list_marks_api_v1_dictation_attempts__attempt_id__marks_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationMarks'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  add_marks_api_v1_dictation_attempts__attempt_id__marks_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AddDictationMarks'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationMarks'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `attempt_not_scored` or `mark_id_taken` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `not_a_mark_candidate` or `mark_too_long` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

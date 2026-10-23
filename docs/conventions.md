@@ -166,7 +166,8 @@ Read the section for the area you are changing before you change it. The rules e
   compatibility exports. Transcript supplies sentence replay and keyboard handling.
   Readiness/failure events invalidate the named review query; pending reads also poll.
 - Marks (#58, ADR 0047): `review` owns `practice.marks`; other modules reach marks only
-  through `review/service.py`. Every mark route calls `require_reached(TRANSCRIPT)` first.
+  through `review/service.py`. Every Transcript mark route calls
+  `require_reached(TRANSCRIPT)` first.
   A new mark carries a browser-made id and is one `INSERT ... ON CONFLICT DO NOTHING`, so
   a resend answers 200 with the same mark; never wrap it in `run_once`. The server
   derives `at_ms` and the phrase from the passage words. Tags (#61), the list and count
@@ -178,6 +179,16 @@ Read the section for the area you are changing before you change it. The rules e
   Test fakes of the marks API answer a resent create with the stored mark, as the API
   does. The limits (at most 20 words; not only removed words) are kept in both
   `domain/marks.py` and `selection.ts`.
+- Dictation marks (#55, ADR 0055): the scored diff stores `mark_candidates` (diff
+  version 2), and `POST /dictation/attempts/{id}/marks` adds candidate words or runs
+  through `review.service.add_dictation_marks` (`source = 'dictation'`, `suggested`),
+  with no Transcript gate and no passage read. Words already marked give back their mark
+  rather than `mark_exists`. The run rule is `dictation/domain/marks.candidate_range` and
+  `features/dictation/marks.ts`; the 20-word limit stays review's `check_length`.
+  `candidate_range` refuses a range longer than the diff's candidates before walking it,
+  so no request walks further than the diff. Beside an open transcript the Dictation
+  panel reads and adds through Transcript's `MarkSync` (`markList`, `takeSaved`), so the
+  page keeps one mark list.
 
 - Mark list/count (#60) read the same `useMarkSync` snapshot as word highlights.
   List rows use native buttons for playback; E opens the note, Delete removes with

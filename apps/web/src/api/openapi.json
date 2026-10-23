@@ -6,6 +6,22 @@
         "title": "Action",
         "type": "string"
       },
+      "AddDictationMarks": {
+        "properties": {
+          "marks": {
+            "items": {
+              "$ref": "#/components/schemas/NewDictationMark"
+            },
+            "maxItems": 2500,
+            "minItems": 1,
+            "title": "Marks",
+            "type": "array"
+          }
+        },
+        "required": ["marks"],
+        "title": "AddDictationMarks",
+        "type": "object"
+      },
       "AttemptStatus": {
         "enum": ["active", "submitted", "voided"],
         "title": "AttemptStatus",
@@ -869,6 +885,68 @@
         "title": "DictationAttemptView",
         "type": "object"
       },
+      "DictationMark": {
+        "description": "A mark on the words of the passage, as the diff needs it to show them as added.",
+        "properties": {
+          "at_ms": {
+            "description": "Absolute media time of the first word",
+            "title": "At Ms",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The learner's own note, so an open Transcript can take the mark as it is",
+            "title": "Note"
+          },
+          "source": {
+            "enum": ["dictation", "manual"],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["suggested", "confirmed"],
+            "title": "Status",
+            "type": "string"
+          },
+          "word_from": {
+            "title": "Word From",
+            "type": "integer"
+          },
+          "word_to": {
+            "title": "Word To",
+            "type": "integer"
+          }
+        },
+        "required": ["id", "word_from", "word_to", "at_ms", "source", "status", "note"],
+        "title": "DictationMark",
+        "type": "object"
+      },
+      "DictationMarks": {
+        "properties": {
+          "marks": {
+            "items": {
+              "$ref": "#/components/schemas/DictationMark"
+            },
+            "title": "Marks",
+            "type": "array"
+          }
+        },
+        "required": ["marks"],
+        "title": "DictationMarks",
+        "type": "object"
+      },
       "DictationPassage": {
         "description": "The part of the clip the player may play, in milliseconds, [start_ms, end_ms).",
         "properties": {
@@ -1521,6 +1599,33 @@
           "consents_required"
         ],
         "title": "Me",
+        "type": "object"
+      },
+      "NewDictationMark": {
+        "description": "Words of the diff to add to the mark list. The browser names the mark (ADR 0047).",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "word_from": {
+            "description": "`index` of the first diff word",
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Word From",
+            "type": "integer"
+          },
+          "word_to": {
+            "description": "`index` of the last diff word",
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Word To",
+            "type": "integer"
+          }
+        },
+        "required": ["id", "word_from", "word_to"],
+        "title": "NewDictationMark",
         "type": "object"
       },
       "NewMark": {
@@ -3410,6 +3515,100 @@
           }
         },
         "summary": "Record Listen Started",
+        "tags": ["dictation"]
+      }
+    },
+    "/api/v1/dictation/attempts/{attempt_id}/marks": {
+      "get": {
+        "description": "The marks of the attempt's session in audio order, to show the words already added.",
+        "operationId": "list_marks_api_v1_dictation_attempts__attempt_id__marks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictationMarks"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Marks",
+        "tags": ["dictation"]
+      },
+      "post": {
+        "description": "Add missed or wrong words of the scored diff to the mark list (FR-DI-6).\n\nEach entry is a word or a run of words next to each other that were all missed or\nwrong, at most 20. The answer has one mark per entry, in order: words that are already\nmarked give back the mark they have and a resend gives back the same mark, so adding\ntwice never makes a duplicate. The browser-made `id` is the idempotency key, so no\n`Idempotency-Key` is needed (ADR 0047). One refused entry refuses the request.",
+        "operationId": "add_marks_api_v1_dictation_attempts__attempt_id__marks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddDictationMarks"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictationMarks"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "409": {
+            "description": "`attempt_not_scored` or `mark_id_taken`"
+          },
+          "422": {
+            "description": "`not_a_mark_candidate` or `mark_too_long`"
+          }
+        },
+        "summary": "Add Marks",
         "tags": ["dictation"]
       }
     },
