@@ -78,6 +78,7 @@ test('Start begins one attempt, loads the passage and hides the way out', async 
   expect(audio.preload).toBe('auto');
   expect(screen.queryByRole('link', { name: 'Library' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Change entry' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Plan' })).toBeNull(); // UX-19
   expect(screen.queryByRole('button', { name: 'Start listening' })).toBeNull();
   expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
 });

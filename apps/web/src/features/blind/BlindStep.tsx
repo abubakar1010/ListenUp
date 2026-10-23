@@ -290,7 +290,7 @@ export function BlindStep({ session, progress }: BlindStepProps) {
             : `Passage ${formatClock(start_ms)} to ${formatClock(end_ms)}`
         }
         back={listening ? null : { to: '/library', label: 'Library' }}
-        progress={listening ? <StepProgress session={session} /> : progress}
+        progress={listening ? <StepProgress session={session} plan={false} /> : progress}
         player={
           <>
             {/* No controls and not focusable: start and volume are the only controls. */}

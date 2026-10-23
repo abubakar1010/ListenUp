@@ -232,6 +232,23 @@ test('a part of the clip is typed at 360 px', async ({ page }) => {
   await expect(page.getByText('Step 1 of 4')).toBeVisible();
   expect(posts[0].body).toMatchObject({ passage: { start_ms: 130_000, end_ms: 280_000 } });
 
+  // The step names do not fit at 360 px: Plan opens the full list as a sheet (UX-09).
+  const plan = page.getByRole('button', { name: 'Plan', exact: true });
+  await plan.focus();
+  await page.keyboard.press('Enter');
+  const sheet = page.getByRole('dialog', { name: 'Your plan' });
+  await expect(sheet.getByRole('listitem')).toHaveText([
+    '1. Blind Now',
+    '2. Transcript Locked',
+    '3. Card Locked',
+    '4. Shadow Locked',
+  ]);
+  const box = (await sheet.boundingBox())!;
+  expect(box.y + box.height).toBeCloseTo(740, 0); // a bottom sheet
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  await expect(plan).toBeFocused();
+
   for (const path of ['/contents/clip-1/plan', '/sessions/s-1', '/library']) {
     await page.goto(path);
     await expect(page.getByRole('main')).toBeVisible();
