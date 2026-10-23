@@ -275,6 +275,8 @@ Verification in this session:
 With the owner's approval, the states were published as a new Design canvas,
 [ListenUp ADR 0033 states](https://claude.ai/artifact/F3Ao8ePjGDBE64aStJSH8h).
 The publish was confirmed by the Artifact tool at version 8 (`1792758339-6872`).
+After the rendered check below, the fixed boards were republished as version 10
+(`1792758778-1e49`).
 The canvas is private until the owner shares it.
 
 It has one page per flow, plus an overview and a page of the five reusable state
@@ -308,7 +310,7 @@ Verification of the published boards:
 | Every UX-37 to UX-41 state, copy line and focus, trap, return, destination, busy-focus, inert, announcement and no-shortcut rule is shown on a frame or in its note | Static review of the board sources against this log | Done |
 | Text at least 4.5:1 and control boundaries and focus rings at least 3:1, for every pair the boards use, in both themes | Calculation from the token values the boards use (ink, ink-muted, accent, success, warning and danger on surface, raised, sunken and accent-soft; on-accent on accent; line-strong on each surface) | All pass. The lowest are warning on sunken, light 4.99:1; muted on accent-soft, dark 5.20:1; line-strong on sunken, light 3.40:1 |
 | Interactive targets at least 44 px, or 48 px for sheet actions | Static review of the board sources | Done. Text links in body copy are exempt inline links |
-| Rendered layout: wrapping, clipping and visible focus | Viewing the rendered canvas | **Not performed.** The boards were not opened or screenshotted after publishing |
+| Rendered layout: wrapping, clipping, sideways overflow, visible focus | The 20 galleries and the overview, rendered in headless Chromium with the canvas's own runtime and fonts. Each note and frame was measured for overflow, and every screenshot was reviewed by eye | Done after fixes (version 10, `1792758778-1e49`). The first render found three defects: the gist textarea showed “[object Object]”; seven 360 px notes were clipped by up to 66 px; three 360 px intake frames sliced their last line. Fixes: the textarea now takes its text through `value`; notes at 360 are 288 px tall; intake frames at 360 are 880 px tall. The re-render found no clipped note, no sideways overflow and no sliced text. Focus rings are visible on every focused control in both themes. Remaining: at 360 the gist side panel sits wholly below a phone-height frame, as page content below the fold. This was a local render, not the claude.ai canvas editor |
 | 200% zoom, mobile keyboard open, reduced motion in a live page | Live check | **Not performed.** The boards are static mockups. The notes specify the behaviour |
 | Keyboard operation, focus trapping, inert background and no playback shortcuts under a modal, in a browser | Live check | **Not performed** |
 | Screen-reader names, descriptions and live announcements | Live check | **Not performed** |
@@ -317,8 +319,8 @@ Remaining gaps after publication:
 - **Final UI.** The boards are not in the existing Final UI, and they have not
   been compared with design system v2. Merge them when an account with access
   can edit it.
-- **Rendered and live checks.** The rendered, browser and screen-reader checks
-  above remain open.
+- **Live checks.** The rendered layout check is done. The 200% zoom,
+  mobile-keyboard, browser keyboard and screen-reader checks above remain open.
 - **Implementation (current main `58ac0c3`).** These gaps are unchanged from
   the comparison above:
   - no whole-clip lock UI or handling of the `blind_in_progress` refusal;
@@ -507,7 +509,6 @@ Publication checklist:
   the separate [ADR 0033 states canvas](https://claude.ai/artifact/F3Ao8ePjGDBE64aStJSH8h).
 - Still open:
   - merge them into the existing Final UI;
-  - inspect the rendered boards for clipping, wrapping and focus visibility;
   - check 200% zoom and mobile layouts with the keyboard open;
   - compare against the actual v2 artifact;
   - verify focus trapping, the inert background and announcements in a browser
