@@ -6,13 +6,14 @@ import { api, ApiError } from '../api/client';
 import type { components } from '../api/schema';
 import { errorMessage } from './errorMessage';
 import { changeSession } from './session';
+import { BusyButton } from '../components/BusyButton';
 
 type ResetRequested = components['schemas']['PasswordResetRequested'];
 
 const inputClass =
   'rounded border border-gray-400 px-3 py-2 focus:outline-2 focus:outline-offset-2 focus:outline-blue-700';
 const buttonClass =
-  'rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 focus:outline-2 focus:outline-offset-2 focus:outline-blue-700 disabled:opacity-60';
+  'rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 focus:outline-2 focus:outline-offset-2 focus:outline-blue-700 aria-disabled:opacity-60';
 const linkClass = 'text-blue-700 underline';
 
 /** Asks for a reset email (FR-ACC-3). Route: /forgot-password. */
@@ -70,9 +71,9 @@ export function PasswordResetRequestPage() {
           <p id={ids.error} role="alert" className="min-h-6 text-red-800">
             {error}
           </p>
-          <button type="submit" disabled={submit.isPending} className={buttonClass}>
+          <BusyButton type="submit" busy={submit.isPending} className={buttonClass}>
             {submit.isPending ? 'Please wait…' : 'Send reset link'}
-          </button>
+          </BusyButton>
         </form>
       )}
       <p className="mt-6">
@@ -172,9 +173,9 @@ export function PasswordResetConfirmPage() {
             </>
           )}
         </div>
-        <button type="submit" disabled={submit.isPending} className={buttonClass}>
+        <BusyButton type="submit" busy={submit.isPending} className={buttonClass}>
           {submit.isPending ? 'Please wait…' : 'Set new password'}
-        </button>
+        </BusyButton>
       </form>
     );
   }

@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { expectFocusKept } from './focus';
 
 const LEARNER = {
   id: '1',
@@ -226,10 +227,24 @@ test('a part of the clip is typed at 360 px', async ({ page }) => {
   expect(posts).toHaveLength(0);
 
   await page.getByRole('textbox', { name: 'End' }).fill('04:40');
+  // The plan starts slowly: Start plan keeps focus and says it is busy (#195).
+  let answer: () => void = () => undefined;
+  const answered = new Promise<void>((resolve) => (answer = resolve));
+  await page.route('**/api/v1/sessions', async (route) => {
+    if (route.request().method() === 'POST') await answered;
+    await route.fallback();
+  });
   await page.getByRole('button', { name: 'Start plan' }).focus();
   await page.keyboard.press('Enter');
+  const starting = page.getByRole('button', { name: 'Starting…' });
+  await expect(starting).toHaveAttribute('aria-busy', 'true');
+  await expect(starting).toBeFocused();
+  await page.keyboard.press('Enter'); // a second press sends nothing
+  await expectFocusKept(page, 'while the plan starts');
+  answer();
   await expect(page).toHaveURL('/sessions/s-1');
   await expect(page.getByText('Step 1 of 4')).toBeVisible();
+  expect(posts).toHaveLength(1);
   expect(posts[0].body).toMatchObject({ passage: { start_ms: 130_000, end_ms: 280_000 } });
 
   for (const path of ['/contents/clip-1/plan', '/sessions/s-1', '/library']) {

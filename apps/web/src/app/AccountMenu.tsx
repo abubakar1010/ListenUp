@@ -6,6 +6,7 @@ import { api, type Me } from '../api/client';
 import { changeSession } from '../auth/session';
 import { buttonClass } from '../components/button';
 import { describeError } from '../components/describeError';
+import { BusyButton } from '../components/BusyButton';
 
 function initials(me: Me): string {
   const source = me.display_name?.trim() || me.email;
@@ -78,14 +79,13 @@ export function AccountMenu({ me }: { me: Me }) {
         <Link to="/settings" onClick={() => setOpen(false)} className={buttonClass('secondary')}>
           Settings
         </Link>
-        <button
-          type="button"
+        <BusyButton
           onClick={() => signOut.mutate()}
-          disabled={signOut.isPending}
+          busy={signOut.isPending}
           className={buttonClass('secondary')}
         >
           {signOut.isPending ? 'Signing out…' : 'Sign out'}
-        </button>
+        </BusyButton>
         {signOut.isError && (
           <p role="alert" className="text-body-s text-danger">
             {describeError(signOut.error).title}. {describeError(signOut.error).nextStep}

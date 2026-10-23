@@ -11,6 +11,7 @@ import { errorMessage } from './errorMessage';
 import { GoogleRestore } from './GoogleRestore';
 import { nextPath } from './next';
 import { changeSession } from './session';
+import { BusyButton } from '../components/BusyButton';
 
 type Mode = 'sign-in' | 'register';
 
@@ -248,13 +249,13 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
             on {formatDeletionDate(keptDeleted)}.
           </p>
         )}
-        <button
+        <BusyButton
           type="submit"
-          disabled={submit.isPending}
-          className="rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 focus:outline-2 focus:outline-offset-2 focus:outline-blue-700 disabled:opacity-60"
+          busy={submit.isPending}
+          className="rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 focus:outline-2 focus:outline-offset-2 focus:outline-blue-700 aria-disabled:opacity-60"
         >
           {submit.isPending ? 'Please wait…' : copy.submit}
-        </button>
+        </BusyButton>
       </form>
       <p className="mt-6">{footer}</p>
       {restoreUntil && (

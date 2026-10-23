@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 're
 import { createPortal } from 'react-dom';
 
 import { buttonClass } from './button';
+import { BusyButton } from './BusyButton';
 
 interface ConfirmDialogProps {
   title: string;
@@ -108,23 +109,12 @@ export function ConfirmDialog({
         <div id={bodyId}>{children}</div>
         {footer}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            className={buttonClass('secondary')}
-            onClick={onConfirm}
-            disabled={busy}
-          >
+          <BusyButton className={buttonClass('secondary')} onClick={onConfirm} busy={busy}>
             {busy ? busyLabel : confirmLabel}
-          </button>
-          <button
-            ref={safe}
-            type="button"
-            className={buttonClass('primary')}
-            onClick={onCancel}
-            disabled={busy}
-          >
+          </BusyButton>
+          <BusyButton ref={safe} className={buttonClass('primary')} onClick={onCancel} busy={busy}>
             {cancelLabel}
-          </button>
+          </BusyButton>
         </div>
       </div>
     </div>,
