@@ -99,6 +99,13 @@ Read the section for the area you are changing before you change it. The rules e
 
 ## Admin (ADR 0045)
 
+- Usage reports (ADR 0052) use `LISTENUP_ADMIN_REPORT_DATABASE_URL`, a separate
+  login granted only `listenup_readonly`. Never fall back to the API or worker
+  connection. Read AI accounting only; quota configuration is allowlisted metadata,
+  with no AI-layer import. Keep hypothetical costs, reserved usage, current
+  calendar quotas and the 30-day UTC history distinct. Zero, uncapped and unknown
+  allowances have different meanings.
+
 - Admin routes live in `modules/admin/api.py` under `/admin` and take `CurrentAdmin` from `modules/admin/service.py`: a learner who is not an admin gets 404 `not_found`, the answer of a path that does not exist. Admins are the verified accounts whose email is in `LISTENUP_ADMIN_EMAILS`. Register admin routes as `Admin(...)` in `tests/integration/access_registry.py`.
 - Admin answers carry counts, ids, names and times only: never job arguments, learner media or text (SRS 2.2). Failed jobs are retried as new jobs with `platform.jobs.retry_failed_job`. The web page is `/admin/jobs` (`src/features/admin/JobsPage.tsx`); on 404 it shows the ordinary "Page not found".
 
