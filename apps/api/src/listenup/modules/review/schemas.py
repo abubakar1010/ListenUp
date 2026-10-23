@@ -47,6 +47,12 @@ class MarkNote(BaseModel):
     note: str | None
 
 
+class MarkStatus(BaseModel):
+    """FR-TR-3: a suggested Dictation mark is confirmed; it never goes back to suggested."""
+
+    status: Literal["confirmed"]
+
+
 class Mark(BaseModel):
     id: uuid.UUID
     session_id: uuid.UUID

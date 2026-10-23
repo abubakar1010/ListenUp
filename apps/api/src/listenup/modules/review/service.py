@@ -260,7 +260,18 @@ async def change_note(
     return _mark(row)
 
 
+async def confirm_mark(db: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UUID) -> schemas.Mark:
+    """FR-TR-3: the learner confirms a suggested Dictation mark; a confirmed one stays so."""
+    await practice.require_reached(db, session_id, practice.Step.TRANSCRIPT)
+    row = await repository.confirm(db, session_id, mark_id)
+    if row is None:
+        raise _mark_not_found()
+    return _mark(row)
+
+
 async def remove_mark(db: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UUID) -> None:
+    """Delete the mark, from either source: a removed Dictation suggestion is not kept
+    (ADR 0056)."""
     await practice.require_reached(db, session_id, practice.Step.TRANSCRIPT)
     if not await repository.delete(db, session_id, mark_id):
         raise _mark_not_found()

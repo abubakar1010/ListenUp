@@ -1,4 +1,4 @@
-"""Transcript step HTTP boundary (FR-TR-1, FR-TR-2, FR-TX-5)."""
+"""Transcript step HTTP boundary (FR-TR-1, FR-TR-2, FR-TR-3, FR-TX-5)."""
 
 import uuid
 from typing import Any
@@ -136,6 +136,25 @@ async def change_mark_note(
     """Replace the mark's note; an empty or null note removes it."""
     response.headers.update(_NO_STORE)
     return await service.change_note(db, session_id, mark_id, body.note)
+
+
+@router.put(
+    "/sessions/{session_id}/marks/{mark_id}/status",
+    responses={**_GATE, 404: {"description": "`session_not_found` or `mark_not_found`"}},
+)
+async def confirm_mark(
+    session_id: uuid.UUID,
+    mark_id: uuid.UUID,
+    body: schemas.MarkStatus,
+    response: Response,
+    learner: CurrentLearner,
+    db: DbSession,
+) -> schemas.Mark:
+    """Confirm a mark pre-filled from Dictation (FR-TR-3). Confirming again answers with
+    the same mark, so a resend is harmless; to drop the mark, DELETE it (ADR 0056).
+    """
+    response.headers.update(_NO_STORE)
+    return await service.confirm_mark(db, session_id, mark_id)
 
 
 @router.delete(
