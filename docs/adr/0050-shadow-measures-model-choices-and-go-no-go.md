@@ -102,7 +102,9 @@ Accepted by the owner on 2026-10-23:
   #21 (B3 latency on the stage-0 server), #22 (B4 filler recall) and #110
   (calibration against the teacher golden set, which needs #107), learners see
   "Feedback unavailable" after each round and the plan still completes. This
-  follows the FR-BL-11 principle: "grading never blocks the learner". The MVP
+  follows FR-SH-16 ("a round counts as done once recorded") and the principle
+  that grading never blocks the learner. #110 itself needs #83, so it gates
+  turning grading on for learners, not building #80 to #83. The MVP
   does not launch without Shadow grading; no SRS or PRD requirement changes.
   Rounds do not wait for the reference profile; "preparing" applies only where
   grading needs the profile.
