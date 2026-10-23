@@ -118,6 +118,48 @@ test('a signed-out learner opens a session, signs in and lands back on it', asyn
   await expect(main.getByRole('region', { name: 'Blind' })).toBeVisible();
 });
 
+test('a paused sign-in shows the time, the minutes left and the reset link at 360 px', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await fakeApi(page);
+  const until = new Date(Date.now() + 10 * 60_000 + 30_000).toISOString();
+  let logins = 0;
+  await page.route('**/api/v1/auth/login', (route) => {
+    logins += 1;
+    return route.fulfill({
+      status: 429,
+      contentType: 'application/problem+json',
+      json: {
+        type: '/problems/account_locked',
+        title: 'Too Many Requests',
+        status: 429,
+        detail: 'Too many failed sign-in attempts for this account.',
+        code: 'account_locked',
+        locked_until: until,
+      },
+    });
+  });
+  await page.goto('/sign-in');
+  await page.getByLabel('Email').fill('learner@example.com');
+  await page.getByLabel('Password').fill('wrong horse');
+  await page.getByLabel('Password').press('Enter');
+
+  await expect(page.getByRole('alert')).toContainText(/Sign-in is paused until \d/);
+  await expect(page.getByText('11 minutes left.')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Reset your password' })).toBeVisible();
+  const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
+  await expect(signIn).toHaveAttribute('aria-disabled', 'true');
+  await signIn.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('alert')).toBeFocused();
+  expect(logins).toBe(1);
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
 test('the shell fits a 360 px screen without sideways scrolling', async ({ page }) => {
   await fakeApi(page, { signedIn: true });
   await page.setViewportSize({ width: 360, height: 740 });

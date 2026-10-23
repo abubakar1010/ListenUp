@@ -27,6 +27,11 @@ from listenup.modules.identity.domain.credentials import (
     normalize_email,
     password_problem,
 )
+from listenup.modules.identity.domain.lockout import (
+    attempts_left,
+    email_lock_subject,
+    user_lock_subject,
+)
 from listenup.modules.identity.domain.tokens import new_token, token_hash
 from listenup.modules.identity.repository import Account
 from listenup.platform.config import Settings, get_settings
@@ -74,12 +79,20 @@ def _not_signed_in() -> ProblemError:
     return ProblemError(401, "not_signed_in", "Sign in to continue.")
 
 
-def _invalid_credentials() -> ProblemError:
-    return ProblemError(
+def _invalid_credentials(
+    attempts_left: int | None = None, lock_minutes: int | None = None
+) -> ProblemError:
+    # Sign-in tells how many tries are left before the pause (UX-35), the same for
+    # every address, so a learner can stop and reset in time.
+    problem = ProblemError(
         401,
         "invalid_credentials",
         "The email or password is wrong. Check both and try again.",
     )
+    if attempts_left is not None:
+        problem.extensions["attempts_left"] = attempts_left
+        problem.extensions["lock_minutes"] = lock_minutes
+    return problem
 
 
 async def signed_in_learner(request: Request, session: DbSession) -> uuid.UUID:
@@ -252,10 +265,10 @@ class Accounts:
             await self.limiter.enforce(self.login_by_ip, ip_key(self.login_by_ip, ip))
 
         account = await repository.find_account(session, normalize_email(email))
-        valid = await self._check_password(account, password)
+        valid, left = await self._check_password(account, password, email)
         # A deleted account past its grace period answers exactly like an unknown one.
         if account is None or not valid or account.gone:
-            raise _invalid_credentials()
+            raise _invalid_credentials(left, self.settings.login_lock_minutes)
 
         async with self.database.transaction() as own:
             await repository.clear_failures(own, account.id)
@@ -269,32 +282,42 @@ class Accounts:
             )
         return account.id
 
-    async def _check_password(self, account: Account | None, password: str) -> bool:
-        """Verify a password under the sign-in lockout (D17); True when it is right.
+    async def _check_password(
+        self, account: Account | None, password: str, email: str
+    ) -> tuple[bool, int]:
+        """Verify a password under the sign-in lockout (D17): whether it is right, and
+        how many tries are left before the pause.
 
-        A locked account answers 429 `account_locked` before the password is checked,
-        and a wrong password counts as a failure, answering 429 when it locks the
-        account. Both are committed on their own, since the caller is about to refuse
-        the request and roll it back. A missing or gone account still costs a hash
-        check, so the answer takes as long, and nothing is counted for it.
+        A locked subject answers 429 `account_locked` before the password is checked,
+        and a wrong password counts as a failure, answering 429 when it locks. Both are
+        committed on their own, since the caller is about to refuse the request and
+        roll it back. A missing or gone account still costs a hash check, so the answer
+        takes as long, and is counted under a digest of the address (ADR 0057): it gets
+        the same answers as a real account, so the lockout reveals no account (UX-35).
         """
-        counted = account if account is not None and not account.gone else None
-        if counted is not None:
-            async with self.database.transaction() as own:
-                until = await repository.locked_until(own, counted.id, self.lock)
-            if until is not None:
-                raise self._locked(until)
-        valid = await passwords.verify_password(
-            account.password_hash if account else None, password
+        live = account if account is not None and not account.gone else None
+        subject = (
+            user_lock_subject(live.id)
+            if live is not None
+            else email_lock_subject(
+                self.settings.analytics_hmac_key.get_secret_value().encode(), email
+            )
         )
-        if counted is not None and not valid:
-            async with self.database.transaction() as own:
-                until = await repository.record_failure(
-                    own, counted.id, self.lock, self.settings.login_lock_threshold
-                )
-            if until is not None:
-                raise self._locked(until)
-        return valid
+        threshold = self.settings.login_lock_threshold
+        async with self.database.transaction() as own:
+            until = await repository.locked_until(own, subject, self.lock)
+        if until is not None:
+            raise self._locked(until)
+        valid = live is not None and await passwords.verify_password(live.password_hash, password)
+        if live is None:
+            await passwords.verify_password(None, password)  # the same work either way
+        if valid:
+            return True, threshold
+        async with self.database.transaction() as own:
+            failures, until = await repository.record_failure(own, subject, self.lock, threshold)
+        if until is not None:
+            raise self._locked(until)
+        return False, attempts_left(failures, threshold)
 
     async def complete_sign_in(
         self,
@@ -386,7 +409,8 @@ class Accounts:
                 "google_reauthentication_required",
                 "Confirm with Google before deleting your account.",
             )
-        if not await self._check_password(account, password):
+        valid, _ = await self._check_password(account, password, account.email)
+        if not valid:
             raise ProblemError(
                 403,
                 "wrong_password",
