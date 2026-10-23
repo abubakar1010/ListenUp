@@ -1,0 +1,19 @@
+{
+  "synthetic": true,
+  "note": "Hand-authored replay fixture for pipeline behavior; not a live provider recording or model-quality evidence.",
+  "gist": "City plant tree cool street. Tree shade the pavement. Leaf release water.",
+  "response": {
+    "dimension_scores": {
+      "main_idea": 95,
+      "key_details": 100,
+      "accuracy": 100
+    },
+    "covered_points": [
+      "kp1",
+      "kp2",
+      "kp3"
+    ],
+    "wrong_claims": [],
+    "feedback": "You caught the main idea. You included both ways trees cool streets."
+  }
+}
