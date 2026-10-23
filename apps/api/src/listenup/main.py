@@ -48,6 +48,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         configure_telemetry(settings, "api")
         app.state.database = Database(settings.database_url, settings.database_pool_size)
         app.state.transcript_database = Database(settings.transcript_read_database_url, 2)
+        app.state.admin_report_database = (
+            Database(settings.admin_report_database_url, 2)
+            if settings.admin_report_database_url
+            else None
+        )
         app.state.storage = S3Storage(settings)
         app.state.rate_limiter = RateLimiter(app.state.database)
         app.state.accounts = build_accounts(app.state.database, app.state.rate_limiter, settings)
@@ -69,7 +74,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 try:
                     await app.state.transcript_database.dispose()
                 finally:
-                    shutdown_telemetry()
+                    try:
+                        if app.state.admin_report_database is not None:
+                            await app.state.admin_report_database.dispose()
+                    finally:
+                        shutdown_telemetry()
 
     app = FastAPI(title="ListenUp API", version=__version__, lifespan=lifespan)
     app.state.settings = settings

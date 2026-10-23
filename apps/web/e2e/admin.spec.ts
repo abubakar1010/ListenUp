@@ -35,6 +35,39 @@ async function answerApi(page: Page, admin: boolean) {
       });
     }
     if (path === '/me') return route.fulfill({ json: ADMIN });
+    if (admin && path === '/admin/usage')
+      return route.fulfill({
+        json: {
+          start_date: '2026-10-01',
+          end_date: '2026-10-30',
+          as_of: '2026-10-30T23:30:00Z',
+          providers: [
+            {
+              provider: 'hosted',
+              days: [
+                {
+                  date: '2026-10-30',
+                  calls: 2,
+                  input_tokens: 300,
+                  output_tokens: 50,
+                  audio_seconds: 4,
+                  estimated_cost_usd: 0.25,
+                  estimated_calls: 1,
+                },
+              ],
+              quotas: [
+                {
+                  period: 'day',
+                  calls: 2,
+                  tokens: 350,
+                  audio_seconds: 4,
+                  limits: { calls: 10, tokens: 1000 },
+                },
+              ],
+            },
+          ],
+        },
+      });
     if (admin && path === '/admin/jobs') return route.fulfill({ json: { lanes: LANES, failed } });
     if (admin && path === '/admin/jobs/12/retry' && request.method() === 'POST') {
       expect(request.headers()['x-csrf-token']).toBe('e2e-token');
@@ -68,4 +101,33 @@ test('a learner who opens the admin page sees page-not-found', async ({ page }) 
 
   await page.goto('/admin/jobs');
   await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
+});
+
+test('an admin navigates to usage by keyboard and reads it at 360 px', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 });
+  await answerApi(page, true);
+  await page.goto('/admin/jobs');
+  const usage = page.getByRole('link', { name: 'AI usage', exact: true });
+  await usage.focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/admin\/usage$/);
+  await expect(page.getByRole('table', { name: 'hosted daily usage (UTC)' })).toBeVisible();
+  await expect(page.getByText('2 / 10 (20%)')).toBeVisible();
+  await expect(page.getByText('$0.2500')).toBeAttached();
+  const history = page.getByRole('region', { name: 'hosted history' });
+  await history.focus();
+  await expect(history).toBeFocused();
+  await page.keyboard.press('End');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.getByRole('link', { name: 'Jobs', exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/jobs$/);
+});
+
+test('a learner who opens usage receives the ordinary page-not-found', async ({ page }) => {
+  await answerApi(page, false);
+  await page.goto('/admin/usage');
+  await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
+  await expect(page.getByRole('table')).toHaveCount(0);
 });

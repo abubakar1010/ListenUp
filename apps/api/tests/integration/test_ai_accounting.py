@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+from datetime import timedelta
 from textwrap import dedent
 from uuid import uuid4
 
@@ -141,6 +142,16 @@ async def test_admission_racing_settlement_observes_committed_capacity(migrated_
     entry = ProviderEntry(provider="p" + uuid4().hex, limits={"day": {"tokens": 100}})
     admit_store, settle_store = PostgresAccounting(db), PostgresAccounting(db)
     try:
+        async with db.transaction() as session:
+            minute = (await settle_store._now(session)).replace(second=0, microsecond=0)
+        # This races capacity within one bucket. Keep distinct ordered timestamps
+        # without letting a real minute rollover add another valid quota row.
+        times = iter((minute, minute + timedelta(seconds=1)))
+
+        async def same_bucket(session):
+            return next(times)
+
+        admit_store._now = settle_store._now = same_bucket
         ticket = await settle_store.admit(
             entry, Role.TEXT_AI, "grade_gist", "v1", Usage(input_tokens=60), False
         )

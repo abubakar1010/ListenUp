@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { Link } from 'react-router';
 
 import { ApiError } from '../../api/client';
 import { usePageTitle } from '../../app/usePageTitle';
@@ -196,6 +197,13 @@ export default function JobsPage() {
       </div>
 
       {/* Always in the page, so screen readers announce what a retry did. */}
+      {overview.isSuccess && (
+        <nav aria-label="Administration">
+          <Link to="/admin/usage" className="underline">
+            AI usage
+          </Link>
+        </nav>
+      )}
       <div role="status" className="empty:hidden">
         {outcome && (
           <p className={outcome.failed ? 'font-bold text-danger' : undefined}>{outcome.text}</p>
