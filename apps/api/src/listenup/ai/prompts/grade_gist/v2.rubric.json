@@ -1,0 +1,13 @@
+{
+  "version": "v2",
+  "weights": {
+    "main_idea": 50,
+    "key_details": 30,
+    "accuracy": 20
+  },
+  "levels": {
+    "fair": 50,
+    "good": 70,
+    "excellent": 90
+  }
+}
