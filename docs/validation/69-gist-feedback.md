@@ -59,12 +59,24 @@ run as the restricted API role; shared references stay inaccessible to that role
 - Backend format, lint, mypy and six import contracts: passed.
 - Uninstrumented `uv run pytest -m performance --no-cov`: 1 passed.
 - Final focused feedback API run: 5 passed, restricted API role, real PostgreSQL.
-- Backend full coverage: in progress. Initial run was stopped after lint autofix
-  removed imported fixtures; explicit re-export aliases fixed setup, and the run
-  restarted. This was test setup, not a production regression or Red evidence.
+- Backend full required-service coverage command from `docs/testing.md`:
+  **1,972 passed, 1 deselected**, 477.28 s; PostgreSQL and S3 required, fake AI.
+  Overall line/branch report: 97%. Runtime coverage inventory passes.
+- Backend changed executable lines: **98% (49/50)** against `origin/main`.
+  The single uncovered line is the defensive pending return when a stored shared
+  reference disappears during the read. D4 disclosure outcomes and ownership
+  refusals are covered. Blind's two branch gaps are unchanged playback paths.
+- Initial full run was stopped after lint autofix removed imported fixtures;
+  explicit re-export aliases fixed setup before the passing full run. This was
+  test setup, not a production regression or Red evidence.
 - No migration: no database schema changed. OpenAPI exported and client regenerated;
   new GET route registered as Owned in `access_registry.py`.
-- Required CI and independent fresh-session review remain before owner merge.
+- Implementation CI passed on `f2cd28f`, including both application suites,
+  browser tests, changed-line gate, schema contract, dependency scan, Docker builds
+  and the real-scanner/media-sandbox job. Synthetic AI smoke was path-skipped:
+  no prompts, jobs or provider code changed. Evidence: [PR run](https://github.com/abubakar1010/ListenUp/actions/runs/39943675664).
+- Independent fresh-session review remains an owner merge gate; no merge performed.
+  Final documentation update needs the current head's CI before owner merge.
 
 ## Deferred performance criterion
 
