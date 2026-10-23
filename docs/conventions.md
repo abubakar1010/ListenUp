@@ -169,6 +169,10 @@ Read the section for the area you are changing before you change it. The rules e
   with no Transcript gate and no passage read. Words already marked give back their mark
   rather than `mark_exists`. The run rule is `dictation/domain/marks.candidate_range` and
   `features/dictation/marks.ts`; the 20-word limit stays review's `check_length`.
+  `candidate_range` refuses a range longer than the diff's candidates before walking it,
+  so no request walks further than the diff. Beside an open transcript the Dictation
+  panel reads and adds through Transcript's `MarkSync` (`markList`, `takeSaved`), so the
+  page keeps one mark list.
 
 ## Media sandbox and scanning (ADR 0049)
 
