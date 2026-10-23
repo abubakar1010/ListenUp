@@ -26,6 +26,7 @@ test('the daily limit names the limit and when to come back', () => {
     title: "You have reached today's limit of new audio",
     detail:
       'You have added 120 minutes of new audio today, the daily limit. You can add more at 06:00 tomorrow.',
+    rule: true,
   });
   expect(
     dailyLimitProblem(

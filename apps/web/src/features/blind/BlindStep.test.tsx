@@ -276,6 +276,8 @@ test('an attempt that ended says why and how to go on', async () => {
 
   const alert = await screen.findByRole('alert');
   expect(alert).toHaveTextContent('Your Blind attempt ended');
+  // The rule working, not an error: the calm caution style (UX-12, UX-17).
+  expect(alert).toHaveAttribute('data-tone', 'caution');
   expect(alert).toHaveTextContent(
     'You left the page at 01:12. Blind needs one full listen, so you start again from 00:00.',
   );
