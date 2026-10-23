@@ -34,17 +34,6 @@
   --color-toast-ink: var(--color-surface);
   --color-scrim: rgba(14, 17, 16, 0.55);
 
-  /*
-   * Bridge for the auth pages, which were styled before the tokens existed. Remove each
-   * alias once nothing uses the Tailwind colour it replaces.
-   */
-  --color-blue-700: var(--color-accent);
-  --color-blue-800: var(--color-accent-hover);
-  --color-gray-400: var(--color-line-strong);
-  --color-gray-700: var(--color-ink-muted);
-  --color-red-800: var(--color-danger);
-  --color-white: var(--color-on-accent);
-
   /* Type. Fonts are self-hosted from @fontsource (imported in main.tsx). */
   --font-display:
     'Bricolage Grotesque Variable', 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;

@@ -54,6 +54,25 @@ test('signing in sends the CSRF token and goes to the library', async () => {
   });
 });
 
+test('Continue with Google and the main action look the same on sign-in and register', async () => {
+  mockApi({ '/me': () => SIGNED_OUT() });
+  const signIn = renderWithProviders(<App />, { route: '/sign-in' });
+  const google = await screen.findByRole('link', { name: 'Continue with Google' });
+  const submit = screen.getByRole('button', { name: 'Sign in' });
+  expect(google).toHaveAttribute('data-variant', 'secondary');
+  expect(submit).toHaveAttribute('data-variant', 'primary');
+  const googleLook = google.className;
+  signIn.unmount();
+
+  renderWithProviders(<App />, { route: '/register' });
+  const registerGoogle = await screen.findByRole('button', { name: 'Continue with Google' });
+  expect(registerGoogle.className).toBe(googleLook);
+  expect(screen.getByRole('button', { name: 'Create account' })).toHaveAttribute(
+    'data-variant',
+    'primary',
+  );
+});
+
 test('a locked account is announced with the time it can try again', async () => {
   const lockedUntil = '2026-10-03T10:45:00Z';
   mockApi({

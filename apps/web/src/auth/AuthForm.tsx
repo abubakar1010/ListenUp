@@ -3,9 +3,11 @@ import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import { api, ApiError, type Me } from '../api/client';
+import { buttonProps } from '../components/button';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { formatDeletionDate } from '../features/account/deletionApi';
 import { ErrorPanel } from '../components/ErrorPanel';
+import { AUTH_PAGE_CLASS, inputClass, textLinkClass } from '../components/field';
 import { CONSENT_VERSIONS_KEY, DOCUMENTS, useConsentVersions } from './consentApi';
 import { errorMessage } from './errorMessage';
 import { GoogleRestore } from './GoogleRestore';
@@ -114,8 +116,8 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
     registering && versions.data
       ? `/api/v1/auth/oidc/google/start?next=${next}&terms_version=${encodeURIComponent(versions.data.terms)}&privacy_version=${encodeURIComponent(versions.data.privacy)}`
       : `/api/v1/auth/oidc/google/start?next=${next}`;
-  const googleClass =
-    'mt-4 inline-flex min-h-11 items-center rounded border px-4 py-2 font-bold focus:outline-2 focus:outline-offset-2';
+  // One look for Continue with Google, whether it is a link or a button (#197).
+  const google = buttonProps('secondary', 'mt-4 self-start');
 
   const failed = submit.isError && !scheduledDate(submit.error);
   const error = consentError ?? (failed && !restoreUntil ? errorMessage(submit.error) : null);
@@ -129,8 +131,8 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
   }
 
   return (
-    <main className="mx-auto max-w-sm p-6">
-      <h1 className="text-2xl font-semibold">{copy.title}</h1>
+    <main className={AUTH_PAGE_CLASS}>
+      <h1 className="font-display text-title-compact md:text-title">{copy.title}</h1>
       {registering && (
         <div className="mt-4 flex items-start gap-2">
           <input
@@ -150,11 +152,11 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
           />
           <label htmlFor={ids.consent}>
             I agree to the{' '}
-            <Link to={DOCUMENTS.terms.path} target="_blank" className="text-blue-700 underline">
+            <Link to={DOCUMENTS.terms.path} target="_blank" className={textLinkClass}>
               {DOCUMENTS.terms.name}
             </Link>{' '}
             and the{' '}
-            <Link to={DOCUMENTS.privacy.path} target="_blank" className="text-blue-700 underline">
+            <Link to={DOCUMENTS.privacy.path} target="_blank" className={textLinkClass}>
               {DOCUMENTS.privacy.name}
             </Link>
             .
@@ -162,7 +164,7 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
         </div>
       )}
       {registering && (
-        <div id={ids.versions} className="mt-2 text-sm text-gray-700">
+        <div id={ids.versions} className="mt-2 text-body-s text-ink-muted">
           {versions.data ? (
             <p>
               {DOCUMENTS.terms.name} version {versions.data.terms}, {DOCUMENTS.privacy.name} version{' '}
@@ -178,16 +180,11 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
       {registering && !accepted ? (
         // A Google sign-up accepts the same documents, so it waits for the box, and
         // for the versions it would accept.
-        <button
-          type="button"
-          className={`${googleClass} disabled:opacity-60`}
-          onClick={requireConsent}
-          disabled={!versions.data}
-        >
+        <button type="button" {...google} onClick={requireConsent} disabled={!versions.data}>
           Continue with Google
         </button>
       ) : (
-        <a className={googleClass} href={googleStart}>
+        <a {...google} href={googleStart}>
           Continue with Google
         </a>
       )}
@@ -202,7 +199,7 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
         aria-describedby={error ? ids.error : undefined}
       >
         <div className="flex flex-col gap-1">
-          <label htmlFor={ids.email} className="font-medium">
+          <label htmlFor={ids.email} className="font-bold">
             Email
           </label>
           <input
@@ -213,11 +210,11 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             aria-invalid={submit.error instanceof ApiError && submit.error.code === 'invalid_email'}
-            className="rounded border border-gray-400 px-3 py-2 focus:outline-2 focus:outline-offset-2 focus:outline-blue-700"
+            className={inputClass}
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label htmlFor={ids.password} className="font-medium">
+          <label htmlFor={ids.password} className="font-bold">
             Password
           </label>
           <input
@@ -230,16 +227,16 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
             onChange={(event) => setPassword(event.target.value)}
             aria-describedby={mode === 'register' ? ids.hint : undefined}
             aria-invalid={submit.error instanceof ApiError && submit.error.code === 'weak_password'}
-            className="rounded border border-gray-400 px-3 py-2 focus:outline-2 focus:outline-offset-2 focus:outline-blue-700"
+            className={inputClass}
           />
           {mode === 'register' && (
-            <p id={ids.hint} className="text-sm text-gray-700">
+            <p id={ids.hint} className="text-body-s text-ink-muted">
               At least 8 characters.
             </p>
           )}
         </div>
         {/* role="alert" makes screen readers announce the message, including the lockout time. */}
-        <p id={ids.error} role="alert" className="min-h-6 text-red-800">
+        <p id={ids.error} role="alert" className="min-h-6 text-danger">
           {error}
         </p>
         {keptDeleted && (
@@ -248,11 +245,7 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
             on {formatDeletionDate(keptDeleted)}.
           </p>
         )}
-        <button
-          type="submit"
-          disabled={submit.isPending}
-          className="rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 focus:outline-2 focus:outline-offset-2 focus:outline-blue-700 disabled:opacity-60"
-        >
+        <button type="submit" disabled={submit.isPending} {...buttonProps('primary')}>
           {submit.isPending ? 'Please wait…' : copy.submit}
         </button>
       </form>

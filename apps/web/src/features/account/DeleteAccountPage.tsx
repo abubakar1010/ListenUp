@@ -5,7 +5,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import { ApiError } from '../../api/client';
 import { usePageTitle } from '../../app/usePageTitle';
 import { ME_KEY, useMe } from '../../auth/useMe';
-import { buttonClass } from '../../components/button';
+import { buttonClass, buttonProps } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import {
   DELETE_ACCOUNT_KEY,
@@ -248,11 +248,7 @@ export default function DeleteAccountPage() {
           {requestError && <ErrorPanel error={requestError} />}
 
           <div className="flex flex-wrap gap-3">
-            <button
-              type="submit"
-              aria-disabled={remove.isPending}
-              className={buttonClass('secondary', 'text-danger')}
-            >
+            <button type="submit" aria-disabled={remove.isPending} {...buttonProps('danger')}>
               {remove.isPending ? 'Deleting…' : 'Delete my account'}
             </button>
             <button

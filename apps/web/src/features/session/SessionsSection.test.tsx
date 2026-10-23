@@ -37,6 +37,30 @@ test('plans list where each one stands, newest activity first, with more on dema
   expect(within(section).queryByRole('button', { name: 'More plans' })).not.toBeInTheDocument();
 });
 
+test('only the most recent unfinished plan gets the primary Resume button', async () => {
+  mockRoutes({
+    'GET /sessions': jsonResponse(200, {
+      items: [
+        sessionFixture({ id: 's3', done: 4, content_title: 'Done talk' }),
+        sessionFixture({ id: 's2', entry: 'both', done: 1, content_title: 'Newest' }),
+        sessionFixture({ id: 's1', done: 1, content_title: 'Older' }),
+      ],
+      next_cursor: null,
+    }),
+  });
+  renderWithProviders(<SessionsSection />);
+
+  const section = await screen.findByRole('region', { name: 'Your plans' });
+  const newest = within(section).getByRole('link', { name: 'Resume Newest' });
+  const older = within(section).getByRole('link', { name: 'Resume Older' });
+  expect(newest).toHaveAttribute('data-variant', 'primary');
+  expect(older).toHaveAttribute('data-variant', 'secondary');
+  expect(within(section).getByRole('link', { name: 'View Done talk' })).toHaveAttribute(
+    'data-variant',
+    'secondary',
+  );
+});
+
 test('without any plan, the section is not shown', async () => {
   const { spy } = mockRoutes({
     'GET /sessions': jsonResponse(200, { items: [], next_cursor: null }),

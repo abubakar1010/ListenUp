@@ -9,10 +9,17 @@ const VARIANTS = {
   primary: 'border-transparent bg-accent text-on-accent hover:bg-accent-hover hover:text-on-accent',
   secondary: 'border-line-strong bg-surface-raised text-ink hover:border-ink hover:text-ink',
   quiet: 'border-transparent bg-transparent px-3 text-accent hover:bg-accent-soft',
+  // Destructive actions only (UX-12): deleting an account.
+  danger: 'border-transparent bg-danger text-on-accent hover:opacity-90 hover:text-on-accent',
 } as const;
 
 export type ButtonVariant = keyof typeof VARIANTS;
 
 export function buttonClass(variant: ButtonVariant = 'secondary', extra = ''): string {
   return `${BASE} ${VARIANTS[variant]} ${extra}`.trim();
+}
+
+/** The class and the variant's name, for elements whose look tests check by role. */
+export function buttonProps(variant: ButtonVariant = 'secondary', extra = '') {
+  return { className: buttonClass(variant, extra), 'data-variant': variant };
 }

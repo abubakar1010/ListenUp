@@ -1,6 +1,6 @@
 import { Link } from 'react-router';
 
-import { buttonClass } from '../../components/button';
+import { buttonClass, buttonProps } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { progressText, useSessions, type Session } from './api';
 import { STEP_NAMES } from './plan';
@@ -25,6 +25,9 @@ export function SessionsSection() {
     );
   }
   if (items.length === 0) return null;
+  // Plans come newest activity first: only the latest unfinished one gets the primary
+  // Resume, so the page keeps one primary action (#197).
+  const leadId = items.find((session) => session.status === 'active')?.id;
 
   return (
     <section aria-labelledby="library-plans" className="flex flex-col gap-3">
@@ -33,7 +36,7 @@ export function SessionsSection() {
       </h2>
       <ul className="flex flex-col gap-3">
         {items.map((session) => (
-          <SessionRow key={session.id} session={session} />
+          <SessionRow key={session.id} session={session} lead={session.id === leadId} />
         ))}
       </ul>
       {sessions.isFetchNextPageError && (
@@ -53,7 +56,7 @@ export function SessionsSection() {
   );
 }
 
-function SessionRow({ session }: { session: Session }) {
+function SessionRow({ session, lead }: { session: Session; lead: boolean }) {
   const active = session.status === 'active';
   return (
     <li className="flex flex-col gap-2 rounded-md border border-line bg-surface-raised p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -70,7 +73,7 @@ function SessionRow({ session }: { session: Session }) {
       </div>
       <Link
         to={`/sessions/${session.id}`}
-        className={buttonClass(active ? 'primary' : 'secondary', 'self-start sm:self-auto')}
+        {...buttonProps(lead ? 'primary' : 'secondary', 'self-start sm:self-auto')}
       >
         {active ? 'Resume' : 'View'} <span className="sr-only">{session.content_title}</span>
       </Link>
