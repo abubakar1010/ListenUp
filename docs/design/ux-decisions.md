@@ -172,8 +172,10 @@ All 36 wireframe boards have a final board on the [UI canvas](https://claude.ai/
 ## ADR 0033 follow-up specification — 2026-10-23 (#117)
 
 **Publication status: unpublished.** This section specifies the requested visual
-revision; it does not claim the Final UI has been edited. Claude Code and the
-Claude Artifact tools were unavailable in this session. The existing Final UI,
+revision; it does not claim the Final UI has been edited. Three sessions have
+tried to publish it; in the latest, the Artifact tools were available but both
+artifacts returned “not found or not shared” for the signed-in account (see the
+second continuation below). The existing Final UI,
 design system v2 and wireframes could not be inspected or updated. Publish these
 states into the existing Final UI, preserving the base boards, before marking the
 design follow-up complete. The repository log remains the decision source of truth.
@@ -225,6 +227,47 @@ Validation of this documentation-only continuation: branch-name and
 6 files, 60 tests passed on the PR branch. The relevant tested UI files match
 main; this is not a full-main test run or verification of unpublished states.
 TDD is inapplicable because no executable behavior changed (docs/testing.md).
+
+### Second continuation: artifact access blocked — 2026-10-23
+
+This session had the Claude Artifact tools. A `read` of the Final UI
+(`https://claude.ai/artifact/SvknZCah3F9zuyBQyTNvov`, id
+`d1f5debb-1486-4271-9dd9-7aa82ecd13bd`) and of design system v2
+(`https://claude.ai/artifact/LsijobynKEzf1P5fvyYiRw`, id
+`a0f28b84-862a-4bdd-a41d-d50fafb31e62`) both returned “artifact not found — it
+may have been deleted, or it has not been shared with you”. A `list` with scope
+`all` showed only the review-captures page
+(`https://claude.ai/artifact/MoJdDaqzBA4NjLQAeSpDhb`). The implementation review
+on #117 hit the same refusal for the Final UI. The artifacts belong to, or are
+shared only with, another account. No board was read, edited or published, and no
+replacement or duplicate was created. **Publication status is unchanged.**
+
+To unblock, the owner shares both artifacts with edit access with the account this
+session runs as, or resumes the work while signed in as their owner. Once a `read`
+reports “writer”, publish every variant below into the existing Final UI. That
+means 360 and 1280 CSS px in light and dark, with YouTube variants only behind D10.
+
+Rechecked against fetched main `58ac0c31eba27cb5ff86a6fccc217bd283533ef3`.
+Since `8dd1a67`, main added only B2 spike documents and ADR 0056 (#187). Nothing
+changed under `apps/web/src` or the content, Blind or identity modules. Spot
+checks confirm the recorded gaps still hold:
+- `ConfirmDialog.tsx` still switches layout at Tailwind `sm` (640 px).
+- Busy dialog buttons are still natively `disabled`, so focus can be lost.
+- `ContentPage.tsx` still renders a native `<audio>`/`<video>`, and
+  `blind_in_progress` appears only in the generated schema.
+- `GistForm.tsx` still saves after a 500 ms debounce.
+- `AddClipPage.tsx` still shows no reservation figures.
+
+The comparison table above therefore stands for current main.
+
+Verification in this session:
+
+| Check | Kind | Result |
+| --- | --- | --- |
+| UX-37 to UX-41 name keyboard, focus order, trapping, return and destination focus, focus kept on pending actions, inert background, names, descriptions and announcements, and no playback shortcuts under a modal | Static review of this specification | Specified for every state |
+| AA text and control contrast | Token arithmetic from main's v2 mirror (table below) | Passes numerically; the actual artifact colours were not readable, so this is not a check against the artifact |
+| Rendered wrapping, clipping, visible focus, touch targets, reduced motion, 200% zoom, mobile keyboard | Rendered boards | **Not performed** (no boards) |
+| Live keyboard, focus trap and inert background in a browser; screen-reader announcements | Live check | **Not performed** |
 
 ### New decisions
 
