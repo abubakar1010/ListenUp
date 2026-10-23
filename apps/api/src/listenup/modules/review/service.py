@@ -271,7 +271,7 @@ async def confirm_mark(db: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UU
 
 async def remove_mark(db: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UUID) -> None:
     """Delete the mark, from either source: a removed Dictation suggestion is not kept
-    (ADR 0056)."""
+    (ADR 0057)."""
     await practice.require_reached(db, session_id, practice.Step.TRANSCRIPT)
     if not await repository.delete(db, session_id, mark_id):
         raise _mark_not_found()

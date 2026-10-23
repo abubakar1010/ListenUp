@@ -1,4 +1,4 @@
-# ADR 0056: A Dictation mark is confirmed in place or deleted
+# ADR 0057: A Dictation mark is confirmed in place or deleted
 
 - Status: Proposed in the #59 pull request (2026-10-23); the owner accepts it on merge
 - Date: 2026-10-23

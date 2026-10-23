@@ -189,7 +189,7 @@ Read the section for the area you are changing before you change it. The rules e
   so no request walks further than the diff. Beside an open transcript the Dictation
   panel reads and adds through Transcript's `MarkSync` (`markList`, `takeSaved`), so the
   page keeps one mark list.
-- Confirm or remove Dictation marks (#59, ADR 0056): `PUT .../marks/{id}/status`
+- Confirm or remove Dictation marks (#59, ADR 0057): `PUT .../marks/{id}/status`
   confirms in place; removal is the ordinary DELETE, and no `removed` status exists, so
   readers of marks need no filter for rejected marks. In `MarkSync`, an `update` op sends
   whatever differs from the server (note, then confirmation); confirm and remove are sent

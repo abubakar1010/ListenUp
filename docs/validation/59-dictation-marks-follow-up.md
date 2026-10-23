@@ -3,7 +3,7 @@
 Done criterion: one PR for the story, opened for owner review; do not merge.
 This session continues existing PR #204 on `feat/59-confirm-dictation-marks`.
 A concurrent implementation was discovered when the initial push was rejected;
-its history, PUT status route, immediate confirm/remove saves and ADR 0056 were
+its history, PUT status route, immediate confirm/remove saves and ADR 0057 were
 preserved. The alternate local implementation was not pushed over it, and no
 second PR was created. The owner authorized using Codex when Claude Code was
 unavailable.
@@ -62,7 +62,7 @@ From `apps/web`:
 
 ## Decisions and merge gates
 
-ADR 0056 settles the technical-notes question: removal deletes the mark, with
+ADR 0057 settles the technical-notes question: removal deletes the mark, with
 no third status and no filters for downstream readers. Its independent creation
 analytics remains. This fix restores the saved data after a refused removal and
 introduces no new data rule or API.
