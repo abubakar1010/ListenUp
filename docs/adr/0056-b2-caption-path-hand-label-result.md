@@ -1,4 +1,4 @@
-# ADR 0055: B2 hand-label result and the caption path
+# ADR 0056: B2 hand-label result and the caption path
 
 - Status: Accepted (owner, 2026-10-23, taking the recommended option for each decision below)
 - Date: 2026-10-22
@@ -40,4 +40,4 @@ The owner took the recommended option for each open point.
 3. **Caption path off, YouTube intake not blocked by it.** Until the gate passes, captioned YouTube videos take the transcription path like any other video. The cost is compute only (about 0.54 instead of about 0.18 core-s per audio-s, historical container figures), with no change for the learner. YouTube intake stays gated only by its own flag and legal review (OQ-6).
 4. **No `MMS_FA` fallback.** ADR 0034's `MMS_FA` fallback is withdrawn: its noncommercial licence (ADR 0037) rules it out without a licence review, which is not worth doing for a compute saving. If the labels fail the gate, the caption path stays off, the transcription path stays in use, and any alternative aligner gets its own spike and ADR.
 5. **This ADR is accepted** as the record of ADR 0034's caption-path condition. ADR 0034's status line points here.
-6. **Numbering.** By the time of acceptance, `main` had 0052 and 0053 and an open branch had claimed 0054 (`feat/55-dictation-words-to-marks`), so this record takes 0055.
+6. **Numbering.** By the time this merged, `main` held 0052 to 0055 (0055 is #55's dictation-marks ADR, which landed first), so this record takes 0056.

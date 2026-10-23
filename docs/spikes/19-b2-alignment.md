@@ -110,7 +110,7 @@ No alignment run was spent on this: with no labels, the gate fails whatever the 
 
 The tests are in `spikes/tests/test_boundary_comparison.py`.
 
-**Gate status: not met (no evidence).** Under ADR 0034's condition the caption path does not ship ([ADR 0055](../adr/0055-b2-caption-path-hand-label-result.md), accepted 2026-10-23). The windows are labelled by hand before YouTube intake's flag is turned on; until the gate passes, captioned videos are transcribed. The `MMS_FA` fallback is withdrawn (noncommercial licence, ADR 0037).
+**Gate status: not met (no evidence).** Under ADR 0034's condition the caption path does not ship ([ADR 0056](../adr/0056-b2-caption-path-hand-label-result.md), accepted 2026-10-23). The windows are labelled by hand before YouTube intake's flag is turned on; until the gate passes, captioned videos are transcribed. The `MMS_FA` fallback is withdrawn (noncommercial licence, ADR 0037).
 
 **Core-seconds on the stage 0 server: deferred until staging, unverified.** The target (about 0.2 core-s per audio-s, System Design 5.1 and 12.1 B2) and its evidence requirement (the B2 commands below run on stage 0 with the corrected harness) are unchanged and tracked in [#155](https://github.com/abubakar1010/ListenUp/issues/155); it needs the server from [#16](https://github.com/abubakar1010/ListenUp/issues/16). The 0.177 container figure above is historical and is not a pass.
 
