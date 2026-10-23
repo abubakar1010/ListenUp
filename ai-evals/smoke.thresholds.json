@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "scope": "synthetic",
+  "gist_level_bounds": [
+    40,
+    60,
+    90
+  ],
+  "rules": {
+    "gist": {
+      "mae.main_idea": {
+        "max": 0
+      },
+      "max_range.main_idea": {
+        "max": 0
+      },
+      "mae.key_details": {
+        "max": 0
+      },
+      "max_range.key_details": {
+        "max": 0
+      },
+      "mae.accuracy": {
+        "max": 0
+      },
+      "max_range.accuracy": {
+        "max": 0
+      },
+      "mae.overall": {
+        "max": 0
+      },
+      "max_range.overall": {
+        "max": 0
+      },
+      "level_agreement": {
+        "min": 1
+      }
+    },
+    "shadow": {
+      "mae.timing": {
+        "max": 0
+      },
+      "max_range.timing": {
+        "max": 0
+      },
+      "mae.pronunciation": {
+        "max": 0
+      },
+      "max_range.pronunciation": {
+        "max": 0
+      },
+      "mae.accent": {
+        "max": 0
+      },
+      "max_range.accent": {
+        "max": 0
+      },
+      "mae.articulation": {
+        "max": 0
+      },
+      "max_range.articulation": {
+        "max": 0
+      },
+      "mae.fluency": {
+        "max": 0
+      },
+      "max_range.fluency": {
+        "max": 0
+      },
+      "mae.fillers": {
+        "max": 0
+      },
+      "max_range.fillers": {
+        "max": 0
+      },
+      "mae.completeness": {
+        "max": 0
+      },
+      "max_range.completeness": {
+        "max": 0
+      },
+      "mae.overall": {
+        "max": 0
+      },
+      "max_range.overall": {
+        "max": 0
+      },
+      "filler_count_mae": {
+        "max": 0
+      },
+      "filler_count_max_error": {
+        "max": 0
+      }
+    }
+  }
+}

@@ -1,8 +1,11 @@
 """Reads of the job queue for the admin view (#100, System Design 11.1)."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import text
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -47,3 +50,48 @@ async def lane_backlog(session: AsyncSession) -> dict[str, LaneRow]:
         )
         for row in rows
     }
+
+
+async def usage_rows(
+    session: AsyncSession, since: datetime, now: datetime, today: datetime, month: datetime
+) -> tuple[Sequence[RowMapping], Sequence[RowMapping]]:
+    """Two independent aggregates in one restricted, read-only snapshot."""
+    await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
+    await session.execute(text("SET LOCAL ROLE listenup_readonly"))
+    daily = (
+        (
+            await session.execute(
+                text("""
+        SELECT provider, (created_at AT TIME ZONE 'UTC')::date AS date,
+               count(*) AS calls, sum(input_units) AS input_tokens,
+               sum(output_units) AS output_tokens, sum(audio_seconds) AS audio_seconds,
+               sum(projected_cost_usd) AS estimated_cost_usd,
+               count(*) FILTER (WHERE usage_estimated) AS estimated_calls
+          FROM ai.calls
+         WHERE created_at >= :since AND created_at <= :now
+           AND outcome NOT IN ('quota', 'ineligible')
+         GROUP BY provider, (created_at AT TIME ZONE 'UTC')::date
+         ORDER BY provider, date
+    """),
+                {"since": since, "now": now},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    quotas = (
+        (
+            await session.execute(
+                text("""
+        SELECT provider, period, calls, units AS tokens, audio_seconds
+          FROM ai.quota_usage
+         WHERE (period = 'day' AND period_start = :today)
+            OR (period = 'month' AND period_start = :month)
+    """),
+                {"today": today, "month": month},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return daily, quotas

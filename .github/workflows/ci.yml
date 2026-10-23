@@ -12,6 +12,79 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ai-evals-changes:
+    name: Detect AI smoke paths
+    runs-on: ubuntu-latest
+    outputs:
+      smoke: ${{ steps.paths.outputs.smoke }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          smoke=$(bash .github/scripts/ai-evals-changes.sh)
+          echo "smoke=$smoke" >> "$GITHUB_OUTPUT"
+
+  ai-evals-smoke:
+    name: AI evals (synthetic offline smoke)
+    needs: ai-evals-changes
+    if: needs.ai-evals-changes.outputs.smoke == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: listenup
+          POSTGRES_PASSWORD: listenup
+          POSTGRES_DB: listenup
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U listenup -d listenup"
+          --health-interval 2s --health-retries 30
+    env:
+      LISTENUP_DATABASE_URL: postgresql://listenup:listenup@localhost:5432/listenup
+      LISTENUP_ENVIRONMENT: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - run: uv sync --frozen --python 3.12
+      - run: uv run alembic upgrade head
+      - name: Run both synthetic subsets through the report gate
+        env:
+          REVISION: ${{ github.sha }}
+        run: |
+          result=0
+          for suite in gist shadow; do
+            if ! uv run ai-evals --offline --smoke \
+              --dataset "../../ai-evals/fixtures/$suite.json" \
+              --thresholds ../../ai-evals/smoke.thresholds.json \
+              --ai-config src/listenup/ai/ai.fake.yaml \
+              --revision "$REVISION" \
+              --report "../../work/ai-evals/$suite.json"; then
+              result=1
+            fi
+          done
+          exit "$result"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-evals-synthetic-smoke
+          path: work/ai-evals/
+          if-no-files-found: error
+          retention-days: 14
+
   branch-name:
     name: Branch name is readable and auditable
     if: >-
