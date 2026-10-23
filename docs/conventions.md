@@ -50,6 +50,15 @@ Read the section for the area you are changing before you change it. The rules e
 
 ## Grading references (ADR 0053)
 
+- Gist grades (#68, ADR 0054): queue through `grading.service.queue_gist` in the
+  submission transaction. The job reads Blind data through `blind.service` and
+  original transcript words through `transcript.service`; never import their
+  repositories. Use the per-attempt queue lock, update pending rows conditionally
+  and publish `grade.ready` with the attempt id in that result transaction.
+  Overall scores and level thresholds come from the active prompt version's
+  `<version>.rubric.json`; a rubric change needs a new version and manifest.
+  Preserve provider/model/deployment/prompt/rubric versions and reference trimming.
+
 - Key points are prefetched by the transcript-ready hook on the `ai` lane. Queue
   media id and exact passage bounds only; use the passage key for both producer
   deduplication and the execution lock, and check the versioned cache under that

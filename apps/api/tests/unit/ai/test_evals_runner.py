@@ -9,6 +9,7 @@ from listenup.ai.evals.models import Dataset, Thresholds
 from listenup.ai.evals.runner import run
 from listenup.ai.gateway import AIGateway
 from listenup.ai.ports import Provenance, Role, TextGeneration
+from listenup.ai.prompt_files import load_task
 from listenup.ai.registry import Registry
 from listenup.ai.tasks import EXAMPLES
 
@@ -256,7 +257,7 @@ def test_report_does_not_include_input_or_feedback(fake_accounting):
     serialized = json.dumps(report)
     assert "Sleep matters" not in serialized
     assert "You caught" not in serialized
-    assert report["cases"][0]["runs"][0]["prompt_version"] == "v1"
+    assert report["cases"][0]["runs"][0]["prompt_version"] == load_task("grade_gist").version
 
 
 def test_live_shadow_is_explicitly_unavailable(fake_accounting):

@@ -4,8 +4,16 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import INT4RANGE, JSONB, TIMESTAMP, Range
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    ForeignKeyConstraint,
+    SmallInteger,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, INT4RANGE, JSONB, TIMESTAMP, Range
 from sqlalchemy.orm import Mapped, mapped_column
 
 from listenup.platform.db import Base
@@ -42,5 +50,65 @@ class KeyPoints(Base):
     points: Mapped[list[dict[str, str]]] = mapped_column(JSONB)
     provider_info: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+
+
+class GistGrade(Base):
+    __tablename__ = "gist_grades"
+    __table_args__ = (
+        CheckConstraint("status IN ('pending','ready','unavailable')"),
+        CheckConstraint("overall BETWEEN 0 AND 100"),
+        CheckConstraint("level IN ('needs_work','fair','good','excellent')"),
+        CheckConstraint("char_length(feedback) BETWEEN 1 AND 1500"),
+        CheckConstraint("length(rubric_version) > 0"),
+        CheckConstraint("attempts_made >= 0"),
+        CheckConstraint(
+            "status <> 'ready' OR (overall IS NOT NULL AND level IS NOT NULL "
+            "AND feedback IS NOT NULL AND rubric_version IS NOT NULL "
+            "AND provider_info IS NOT NULL)",
+            name="gist_grades_ready_complete",
+        ),
+        CheckConstraint(
+            "provider_info IS NULL OR COALESCE(jsonb_typeof(provider_info) = 'object' "
+            "AND provider_info ?& ARRAY['provider','model','version','prompt_version'] "
+            "AND jsonb_typeof(provider_info->'provider') = 'string' "
+            "AND length(provider_info->>'provider') > 0 "
+            "AND jsonb_typeof(provider_info->'model') = 'string' "
+            "AND length(provider_info->>'model') > 0 "
+            "AND jsonb_typeof(provider_info->'version') = 'string' "
+            "AND length(provider_info->>'version') > 0 "
+            "AND jsonb_typeof(provider_info->'prompt_version') = 'string' "
+            "AND length(provider_info->>'prompt_version') > 0, false)",
+            name="gist_grades_provenance",
+        ),
+        ForeignKeyConstraint(
+            ["attempt_id", "user_id"],
+            ["practice.attempts.id", "practice.attempts.user_id"],
+            name="gist_grades_attempt_user_fk",
+            ondelete="CASCADE",
+        ),
+        {"schema": "grading"},
+    )
+
+    attempt_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    user_id: Mapped[uuid.UUID]
+    status: Mapped[str] = mapped_column(Text, server_default="pending")
+    key_points_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("grading.key_points.id", ondelete="SET NULL")
+    )
+    dimension_scores: Mapped[dict[str, int] | None] = mapped_column(JSONB)
+    overall: Mapped[int | None] = mapped_column(SmallInteger)
+    level: Mapped[str | None] = mapped_column(Text)
+    covered_points: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    wrong_claims: Mapped[list[str] | None] = mapped_column(JSONB)
+    feedback: Mapped[str | None] = mapped_column(Text)
+    rubric_version: Mapped[str | None] = mapped_column(Text)
+    provider_info: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    attempts_made: Mapped[int] = mapped_column(SmallInteger, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
