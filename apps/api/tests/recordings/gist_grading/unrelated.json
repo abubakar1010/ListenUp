@@ -1,0 +1,15 @@
+{
+  "synthetic": true,
+  "note": "Hand-authored replay fixture for pipeline behavior; not a live provider recording or model-quality evidence.",
+  "gist": "I enjoy playing football. My team won yesterday. We celebrated after dinner.",
+  "response": {
+    "dimension_scores": {
+      "main_idea": 0,
+      "key_details": 0,
+      "accuracy": 100
+    },
+    "covered_points": [],
+    "wrong_claims": [],
+    "feedback": "You missed the main idea that cities plant trees to cool streets. You missed how trees shade pavement and how leaves release water."
+  }
+}
