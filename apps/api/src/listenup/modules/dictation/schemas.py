@@ -132,6 +132,9 @@ class DictationMark(BaseModel):
     at_ms: int = Field(description="Absolute media time of the first word")
     source: Literal["dictation", "manual"]
     status: Literal["suggested", "confirmed"]
+    note: str | None = Field(
+        description="The learner's own note, so an open Transcript can take the mark as it is"
+    )
 
 
 class DictationMarks(BaseModel):

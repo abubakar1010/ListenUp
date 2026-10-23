@@ -1527,6 +1527,11 @@ export interface components {
        */
       id: string;
       /**
+       * Note
+       * @description The learner's own note, so an open Transcript can take the mark as it is
+       */
+      note: string | null;
+      /**
        * Source
        * @enum {string}
        */

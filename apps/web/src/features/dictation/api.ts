@@ -123,11 +123,24 @@ export const dictationMarksKey = (attemptId: string) =>
 const marksPath = (attemptId: string) =>
   `/dictation/attempts/${encodeURIComponent(attemptId)}/marks`;
 
-/** The session's marks, so the diff shows which words are already added (#55). */
-export function useDictationMarks(attemptId: string) {
+/**
+ * A mark list the page already keeps, such as Transcript's `MarkSync` (#55). The Dictation
+ * result shows its marks as added and hands it the marks it adds, so both agree.
+ */
+export interface OpenMarkList {
+  marks: Range[];
+  take: (marks: DictationMark[]) => void;
+}
+
+/**
+ * The session's marks, so the diff shows which words are already added (#55). Not read
+ * while the page keeps its own list (`enabled: false`).
+ */
+export function useDictationMarks(attemptId: string, enabled = true) {
   return useQuery({
     queryKey: dictationMarksKey(attemptId),
     queryFn: async () => (await api<DictationMarks>(marksPath(attemptId))).marks,
+    enabled,
   });
 }
 
@@ -136,7 +149,10 @@ export function useDictationMarks(attemptId: string) {
  * range keeps its id until it is added, so a retry after a lost answer is the same mark
  * (ADR 0047); words that are already marked come back as the mark they have.
  */
-export function useAddDictationMarks(attemptId: string) {
+export function useAddDictationMarks(
+  attemptId: string,
+  onAdded?: (marks: DictationMark[]) => void,
+) {
   const queryClient = useQueryClient();
   const ids = useRef(new Map<string, string>());
   const idFor = (range: Range) => {
@@ -168,6 +184,7 @@ export function useAddDictationMarks(attemptId: string) {
         for (const mark of marks) byId.set(mark.id, mark);
         return [...byId.values()];
       });
+      onAdded?.(marks);
     },
   });
 }

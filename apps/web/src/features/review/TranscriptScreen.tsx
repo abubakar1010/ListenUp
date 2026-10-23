@@ -11,6 +11,7 @@ import {
 import { ApiError } from '../../api/client';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
+import type { OpenMarkList } from '../dictation/api';
 import { DictationResultPanel } from '../dictation/DictationResultPanel';
 import { PassagePlayerControls } from '../media/PassagePlayerControls';
 import { actionFor, stepSpeed } from '../media/playerPolicy';
@@ -85,11 +86,14 @@ function Layout({
   session,
   progress,
   player,
+  markList,
   children,
 }: {
   session: Session;
   progress: ReactNode;
   player: ReactNode;
+  /** The transcript's own marks, once it is open, for the Dictation result to share. */
+  markList?: OpenMarkList;
   children: ReactNode;
 }) {
   return (
@@ -105,7 +109,7 @@ function Layout({
     >
       <p className="text-body-s">Transcript can't be skipped: it shows what you missed.</p>
       {session.steps.some((step) => step.step === 'dictation' && step.status === 'done') && (
-        <DictationResultPanel sessionId={session.id} />
+        <DictationResultPanel sessionId={session.id} markList={markList} />
       )}
       {children}
     </PracticeLayout>
@@ -146,6 +150,7 @@ function TranscriptWork({
     <Layout
       session={session}
       progress={progress}
+      markList={marking.markList}
       player={
         <PassagePlayerControls
           audioRef={audio}
@@ -360,6 +365,9 @@ function useMarking(sessionId: string, data: TranscriptReview, saved: SavedMark[
     choose,
     isMarked: (index: number) => marked.has(index),
     isSelected: (index: number) => (range ? covers(range, index) : false),
+    // Marks added from the Dictation result join this list, and words marked here show
+    // as added there (#55): one list on the page, so the two never disagree.
+    markList: { marks: sync.marks, take: sync.takeSaved } satisfies OpenMarkList,
     describedBy: (index: number) =>
       marked.has(index) ? MARKED : range && covers(range, index) ? SELECTED : undefined,
   };

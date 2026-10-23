@@ -200,15 +200,16 @@ def test_a_manual_mark_on_the_same_words_is_the_one_given_back(
     with psycopg.connect(migrated_url, autocommit=True) as conn:
         conn.execute(
             "INSERT INTO practice.marks (id, session_id, user_id, word_from, word_to, at_ms, "
-            "source) VALUES (%s, %s, %s, 5, 5, 6000, 'manual')",
+            "source, note) VALUES (%s, %s, %s, 5, 5, 6000, 'manual', 'sounds like cold')",
             [manual, attempt["session_id"], learner_id(client)],
         )
 
     response = add(client, attempt["id"], mark(5))
 
     assert response.status_code == 200, response.text
-    assert [(m["id"], m["source"], m["status"]) for m in response.json()["marks"]] == [
-        (manual, "manual", "confirmed")
+    # With its note, so an open Transcript can take the mark as it is (review of #186).
+    assert [(m["id"], m["source"], m["status"], m["note"]) for m in response.json()["marks"]] == [
+        (manual, "manual", "confirmed", "sounds like cold")
     ]
 
 

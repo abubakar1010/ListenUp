@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Link, Route, Routes } from 'react-router';
 
 import { jsonResponse, problem, renderWithProviders } from '../../test-utils';
@@ -501,4 +501,60 @@ test('the_panel_follows_the_page_while_words_are_chosen_and_scrolls_away_while_a
   expect(panel()).toHaveAttribute('data-sticky', 'false');
   fireEvent.keyDown(word('Hello'), { key: 'Escape' });
   expect(panel()).toHaveAttribute('data-sticky', 'true');
+});
+
+describe('the Dictation result beside the transcript (#55)', () => {
+  const ATTEMPT_MARKS = '/dictation/attempts/attempt-1/marks';
+  const attempt = {
+    id: 'attempt-1',
+    session_id: SESSION.id,
+    status: 'submitted',
+    scoring_status: 'scored',
+    result: {
+      accuracy: 67,
+      counts: { correct: 2, spelling_slip: 0, wrong: 0, missing: 1, extra: 0 },
+      items: [
+        { index: 0, status: 'correct', word: 'Hello', typed: 'Hello' },
+        { index: 1, status: 'missing', word: 'world.', typed: '' },
+        { index: 2, status: 'correct', word: 'Again.', typed: 'Again' },
+      ],
+    },
+  };
+
+  function renderWithDictation() {
+    // The routes reach the marks server that renderMarking makes, once it exists.
+    const held: { server?: ReturnType<typeof markServer> } = {};
+    const rendered = renderMarking({
+      [`GET /sessions/${SESSION.id}/dictation/attempt`]: jsonResponse(200, attempt),
+      [`GET ${ATTEMPT_MARKS}`]: () =>
+        jsonResponse(200, { marks: [...held.server!.marks.values()] }),
+      [`POST ${ATTEMPT_MARKS}`]: (call: Call) => {
+        const body = call.body as { marks: { id: string; word_from: number; word_to: number }[] };
+        const stored = body.marks.map((m) =>
+          serverMark({ ...m, at_ms: 132000, source: 'dictation', status: 'suggested' }),
+        );
+        for (const mark of stored) held.server!.marks.set(mark.id, mark);
+        return jsonResponse(200, { marks: stored });
+      },
+    });
+    held.server = rendered.server;
+    return rendered;
+  }
+
+  test('a_word_added_from_the_Dictation_result_is_marked_in_the_transcript_at_once', async () => {
+    const { calls } = renderWithDictation();
+    await ready();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add “world.” to marks' }));
+    await waitFor(() => expect(word('world.')).toHaveAccessibleDescription('Marked'));
+    expect(sent(calls, 'POST')).toEqual([]); // not sent a second time through Transcript
+  });
+
+  test('a_word_marked_in_the_transcript_shows_as_added_in_the_Dictation_result', async () => {
+    renderWithDictation();
+    await ready();
+    await screen.findByRole('button', { name: 'Add “world.” to marks' });
+    fireEvent.click(word('world.'));
+    fireEvent.click(within(panel()).getByRole('button', { name: 'Mark' }));
+    expect(screen.getByRole('button', { name: '“world.” added to marks' })).toBeInTheDocument();
+  });
 });

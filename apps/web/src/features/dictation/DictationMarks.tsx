@@ -3,7 +3,7 @@ import { type ReactNode, useMemo, useState } from 'react';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import type { Range } from '../review/selection';
-import { type DiffItem, useAddDictationMarks, useDictationMarks } from './api';
+import { type DiffItem, type OpenMarkList, useAddDictationMarks, useDictationMarks } from './api';
 import { candidateRuns, isAdded, isRunAdded, rangesToAddAll, type Run } from './marks';
 
 const quoted = (text: string) => `“${text}”`;
@@ -13,19 +13,29 @@ const quoted = (text: string) => `“${text}”`;
  * of words in one action, or all of them. The marks wait in Transcript for the learner to
  * confirm (FR-TR-3), and words already marked show as added. Every action is a native
  * button, so Tab reaches it and Enter or Space adds; an added button stays focusable and
- * says so (aria-disabled), so focus never drops to the page.
+ * says so (aria-disabled), so focus never drops to the page. Beside an open transcript
+ * it shares the transcript's `markList` instead of reading its own.
  */
-export function DictationMarks({ attemptId, items }: { attemptId: string; items: DiffItem[] }) {
+export function DictationMarks({
+  attemptId,
+  items,
+  markList,
+}: {
+  attemptId: string;
+  items: DiffItem[];
+  markList?: OpenMarkList;
+}) {
   const runs = useMemo(() => candidateRuns(items), [items]);
-  const marks = useDictationMarks(attemptId);
-  const add = useAddDictationMarks(attemptId);
+  const marks = useDictationMarks(attemptId, !markList);
+  const add = useAddDictationMarks(attemptId, markList?.take);
   const [announcement, setAnnouncement] = useState('');
 
   if (runs.length === 0) return null;
-  if (marks.isError) return <ErrorPanel error={marks.error} onRetry={() => void marks.refetch()} />;
-  if (!marks.data) return null;
+  if (!markList && marks.isError)
+    return <ErrorPanel error={marks.error} onRetry={() => void marks.refetch()} />;
+  const known = markList?.marks ?? marks.data;
+  if (!known) return null;
 
-  const known = marks.data;
   const remaining = rangesToAddAll(runs, known);
   const submit = (ranges: Range[], done: string) => {
     if (ranges.length === 0 || add.isPending) return;

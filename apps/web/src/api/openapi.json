@@ -854,6 +854,18 @@
             "title": "Id",
             "type": "string"
           },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The learner's own note, so an open Transcript can take the mark as it is",
+            "title": "Note"
+          },
           "source": {
             "enum": ["dictation", "manual"],
             "title": "Source",
@@ -873,7 +885,7 @@
             "type": "integer"
           }
         },
-        "required": ["id", "word_from", "word_to", "at_ms", "source", "status"],
+        "required": ["id", "word_from", "word_to", "at_ms", "source", "status", "note"],
         "title": "DictationMark",
         "type": "object"
       },
