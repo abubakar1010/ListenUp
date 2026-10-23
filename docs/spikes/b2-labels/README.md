@@ -8,7 +8,7 @@ The B2 results report how far each aligner's word boundaries are from a human's.
 | `other-m-1688` | `ls-other-1688-142285` | LibriSpeech test-other, male reader | 65 to 125 s |
 | `accented-es-20090218` | `vp-accented-20090218-0900-plenary-13-en` | VoxPopuli, Spanish-accented MEP | 65 to 125 s |
 
-**Status (2026-10-22): not labelled yet.** All three `words` tiers are empty, so the B2 gate fails (ADR 0053). `spike-compare` lists unlabelled windows and fails the gate until every window in `windows.json` is labelled.
+**Status (2026-10-22): not labelled yet.** All three `words` tiers are empty, so the B2 gate fails (ADR 0055). `spike-compare` lists unlabelled windows and fails the gate until every window in `windows.json` is labelled.
 
 `windows.json` defines the windows. Each `NAME.TextGrid` here is a template with an empty `words` tier and a `hint` tier. The hint holds the reference text of the utterances that overlap the window, as text only, with no times from any model, so the labels do not lean towards any of the systems they measure.
 

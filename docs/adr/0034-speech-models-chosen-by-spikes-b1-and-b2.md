@@ -1,6 +1,6 @@
 # ADR 0034: Speech models chosen by spikes B1 and B2
 
-- Status: Accepted (numbers indicative until rerun on the stage 0 server, #16); caption-path condition reported by [ADR 0053](0053-b2-caption-path-hand-label-result.md): not met, the caption path does not ship
+- Status: Accepted (numbers indicative until rerun on the stage 0 server, #16); caption-path condition reported by [ADR 0055](0055-b2-caption-path-hand-label-result.md): not met, so the caption path does not ship; the `MMS_FA` fallback is withdrawn
 - Date: 2026-10-05
 - Source: spikes [#18](https://github.com/abubakar1010/ListenUp/issues/18) (B1) and [#19](https://github.com/abubakar1010/ListenUp/issues/19) (B2); results in [`docs/spikes/18-b1-transcription.md`](../spikes/18-b1-transcription.md) and [`docs/spikes/19-b2-alignment.md`](../spikes/19-b2-alignment.md); [SRS FR-TX-1, FR-TX-2, FR-TR-1, NFR-PERF-2, NFR-PERF-4, NFR-AI-3, OI-2, OI-3](https://claude.ai/code/artifact/fd47a9cb-6515-4fde-a232-3ab8cc14f0dd); [System Design 2.2, 3.2, 5, 12.1](https://claude.ai/code/artifact/98274889-96ba-4424-afad-c2cd056206e2); ADR 0028
 

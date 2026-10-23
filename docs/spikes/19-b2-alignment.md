@@ -102,7 +102,7 @@ The model-output folder for this run was empty: with no labels the row is the sa
 
 **Harness fix in the same change.** The gate previously counted only the label CSVs present, so labelling one window of three could pass on a third of the sample. `spike-compare` now reads `windows.json` from the label folder, lists unlabelled windows in the report summary (`unlabelled windows`) and fails the gate while any remain (`test_unlabelled_windows_fail_the_gate_and_are_listed`).
 
-**Gate status: not met (no evidence).** Under ADR 0034's condition the caption path does not ship; see [ADR 0053](../adr/0053-b2-caption-path-hand-label-result.md).
+**Gate status: not met (no evidence).** Under ADR 0034's condition the caption path does not ship ([ADR 0055](../adr/0055-b2-caption-path-hand-label-result.md), accepted 2026-10-23). The windows are labelled by hand before YouTube intake's flag is turned on; until the gate passes, captioned videos are transcribed. The `MMS_FA` fallback is withdrawn (noncommercial licence, ADR 0037).
 
 **Core-seconds on the stage 0 server: deferred until staging, unverified.** The target (about 0.2 core-s per audio-s, System Design 5.1 and 12.1 B2) and its evidence requirement (the B2 commands below run on stage 0 with the corrected harness) are unchanged and tracked in [#155](https://github.com/abubakar1010/ListenUp/issues/155); it needs the server from [#16](https://github.com/abubakar1010/ListenUp/issues/16). The 0.177 container figure above is historical and is not a pass.
 

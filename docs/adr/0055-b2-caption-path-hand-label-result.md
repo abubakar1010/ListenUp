@@ -1,6 +1,6 @@
-# ADR 0053: B2 hand-label result and the caption path
+# ADR 0055: B2 hand-label result and the caption path
 
-- Status: Proposed for owner review
+- Status: Accepted (owner, 2026-10-23, taking the recommended option for each decision below)
 - Date: 2026-10-22
 - Follow-up to: [ADR 0034](0034-speech-models-chosen-by-spikes-b1-and-b2.md)
 - Related: [ADR 0039](0039-performance-validation-before-launch.md), [ADR 0037](0037-free-ai-provider-order-and-eligibility.md), [ADR 0050](0050-shadow-measures-model-choices-and-go-no-go.md)
@@ -31,11 +31,13 @@ The corrected harness was run on the committed label set on 2026-10-22, on the m
 - Issue #19 stays open: its hand-label criterion has no result, and its stage 0 criterion is deferred to #155.
 - The `MMS_FA` fallback in ADR 0034 is not a way around the gate: it has the same unlabelled evidence, and its noncommercial licence (ADR 0037) blocks unqualified commercial use.
 
-## Owner decision points
+## Owner decisions (2026-10-23)
 
-1. **Who labels the three windows, and when?** About 30 to 40 minutes each in Praat, following `docs/spikes/b2-labels/README.md`. The audio is rebuilt from the public corpora (LibriSpeech test-clean and test-other alone are about 670 MB). Until this happens the caption path cannot ship.
-2. **Is three windows (about 450 words, one accented) enough** for the ship decision, or should the sample grow, for example with real YouTube-style conversational speech?
-3. **Accept that the caption path is off** until the labels pass, so YouTube intake (when OQ-6 clears) uses transcription for captioned videos too, or **block YouTube intake** until the caption path is validated.
-4. **Fallback if the labels fail the gate:** `MMS_FA` is noncommercial (ADR 0037). Choose between another aligner spike, dropping the caption path, or a licence review.
-5. **Accept this ADR** (Proposed) as the record of the caption-path condition, and the ADR 0034 status pointer.
-6. **ADR number.** 0052 is already used by three open branches (#108, #55, #67), so this record takes 0053; renumber at merge if those land differently.
+The owner took the recommended option for each open point.
+
+1. **Labelling.** The owner (or someone they assign) labels the three windows by hand in Praat, following `docs/spikes/b2-labels/README.md`: about 30 to 40 minutes per window, with the audio rebuilt from the public corpora (LibriSpeech test-clean and test-other alone are about 670 MB). The deadline is before YouTube intake's flag is turned on, not before launch of the upload-only path. Until then the caption path stays off.
+2. **Sample size.** The three windows (about 450 words, one accented) stay the gate's sample, as ADR 0034 set it. The sample does not grow for this decision. Real conversational and accented speech is covered by the hand-checked clips ADR 0034 already adds to the golden set before the YouTube path ships.
+3. **Caption path off, YouTube intake not blocked by it.** Until the gate passes, captioned YouTube videos take the transcription path like any other video. The cost is compute only (about 0.54 instead of about 0.18 core-s per audio-s, historical container figures), with no change for the learner. YouTube intake stays gated only by its own flag and legal review (OQ-6).
+4. **No `MMS_FA` fallback.** ADR 0034's `MMS_FA` fallback is withdrawn: its noncommercial licence (ADR 0037) rules it out without a licence review, which is not worth doing for a compute saving. If the labels fail the gate, the caption path stays off, the transcription path stays in use, and any alternative aligner gets its own spike and ADR.
+5. **This ADR is accepted** as the record of ADR 0034's caption-path condition. ADR 0034's status line points here.
+6. **Numbering.** By the time of acceptance, `main` had 0052 and 0053 and an open branch had claimed 0054 (`feat/55-dictation-words-to-marks`), so this record takes 0055.
