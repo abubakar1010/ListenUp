@@ -1,5 +1,6 @@
 """AT-6 (part): real API-role requests and PostgreSQL constraints, no rounds."""
 
+import asyncio
 import uuid
 
 import psycopg
@@ -125,3 +126,89 @@ def test_shadow_requires_open_step(client, migrated_url):
         )
         assert response.status_code == 409
         assert response.json()["code"] == "step_locked"
+
+
+@pytest.mark.parametrize(
+    "first,second",
+    [("proposal", "proposal"), ("choice", "proposal"), ("proposal", "choice"), ("skip", "choice")],
+)
+def test_concurrent_segment_operations_serialize(client, migrated_url, api_role_url, first, second):
+    """Separate API-role transactions wait on PostgreSQL, then see committed state."""
+    from sqlalchemy import text
+
+    from listenup.modules.practice import service as practice
+    from listenup.modules.shadow import schemas, service
+    from listenup.platform.database import Database
+    from listenup.platform.errors import ProblemError
+
+    sid = uuid.UUID(open_shadow(client, migrated_url, api_role_url))
+    learner = uuid.UUID(learner_id(client))
+    marker = f"shadow-race-{uuid.uuid4()}"
+    choice = schemas.SegmentChoice(start_ms=20_000, end_ms=80_000)
+
+    async def run():
+        database = Database(api_role_url)
+        ready = asyncio.Event()
+
+        async def following():
+            async with database.transaction(learner) as db:
+                await db.execute(
+                    text("SELECT set_config('application_name', :name, true)"), {"name": marker}
+                )
+                ready.set()
+                return await service.segment(db, sid, choice if second == "choice" else None)
+
+        try:
+            async with database.transaction(learner) as db:
+                if first == "skip":
+                    session = await practice.require_step(db, sid, Step.SHADOW)
+                    await practice.skip_step(db, session, Step.SHADOW, confirmed=True)
+                else:
+                    await service.segment(db, sid, choice if first == "choice" else None)
+                task = asyncio.create_task(following())
+                await ready.wait()
+                # Observe a real server-side lock wait, rather than relying on timing.
+                async with await psycopg.AsyncConnection.connect(
+                    migrated_url, autocommit=True
+                ) as observer:
+                    async with asyncio.timeout(5):
+                        while True:
+                            cursor = await observer.execute(
+                                "SELECT wait_event_type FROM pg_stat_activity "
+                                "WHERE application_name = %s",
+                                [marker],
+                            )
+                            row = await cursor.fetchone()
+                            if row and row[0] == "Lock":
+                                break
+                            assert not task.done(), "operation bypassed the session lock"
+                            await asyncio.sleep(0.01)
+                assert not task.done()
+            if first == "skip":
+                with pytest.raises(ProblemError) as error:
+                    await asyncio.wait_for(task, 5)
+                assert error.value.code == "session_closed"
+            else:
+                result = await asyncio.wait_for(task, 5)
+                expected = (20_000, 80_000) if "choice" in (first, second) else (0, 90_000)
+                assert (result.start_ms, result.end_ms) == expected
+                assert result.chosen_by == ("learner" if "choice" in (first, second) else "system")
+        finally:
+            if "task" in locals() and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            await database.dispose()
+
+    asyncio.run(run())
+    with psycopg.connect(migrated_url) as db:
+        rows = db.execute(
+            "SELECT lower(span), upper(span), chosen_by FROM practice.shadow_segments "
+            "WHERE session_id = %s",
+            [sid],
+        ).fetchall()
+    if first == "skip":
+        assert rows == []
+    elif "choice" in (first, second):
+        assert rows == [(20_000, 80_000, "learner")]
+    else:
+        assert rows == [(0, 90_000, "system")]

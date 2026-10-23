@@ -3,17 +3,11 @@
 import uuid
 from typing import Literal
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.shadow.models import ShadowSegment
-
-
-async def lock_session(db: AsyncSession, session_id: uuid.UUID) -> None:
-    await db.execute(
-        text("SELECT id FROM practice.sessions WHERE id = :id FOR UPDATE"), {"id": session_id}
-    )
 
 
 async def get(db: AsyncSession, session_id: uuid.UUID) -> ShadowSegment | None:

@@ -28,7 +28,7 @@ def present(row: ShadowSegment) -> schemas.Segment:
 async def segment(
     db: AsyncSession, session_id: uuid.UUID, choice: schemas.SegmentChoice | None = None
 ) -> schemas.Segment:
-    await repository.lock_session(db, session_id)
+    await practice.lock_session(db, session_id)
     session = await practice.require_step(db, session_id, practice.Step.SHADOW)
     row = await repository.get(db, session_id)
     if choice is None and row is not None:
