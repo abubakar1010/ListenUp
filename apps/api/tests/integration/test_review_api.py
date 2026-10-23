@@ -384,3 +384,94 @@ def test_finishing_transcript_denies_locked_foreign_missing_and_unsigned_session
     client.cookies.clear()
     with_csrf(client)
     assert client.post(path).json()["code"] == "not_signed_in"
+
+
+def test_finishing_transcript_replays_a_key_without_advancing_card(client, clip, api_role_url):
+    session = start(client, clip, "dictation")
+    finish(api_role_url, client, session["id"], Step.DICTATION)
+    path = f"/api/v1/sessions/{session['id']}/transcript/complete"
+    headers = {"Idempotency-Key": f"transcript-{session['id']}"}
+    first = client.post(path, headers=headers)
+    updated = load(client, session)
+    replay = client.post(path, headers=headers)
+    assert first.status_code == replay.status_code == 204
+    assert first.content == replay.content == b""
+    assert replay.headers["Idempotent-Replayed"] == "true"
+    assert load(client, session) == updated
+    assert updated["open_step"] == "card"
+
+
+def test_a_refused_completion_does_not_consume_its_retry_key(client, clip, api_role_url):
+    session = start(client, clip, "dictation")
+    path = f"/api/v1/sessions/{session['id']}/transcript/complete"
+    headers = {"Idempotency-Key": f"transcript-{session['id']}"}
+    assert client.post(path, headers=headers).json()["code"] == "step_locked"
+    finish(api_role_url, client, session["id"], Step.DICTATION)
+    assert client.post(path, headers=headers).status_code == 204
+    assert client.post(path, headers=headers).status_code == 204
+    assert load(client, session)["open_step"] == "card"
+
+
+def test_concurrent_completion_requests_with_one_key_persist_one_transition(
+    client, clip, api_role_url
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    session = start(client, clip, "dictation")
+    finish(api_role_url, client, session["id"], Step.DICTATION)
+    before = load(client, session)
+    path = f"/api/v1/sessions/{session['id']}/transcript/complete"
+    headers = {"Idempotency-Key": f"transcript-{session['id']}"}
+    both = Barrier(2)
+
+    def complete():
+        both.wait(timeout=5)
+        return client.post(path, headers=headers)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(complete) for _ in range(2)]
+        responses = [future.result(timeout=10) for future in futures]
+    assert [response.status_code for response in responses] == [204, 204]
+    assert sorted(response.headers.get("Idempotent-Replayed", "") for response in responses) == [
+        "",
+        "true",
+    ]
+    after = load(client, session)
+    assert after["version"] == before["version"] + 1
+    assert after["open_step"] == "card"
+
+
+def test_completion_requires_csrf_even_with_a_valid_retry_key(client, clip, api_role_url):
+    session = start(client, clip, "dictation")
+    finish(api_role_url, client, session["id"], Step.DICTATION)
+    before = load(client, session)
+    del client.headers["X-CSRF-Token"]
+    response = client.post(
+        f"/api/v1/sessions/{session['id']}/transcript/complete",
+        headers={"Idempotency-Key": "complete"},
+    )
+    assert response.status_code == 403
+    assert response.json()["code"] == "csrf_failed"
+    assert load(client, session) == before
+
+
+def test_completion_replay_still_requires_ownership_and_authentication(
+    client, clip, api_role_url, make_client
+):
+    session = start(client, clip, "dictation")
+    finish(api_role_url, client, session["id"], Step.DICTATION)
+    path = f"/api/v1/sessions/{session['id']}/transcript/complete"
+    headers = {"Idempotency-Key": f"transcript-{session['id']}"}
+    assert client.post(path, headers=headers).status_code == 204
+    updated = load(client, session)
+    other = make_client()
+    response = other.post(path, headers=headers)
+    assert response.status_code == 404
+    assert response.json()["code"] == "session_not_found"
+    assert load(client, session) == updated
+    client.cookies.clear()
+    with_csrf(client)
+    response = client.post(path, headers=headers)
+    assert response.status_code == 401
+    assert response.json()["code"] == "not_signed_in"

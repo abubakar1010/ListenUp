@@ -14,7 +14,10 @@ export function useFinishTranscript(id: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      api<void>(`/sessions/${encodeURIComponent(id)}/transcript/complete`, { method: 'POST' }),
+      api<void>(`/sessions/${encodeURIComponent(id)}/transcript/complete`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': `transcript-${id}` },
+      }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: sessionKey(id) });
       void client.invalidateQueries({ queryKey: SESSIONS_LIST_KEY });

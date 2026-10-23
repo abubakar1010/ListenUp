@@ -89,3 +89,57 @@ passing run. No skipped or blocked check is counted as passing.
 
 Required CI and fresh-session independent review remain merge gates; the owner
 merges. No independent reviewer has been claimed in this builder session.
+
+## Independent review remediation (2026-10-23)
+
+The fresh-session review of `d4a3a74` is posted at
+https://github.com/abubakar1010/ListenUp/pull/188#pullrequestreview-5624988789.
+The owner then authorized fixes in this PR and chose the documented submission
+idempotency rule for Finish Transcript. UX-22 is followed without changing its
+policy: the visible count remains immediate, counter announcements wait one second,
+and mark notices/refusals share one polite region. No new ADR or exception is needed.
+
+Actual focused cycles, run before each corresponding implementation:
+
+| Finding / boundary | Regression and observed red | Green |
+| --- | --- | --- |
+| Saved mark lost locally after Undo and a refused create; saved note rollback | From `apps/web`: `pnpm vitest run src/features/review/markSync.test.ts src/features/review/Marking.test.tsx -t 'undo_cancels_an_unsent\|a_refused_note_after_undo\|finish_waiting_for_marks'`: 3 failed. Both sync tests received an empty local list despite the saved server mark. | Same selection: 3 passed. Undo now cancels unsent deletion while retaining its server snapshot; refused notes roll back to that snapshot. |
+| Finish must remain focusable with a linked reason and refuse premature activation (UX-10) | `finish_waiting_for_marks_stays_focusable_and_explains_why_without_completing`, in the same command above, failed on native disabled. | Same selection passed. Existing pending-state assertions now check `aria-disabled`; the new interaction asserts focus and absence of completion requests. |
+| One polite region and debounced counter announcements (UX-22) | `pnpm vitest run src/features/review/MarkPanel.test.tsx -t the_visual_count`: 1 failed, two status regions instead of one. | Expanded review suite passed; fake-clock assertions cover the one-second boundary and cancellation when the count changes again. |
+| Undo while an in-flight DELETE is refused | `pnpm vitest run src/features/review/markSync.test.ts -t undo_of_an_in_flight_refused`: 1 failed, local mark vanished. | Expanded sync coverage also checks a changed note and remove–Undo–remove after refusal, with local and fake-server assertions. |
+| Undo after DELETE commits but its response is lost | `pnpm vitest run src/features/review/markSync.test.ts -t undo_after_a_lost_delete`: 1 failed against the initial remediation (server mark missing). | Deletion-attempt tracking distinguishes a safely canceled queued DELETE from an uncertain/committed one that needs recreation. |
+| Rapid Finish activation before mutation notifications render | `pnpm vitest run src/features/review/TranscriptScreen.test.tsx -t 'completion_with_a_lost\|repeated_finish_activation'`: 1 passed, 1 failed (two completion requests). The lost-response example is characterization, not a test-first claim. | A synchronous activation guard prevents the duplicate and resets when the request settles. The waiting reason also covers an in-flight completion. |
+| Submission replay and concurrent duplicate requests | From `apps/api`: `LISTENUP_REQUIRE_DB=1 uv run pytest tests/integration/test_review_api.py -k 'replays_a_key or consume_its_retry_key or concurrent_completion' -q --tb=short`: 3 failed (retry/concurrent request returned 409). | Focused API completion suite: 7 passed, including CSRF, ownership/authentication on replay, failed-key rollback, empty replayed 204, and one persisted version increment under concurrent requests. |
+| Browser sends one stable submission key across retries | From `apps/web`: `pnpm vitest run src/features/review/TranscriptScreen.test.tsx -t completion_retries_send`: 1 failed (both keys undefined). | Stable session-scoped key added to the existing mutation. |
+
+Supplementary coverage includes
+`undo_keeps_the_saved_count_and_note_when_a_create_would_be_refused`, which checks
+visible count/list/note and no unnecessary POST or DELETE. The 360 px Chromium test
+now reaches the pending Finish action through Tab, activates it with Enter, checks
+focus on the linked reason and zero completion requests, then releases the held mark
+write. Browser API responses remain mocked; PostgreSQL API tests independently prove
+persistence, idempotency, authentication, ownership and CSRF. Generated OpenAPI/client
+updates are mechanical and need no artificial red test. `review/service.py` and
+`create_mark` are unchanged by remediation, as are Dictation, grading and AI.
+
+Final remediation verification:
+
+- Web: lint, formatting, typecheck, **481 tests** with coverage, production build,
+  bundle budget (**124.4/200 kB gzip**) and **37 Chromium tests** pass.
+- Backend: format, lint, mypy and all **six import contracts** pass. With PostgreSQL
+  and S3 required, full coverage run passes **1736 tests**, no skips (one performance
+  test deselected). The separate uninstrumented performance test passes.
+- Coverage: runtime-source completeness checks pass for both apps. Web changed-line
+  coverage is **100% of 68 executable lines**; `MarkList` and `MarkPanel` retain 100%
+  line/branch coverage. The stale absent-mark callback guard and pre-existing review
+  branches remain uncovered; the new cancellation, refusal and rapid-completion
+  decisions have exercised outcomes. Backend changed-line coverage is **100% of 11 executable lines**; overall
+  coverage remains **97%**.
+- OpenAPI and TypeScript client regenerated; no migration, coverage exclusion or
+  threshold changed. PostgreSQL 16 client binaries were extracted under local
+  `work/` for the backup checks; the default database was migrated before the full
+  run. Red results above are regression evidence, not passing validation.
+
+The fixes require CI on their new commit and fresh-session re-review before merge;
+the review of `d4a3a74` does not claim independence for changes made afterward in
+this remediation session. The owner merges.

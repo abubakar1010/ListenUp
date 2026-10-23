@@ -4585,7 +4585,7 @@
     },
     "/api/v1/sessions/{session_id}/transcript/complete": {
       "post": {
-        "description": "Finish Transcript and unlock Card (FR-PL-4). No marks are required.",
+        "description": "Finish Transcript and unlock Card (FR-PL-4). No marks are required.\n\nAn Idempotency-Key replays completion without advancing the next step.",
         "operationId": "finish_transcript_api_v1_sessions__session_id__transcript_complete_post",
         "parameters": [
           {
@@ -4596,6 +4596,24 @@
               "format": "uuid",
               "title": "Session Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
             }
           }
         ],

@@ -283,7 +283,7 @@ test('a_refused_mark_is_taken_back_with_the_reason', async () => {
   fireEvent.click(within(panel()).getByRole('button', { name: 'Mark' }));
   await afterDebounce();
   expect(word('Hello')).not.toHaveAccessibleDescription('Marked');
-  expect(within(panel()).getByRole('alert')).toHaveTextContent(/Not saved\./);
+  expect(within(panel()).getByRole('status')).toHaveTextContent(/Not saved\./);
 });
 
 test('the_marks_load_error_offers_a_retry', async () => {
@@ -386,7 +386,7 @@ test('a_refusal_is_announced_to_a_screen_reader', async () => {
   fireEvent.click(word('Hello'));
   fireEvent.click(within(panel()).getByRole('button', { name: 'Mark' }));
   await afterDebounce();
-  expect(within(panel()).getByRole('alert')).toHaveTextContent(
+  expect(within(panel()).getByRole('status')).toHaveTextContent(
     'Not saved. Mark a word or a short phrase.',
   );
 });
@@ -564,13 +564,13 @@ test('finish_waits_for_saved_marks_including_pending_removals', async () => {
   ]);
   const hello = await ready();
   const finish = screen.getByRole('button', { name: 'Finish Transcript' });
-  expect(finish).toBeEnabled();
+  expect(finish).not.toHaveAttribute('aria-disabled', 'true');
   fireEvent.keyDown(hello, { key: 'm' });
   fireEvent.click(within(panel()).getByRole('button', { name: 'Remove mark' }));
-  expect(finish).toBeDisabled();
+  expect(finish).toHaveAttribute('aria-disabled', 'true');
   expect(screen.getByText('Wait for your marks to save before finishing.')).toBeInTheDocument();
   await afterDebounce();
-  expect(finish).toBeEnabled();
+  expect(finish).not.toHaveAttribute('aria-disabled', 'true');
 });
 
 test('a_refused_removal_restores_the_count_and_does_not_trap_Transcript_completion', async () => {
@@ -584,9 +584,59 @@ test('a_refused_removal_restores_the_count_and_does_not_trap_Transcript_completi
     }),
   );
   expect(screen.getByText('0 marks')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Finish Transcript' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Finish Transcript' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
   await afterDebounce();
   expect(screen.getByText('1 mark')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Finish Transcript' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Finish Transcript' })).not.toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
   expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+});
+
+test('finish_waiting_for_marks_stays_focusable_and_explains_why_without_completing', async () => {
+  const { calls } = renderMarking();
+  const hello = await ready();
+  fireEvent.keyDown(hello, { key: 'm' });
+  const finish = screen.getByRole('button', { name: 'Finish Transcript' });
+  expect(finish).not.toBeDisabled();
+  expect(finish).toHaveAttribute('aria-disabled', 'true');
+  expect(finish).toHaveAccessibleDescription('Wait for your marks to save before finishing.');
+  finish.focus();
+  expect(finish).toHaveFocus();
+  fireEvent.click(finish);
+  expect(screen.getByText('Wait for your marks to save before finishing.')).toHaveFocus();
+  expect(calls.filter((call) => call.path.endsWith('/transcript/complete'))).toEqual([]);
+  await afterDebounce();
+  expect(finish).not.toHaveAttribute('aria-disabled', 'true');
+});
+
+test('undo_keeps_the_saved_count_and_note_when_a_create_would_be_refused', async () => {
+  const mark = serverMark({ id: 'kept', note: 'linking' });
+  const { calls, server } = renderMarking(
+    {
+      [`POST ${MARKS}`]: problem(403, 'forbidden', 'Saving refused.'),
+    },
+    [mark],
+  );
+  await ready();
+  fireEvent.click(
+    within(screen.getByRole('list', { name: 'Your marks' })).getByRole('button', {
+      name: 'Remove mark Hello',
+    }),
+  );
+  expect(screen.getByText('0 marks')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+  expect(screen.getByText('1 mark')).toBeInTheDocument();
+  await afterDebounce();
+  expect(screen.getByText('1 mark')).toBeInTheDocument();
+  expect(
+    within(screen.getByRole('list', { name: 'Your marks' })).getByText('linking'),
+  ).toBeInTheDocument();
+  expect(server.marks.get(mark.id)).toEqual(mark);
+  expect(sent(calls, 'POST')).toEqual([]);
+  expect(sent(calls, 'DELETE')).toEqual([]);
 });

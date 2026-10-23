@@ -47,6 +47,11 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   const marks: Record<string, unknown>[] = [];
   let session = SESSION;
+  let completionRequests = 0;
+  let releaseMarkSave!: () => void;
+  const markSaveGate = new Promise<void>((resolve) => {
+    releaseMarkSave = resolve;
+  });
   await page.route('**/api/v1/**', async (route) => {
     const req = route.request();
     const path = new URL(req.url()).pathname.replace('/api/v1', '');
@@ -63,6 +68,8 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
       });
     if (path === '/sessions/s-57') return route.fulfill({ json: session });
     if (path === '/sessions/s-57/transcript/complete' && req.method() === 'POST') {
+      completionRequests += 1;
+      expect(req.headers()['idempotency-key']).toBe('transcript-s-57');
       session = {
         ...SESSION,
         version: 2,
@@ -101,6 +108,7 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
       });
     // A server that keeps the marks it is sent (#58).
     if (path === '/sessions/s-57/marks' && req.method() === 'POST') {
+      await markSaveGate;
       const body = req.postDataJSON() as { id: string; word_from: number; word_to: number };
       const mark = {
         ...body,
@@ -194,6 +202,19 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await expect(second).toHaveAccessibleDescription('Marked');
   const panel = page.getByRole('region', { name: 'Mark words' });
   await expect(panel).toContainText('“Hello. Again.”');
+  // UX-10: pending saves keep Finish in the native Tab order and explain the block.
+  const waitingFinish = page.getByRole('button', { name: 'Finish Transcript', exact: true });
+  await second.focus();
+  await page.keyboard.press('Tab');
+  await expect(waitingFinish).toBeFocused();
+  await expect(waitingFinish).toHaveAttribute('aria-disabled', 'true');
+  await expect(waitingFinish).toHaveAccessibleDescription(
+    'Wait for your marks to save before finishing.',
+  );
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('Wait for your marks to save before finishing.')).toBeFocused();
+  expect(completionRequests).toBe(0);
+  releaseMarkSave();
   await expect(panel).toContainText('Marks saved', { timeout: 5000 });
   expect(marks).toMatchObject([{ word_from: 0, word_to: 1 }]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

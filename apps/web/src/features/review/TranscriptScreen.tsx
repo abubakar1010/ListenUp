@@ -150,6 +150,9 @@ function TranscriptWork({
   usePlayerKeys(controls);
   const marking = useMarking(session.id, data, marks, jump);
   const finish = useFinishTranscript(session.id);
+  const finishReason = useRef<HTMLParagraphElement>(null);
+  const finishStarted = useRef(false);
+  const finishBlocked = !marking.saved || finish.isPending;
   return (
     <Layout
       session={session}
@@ -221,13 +224,31 @@ function TranscriptWork({
           ))}
         </ol>
       )}
-      {!marking.saved && <p>Wait for your marks to save before finishing.</p>}
+      {finishBlocked && (
+        <p id="finish-transcript-reason" ref={finishReason} tabIndex={-1}>
+          {finish.isPending
+            ? 'Finishing Transcript. Please wait.'
+            : 'Wait for your marks to save before finishing.'}
+        </p>
+      )}
       {finish.isError && <ErrorPanel error={finish.error} />}
       <button
         type="button"
         className={buttonClass('primary', 'self-start')}
-        disabled={!marking.saved || finish.isPending}
-        onClick={() => finish.mutate()}
+        aria-disabled={finishBlocked || undefined}
+        aria-describedby={finishBlocked ? 'finish-transcript-reason' : undefined}
+        onClick={() => {
+          if (finishBlocked || finishStarted.current) finishReason.current?.focus();
+          else {
+            // Mutation notifications render asynchronously; guard rapid activation now.
+            finishStarted.current = true;
+            finish.mutate(undefined, {
+              onSettled: () => {
+                finishStarted.current = false;
+              },
+            });
+          }
+        }}
       >
         {finish.isPending ? 'Finishing Transcript…' : 'Finish Transcript'}
       </button>
@@ -405,7 +426,7 @@ function useMarking(
         />
         {removed && !sync.marks.some((mark) => mark.id === removed.id) && (
           <div className="flex flex-wrap items-center gap-2">
-            <p role="status">Mark removed. You can undo this removal.</p>
+            <p>Mark removed. You can undo this removal.</p>
             <button
               type="button"
               className={buttonClass('secondary')}

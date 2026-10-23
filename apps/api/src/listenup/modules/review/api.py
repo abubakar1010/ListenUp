@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from listenup.modules.identity.service import CurrentLearner
 from listenup.modules.review import schemas, service
 from listenup.platform.database import DbSession
+from listenup.platform.idempotency import IdempotencyKeyHeader, request_fingerprint, run_once
 
 router = APIRouter(tags=["review"])
 
@@ -42,10 +43,33 @@ _GATE: dict[int | str, dict[str, Any]] = {
 }
 
 
-@router.post("/sessions/{session_id}/transcript/complete", status_code=204, responses=_GATE)
-async def finish_transcript(session_id: uuid.UUID, learner: CurrentLearner, db: DbSession) -> None:
-    """Finish Transcript and unlock Card (FR-PL-4). No marks are required."""
-    await service.finish_transcript(db, session_id)
+@router.post(
+    "/sessions/{session_id}/transcript/complete",
+    status_code=204,
+    response_class=Response,
+    responses=_GATE,
+)
+async def finish_transcript(
+    session_id: uuid.UUID,
+    request: Request,
+    learner: CurrentLearner,
+    db: DbSession,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> Response:
+    """Finish Transcript and unlock Card (FR-PL-4). No marks are required.
+
+    An Idempotency-Key replays completion without advancing the next step.
+    """
+
+    async def complete() -> tuple[int, Any]:
+        await service.finish_transcript(db, session_id)
+        return 204, None
+
+    result = await run_once(
+        db, learner, idempotency_key, await request_fingerprint(request), complete
+    )
+    # run_once stores JSON; HTTP 204 must have no response body, including on replay.
+    return Response(status_code=result.status_code, headers={**result.headers, **_NO_STORE})
 
 
 @router.get("/sessions/{session_id}/marks", responses=_GATE)

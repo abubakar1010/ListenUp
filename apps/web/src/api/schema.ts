@@ -974,6 +974,8 @@ export interface paths {
     /**
      * Finish Transcript
      * @description Finish Transcript and unlock Card (FR-PL-4). No marks are required.
+     *
+     *     An Idempotency-Key replays completion without advancing the next step.
      */
     post: operations['finish_transcript_api_v1_sessions__session_id__transcript_complete_post'];
     delete?: never;
@@ -4227,7 +4229,10 @@ export interface operations {
   finish_transcript_api_v1_sessions__session_id__transcript_complete_post: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
       path: {
         session_id: string;
       };
