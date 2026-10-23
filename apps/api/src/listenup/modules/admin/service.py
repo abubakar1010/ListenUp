@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.admin import repository
 from listenup.modules.admin.domain.roles import is_admin
+from listenup.modules.admin.usage import usage_overview
 from listenup.modules.identity import service as identity
 from listenup.modules.identity.service import CurrentLearner
 from listenup.platform import jobs
@@ -24,7 +25,15 @@ from listenup.platform.database import DbSession
 from listenup.platform.errors import ProblemError
 from listenup.platform.jobs import Lane
 
-__all__ = ["CurrentAdmin", "FailedJob", "JobsOverview", "LaneBacklog", "jobs_overview", "retry"]
+__all__ = [
+    "CurrentAdmin",
+    "FailedJob",
+    "JobsOverview",
+    "LaneBacklog",
+    "jobs_overview",
+    "retry",
+    "usage_overview",
+]
 
 FAILED_SHOWN = 50
 

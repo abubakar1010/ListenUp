@@ -45,6 +45,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/admin/usage': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Usage Overview
+     * @description Content-free daily usage for the last 30 UTC dates and current quota consumption.
+     */
+    get: operations['usage_overview_api_v1_admin_usage_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/auth/consent-versions': {
     parameters: {
       query?: never;
@@ -1369,6 +1389,46 @@ export interface components {
        */
       used_seconds: number;
     };
+    /** DailyUsage */
+    DailyUsage: {
+      /**
+       * Audio Seconds
+       * @default 0
+       */
+      audio_seconds: number;
+      /**
+       * Calls
+       * @default 0
+       */
+      calls: number;
+      /**
+       * Date
+       * Format: date
+       */
+      date: string;
+      /**
+       * Estimated Calls
+       * @description Calls retaining estimated/reserved usage
+       * @default 0
+       */
+      estimated_calls: number;
+      /**
+       * Estimated Cost Usd
+       * @description Stored hypothetical cost, not billed spend
+       * @default 0
+       */
+      estimated_cost_usd: number;
+      /**
+       * Input Tokens
+       * @default 0
+       */
+      input_tokens: number;
+      /**
+       * Output Tokens
+       * @default 0
+       */
+      output_tokens: number;
+    };
     /** DataExport */
     DataExport: {
       /** Archive Bytes */
@@ -1971,6 +2031,45 @@ export interface components {
      * @enum {string}
      */
     PlayerState: 'playing' | 'buffering' | 'interrupted' | 'resuming' | 'ended';
+    /** ProviderUsage */
+    ProviderUsage: {
+      /** Days */
+      days: components['schemas']['DailyUsage'][];
+      /** Provider */
+      provider: string;
+      /** Quotas */
+      quotas: components['schemas']['QuotaUsage'][];
+    };
+    /** QuotaUsage */
+    QuotaUsage: {
+      /**
+       * Audio Seconds
+       * @default 0
+       */
+      audio_seconds: number;
+      /**
+       * Calls
+       * @default 0
+       */
+      calls: number;
+      /**
+       * Limits
+       * @description Current configured allowance; absent dimension is uncapped, null is unknown
+       */
+      limits: {
+        [key: string]: number;
+      } | null;
+      /**
+       * Period
+       * @enum {string}
+       */
+      period: 'day' | 'month';
+      /**
+       * Tokens
+       * @default 0
+       */
+      tokens: number;
+    };
     /** Registration */
     Registration: {
       /** Email */
@@ -2290,6 +2389,26 @@ export interface components {
       /** Url */
       url: string;
     };
+    /** UsageOverview */
+    UsageOverview: {
+      /**
+       * As Of
+       * Format: date-time
+       */
+      as_of: string;
+      /**
+       * End Date
+       * Format: date
+       */
+      end_date: string;
+      /** Providers */
+      providers: components['schemas']['ProviderUsage'][];
+      /**
+       * Start Date
+       * Format: date
+       */
+      start_date: string;
+    };
     /** ValidationError */
     ValidationError: {
       /** Context */
@@ -2398,6 +2517,40 @@ export interface operations {
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
         };
+      };
+    };
+  };
+  usage_overview_api_v1_admin_usage_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UsageOverview'];
+        };
+      };
+      /** @description Not an administrator (`not_found`) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Reporting unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

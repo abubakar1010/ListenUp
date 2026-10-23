@@ -39,10 +39,14 @@ def accounts(api_role_url: str, migrated_url: str) -> Iterator[AdminFactory]:
     list holds this account's email exactly when `admin` is true."""
     opened: list[TestClient] = []
 
-    def make(admin: bool = True, verified: bool = True) -> TestClient:
+    def make(admin: bool = True, verified: bool = True, **settings: Any) -> TestClient:
+        # Never inherit an operator's real report connection in application tests.
+        settings.setdefault("admin_report_database_url", None)
         email = f"Admin-{uuid.uuid4().hex}@Example.com"
         listed = (" learner@example.com", email.lower()) if admin else ()
-        app = create_app(Settings(database_url=api_role_url, log_json=False, admin_emails=listed))
+        app = create_app(
+            Settings(database_url=api_role_url, log_json=False, admin_emails=listed, **settings)
+        )
         client = TestClient(app, raise_server_exceptions=False)
         client.__enter__()
         opened.append(client)
