@@ -171,14 +171,15 @@ All 36 wireframe boards have a final board on the [UI canvas](https://claude.ai/
 
 ## ADR 0033 follow-up specification — 2026-10-23 (#117)
 
-**Publication status: unpublished.** This section specifies the requested visual
-revision; it does not claim the Final UI has been edited. Three sessions have
-tried to publish it; in the latest, the Artifact tools were available but both
-artifacts returned “not found or not shared” for the signed-in account (see the
-second continuation below). The existing Final UI,
-design system v2 and wireframes could not be inspected or updated. Publish these
-states into the existing Final UI, preserving the base boards, before marking the
-design follow-up complete. The repository log remains the decision source of truth.
+**Publication status: published as a separate canvas; not merged into the Final
+UI.** Every state below is published on the
+[ADR 0033 states canvas](https://claude.ai/artifact/F3Ao8ePjGDBE64aStJSH8h)
+(see “Publication on a separate canvas” below). The owner approved this
+separate artifact because the signed-in account could not open the Final UI or
+design system v2: both returned “not found or not shared” (see the second
+continuation below). The Final UI has not been edited. Copy these boards into it,
+preserving its base boards, before marking the design follow-up complete. The
+repository log remains the decision source of truth.
 
 ### Comparison with current main
 
@@ -268,6 +269,69 @@ Verification in this session:
 | AA text and control contrast | Token arithmetic from main's v2 mirror (table below) | Passes numerically; the actual artifact colours were not readable, so this is not a check against the artifact |
 | Rendered wrapping, clipping, visible focus, touch targets, reduced motion, 200% zoom, mobile keyboard | Rendered boards | **Not performed** (no boards) |
 | Live keyboard, focus trap and inert background in a browser; screen-reader announcements | Live check | **Not performed** |
+
+### Publication on a separate canvas — 2026-10-23
+
+With the owner's approval, the states were published as a new Design canvas,
+[ListenUp ADR 0033 states](https://claude.ai/artifact/F3Ao8ePjGDBE64aStJSH8h).
+The publish was confirmed by the Artifact tool at version 8 (`1792758339-6872`).
+The canvas is private until the owner shares it.
+
+It has one page per flow, plus an overview and a page of the five reusable state
+components. Each flow has four galleries (360 light, 360 dark, 1280 light,
+1280 dark). Every frame has a note above it naming its focus target, its
+announcement and the rule it follows.
+
+| Page | Decision | States (each at 360 and 1280, light and dark) |
+| --- | --- | --- |
+| D02 Blind leave | UX-37 | In-app link; Browser Back; Leaving… pending; leave failed with Try again; completed while open; destination after leaving |
+| D04 Listen and gist | UX-38 | Server acknowledgement pending; saving, saved and restored on this device; storage failure with Retry save; Leave without saving your gist? |
+| Whole-clip lock | UX-39 | Blocked with another-tab guidance; checking; still blocked; available with no autoplay; network failure |
+| B01 Intake | UX-40 | Allowance loading; counted and reserved shown separately; admission checking; admitted and uploading; reservation refusal; counted limit reached; crossing clip admitted (119 → 134 of 120); recheck at reset; check failed; B02 YouTube link behind the D10 flag only |
+| A01 Restore | UX-41 | Restore or keep deleted; Restoring… pending; Keeping it deleted… pending; failure with retry; restored; kept deleted and signed out; grace expired or refused |
+
+That makes 33 states, each in four variants: 132 frames. The colours, type
+scale, radii, 3 px focus ring with a 2 px offset, scrim and dialog shadow are
+taken from main's v2 token mirror (`apps/web/src/index.css`). They are not taken
+from the v2 artifact, which could not be read.
+
+Three conventions apply on every frame:
+- Dialogs are bottom sheets at 360 with stacked 48 px actions, and centred
+  dialogs at most 448 px wide at 1280.
+- The safe action comes first on mobile and right-most on desktop.
+- Busy actions stay focusable with aria-disabled.
+
+Verification of the published boards:
+
+| Check | Kind | Result |
+| --- | --- | --- |
+| Every UX-37 to UX-41 state, copy line and focus, trap, return, destination, busy-focus, inert, announcement and no-shortcut rule is shown on a frame or in its note | Static review of the board sources against this log | Done |
+| Text at least 4.5:1 and control boundaries and focus rings at least 3:1, for every pair the boards use, in both themes | Calculation from the token values the boards use (ink, ink-muted, accent, success, warning and danger on surface, raised, sunken and accent-soft; on-accent on accent; line-strong on each surface) | All pass. The lowest are warning on sunken, light 4.99:1; muted on accent-soft, dark 5.20:1; line-strong on sunken, light 3.40:1 |
+| Interactive targets at least 44 px, or 48 px for sheet actions | Static review of the board sources | Done. Text links in body copy are exempt inline links |
+| Rendered layout: wrapping, clipping and visible focus | Viewing the rendered canvas | **Not performed.** The boards were not opened or screenshotted after publishing |
+| 200% zoom, mobile keyboard open, reduced motion in a live page | Live check | **Not performed.** The boards are static mockups. The notes specify the behaviour |
+| Keyboard operation, focus trapping, inert background and no playback shortcuts under a modal, in a browser | Live check | **Not performed** |
+| Screen-reader names, descriptions and live announcements | Live check | **Not performed** |
+
+Remaining gaps after publication:
+- **Final UI.** The boards are not in the existing Final UI, and they have not
+  been compared with design system v2. Merge them when an account with access
+  can edit it.
+- **Rendered and live checks.** The rendered, browser and screen-reader checks
+  above remain open.
+- **Implementation (current main `58ac0c3`).** These gaps are unchanged from
+  the comparison above:
+  - no whole-clip lock UI or handling of the `blind_in_progress` refusal;
+  - the 500 ms gist debounce, and no storage-failure feedback;
+  - no reservation figures, admission-checking state or recheck at reset;
+  - `ConfirmDialog` natively disables busy buttons, makes nothing inert and
+    uses a 640 px breakpoint;
+  - restore success and error focus and announcements, and Google restore's
+    generic “Saving…”.
+- **Restore copy.** The password restore dialog in `auth/AuthForm.tsx` says
+  “You deleted this account. Everything in it will be deleted on {date}”.
+  The Google dialog uses a shorter body. Both differ from the UX-41 copy drawn
+  here.
 
 ### New decisions
 
@@ -438,13 +502,20 @@ surfaces, including around an accent button. A locked card uses an icon plus
 words, not colour alone. Reduced motion removes sheet and status transitions;
 no new motion occurs near active Blind audio.
 
-Publication checklist, still open: add all variants above to the existing Final
-UI in both sizes/themes; inspect clipping, wrapping, 200% zoom, keyboard-open
-mobile layouts and focus visibility; compare against the actual v2 artifact;
-verify focus trapping/inert background and announcements in the browser with a
-screen reader. Existing test evidence is listed in the follow-up PR, not presented
-as validation of these unimplemented designs. Keep #117 open for publication and
-implementation-time reviews.
+Publication checklist:
+- Done: all variants above are published at both sizes and in both themes on
+  the separate [ADR 0033 states canvas](https://claude.ai/artifact/F3Ao8ePjGDBE64aStJSH8h).
+- Still open:
+  - merge them into the existing Final UI;
+  - inspect the rendered boards for clipping, wrapping and focus visibility;
+  - check 200% zoom and mobile layouts with the keyboard open;
+  - compare against the actual v2 artifact;
+  - verify focus trapping, the inert background and announcements in a browser
+    with a screen reader.
+
+Existing test evidence is listed in the follow-up PR, not presented as
+validation of these unimplemented designs. Keep #117 open for the Final UI merge
+and implementation-time reviews.
 
 ## Self-review (WCAG 2.2 AA and the 10 heuristics)
 
