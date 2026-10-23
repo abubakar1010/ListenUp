@@ -10,6 +10,7 @@ const IDLE = {
   phrase: '',
   mark: undefined,
   wordCount: 3,
+  markCount: 0,
   status: { kind: 'saved', at: null } as const,
   announcement: '',
   focusNote: false,

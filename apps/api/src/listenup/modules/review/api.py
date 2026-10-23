@@ -42,6 +42,12 @@ _GATE: dict[int | str, dict[str, Any]] = {
 }
 
 
+@router.post("/sessions/{session_id}/transcript/complete", status_code=204, responses=_GATE)
+async def finish_transcript(session_id: uuid.UUID, learner: CurrentLearner, db: DbSession) -> None:
+    """Finish Transcript and unlock Card (FR-PL-4). No marks are required."""
+    await service.finish_transcript(db, session_id)
+
+
 @router.get("/sessions/{session_id}/marks", responses=_GATE)
 async def list_marks(
     session_id: uuid.UUID, response: Response, learner: CurrentLearner, db: DbSession

@@ -299,3 +299,36 @@ test('replay_in_leading_silence_starts_first_line_and_paused_seek_stays_paused',
   expect(audioTime).toBe(280);
   expect(audio.paused).toBe(true);
 });
+
+test('finishing_Transcript_refreshes_the_plan_and_opens_Card', async () => {
+  let finished = false;
+  let resolve!: (response: Response) => void;
+  renderReview({
+    [`GET /sessions/${SESSION.id}`]: () =>
+      jsonResponse(200, finished ? sessionFixture({ entry: 'dictation', done: 2 }) : SESSION),
+    [`POST ${PATH}/complete`]: () =>
+      new Promise<Response>((r) => {
+        resolve = r;
+      }),
+  });
+  await ready();
+  fireEvent.click(screen.getByRole('button', { name: 'Finish Transcript' }));
+  expect(await screen.findByRole('button', { name: 'Finishing Transcript…' })).toBeDisabled();
+  await act(async () => {
+    finished = true;
+    resolve(new Response(null, { status: 204 }));
+  });
+  expect(
+    await screen.findByRole('heading', { name: `Card: ${SESSION.content_title}` }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Skip Card' })).toBeEnabled();
+});
+
+test('completion_failure_keeps_Transcript_and_allows_retry', async () => {
+  renderReview({ [`POST ${PATH}/complete`]: problem(503, 'unavailable', 'Please try later.') });
+  await ready();
+  fireEvent.click(screen.getByRole('button', { name: 'Finish Transcript' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Please try later.');
+  expect(screen.getByRole('button', { name: 'Finish Transcript' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Jump to Hello' })).toBeInTheDocument();
+});

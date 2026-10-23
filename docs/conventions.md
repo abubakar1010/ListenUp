@@ -143,6 +143,14 @@ Read the section for the area you are changing before you change it. The rules e
   does. The limits (at most 20 words; not only removed words) are kept in both
   `domain/marks.py` and `selection.ts`.
 
+- Mark list/count (#60) read the same `useMarkSync` snapshot as word highlights.
+  List rows use native buttons for playback; E opens the note, Delete removes with
+  Undo. Keep the list outside the sticky selection panel so it can grow at 360 px.
+  `POST /sessions/{id}/transcript/complete` calls `review.service.finish_transcript`,
+  which uses `practice.service.require_step` and `complete_step` in the request
+  transaction. The browser waits for mark sync before finishing and reloads the
+  authoritative plan after completion (or a lost completion response).
+
 ## Media sandbox and scanning (ADR 0049)
 
 - Uploads call `content.scanner.Scanner.scan` before fingerprint deduplication or

@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from listenup.modules.practice.service import Step
 from listenup.modules.review import service as review
 from listenup.platform.database import Database
-from tests.integration.conftest import conninfo_to_url
+from tests.integration.conftest import conninfo_to_url, with_csrf
 from tests.integration.intake_helpers import (
     ClientFactory,
     FakeStorage,
@@ -347,3 +347,40 @@ def test_correction_identity_and_sentence_boundaries_survive_cache_composition(
         [(w["index"], w["text"], w["edited"]) for w in line["words"]]
         for line in response.json()["lines"]
     ] == [[(0, "", True)], [(1, "New second", True)]]
+
+
+def test_finishing_transcript_unlocks_card_and_persists_the_plan(client, clip, api_role_url):
+    session = start(client, clip, "dictation")
+    finish(api_role_url, client, session["id"], Step.DICTATION)
+    path = f"/api/v1/sessions/{session['id']}/transcript/complete"
+    response = client.post(path)
+    assert response.status_code == 204, response.text
+    updated = load(client, session)
+    assert updated["open_step"] == "card"
+    assert [(s["step"], s["status"]) for s in updated["steps"]] == [
+        ("dictation", "done"),
+        ("transcript", "done"),
+        ("card", "open"),
+        ("shadow", "locked"),
+    ]
+    # A duplicate/lost-answer retry must never finish Card or change the version.
+    assert client.post(path).json()["code"] == "step_locked"
+    assert load(client, session)["version"] == updated["version"]
+
+
+def test_finishing_transcript_denies_locked_foreign_missing_and_unsigned_sessions(
+    client, clip, make_client
+):
+    session = start(client, clip, "dictation")
+    path = f"/api/v1/sessions/{session['id']}/transcript/complete"
+    other = make_client()
+    assert client.post(path).json()["code"] == "step_locked"
+    assert load(client, session)["open_step"] == "dictation"
+    assert other.post(path).json()["code"] == "session_not_found"
+    assert (
+        client.post(f"/api/v1/sessions/{uuid.uuid4()}/transcript/complete").json()["code"]
+        == "session_not_found"
+    )
+    client.cookies.clear()
+    with_csrf(client)
+    assert client.post(path).json()["code"] == "not_signed_in"

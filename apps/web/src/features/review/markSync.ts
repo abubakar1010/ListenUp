@@ -60,6 +60,8 @@ export type MarkSyncStatus = AutosaveStatus<never>;
 export interface MarkSyncSnapshot {
   marks: LocalMark[];
   status: MarkSyncStatus;
+  /** Includes pending removals, which are absent from the visible marks. */
+  hasPendingChanges: boolean;
   /** True when this visit started from unsent changes kept on this device. */
   restored: boolean;
 }
@@ -174,12 +176,15 @@ export class MarkSync {
   // -- writing --------------------------------------------------------------------------
 
   add(mark: NewLocalMark): void {
+    const previous = this.entries.get(mark.id);
     this.entries.set(mark.id, {
       mark: { ...mark },
       op: 'create',
       rev: 1,
       server: null,
-      attempted: false,
+      // Undo may replace a queued deletion of a mark the server already holds.
+      // Removing it again must still DELETE, even before this create is sent.
+      attempted: previous !== undefined && (previous.attempted || previous.server !== null),
     });
     this.changed();
   }
@@ -309,7 +314,9 @@ export class MarkSync {
       else this.entries.delete(mark.id);
     } else {
       await this.gone(() => this.options.transport.remove(mark.id));
-      this.entries.delete(mark.id);
+      // Undo can replace this entry while DELETE is in flight. Keep that new create
+      // queued until deletion settles, then recreate the mark (including its note).
+      if (this.entries.get(mark.id) === entry) this.entries.delete(mark.id);
     }
   }
 
@@ -418,7 +425,12 @@ export class MarkSync {
       .filter((entry) => entry.op !== 'delete')
       .map((entry) => ({ ...entry.mark, saved: entry.op === 'none' }))
       .sort((a, b) => a.at_ms - b.at_ms || a.word_from - b.word_from || a.word_to - b.word_to);
-    return { marks, status: this.status, restored: this.restored };
+    return {
+      marks,
+      status: this.status,
+      hasPendingChanges: this.next() !== undefined,
+      restored: this.restored,
+    };
   }
 
   /** Lay the unsent changes kept on this device over the server's marks. */

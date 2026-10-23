@@ -550,3 +550,35 @@ test('a_refused_removal_of_a_mark_never_confirmed_puts_it_back_and_sends_it_agai
   expect(server.transport.create).toHaveBeenCalledTimes(2);
   expect(sync.getSnapshot().marks[0]).toMatchObject({ saved: true });
 });
+
+test('undo_during_an_in_flight_delete_recreates_the_mark_with_its_note', async () => {
+  const mark = saved('m1', 2, 'linking');
+  const server = fakeServer([mark]);
+  let finishDelete!: () => void;
+  server.transport.remove = vi.fn(async (id: string) => {
+    await new Promise<void>((resolve) => {
+      finishDelete = resolve;
+    });
+    server.marks.delete(id);
+  });
+  const sync = make(server.transport, memoryStorage(), [mark]);
+  sync.remove(mark.id);
+  await vi.advanceTimersByTimeAsync(2000);
+  sync.add(mark); // Undo while DELETE is still on its way.
+  finishDelete();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().marks).toMatchObject([{ id: 'm1', note: 'linking', saved: true }]);
+  expect(server.marks.get('m1')).toMatchObject({ note: 'linking' });
+});
+
+test('remove_undo_remove_before_saving_still_deletes_the_saved_mark', async () => {
+  const mark = saved('m1', 2, 'linking');
+  const server = fakeServer([mark]);
+  const sync = make(server.transport, memoryStorage(), [mark]);
+  sync.remove(mark.id);
+  sync.add(mark); // Undo before the original DELETE was sent.
+  sync.remove(mark.id);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().marks).toEqual([]);
+  expect(server.marks.has(mark.id)).toBe(false);
+});

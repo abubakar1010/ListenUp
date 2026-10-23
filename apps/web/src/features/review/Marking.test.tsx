@@ -502,3 +502,91 @@ test('the_panel_follows_the_page_while_words_are_chosen_and_scrolls_away_while_a
   fireEvent.keyDown(word('Hello'), { key: 'Escape' });
   expect(panel()).toHaveAttribute('data-sticky', 'true');
 });
+
+test('mark_list_is_in_audio_order_and_selecting_a_mark_seeks_and_highlights_its_words', async () => {
+  renderMarking({}, [
+    serverMark({ id: 'late', word_from: 2, word_to: 2, at_ms: 140125 }),
+    serverMark({ id: 'early', word_from: 0, word_to: 1 }),
+  ]);
+  await ready();
+  expect(screen.getByText('2 marks')).toBeInTheDocument();
+  const list = screen.getByRole('list', { name: 'Your marks' });
+  const rows = within(list).getAllByRole('listitem');
+  expect(rows[0]).toHaveTextContent('Hello world.');
+  expect(rows[1]).toHaveTextContent('Again.');
+  fireEvent.click(within(rows[1]!).getByRole('button', { name: /Play mark/ }));
+  expect(document.querySelector('audio')!.currentTime).toBe(140.125);
+  expect(word('Again.')).toHaveClass('outline-mark-strong');
+  expect(within(panel()).getByText('“Again.”')).toBeInTheDocument();
+});
+
+test('mark_count_and_empty_list_update_before_the_server_saves_additions_and_removals', async () => {
+  const { calls } = renderMarking();
+  const hello = await ready();
+  expect(screen.getByText('0 marks')).toBeInTheDocument();
+  expect(
+    screen.getByText('No marks yet. Choose a word to mark a sound you missed.'),
+  ).toBeInTheDocument();
+  fireEvent.keyDown(hello, { key: 'm' });
+  expect(screen.getByText('1 mark')).toBeInTheDocument();
+  expect(screen.getByRole('list', { name: 'Your marks' })).toHaveTextContent('Hello');
+  fireEvent.click(within(panel()).getByRole('button', { name: 'Remove mark' }));
+  expect(screen.getByText('0 marks')).toBeInTheDocument();
+  expect(screen.queryByRole('list', { name: 'Your marks' })).not.toBeInTheDocument();
+  expect(sent(calls, 'POST')).toEqual([]);
+});
+
+test('list_keyboard_edit_delete_and_undo_preserve_the_mark_and_note', async () => {
+  renderMarking({}, [serverMark({ id: 'early', word_to: 1, note: 'linking' })]);
+  await ready();
+  const row = within(screen.getByRole('list', { name: 'Your marks' })).getByRole('button', {
+    name: /Play mark/,
+  });
+  row.focus();
+  fireEvent.keyDown(row, { key: 'e' });
+  expect(screen.getByRole('textbox', { name: 'Note (optional)' })).toHaveFocus();
+  expect(screen.getByRole('textbox', { name: 'Note (optional)' })).toHaveValue('linking');
+  row.focus();
+  fireEvent.keyDown(row, { key: 'Delete' });
+  expect(screen.getByText('0 marks')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+  expect(screen.getByText('1 mark')).toBeInTheDocument();
+  expect(
+    within(screen.getByRole('list', { name: 'Your marks' })).getByText('linking'),
+  ).toBeInTheDocument();
+  await afterDebounce();
+  expect(screen.getByText('1 mark')).toBeInTheDocument();
+});
+
+test('finish_waits_for_saved_marks_including_pending_removals', async () => {
+  renderMarking({ [`DELETE ${MARKS}/early`]: new Response(null, { status: 204 }) }, [
+    serverMark({ id: 'early' }),
+  ]);
+  const hello = await ready();
+  const finish = screen.getByRole('button', { name: 'Finish Transcript' });
+  expect(finish).toBeEnabled();
+  fireEvent.keyDown(hello, { key: 'm' });
+  fireEvent.click(within(panel()).getByRole('button', { name: 'Remove mark' }));
+  expect(finish).toBeDisabled();
+  expect(screen.getByText('Wait for your marks to save before finishing.')).toBeInTheDocument();
+  await afterDebounce();
+  expect(finish).toBeEnabled();
+});
+
+test('a_refused_removal_restores_the_count_and_does_not_trap_Transcript_completion', async () => {
+  renderMarking({ [`DELETE ${MARKS}/early`]: problem(403, 'forbidden', 'Removal refused.') }, [
+    serverMark({ id: 'early' }),
+  ]);
+  await ready();
+  fireEvent.click(
+    within(screen.getByRole('list', { name: 'Your marks' })).getByRole('button', {
+      name: 'Remove mark Hello',
+    }),
+  );
+  expect(screen.getByText('0 marks')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Finish Transcript' })).toBeDisabled();
+  await afterDebounce();
+  expect(screen.getByText('1 mark')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Finish Transcript' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+});

@@ -16,6 +16,7 @@ export function MarkPanel({
   phrase,
   mark,
   wordCount,
+  markCount,
   status,
   announcement,
   focusNote,
@@ -30,6 +31,7 @@ export function MarkPanel({
   /** The mark with exactly the selected words, if any. */
   mark: LocalMark | undefined;
   wordCount: number;
+  markCount: number;
   status: MarkSyncStatus;
   announcement: string;
   /** True when the note field should take focus (the M key on a marked word). */
@@ -56,6 +58,9 @@ export function MarkPanel({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-bold">Mark what you did not hear</h3>
+        <p role="status">
+          {markCount} {markCount === 1 ? 'mark' : 'marks'}
+        </p>
         <span aria-hidden={status.kind === 'failed' || undefined}>
           <SaveStatus status={status} noun="Marks" className="text-body-s" />
         </span>
