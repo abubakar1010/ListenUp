@@ -252,6 +252,7 @@ def test_marks_wait_for_the_transcript_step(client, clip):
         client.post(path, json=new_mark()),
         client.patch(f"{path}/{mark_id}", json={"note": "x"}),
         client.delete(f"{path}/{mark_id}"),
+        client.put(f"{path}/{mark_id}/status", json={"status": "confirmed"}),
     ):
         assert response.status_code == 409, response.text
         assert response.json()["code"] == "step_locked"
