@@ -277,7 +277,8 @@ With the owner's approval, the states were published as a new Design canvas,
 The publish was confirmed by the Artifact tool at version 8 (`1792758339-6872`).
 After the rendered check below, the fixed boards were republished as version 10
 (`1792758778-1e49`). After the keyboard and zoom checks, they were republished as
-version 13 (`1792847518-2445`).
+version 13 (`1792847518-2445`). After the mobile keyboard check, they were
+republished as version 15 (`1792848519-dd38`).
 The canvas is private until the owner shares it.
 
 It has one page per flow, plus an overview and a page of the five reusable state
@@ -315,7 +316,8 @@ Verification of the published boards:
 | Rendered layout: wrapping, clipping, sideways overflow, visible focus | The 20 galleries and the overview, rendered in headless Chromium with the canvas's own runtime and fonts. Each note and frame was measured for overflow, and every screenshot was reviewed by eye | Done after fixes (version 10, `1792758778-1e49`). The first render found three defects: the gist textarea showed “[object Object]”; seven 360 px notes were clipped by up to 66 px; three 360 px intake frames sliced their last line. Fixes: the textarea now takes its text through `value`; notes at 360 are 288 px tall; intake frames at 360 are 880 px tall. The re-render found no clipped note, no sideways overflow and no sliced text. Focus rings are visible on every focused control in both themes. Remaining: at 360 the gist side panel sits wholly below a phone-height frame, as page content below the fold. This was a local render, not the claude.ai canvas editor |
 | Keyboard: tab order, focus target, names, dialog labelling, aria-disabled focusability, target size, focus-ring contrast | Each of the 136 frames was measured in Chromium. Tab was pressed through each frame and the focused element recorded. Each control's DOM order was compared with its visual position | Done after fixes (version 13). Before the fixes: duplicate dialog and heading ids made `aria-labelledby` resolve to another frame in the Blind and gist boards; desktop gist and restore dialogs tabbed opposite to their visual order (`row-reverse`); and the intake refusal's “Go to Library” was a 17 px inline link. Fixes: unique ids per frame; desktop buttons in visual order (consequential, then the safe action right-most), as in `ConfirmDialog`; a 44 px link; and a drawn focus ring for the YouTube link field its note names. After the fixes, all 508 tab stops follow DOM and visual order in a real Tab traversal, and every control has a name. All 88 drawn focus rings sit on a tabbable control inside any open dialog, at 3:1 or better against their background. In the other 48 frames, focus is on a tabindex −1 heading or message, or follows normal page order, as their notes say |
 | 200% zoom (reflow) | Every 360 px frame (68) laid out at 320 CSS px (a 640 px window at 200%) and at 640 CSS px (a 1280 px window at 200%, below the 768 px sheet breakpoint) | Done. No sideways overflow, no text wider than its box, and every sheet fits. Screenshots were reviewed |
-| Focus trapping, Escape, inert background, no playback shortcuts under a modal; mobile keyboard open; reduced motion | Live check in the built app | **Not performed.** The static boards have no such behaviour, so it can only be tested in the implementation |
+| Mobile on-screen keyboard | Every frame with a text field (gist saving, saved, restored and storage-failed; B02 YouTube link; the restore sign-in error), in both themes. Each frame was cut to the 440, 384 and 320 CSS px left visible on a 360 × 720 phone, with the practice header sticky as in `PracticeLayout.tsx`. The field was then scrolled into view as a browser does on focus | Done after a fix (version 15). The label, description and field were always visible, and Submit, Add link and Sign in were reachable by scrolling. The restore sign-in error stayed visible above both fields. But the gist status line was cut off, and the storage-failure warning was off-screen at every height while typing (field plus warning 306 px against 264 px visible). Fixes: the short warning now also appears in the status line, and a UX-38 rule keeps that line in view on focus. The gist 360 px frame is 760 px tall to fit the wrapped line. After the fix, the field, label, description and status line are visible together at every height (256 px in 264 px at worst). This was a simulation with a reduced viewport, not a real phone keyboard |
+| Focus trapping, Escape, inert background, no playback shortcuts under a modal; reduced motion; a real phone keyboard | Live check in the built app | **Not performed.** The static boards have no such behaviour, so it can only be tested in the implementation |
 | Screen-reader names, descriptions and live announcements | Live check | **Not performed** |
 
 Remaining gaps after publication:
@@ -323,8 +325,9 @@ Remaining gaps after publication:
   been compared with design system v2. Merge them when an account with access
   can edit it.
 - **Live checks.** The rendered layout, keyboard and 200% zoom checks of the
-  boards are done. Focus trapping, Escape, the inert background, playback
-  shortcuts, the mobile keyboard and a screen-reader pass need the built app.
+  boards are done, as is the simulated mobile keyboard check. Focus trapping,
+  Escape, the inert background, playback shortcuts, a real phone keyboard and a
+  screen-reader pass need the built app.
 - **Implementation (current main `58ac0c3`).** These gaps are unchanged from
   the comparison above:
   - no whole-clip lock UI or handling of the `blind_in_progress` refusal;
@@ -406,6 +409,11 @@ politely, keep the text selectable/editable and provide Retry save. If leaving
 would lose that text, offer a distinct “Leave without saving your gist?” sheet
 with Stay / Leave without saving; a native unload prompt is best effort only.
 The gist's existing sentence validation and focusable Submit remain unchanged.
+On a storage failure, the draft status line under the textarea also reads “Not
+saved on this device. Copy your text before leaving.”, with a warning icon.
+When the textarea takes focus with an on-screen keyboard open, scroll so that
+the status line stays in view as well as the textarea, clear of the sticky
+header. A learner who is typing then still sees the failure.
 
 **Whole-clip blocked variant (UX-39).** In the clip page's player slot show a lock
 icon, “Whole-clip playback is unavailable” and “Finish or leave the Blind listen
@@ -514,8 +522,8 @@ Publication checklist:
 - Still open:
   - merge them into the existing Final UI;
   - compare against the actual v2 artifact;
-  - in the built app: verify focus trapping, Escape, the inert background, the
-    mobile keyboard and announcements with a screen reader.
+  - in the built app: verify focus trapping, Escape, the inert background, a
+    real phone keyboard and announcements with a screen reader.
 
 Existing test evidence is listed in the follow-up PR, not presented as
 validation of these unimplemented designs. Keep #117 open for the Final UI merge
