@@ -13,10 +13,18 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 
+from listenup.main import create_app
 from listenup.modules.practice.service import Step
 from listenup.modules.review.domain import MAX_MARK_WORDS
-from tests.integration.conftest import conninfo_to_url
-from tests.integration.intake_helpers import ClientFactory, FakeStorage, client_factory, learner_id
+from listenup.platform.config import Settings
+from tests.integration.conftest import conninfo_to_url, with_csrf
+from tests.integration.intake_helpers import (
+    PASSWORD,
+    ClientFactory,
+    FakeStorage,
+    client_factory,
+    learner_id,
+)
 from tests.integration.test_review_api import cache, correction
 from tests.integration.test_sessions_api import add_clip, finish, start
 
@@ -293,6 +301,59 @@ def test_marks_come_back_in_audio_order(client, session_id):
 
 def test_a_session_without_marks_lists_none(client, session_id):
     assert client.get(marks_path(session_id)).json() == {"marks": []}
+
+
+def test_second_sign_in_resumes_transcript_with_marks_intact(
+    client, clip, api_role_url, worker_url
+):
+    """AT-8 / FR-ACC-2: cookies and request connections are independent browsers."""
+    credentials = {"email": client.get("/api/v1/me").json()["email"], "password": PASSWORD}
+    assert client.post("/api/v1/auth/logout").status_code == 204
+    first_login = client.post("/api/v1/auth/login", json=credentials)
+    assert first_login.status_code == 200, first_login.text
+    session = start(client, clip, "dictation", passage=PASSAGE)
+    finish(api_role_url, client, session["id"], Step.DICTATION)
+    path = f"/api/v1/sessions/{session['id']}"
+    marks = []
+    for word, note in [(0, "linking sound"), (2, None)]:
+        response = client.post(
+            f"{path}/marks", json=new_mark(word_from=word, word_to=word, note=note)
+        )
+        assert response.status_code == 201, response.text
+        marks.append(response.json())
+    saved = client.get(path).json()
+
+    app = create_app(
+        Settings(
+            database_url=api_role_url,
+            transcript_read_database_url=worker_url,
+            log_json=False,
+        )
+    )
+    with TestClient(app) as second:
+        with_csrf(second)
+        assert second.get("/api/v1/me").status_code == 401
+        login = second.post("/api/v1/auth/login", json=credentials)
+        assert login.status_code == 200, login.text
+        assert login.json()["id"] == first_login.json()["id"]
+        assert second.cookies.get("listenup_session") != client.cookies.get("listenup_session")
+        listing = second.get("/api/v1/sessions")
+        assert listing.status_code == 200
+        assert listing.json()["items"] == [saved]
+        resumed = second.get(path)
+        assert resumed.status_code == 200
+        assert resumed.json() == saved
+        assert resumed.json()["open_step"] == "transcript"
+        assert resumed.json()["open_position"] == 2
+        assert resumed.json()["steps"] == [
+            {"step": "dictation", "position": 1, "status": "done"},
+            {"step": "transcript", "position": 2, "status": "open"},
+            {"step": "card", "position": 3, "status": "locked"},
+            {"step": "shadow", "position": 4, "status": "locked"},
+        ]
+        restored = second.get(f"{path}/marks")
+        assert restored.status_code == 200
+        assert restored.json() == {"marks": marks}
 
 
 # -- changing the note and removing ------------------------------------------------------

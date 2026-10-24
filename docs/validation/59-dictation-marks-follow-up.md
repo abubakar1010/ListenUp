@@ -3,7 +3,7 @@
 Done criterion: one PR for the story, opened for owner review; do not merge.
 This session continues existing PR #204 on `feat/59-confirm-dictation-marks`.
 A concurrent implementation was discovered when the initial push was rejected;
-its history, PUT status route, immediate confirm/remove saves and ADR 0057 were
+its history, PUT status route, immediate confirm/remove saves and ADR 0058 were
 preserved. The alternate local implementation was not pushed over it, and no
 second PR was created. The owner authorized using Codex when Claude Code was
 unavailable.
@@ -62,7 +62,7 @@ From `apps/web`:
 
 ## Decisions and merge gates
 
-ADR 0057 settles the technical-notes question: removal deletes the mark, with
+ADR 0058 settles the technical-notes question: removal deletes the mark, with
 no third status and no filters for downstream readers. Its independent creation
 analytics remains. This fix restores the saved data after a refused removal and
 introduces no new data rule or API.
@@ -78,7 +78,7 @@ and [launch validation tracker #155](https://github.com/abubakar1010/ListenUp/is
 An independent review of `b868f7e` found two defects and four validation gaps. The owner
 chose to keep a Dictation mark's source on Undo through a server-checked restore. The
 existing Dictation marks route (ADR 0055) already checks words against the scored diff
-and inserts by the browser's id, so Undo reuses it. ADR 0057 records this; there is no
+and inserts by the browser's id, so Undo reuses it. ADR 0058 records this; there is no
 new route, schema or generated client change.
 
 | Finding | Fix | Red (observed) | Green |
@@ -128,3 +128,13 @@ test from both sides is kept.
   required pass. The S3 integration tests cannot run here (no S3 server is reachable);
   CI runs them with `LISTENUP_REQUIRE_S3=1`.
 - Actual-server latency stays **deferred until staging — unverified** (ADR 0039, #155).
+
+### Merge of `main` (2026-10-24)
+
+`main` gained ADR 0057 for Shadow segment proposals (#191) while this PR was open, so
+this PR's ADR moved to **0058** and every reference to it was updated. The OpenAPI schema
+and client were regenerated with the repository's scripts; the conflicts were only in
+those generated files. Shadow proposes segments from every mark, `suggested` ones
+included. That matches ADR 0058, which leaves how Card and Shadow treat suggestions to
+the owner.
+

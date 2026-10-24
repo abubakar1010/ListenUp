@@ -91,7 +91,7 @@ A learner should never wait for work that the current step does not need, so con
 | --- | --- | --- |
 | `playable` | Audio is in storage in the playback format | Blind, and Dictation typing |
 | `transcribed` | The chosen passage has words with times | Dictation scoring, Transcript step, key-point extraction |
-| `profiled` | The original's reference profile for the passage exists | Shadow |
+| `profiled` | The original's reference profile for the passage exists | Shadow grading; rounds can start without it ([ADR 0050](../adr/0050-shadow-measures-model-choices-and-go-no-go.md)) |
 
 Blind takes the length of the passage (3 minutes by default) plus the gist, so transcription and profiling normally finish before the learner needs them. If a learner submits Dictation before the transcript is ready, the text is saved and scored automatically when it arrives.
 
@@ -146,7 +146,7 @@ Speech work is the main cost, so the design avoids repeating it, keeps models lo
 - **Passage-only processing.** Transcribe and profile the chosen passage plus 5 s on each side (to avoid cutting words), never the whole clip. Results are cached by (media fingerprint, start, end); overlapping later requests reuse the cached words and process only the missing span.
 - **Skip transcription when captions exist.** Creator captions need only forced alignment, about a fifth of the cost of transcription (est.).
 - **Silence skipping.** A voice-activity detector removes silence before transcription and round analysis.
-- **Reference profile once.** For each passage, the original speaker's word and sound timings, pitch contour, stress and speech rate are computed once at `transcribed` time and stored (about 50 KB). Each Shadow round analyses only the learner's 75 s and compares against the stored profile, which roughly halves the work per round.
+- **Reference profile once.** For each passage, the original speaker's word alignment (ADR 0034), Parselmouth pitch and intensity are computed once at `transcribed` time and stored with model and version provenance (#76). Reference-speaker phone-level GOP is deferred to #80 ([ADR 0050](../adr/0050-shadow-measures-model-choices-and-go-no-go.md)). Shadow grading analyses only the learner's 75 s and compares against the stored profile, which roughly halves the work per round.
 - **One acoustic pass per round.** The phoneme model runs once per recording; its output feeds pronunciation, articulation and completeness. Pitch and intensity (Parselmouth) are cheap and run alongside.
 - **Filler pass on the recording only.** The disfluency-keeping transcription pass runs on the 75 s recording, not on the passage.
 

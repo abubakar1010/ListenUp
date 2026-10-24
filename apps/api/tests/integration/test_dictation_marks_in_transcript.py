@@ -2,7 +2,7 @@
 
 A mark added from the Dictation diff is `suggested` (#55, ADR 0055). In Transcript the
 learner confirms it (`PUT .../status`, one UPDATE) or removes it; a removed Dictation
-mark is deleted like any other mark (ADR 0057).
+mark is deleted like any other mark (ADR 0058).
 """
 
 from collections.abc import Iterator
@@ -114,7 +114,7 @@ def test_a_mark_cannot_be_put_back_to_suggested(
 def test_removing_a_dictation_mark_deletes_it_and_keeps_its_analytics_event(
     client: TestClient, attempt: dict[str, Any], added: list[dict[str, Any]], migrated_url: str
 ) -> None:
-    """ADR 0057: a removed suggestion is not kept with a status."""
+    """ADR 0058: a removed suggestion is not kept with a status."""
     session_id = attempt["session_id"]
 
     removed = client.delete(f"{transcript_marks(session_id)}/{added[0]['id']}")
@@ -147,7 +147,7 @@ def test_a_removed_dictation_word_can_be_marked_again_by_hand(
 def test_undo_of_a_removed_dictation_mark_brings_it_back_from_dictation(
     client: TestClient, attempt: dict[str, Any], added: list[dict[str, Any]], migrated_url: str
 ) -> None:
-    """ADR 0057: Undo adds the words again through the Dictation route with the same id,
+    """ADR 0058: Undo adds the words again through the Dictation route with the same id,
     so the mark keeps its source and waits to be confirmed; its analytics event is not
     doubled."""
     session_id = attempt["session_id"]

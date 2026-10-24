@@ -33,7 +33,7 @@ import {
  * rather than after the debounce, and are saved within a second. A note and a
  * confirmation waiting on one mark are both sent. Undo of a removed Dictation mark brings
  * it back through the Dictation route, which checks the words against the scored diff, so
- * it keeps its source (ADR 0057).
+ * it keeps its source (ADR 0058).
  */
 
 export type SavedMark = components['schemas']['Mark'];
@@ -249,7 +249,7 @@ export class MarkSync {
   /**
    * Undo of a removal. A Dictation mark whose removal may have reached the server is added
    * again from Dictation, so it comes back as it was rather than as the learner's own
-   * (ADR 0057); its note and a confirmation follow as an update.
+   * (ADR 0058); its note and a confirmation follow as an update.
    */
   undoRemove(mark: NewLocalMark): void {
     const previous = this.entries.get(mark.id);

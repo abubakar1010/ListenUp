@@ -151,7 +151,7 @@ async def confirm_mark(
     db: DbSession,
 ) -> schemas.Mark:
     """Confirm a mark pre-filled from Dictation (FR-TR-3). Confirming again answers with
-    the same mark, so a resend is harmless; to drop the mark, DELETE it (ADR 0057).
+    the same mark, so a resend is harmless; to drop the mark, DELETE it (ADR 0058).
     """
     response.headers.update(_NO_STORE)
     return await service.confirm_mark(db, session_id, mark_id)
