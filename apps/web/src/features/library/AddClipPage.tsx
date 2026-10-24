@@ -10,6 +10,7 @@ import { ACCEPT_ATTRIBUTE, ACCEPTED_NAMES, checkFile, formatSize, type FileProbl
 import { checkAllowance, formatReset, refusalFor } from './refusals';
 import { StorageError, UploadCancelled, uploadFile, type UploadHandle } from './upload';
 import { LIBRARY_KEY, UPLOAD_USAGE_KEY, useUploadUsage, type StorageUse } from './useLibrary';
+import { BusyButton } from '../../components/BusyButton';
 
 type State =
   | { kind: 'idle' }
@@ -148,15 +149,14 @@ export default function AddClipPage() {
             if (file) start(file);
           }}
         />
-        <button
-          type="button"
+        <BusyButton
           className={buttonClass('primary')}
-          disabled={uploading}
+          busy={uploading}
           aria-describedby={hintId}
           onClick={() => inputRef.current?.click()}
         >
           Choose a file
-        </button>
+        </BusyButton>
         <span id={hintId} className="text-body-s text-ink-muted">
           {ACCEPTED_NAMES}, up to {formatSize(usage.data?.max_file_bytes ?? 500 * 1024 * 1024)}
         </span>

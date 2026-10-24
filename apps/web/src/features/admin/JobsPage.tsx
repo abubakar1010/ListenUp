@@ -15,6 +15,7 @@ import {
   type LaneBacklog,
 } from './adminApi';
 import { formatWait } from './formatWait';
+import { BusyButton } from '../../components/BusyButton';
 
 const PAGE_CLASS =
   'mx-auto flex w-full max-w-content flex-col gap-6 px-4 pt-4 pb-8 md:gap-8 md:px-6 md:pt-8 md:pb-12 xl:px-8';
@@ -149,15 +150,14 @@ function FailedTable({
               <td className={NUMBER}>{job.attempts}</td>
               <td className={CELL}>{formatTime(job.failed_at)}</td>
               <td className={CELL}>
-                <button
-                  type="button"
+                <BusyButton
                   className={buttonClass('secondary')}
-                  disabled={retrying !== null}
+                  busy={retrying !== null}
                   onClick={() => onRetry(job)}
                   aria-label={`Retry job ${job.id}, ${job.name}`}
                 >
                   {retrying === job.id ? 'Retrying…' : 'Retry'}
-                </button>
+                </BusyButton>
               </td>
             </tr>
           ))}
@@ -198,14 +198,13 @@ export default function JobsPage() {
     <main className={PAGE_CLASS}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-title-compact md:text-title">Jobs</h1>
-        <button
-          type="button"
+        <BusyButton
           className={buttonClass('secondary')}
           onClick={() => void overview.refetch()}
-          disabled={overview.isFetching}
+          busy={overview.isFetching}
         >
           {overview.isFetching ? 'Refreshing…' : 'Refresh'}
-        </button>
+        </BusyButton>
       </div>
 
       {/* Always in the page, so screen readers announce what a retry did. */}

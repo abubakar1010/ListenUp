@@ -7,6 +7,7 @@ import { ErrorPanel } from '../../components/ErrorPanel';
 import { formatSize } from '../library/files';
 import { formatReset } from '../library/refusals';
 import { isPreparing, useLatestExport, useRequestExport, type DataExport } from './exportApi';
+import { BusyButton } from '../../components/BusyButton';
 
 function formatDate(iso: string): string {
   const date = new Date(iso);
@@ -102,10 +103,9 @@ export function DataExportSection() {
                 Download your data (ZIP)
               </a>
             )}
-            <button
-              type="button"
+            <BusyButton
               onClick={() => request.mutate()}
-              disabled={preparing || request.isPending}
+              busy={preparing || request.isPending}
               className={buttonClass(found?.download_url ? 'secondary' : 'primary')}
             >
               {request.isPending
@@ -115,7 +115,7 @@ export function DataExportSection() {
                   : found === null
                     ? 'Prepare my download'
                     : 'Prepare a new download'}
-            </button>
+            </BusyButton>
           </div>
           {problem && (
             <div role="alert" className="flex flex-col gap-1 text-body-s">

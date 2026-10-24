@@ -9,6 +9,7 @@ import { stageLabel } from '../content/intakeStatus';
 import { SessionsSection } from '../session/SessionsSection';
 import { ACCEPTED_NAMES } from './files';
 import { useLibraryContents, type LibraryItem } from './useLibrary';
+import { BusyButton } from '../../components/BusyButton';
 
 const STEPS = [
   {
@@ -81,14 +82,13 @@ export default function LibraryPage() {
           <ErrorPanel error={contents.error} onRetry={() => void contents.fetchNextPage()} />
         )}
         {contents.hasNextPage && (
-          <button
-            type="button"
+          <BusyButton
             className={buttonClass('secondary', 'self-start')}
             onClick={() => void contents.fetchNextPage()}
-            disabled={contents.isFetchingNextPage}
+            busy={contents.isFetchingNextPage}
           >
             {contents.isFetchingNextPage ? 'Loading more clips…' : 'Load more'}
-          </button>
+          </BusyButton>
         )}
       </section>
     </main>

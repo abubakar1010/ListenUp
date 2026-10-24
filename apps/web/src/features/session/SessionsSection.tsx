@@ -5,6 +5,7 @@ import { ErrorPanel } from '../../components/ErrorPanel';
 import { progressText, useSessions, type Session } from './api';
 import { STEP_NAMES } from './plan';
 import { formatClock } from './time';
+import { BusyButton } from '../../components/BusyButton';
 
 /**
  * The learner's plans, most recently active first, with where each one stands. Shows
@@ -40,14 +41,13 @@ export function SessionsSection() {
         <ErrorPanel error={sessions.error} onRetry={() => void sessions.fetchNextPage()} />
       )}
       {sessions.hasNextPage && (
-        <button
-          type="button"
+        <BusyButton
           className={buttonClass('secondary', 'self-start')}
           onClick={() => void sessions.fetchNextPage()}
-          disabled={sessions.isFetchingNextPage}
+          busy={sessions.isFetchingNextPage}
         >
           {sessions.isFetchingNextPage ? 'Loading more plans…' : 'More plans'}
-        </button>
+        </BusyButton>
       )}
     </section>
   );

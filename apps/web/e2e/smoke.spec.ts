@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 import { expect, test, type Page } from '@playwright/test';
+import { expectFocusKept } from './focus';
 
 const LEARNER = {
   id: '1',
@@ -116,6 +117,42 @@ test('a signed-out learner opens a session, signs in and lands back on it', asyn
   await expect(main.getByRole('region', { name: 'Plan progress' })).toBeVisible();
   await expect(main.getByRole('region', { name: 'Player' })).toBeVisible();
   await expect(main.getByRole('region', { name: 'Blind' })).toBeVisible();
+});
+
+test('a refused sign-in keeps focus on Sign in, which says it is busy while waiting', async ({
+  page,
+}) => {
+  await fakeApi(page);
+  let answer: () => void = () => undefined;
+  const answered = new Promise<void>((resolve) => (answer = resolve));
+  await page.route('**/api/v1/auth/login', async (route) => {
+    await answered;
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/problem+json',
+      json: {
+        type: '/problems/invalid_credentials',
+        title: 'Unauthorized',
+        status: 401,
+        detail: 'The email or password is wrong. Check both and try again.',
+        code: 'invalid_credentials',
+      },
+    });
+  });
+  await page.goto('/sign-in');
+  await page.getByLabel('Email').fill('learner@example.com');
+  await page.getByLabel('Password').fill('wrong horse');
+
+  const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
+  await signIn.click();
+  const busy = page.getByRole('button', { name: 'Please wait…' });
+  await expect(busy).toHaveAttribute('aria-busy', 'true');
+  await expect(busy).toBeFocused();
+  answer();
+
+  await expect(page.getByRole('alert')).toContainText('The email or password is wrong.');
+  await expect(signIn).toBeFocused();
+  await expectFocusKept(page, 'after a refused sign-in');
 });
 
 test('the shell fits a 360 px screen without sideways scrolling', async ({ page }) => {
