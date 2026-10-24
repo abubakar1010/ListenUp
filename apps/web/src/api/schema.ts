@@ -993,6 +993,27 @@ export interface paths {
     patch: operations['change_mark_note_api_v1_sessions__session_id__marks__mark_id__patch'];
     trace?: never;
   };
+  '/api/v1/sessions/{session_id}/shadow/segment': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Segment
+     * @description Resume the saved selection, proposing one on first entry.
+     */
+    get: operations['read_segment_api_v1_sessions__session_id__shadow_segment_get'];
+    /** Choose Segment */
+    put: operations['choose_segment_api_v1_sessions__session_id__shadow_segment_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sessions/{session_id}/steps/{step}/skip': {
     parameters: {
       query?: never;
@@ -2200,6 +2221,34 @@ export interface components {
        * Format: date-time
        */
       updated_at: string;
+    };
+    /** Segment */
+    Segment: {
+      /**
+       * Chosen By
+       * @enum {string}
+       */
+      chosen_by: 'system' | 'learner';
+      /** End Ms */
+      end_ms: number;
+      /** Locked At */
+      locked_at: string | null;
+      /** Mark Count */
+      mark_count: number;
+      /**
+       * Session Id
+       * Format: uuid
+       */
+      session_id: string;
+      /** Start Ms */
+      start_ms: number;
+    };
+    /** SegmentChoice */
+    SegmentChoice: {
+      /** End Ms */
+      end_ms: number;
+      /** Start Ms */
+      start_ms: number;
     };
     /**
      * Session
@@ -4543,6 +4592,98 @@ export interface operations {
         content?: never;
       };
       /** @description `note_too_long` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  read_segment_api_v1_sessions__session_id__shadow_segment_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Segment'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  choose_segment_api_v1_sessions__session_id__shadow_segment_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SegmentChoice'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Segment'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` or `segment_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `segment_span` or `validation_failed` */
       422: {
         headers: {
           [name: string]: unknown;

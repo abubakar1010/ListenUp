@@ -436,14 +436,22 @@ CREATE TABLE practice.card_reviews (
 CREATE INDEX card_reviews_card_idx ON practice.card_reviews (card_id, reviewed_at DESC);
 
 CREATE TABLE practice.shadow_segments (
-  session_id uuid PRIMARY KEY REFERENCES practice.sessions ON DELETE CASCADE,
+  session_id uuid PRIMARY KEY,
   user_id    uuid NOT NULL,
-  span       int4range NOT NULL CHECK (upper(span) - lower(span) BETWEEN 30000 AND 90000),
+  span       int4range NOT NULL CHECK (NOT isempty(span) AND NOT lower_inf(span)
+                                    AND NOT upper_inf(span)
+                                    AND upper(span) - lower(span) BETWEEN 30000 AND 90000),
                                     -- 60 to 90 s, or the whole 30 to 60 s passage: trigger segments_span
   chosen_by  text NOT NULL CHECK (chosen_by IN ('system', 'learner')),
   mark_count int2 NOT NULL CHECK (mark_count >= 0),
-  locked_at  timestamptz              -- set when round 1 starts; the segment can no longer change
+  locked_at  timestamptz,             -- set when round 1 starts; the segment can no longer change
+  FOREIGN KEY (session_id, user_id) REFERENCES practice.sessions(id, user_id) ON DELETE CASCADE
 );
+GRANT SELECT, INSERT, UPDATE ON practice.shadow_segments TO listenup_api;
+ALTER TABLE practice.shadow_segments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY own_rows ON practice.shadow_segments
+  USING (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)
+  WITH CHECK (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid);
 
 CREATE TABLE practice.shadow_rounds (
   id               uuid PRIMARY KEY,
@@ -468,6 +476,8 @@ CREATE INDEX shadow_rounds_expiry_idx ON practice.shadow_rounds (recorded_at)
 - **Two cards without locks.** A card takes slot 1 or 2, and `UNIQUE (session_id, slot)` makes a third card impossible even when two requests race. Deleting a card frees its slot.
 - **Round 1 shows the transcript, rounds 2 and 3 do not.** This is a generated column, so it can never disagree with the round number.
 - **Shadow rounds hang off the segment,** so a round cannot exist before a valid segment does: 60 to 90 s, or the whole passage when the passage is 30 to 60 s.
+
+Shadow segment ownership, RLS/grants and immutable locking follow [ADR 0057](../adr/0057-shadow-segment-proposals.md). The API cannot independently delete a segment; parent deletion still cascades.
 
 Blind and Dictation attempt rows use `own_rows`; the API has `SELECT, INSERT, UPDATE`, with no independent draft deletion. `interrupted` records a second interruption, a device pause of 5 s or more, or an unreported pause beyond the anchor tolerance. The one resume (FR-BL-3) resets the 20 s buffering allowance and records `resume_stop_ms`; draft saves use `draft_version` to reject stale differing text with 409 `draft_conflict`, while an identical resend succeeds ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md), [ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)).
 
@@ -633,18 +643,26 @@ CREATE SCHEMA ops;
 -- The conversion transaction counts a playable clip at most 900 seconds once;
 -- pending clips reserve 900 seconds each during admission checks.
 -- Export requests: 'export:user:<id>', at most 3 per UTC day (ADR 0030).
+-- Keys are '<name>:<ip|user|email>:<value>' (platform/rate_limit.py), at most 200 characters,
+-- so an email is stored as its SHA-256 hex. Current names: login, google, register, upload
+-- (ip and user), password_reset (ip and email), password_reset_confirm, login_fail,
+-- login_lock, intake, export.
+-- The table has no foreign key to identity.users: account deletion removes the learner's
+-- rows with rate_limit.forget_learner (key LIKE '%:user:<id>', identity/jobs.py, DR-1),
+-- so every per-learner key must end ':user:<id>'.
 CREATE UNLOGGED TABLE ops.rate_counters (
-  key          text NOT NULL,       -- 'login:ip:<ip>', 'login_fail:user:<id>', 'login_lock:user:<id>', 'intake:user:<id>'
+  key          text NOT NULL CHECK (char_length(key) <= 200),
   window_start timestamptz NOT NULL,
   count        int4 NOT NULL DEFAULT 0,
   PRIMARY KEY (key, window_start)
 );
+CREATE INDEX rate_counters_window_idx ON ops.rate_counters (window_start);
 
 CREATE TABLE ops.idempotency_keys (
   user_id      uuid NOT NULL REFERENCES identity.users ON DELETE CASCADE,
-  key          text NOT NULL CHECK (char_length(key) <= 100),
+  key          text NOT NULL CHECK (char_length(key) BETWEEN 1 AND 100),
   request_hash bytea NOT NULL,       -- same key with a different body is rejected
-  status_code  int2,
+  status_code  int2,                 -- NULL while the first request is still running
   response     jsonb,
   created_at   timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, key)
@@ -780,12 +798,15 @@ CREATE TRIGGER sessions_entry_lock BEFORE UPDATE OF entry ON practice.sessions
 -- The Shadow segment is fixed once round 1 has started.
 CREATE FUNCTION practice.check_segment_lock() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF OLD.locked_at IS NOT NULL AND NEW.span IS DISTINCT FROM OLD.span THEN
+  IF OLD.locked_at IS NOT NULL AND NEW IS DISTINCT FROM OLD THEN
+    RAISE EXCEPTION 'segment_locked' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.session_id IS DISTINCT FROM OLD.session_id OR NEW.user_id IS DISTINCT FROM OLD.user_id THEN
     RAISE EXCEPTION 'segment_locked' USING ERRCODE = 'check_violation';
   END IF;
   RETURN NEW;
 END $$;
-CREATE TRIGGER segments_lock BEFORE UPDATE OF span ON practice.shadow_segments
+CREATE TRIGGER segments_lock BEFORE UPDATE ON practice.shadow_segments
   FOR EACH ROW EXECUTE FUNCTION practice.check_segment_lock();
 
 -- A Shadow segment is 60 to 90 s, or exactly the whole passage when the passage is 30 to 60 s.
@@ -793,14 +814,16 @@ CREATE FUNCTION practice.check_segment_span() RETURNS trigger LANGUAGE plpgsql A
 DECLARE
   p int4range;
 BEGIN
-  SELECT passage INTO p FROM practice.sessions WHERE id = NEW.session_id;
-  IF NOT (upper(NEW.span) - lower(NEW.span) BETWEEN 60000 AND 90000
-          OR (NEW.span = p AND upper(p) - lower(p) < 60000)) THEN
+  SELECT passage INTO p FROM practice.sessions WHERE id = NEW.session_id AND user_id = NEW.user_id;
+  IF p IS NOT NULL AND (NOT (NEW.span <@ p) OR NOT (
+      (upper(p) - lower(p) <= 60000 AND NEW.span = p)
+      OR (upper(p) - lower(p) > 60000 AND upper(NEW.span) - lower(NEW.span) BETWEEN 60000 AND 90000)
+  )) THEN
     RAISE EXCEPTION 'segment_span' USING ERRCODE = 'check_violation';
   END IF;
   RETURN NEW;
 END $$;
-CREATE TRIGGER segments_span BEFORE INSERT OR UPDATE OF span ON practice.shadow_segments
+CREATE TRIGGER segments_span BEFORE INSERT OR UPDATE ON practice.shadow_segments
   FOR EACH ROW EXECUTE FUNCTION practice.check_segment_span();
 
 -- Reference counting for shared media. SECURITY DEFINER: the API role may not update shared
@@ -934,7 +957,7 @@ Analytics events cascade on account deletion and are included in the learner's e
 | Login sessions | Expired | `auth_sessions_expires_idx` |
 | One-time tokens | Used or expired for 7 days | `one_time_tokens` |
 | Idempotency keys | 24 hours | `idempotency_keys_age_idx` |
-| Rate counters | Windows older than 1 day | primary key range |
+| Rate counters | Windows older than 1 day | `rate_counters_window_idx` |
 | Export archives | Seven days after ready; delete object and mark request expired, retaining the row ([ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)) | `export.expire_archive`, queued transactionally when the archive becomes ready |
 | AI call log | 90 days | Drop the monthly partition |
 
