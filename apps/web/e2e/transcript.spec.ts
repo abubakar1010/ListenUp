@@ -234,6 +234,9 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
         },
       });
     if (path === '/sessions/s-57') return route.fulfill({ json: session });
+    // Completing Transcript now mounts the real Card screen (#72).
+    if (path === '/cards')
+      return route.fulfill({ json: { cards: [], remaining: 2, next_cursor: null } });
     if (path === '/sessions/s-57/transcript/complete' && req.method() === 'POST') {
       completionRequests += 1;
       expect(req.headers()['idempotency-key']).toBe('transcript-s-57');

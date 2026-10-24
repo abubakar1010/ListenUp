@@ -26,13 +26,13 @@ function clip(overrides: Partial<ContentDetail> = {}): ContentDetail {
   };
 }
 
-function renderPage() {
+function renderPage(route = '/contents/content-1') {
   return renderWithProviders(
     <Routes>
       <Route path="/contents/:contentId" element={<ContentPage />} />
       <Route path="/library" element={<h1>Library</h1>} />
     </Routes>,
-    { route: '/contents/content-1' },
+    { route },
   );
 }
 
@@ -192,3 +192,27 @@ test('a copy of a clip the learner has links to that clip', async () => {
     '/contents/content-0',
   );
 });
+
+test.each([false, true])(
+  'a card source link starts the media at its saved time (video: %s)',
+  async (has_video) => {
+    mockApi({ '/contents/content-1': jsonResponse(200, clip({ has_video })) });
+    renderPage('/contents/content-1?at_ms=11000');
+    expect(await screen.findByLabelText('Play Why cities plant street trees')).toHaveAttribute(
+      'src',
+      '/api/v1/media/media-1#t=11',
+    );
+  },
+);
+
+test.each(['-1', 'NaN', 'Infinity', '200001'])(
+  'an invalid source time %s starts normally',
+  async (at) => {
+    mockApi({ '/contents/content-1': jsonResponse(200, clip()) });
+    renderPage(`/contents/content-1?at_ms=${at}`);
+    expect(await screen.findByLabelText('Play Why cities plant street trees')).toHaveAttribute(
+      'src',
+      '/api/v1/media/media-1',
+    );
+  },
+);

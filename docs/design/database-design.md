@@ -419,6 +419,7 @@ CREATE TABLE practice.cards (
   media_object_id uuid REFERENCES content.media_objects ON DELETE SET NULL,
   written_form    text NOT NULL CHECK (char_length(written_form) BETWEEN 1 AND 100),
   heard_form      text NOT NULL CHECK (char_length(heard_form) BETWEEN 1 AND 100),
+  at_ms           int4 NOT NULL CHECK (at_ms >= 0), -- source-time snapshot (ADR 0058)
   snippet_key     text,                 -- 3 to 6 s clip; survives media expiry
   snippet_span    int4range,
   created_at      timestamptz NOT NULL DEFAULT now(),

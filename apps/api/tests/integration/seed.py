@@ -54,6 +54,7 @@ class SeededLearner:
     """The live Dictation attempt, with a draft, of the session open at Dictation."""
     export_id: uuid.UUID | None = None
     """A finished data export, ready to download (#92)."""
+    card_id: uuid.UUID | None = None
     mark_id: uuid.UUID | None = None
     """A manual mark on the session open at Transcript (#58)."""
 
@@ -72,6 +73,7 @@ class SeededLearner:
                 *([self.dictation_attempt_id] if self.dictation_attempt_id else []),
                 *([self.export_id] if self.export_id else []),
                 *([self.mark_id] if self.mark_id else []),
+                *([self.card_id] if self.card_id else []),
             )
         ]
 
@@ -259,6 +261,14 @@ def seed_learner_data(owner_url: str, user_id: uuid.UUID) -> SeededLearner:
     )
     export_id = add_ready_export(owner_url, user_id)
     mark_id = add_mark(owner_url, user_id, sessions["transcript"])
+    card_id = uuid.uuid4()
+    with psycopg.connect(owner_url) as conn:
+        conn.execute(
+            "INSERT INTO practice.cards "
+            "(id,session_id,user_id,slot,written_form,heard_form,at_ms,media_object_id) "
+            "VALUES (%s,%s,%s,1,'could have','kuduv',%s,%s)",
+            [card_id, sessions["card"], user_id, PASSAGE.start_ms, media_id],
+        )
     add_consents(owner_url, user_id, ("voice_recording",))
     return SeededLearner(
         user_id=user_id,
@@ -274,4 +284,5 @@ def seed_learner_data(owner_url: str, user_id: uuid.UUID) -> SeededLearner:
         dictation_attempt_id=dictation_attempt_id,
         export_id=export_id,
         mark_id=mark_id,
+        card_id=card_id,
     )
