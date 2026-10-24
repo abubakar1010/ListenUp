@@ -3,7 +3,7 @@
 from alembic import op
 
 revision = "56_dictation_disputes"
-down_revision = "68_gist_grades"
+down_revision = "77_shadow_segments"
 branch_labels = None
 depends_on = None
 

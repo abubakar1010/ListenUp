@@ -65,7 +65,7 @@ edit; the concurrent test requires both independent edits in the final score.
 These assertions cover plausible scoring/security defects; no mutation result is
 claimed.
 
-ADR 0057 preserves all saved marks (including phrase snapshots, notes and status),
+ADR 0058 preserves all saved marks (including phrase snapshots, notes and status),
 re-scores only the named historical attempt, and applies overlays to future initial
 scoring. The migration changes permissions and lifecycle cleanup on the existing
 table; the shared cache never changes. A key-share parent lock prevents deletion
@@ -101,4 +101,44 @@ grading or AI. Existing Transcript edited-marker behavior is reused unchanged.
   the owner's request to resolve the review findings. This documentation update
   needs no artificial failing test.
 
-Final validation after synchronization with current main is recorded below.
+Synchronization with `origin/main` at `e8901a4` keeps Shadow's accepted ADR 0057
+and renumbers this decision to ADR 0058. The dispute migration now follows
+`77_shadow_segments`, so Alembic has one head; upgrade/check/downgrade/upgrade
+pass. OpenAPI/client regeneration produces no additional diff after the merge.
+The PR adds no changes to the excluded modules relative to that main.
+
+The shared-dialog follow-up test `Tab from the busy dialog container reaches a
+remaining help link in either direction` initially failed (1 failed, 1 passed):
+Shift+Tab from the container was not contained while a Help link remained enabled.
+Both container-to-first/last cases are now handled; both dialog tests pass.
+
+One complete backend run was stopped before completion after noticing that the
+race test module also needed to import the new storage fixture. That fixture
+import is fixed, both focused race tests pass, and the complete run was restarted.
+The stopped run is not counted as successful validation.
+
+Final frontend validation after synchronization with current main:
+
+- Lint, formatting, types, build and bundle size pass (124.9 kB gzip).
+- Coverage run: **523 passed** in 52 files; 95.78% overall lines, 88.50% branches.
+- Complete browser run: **44 passed**, including real Tab/Shift+Tab while the
+  correction response is held pending, score/Edited refresh, restored opener
+  focus, and the other flows using the shared confirmation dialog.
+- Coverage inventory passes; changed executable lines are **33/34 (97%)**.
+  The uncovered line is the existing shared scrim mouse-down handler; the new
+  busy-focus and Tab containment paths have observable assertions. No coverage
+  threshold or exclusion changed. Browser API responses remain mocked.
+
+Final backend validation after synchronization with current main:
+
+- Full required-service coverage run: **2,022 passed, 1 deselected** in 578.64 s;
+  PostgreSQL and S3 were required, with no skips. Overall line/branch report: 98%.
+- Separate uninstrumented performance run: **1 passed, 2,022 deselected**.
+- Backend formatting/lint, strict mypy (187 files) and all six import contracts
+  pass. Migration upgrade/check/downgrade/upgrade passes with one Alembic head.
+- Coverage inventory passes; changed executable lines are **63/63 (100%)**.
+- OpenAPI/client regeneration is reproducible, and all route-registry checks pass
+  within the complete backend run. No application coverage gate was weakened.
+- Required GitHub CI will rerun on the pushed fix commits. The original run's
+  account-purge failure is retained as historical evidence, not reported green.
+  The owner merges after the current required checks pass.

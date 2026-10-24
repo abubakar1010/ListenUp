@@ -86,10 +86,16 @@ export function ConfirmDialog({
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     const active = document.activeElement;
-    if (event.shiftKey && (active === first || !dialog.current.contains(active))) {
+    if (
+      event.shiftKey &&
+      (active === first || active === dialog.current || !dialog.current.contains(active))
+    ) {
       event.preventDefault();
       last.focus();
-    } else if (!event.shiftKey && (active === last || !dialog.current.contains(active))) {
+    } else if (
+      !event.shiftKey &&
+      (active === last || active === dialog.current || !dialog.current.contains(active))
+    ) {
       event.preventDefault();
       first.focus();
     }

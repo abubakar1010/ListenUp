@@ -9,7 +9,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from listenup.platform.storage import S3Storage, use_storage
-
 from tests.integration.conftest import conninfo_to_url
 from tests.integration.dictation_helpers import media_of, seed_transcript
 from tests.integration.intake_helpers import ClientFactory, FakeStorage, client_factory, learner_id

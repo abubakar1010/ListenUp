@@ -1,4 +1,4 @@
-"""Correction writes cannot outlive an owned content parent (#56, ADR 0057)."""
+"""Correction writes cannot outlive an owned content parent (#56, ADR 0058)."""
 
 import asyncio
 import concurrent.futures
@@ -20,9 +20,10 @@ from tests.integration.test_dictation_disputes import (
     dispute,
     make_client,
     share_clip,
+    storage,
 )
 
-__all__ = ["attempt", "client", "make_client"]
+__all__ = ["attempt", "client", "make_client", "storage"]
 
 
 @pytest.mark.anyio

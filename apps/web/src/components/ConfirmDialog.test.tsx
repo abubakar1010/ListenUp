@@ -38,3 +38,27 @@ test('pending dialogs retain focus and keyboard navigation when every control is
   fireEvent.keyDown(modal, { key: 'Escape' });
   expect(onCancel).toHaveBeenCalledOnce();
 });
+
+test('Tab from the busy dialog container reaches a remaining help link in either direction', () => {
+  render(
+    <ConfirmDialog
+      title="Save correction"
+      confirmLabel="Save"
+      cancelLabel="Cancel"
+      onConfirm={vi.fn()}
+      onCancel={vi.fn()}
+      busy
+      footer={<a href="/help">Help</a>}
+    >
+      Saving your correction.
+    </ConfirmDialog>,
+  );
+  const modal = screen.getByRole('dialog');
+  const help = screen.getByRole('link', { name: 'Help' });
+  expect(modal).toHaveFocus();
+  expect(fireEvent.keyDown(modal, { key: 'Tab', shiftKey: true })).toBe(false);
+  expect(help).toHaveFocus();
+  modal.focus();
+  expect(fireEvent.keyDown(modal, { key: 'Tab' })).toBe(false);
+  expect(help).toHaveFocus();
+});
