@@ -328,7 +328,8 @@ test('a learner opens a ready clip from the library and plays it', async ({ page
 
     await expect(page).toHaveURL('/contents/content-1');
     await expect(page).toHaveTitle('Why cities plant street trees · ListenUp');
-    await expect(page.getByRole('status')).toHaveText('Ready to play.');
+    // The player has its own status while the audio loads; this is the clip's.
+    await expect(page.getByRole('status').filter({ hasText: 'Ready to play.' })).toBeVisible();
     // Audio plays in the shared player (#198), with the hidden element behind it.
     const player = page.locator('audio');
     await expect(player).not.toHaveAttribute('controls', '');
