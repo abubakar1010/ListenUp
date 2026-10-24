@@ -993,6 +993,27 @@ export interface paths {
     patch: operations['change_mark_note_api_v1_sessions__session_id__marks__mark_id__patch'];
     trace?: never;
   };
+  '/api/v1/sessions/{session_id}/marks/{mark_id}/status': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Confirm Mark
+     * @description Confirm a mark pre-filled from Dictation (FR-TR-3). Confirming again answers with
+     *     the same mark, so a resend is harmless; to drop the mark, DELETE it (ADR 0058).
+     */
+    put: operations['confirm_mark_api_v1_sessions__session_id__marks__mark_id__status_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sessions/{session_id}/shadow/segment': {
     parameters: {
       query?: never;
@@ -2021,6 +2042,17 @@ export interface components {
     MarkNote: {
       /** Note */
       note: string | null;
+    };
+    /**
+     * MarkStatus
+     * @description FR-TR-3: a suggested Dictation mark is confirmed; it never goes back to suggested.
+     */
+    MarkStatus: {
+      /**
+       * Status
+       * @constant
+       */
+      status: 'confirmed';
     };
     /** Me */
     Me: {
@@ -4597,6 +4629,63 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  confirm_mark_api_v1_sessions__session_id__marks__mark_id__status_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+        mark_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MarkStatus'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Mark'];
+        };
+      };
+      /** @description `not_signed_in` */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `session_not_found` or `mark_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
       };
     };
   };

@@ -1671,6 +1671,19 @@
         "title": "MarkNote",
         "type": "object"
       },
+      "MarkStatus": {
+        "description": "FR-TR-3: a suggested Dictation mark is confirmed; it never goes back to suggested.",
+        "properties": {
+          "status": {
+            "const": "confirmed",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": ["status"],
+        "title": "MarkStatus",
+        "type": "object"
+      },
       "Me": {
         "properties": {
           "consents_required": {
@@ -5070,6 +5083,77 @@
           }
         },
         "summary": "Change Mark Note",
+        "tags": ["review"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/marks/{mark_id}/status": {
+      "put": {
+        "description": "Confirm a mark pre-filled from Dictation (FR-TR-3). Confirming again answers with\nthe same mark, so a resend is harmless; to drop the mark, DELETE it (ADR 0058).",
+        "operationId": "confirm_mark_api_v1_sessions__session_id__marks__mark_id__status_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mark_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mark Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkStatus"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mark"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "`not_signed_in`"
+          },
+          "404": {
+            "description": "`session_not_found` or `mark_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Mark",
         "tags": ["review"]
       }
     },
