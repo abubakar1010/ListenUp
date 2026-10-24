@@ -147,8 +147,8 @@ async def submit(
     return response
 
 
-def _view_response(view: service.AttemptView) -> JSONResponse:
-    body = schemas.DictationAttemptView(
+def _view_body(view: service.AttemptView) -> schemas.DictationAttemptView:
+    return schemas.DictationAttemptView(
         id=view.attempt.id,
         session_id=view.attempt.session_id,
         status=view.attempt.status,
@@ -164,8 +164,11 @@ def _view_response(view: service.AttemptView) -> JSONResponse:
             ],
         ),
     )
+
+
+def _view_response(view: service.AttemptView) -> JSONResponse:
     return JSONResponse(
-        body.model_dump(mode="json"), headers={"Cache-Control": "private, no-store"}
+        _view_body(view).model_dump(mode="json"), headers={"Cache-Control": "private, no-store"}
     )
 
 
@@ -242,3 +245,38 @@ async def add_marks(
 async def list_marks(attempt_id: uuid.UUID, learner: CurrentLearner, db: DbSession) -> JSONResponse:
     """The marks of the attempt's session in audio order, to show the words already added."""
     return _marks_response(await service.list_marks(db, attempt_id))
+
+
+@router.post(
+    "/dictation/attempts/{attempt_id}/disputes",
+    response_model=schemas.DictationAttemptView,
+    responses={
+        404: {"description": "`attempt_not_found`"},
+        409: {"description": "`attempt_not_scored`, `transcript_not_ready`, `transcript_failed`"},
+        422: {"description": "`word_out_of_range`, `validation_failed`, `idempotency_key_reused`"},
+    },
+)
+async def dispute_word(
+    attempt_id: uuid.UUID,
+    body: schemas.DisputeWord,
+    request: Request,
+    learner: CurrentLearner,
+    db: DbSession,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> JSONResponse:
+    """Correct a reference word for this learner and return the re-scored attempt (FR-TX-4)."""
+
+    async def run() -> tuple[int, Any]:
+        view = await service.dispute_word(
+            db,
+            request.app.state.transcript_database,
+            learner,
+            attempt_id,
+            body.word_index,
+            body.corrected_text,
+        )
+        return 200, _view_body(view).model_dump(mode="json")
+
+    response = await run_once(db, learner, idempotency_key, await request_fingerprint(request), run)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
