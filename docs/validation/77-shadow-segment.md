@@ -125,3 +125,24 @@ Final check outcomes and changed-line coverage are recorded in the PR.
   Full final-tree required-service coverage and CI are in progress; their final
   outcomes will be recorded before handoff. Web runtime code is unchanged by this
   remediation; the review's 52 component and five browser checks remain applicable.
+
+## Merge validation refresh (2026-10-24)
+
+- Synced main through `757b19d` (#207, cross-browser resume tests); no production
+  code or migration was added by that sync.
+- The refreshed dependency scan failed on newly reported high advisories in
+  development tooling: Zod `GHSA-mrhx-c7xc-m3w5` and Undici
+  `GHSA-xjj6-f33q-929c`. `pnpm audit --audit-level=high` reproduced the failure.
+  Updated only the compatible transitive lockfile resolutions: Zod 4.6.5 to
+  4.6.7 and Undici 8.11.2 to 8.12.3. The same audit then reported no known
+  vulnerabilities. No advisory suppression or threshold change was added.
+- The actual audit failure/pass is the regression evidence for this dependency
+  maintenance; no artificial application-behavior Red is claimed.
+- With those resolutions: web lint, format, types, all **516** coverage tests,
+  production build and size passed. Coverage is **95.74% lines / 88.48% branches**;
+  initial JavaScript remains **124.7 kB gzip**. All **43** browser tests passed, including the inherited cross-browser resume
+  test. Changed web coverage is **93% (40/43)**; final CI outcomes follow on the PR.
+- The completed final-tree backend run after review remediation passed **1,999**
+  tests with PostgreSQL/S3 required and no skips; performance separately passed.
+  Coverage completeness passed and changed backend coverage was **124/124 (100%)**.
+  The latest CI additionally checks the cross-browser tests inherited from main.
