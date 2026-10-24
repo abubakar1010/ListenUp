@@ -2,6 +2,7 @@
 
 import uuid
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.analytics import service as analytics
@@ -25,19 +26,32 @@ async def create(
     if mark is None:
         raise ProblemError(404, "mark_not_found", "There is no such mark in this session.")
     item = await content.get_content(db, learner, session.content_id)
-    card_id = await repository.insert(
-        db,
-        {
-            "id": uuid7(),
-            "session_id": session_id,
-            "user_id": learner,
-            "mark_id": mark.id,
-            "media_object_id": item.media_object_id,
-            "at_ms": mark.at_ms,
-            "written_form": new.written_form,
-            "heard_form": new.heard_form,
-        },
-    )
+    try:
+        card_id = await repository.insert(
+            db,
+            {
+                "id": uuid7(),
+                "session_id": session_id,
+                "user_id": learner,
+                "mark_id": mark.id,
+                "media_object_id": item.media_object_id,
+                "at_ms": mark.at_ms,
+                "written_form": new.written_form,
+                "heard_form": new.heard_form,
+            },
+        )
+    except IntegrityError as error:
+        # The mark can be removed by another request after list_marks returns.
+        # Refuse that stale selection; unrelated integrity failures remain errors.
+        if (
+            getattr(error.orig, "sqlstate", None) != "23503"
+            or getattr(getattr(error.orig, "diag", None), "constraint_name", None)
+            != "cards_mark_id_fkey"
+        ):
+            raise
+        raise ProblemError(
+            404, "mark_not_found", "There is no such mark in this session."
+        ) from None
     if card_id is None:
         raise ProblemError(
             409,

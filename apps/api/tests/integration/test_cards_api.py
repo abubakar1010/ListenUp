@@ -1,7 +1,9 @@
 """Card creation from marks: FR-CA-1..3, AT-5, D14 (#72)."""
 
+import asyncio
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 
 import psycopg
 import pytest
@@ -142,6 +144,47 @@ def test_removing_mark_preserves_card_source_and_forms(client, card_session):
     assert listed[0] == {**saved, "mark_id": None}
 
 
+def test_mark_deleted_during_creation_is_refused_and_retry_keeps_slot(
+    client, card_session, migrated_url, monkeypatch
+):
+    from listenup.modules.cards import service
+
+    session, mark = card_session
+    mark_path = f"/api/v1/sessions/{session}/marks"
+    path = f"/api/v1/sessions/{session}/cards"
+    body = {"mark_id": mark, "written_form": "could have", "heard_form": "kuduv"}
+    headers = {"Idempotency-Key": str(uuid.uuid4())}
+    read_marks = service.review.list_marks
+
+    async def read_then_remove(db, session_id):
+        found = await read_marks(db, session_id)
+        # A second request commits its deletion after the first has read the mark.
+        removed = await asyncio.to_thread(client.delete, f"{mark_path}/{mark}")
+        assert removed.status_code == 204
+        return found
+
+    with monkeypatch.context() as patch:
+        patch.setattr(service.review, "list_marks", read_then_remove)
+        refused = client.post(path, json=body, headers=headers)
+    assert refused.status_code == 404, refused.text
+    assert refused.json()["code"] == "mark_not_found"
+    assert client.get("/api/v1/cards").json()["cards"] == []
+    with psycopg.connect(migrated_url) as db:
+        assert db.execute(
+            "SELECT count(*) FROM ops.analytics_events "
+            "WHERE event_type='card_created' AND session_id=%s",
+            [session],
+        ).fetchone() == (0,)
+
+    assert client.post(mark_path, json=new_mark(id=mark)).status_code == 201
+    retried = client.post(path, json=body, headers=headers)
+    assert retried.status_code == 201, retried.text
+    assert retried.json()["slot"] == 1
+    replayed = client.post(path, json=body, headers=headers)
+    assert replayed.json() == retried.json()
+    assert len(client.get("/api/v1/cards").json()["cards"]) == 1
+
+
 def test_mark_from_another_session_cannot_be_used(client, card_session, clip, api_role_url):
     from tests.integration.test_sessions_api import start
 
@@ -151,6 +194,23 @@ def test_mark_from_another_session_cannot_be_used(client, card_session, clip, ap
     response = create(client, card_session, mark_id=mark["id"])
     assert response.status_code == 404 and response.json()["code"] == "mark_not_found"
     assert client.get("/api/v1/cards").json()["cards"] == []
+
+
+def test_an_unrelated_foreign_key_failure_is_not_a_missing_mark(client, card_session, monkeypatch):
+    from listenup.modules.cards import service
+
+    get_content = service.content.get_content
+
+    async def missing_media(*args):
+        return replace(await get_content(*args), media_object_id=uuid.uuid4())
+
+    with monkeypatch.context() as patch:
+        patch.setattr(service.content, "get_content", missing_media)
+        response = create(client, card_session)
+    assert response.status_code == 500
+    assert response.json()["code"] == "internal_error"
+    assert client.get("/api/v1/cards").json()["cards"] == []
+    assert create(client, card_session).status_code == 201
 
 
 @pytest.mark.parametrize("action", ["create", "delete", "complete"])
