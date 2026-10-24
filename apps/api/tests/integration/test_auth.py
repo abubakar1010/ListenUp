@@ -232,6 +232,66 @@ def test_the_lock_threshold_and_duration_come_from_configuration(
     assert timedelta(minutes=2) < until - datetime.now(UTC) <= timedelta(minutes=3)
 
 
+def test_each_refused_sign_in_says_how_many_tries_are_left(client: TestClient) -> None:
+    email = unique_email()
+    register(client, email)
+    client.post("/api/v1/auth/logout")
+
+    answers = [login(client, email, "wrong password!").json() for _ in range(4)]  # type: ignore[attr-defined]
+
+    assert [a["code"] for a in answers] == ["invalid_credentials"] * 4
+    assert [a["attempts_left"] for a in answers] == [4, 3, 2, 1]
+    # The pause it warns about, in minutes, from configuration (D17).
+    assert {a["lock_minutes"] for a in answers} == {15}
+
+
+def test_an_unknown_email_gets_the_same_answers_as_a_real_account(
+    client: TestClient, migrated_url: str
+) -> None:
+    """UX-35: the lockout must not reveal whether an email has an account (NFR-SEC-1)."""
+    real, unknown = unique_email(), unique_email()
+    register(client, real)
+    client.post("/api/v1/auth/logout")
+
+    def five_tries(email: str) -> list[tuple[int, str, object]]:
+        out = []
+        for _ in range(5):
+            response = login(client, email, "wrong password!")
+            body = response.json()  # type: ignore[attr-defined]
+            out.append((response.status_code, body["code"], body.get("attempts_left")))  # type: ignore[attr-defined]
+        return out
+
+    assert five_tries(unknown) == five_tries(real)
+    locked = login(client, unknown, "wrong password!")
+    assert locked.status_code == 429  # type: ignore[attr-defined]
+    until = datetime.fromisoformat(locked.json()["locked_until"])  # type: ignore[attr-defined]
+    assert timedelta(minutes=14) < until - datetime.now(UTC) <= timedelta(minutes=15)
+
+    # The counters for an unknown email keep no trace of the address itself.
+    with psycopg.connect(migrated_url) as conn:
+        keys = [row[0] for row in conn.execute("SELECT key FROM ops.rate_counters").fetchall()]
+    assert any(key.startswith("login_lock:email:") for key in keys)
+    local = unknown.split("@")[0]
+    assert not any(local in key for key in keys)
+
+
+def test_an_unknown_email_lock_ends_like_a_real_one(client: TestClient, migrated_url: str) -> None:
+    unknown = unique_email()
+    for _ in range(5):
+        login(client, unknown, "wrong password!")
+    assert login(client, unknown, "wrong password!").status_code == 429  # type: ignore[attr-defined]
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE ops.rate_counters SET window_start = window_start - interval '16 minutes' "
+            "WHERE key LIKE 'login_lock:email:%%'"
+        )
+
+    again = login(client, unknown, "wrong password!").json()  # type: ignore[attr-defined]
+
+    assert again["code"] == "invalid_credentials"
+    assert again["attempts_left"] == 4
+
+
 def test_one_ip_is_limited_across_accounts(make_client: ClientFactory) -> None:
     client = make_client(login_ip_limit=3)
 

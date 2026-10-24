@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.identity.domain.consents import Consent, ConsentKind, CurrentVersions
+from listenup.modules.identity.domain.lockout import user_lock_subject
 from listenup.platform.database import set_learner
 from listenup.platform.ids import uuid7
 
@@ -178,71 +179,74 @@ async def delete_auth_session(session: AsyncSession, token_hash: bytes) -> None:
 
 
 # Sign-in lockout (D17), kept in ops.rate_counters as the Database Design describes:
-# failures are counted in one-minute buckets under 'login_fail:user:<id>', so summing
+# failures are counted in one-minute buckets under 'login_fail:<subject>', so summing
 # the buckets of the last N minutes gives a sliding window; reaching the threshold
-# writes 'login_lock:user:<id>' with window_start = the moment of the lock.
+# writes 'login_lock:<subject>' with window_start = the moment of the lock. The subject
+# is 'user:<id>' for an account, or 'email:<digest>' for an address without a live
+# account (domain/lockout.py, ADR 0057).
 
 
-def _fail_key(user_id: uuid.UUID) -> str:
-    return f"login_fail:user:{user_id}"
+def _fail_key(subject: str) -> str:
+    return f"login_fail:{subject}"
 
 
-def _lock_key(user_id: uuid.UUID) -> str:
-    return f"login_lock:user:{user_id}"
+def _lock_key(subject: str) -> str:
+    return f"login_lock:{subject}"
 
 
-async def locked_until(
-    session: AsyncSession, user_id: uuid.UUID, lock: timedelta
-) -> datetime | None:
+async def locked_until(session: AsyncSession, subject: str, lock: timedelta) -> datetime | None:
     result: datetime | None = await session.scalar(
         text("""
         SELECT max(window_start) + :lock FROM ops.rate_counters
          WHERE key = :key AND window_start > now() - :lock
         """),
-        {"key": _lock_key(user_id), "lock": lock},
+        {"key": _lock_key(subject), "lock": lock},
     )
     return result
 
 
 async def record_failure(
-    session: AsyncSession, user_id: uuid.UUID, window: timedelta, threshold: int
-) -> datetime | None:
-    """Count one failed sign-in; returns when the lock ends if this one locked it."""
+    session: AsyncSession, subject: str, window: timedelta, threshold: int
+) -> tuple[int, datetime | None]:
+    """Count one failed sign-in: the failures in the window, and when the lock ends if
+    this one locked it."""
     await session.execute(
         text("""
         INSERT INTO ops.rate_counters AS c (key, window_start, count)
         VALUES (:key, date_trunc('minute', now()), 1)
         ON CONFLICT (key, window_start) DO UPDATE SET count = c.count + 1
         """),
-        {"key": _fail_key(user_id)},
+        {"key": _fail_key(subject)},
     )
     failures = await session.scalar(
         text("""
         SELECT coalesce(sum(count), 0) FROM ops.rate_counters
          WHERE key = :key AND window_start > now() - :window
         """),
-        {"key": _fail_key(user_id), "window": window},
+        {"key": _fail_key(subject), "window": window},
     )
-    if int(failures or 0) < threshold:
-        return None
+    count = int(failures or 0)
+    if count < threshold:
+        return count, None
     await session.execute(
         text("""
         INSERT INTO ops.rate_counters (key, window_start, count) VALUES (:key, now(), 1)
         ON CONFLICT DO NOTHING
         """),
-        {"key": _lock_key(user_id)},
+        {"key": _lock_key(subject)},
     )
     # The failures that caused this lock must not lock the account again once it ends.
     await session.execute(
-        text("DELETE FROM ops.rate_counters WHERE key = :key"), {"key": _fail_key(user_id)}
+        text("DELETE FROM ops.rate_counters WHERE key = :key"), {"key": _fail_key(subject)}
     )
-    return await locked_until(session, user_id, window)
+    return count, await locked_until(session, subject, window)
 
 
 async def clear_failures(session: AsyncSession, user_id: uuid.UUID) -> None:
+    subject = user_lock_subject(user_id)
     await session.execute(
         text("DELETE FROM ops.rate_counters WHERE key IN (:fail, :lock)"),
-        {"fail": _fail_key(user_id), "lock": _lock_key(user_id)},
+        {"fail": _fail_key(subject), "lock": _lock_key(subject)},
     )
 
 
