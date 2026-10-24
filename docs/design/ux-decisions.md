@@ -276,7 +276,8 @@ With the owner's approval, the states were published as a new Design canvas,
 [ListenUp ADR 0033 states](https://claude.ai/artifact/F3Ao8ePjGDBE64aStJSH8h).
 The publish was confirmed by the Artifact tool at version 8 (`1792758339-6872`).
 After the rendered check below, the fixed boards were republished as version 10
-(`1792758778-1e49`).
+(`1792758778-1e49`). After the keyboard and zoom checks, they were republished as
+version 13 (`1792847518-2445`).
 The canvas is private until the owner shares it.
 
 It has one page per flow, plus an overview and a page of the five reusable state
@@ -292,7 +293,8 @@ announcement and the rule it follows.
 | B01 Intake | UX-40 | Allowance loading; counted and reserved shown separately; admission checking; admitted and uploading; reservation refusal; counted limit reached; crossing clip admitted (119 → 134 of 120); recheck at reset; check failed; B02 YouTube link behind the D10 flag only |
 | A01 Restore | UX-41 | Restore or keep deleted; Restoring… pending; Keeping it deleted… pending; failure with retry; restored; kept deleted and signed out; grace expired or refused |
 
-That makes 33 states, each in four variants: 132 frames. The colours, type
+That makes 34 states, each in four variants: 136 frames. (An earlier count of
+33 states and 132 frames was wrong.) The colours, type
 scale, radii, 3 px focus ring with a 2 px offset, scrim and dialog shadow are
 taken from main's v2 token mirror (`apps/web/src/index.css`). They are not taken
 from the v2 artifact, which could not be read.
@@ -311,16 +313,18 @@ Verification of the published boards:
 | Text at least 4.5:1 and control boundaries and focus rings at least 3:1, for every pair the boards use, in both themes | Calculation from the token values the boards use (ink, ink-muted, accent, success, warning and danger on surface, raised, sunken and accent-soft; on-accent on accent; line-strong on each surface) | All pass. The lowest are warning on sunken, light 4.99:1; muted on accent-soft, dark 5.20:1; line-strong on sunken, light 3.40:1 |
 | Interactive targets at least 44 px, or 48 px for sheet actions | Static review of the board sources | Done. Text links in body copy are exempt inline links |
 | Rendered layout: wrapping, clipping, sideways overflow, visible focus | The 20 galleries and the overview, rendered in headless Chromium with the canvas's own runtime and fonts. Each note and frame was measured for overflow, and every screenshot was reviewed by eye | Done after fixes (version 10, `1792758778-1e49`). The first render found three defects: the gist textarea showed “[object Object]”; seven 360 px notes were clipped by up to 66 px; three 360 px intake frames sliced their last line. Fixes: the textarea now takes its text through `value`; notes at 360 are 288 px tall; intake frames at 360 are 880 px tall. The re-render found no clipped note, no sideways overflow and no sliced text. Focus rings are visible on every focused control in both themes. Remaining: at 360 the gist side panel sits wholly below a phone-height frame, as page content below the fold. This was a local render, not the claude.ai canvas editor |
-| 200% zoom, mobile keyboard open, reduced motion in a live page | Live check | **Not performed.** The boards are static mockups. The notes specify the behaviour |
-| Keyboard operation, focus trapping, inert background and no playback shortcuts under a modal, in a browser | Live check | **Not performed** |
+| Keyboard: tab order, focus target, names, dialog labelling, aria-disabled focusability, target size, focus-ring contrast | Each of the 136 frames was measured in Chromium. Tab was pressed through each frame and the focused element recorded. Each control's DOM order was compared with its visual position | Done after fixes (version 13). Before the fixes: duplicate dialog and heading ids made `aria-labelledby` resolve to another frame in the Blind and gist boards; desktop gist and restore dialogs tabbed opposite to their visual order (`row-reverse`); and the intake refusal's “Go to Library” was a 17 px inline link. Fixes: unique ids per frame; desktop buttons in visual order (consequential, then the safe action right-most), as in `ConfirmDialog`; a 44 px link; and a drawn focus ring for the YouTube link field its note names. After the fixes, all 508 tab stops follow DOM and visual order in a real Tab traversal, and every control has a name. All 88 drawn focus rings sit on a tabbable control inside any open dialog, at 3:1 or better against their background. In the other 48 frames, focus is on a tabindex −1 heading or message, or follows normal page order, as their notes say |
+| 200% zoom (reflow) | Every 360 px frame (68) laid out at 320 CSS px (a 640 px window at 200%) and at 640 CSS px (a 1280 px window at 200%, below the 768 px sheet breakpoint) | Done. No sideways overflow, no text wider than its box, and every sheet fits. Screenshots were reviewed |
+| Focus trapping, Escape, inert background, no playback shortcuts under a modal; mobile keyboard open; reduced motion | Live check in the built app | **Not performed.** The static boards have no such behaviour, so it can only be tested in the implementation |
 | Screen-reader names, descriptions and live announcements | Live check | **Not performed** |
 
 Remaining gaps after publication:
 - **Final UI.** The boards are not in the existing Final UI, and they have not
   been compared with design system v2. Merge them when an account with access
   can edit it.
-- **Live checks.** The rendered layout check is done. The 200% zoom,
-  mobile-keyboard, browser keyboard and screen-reader checks above remain open.
+- **Live checks.** The rendered layout, keyboard and 200% zoom checks of the
+  boards are done. Focus trapping, Escape, the inert background, playback
+  shortcuts, the mobile keyboard and a screen-reader pass need the built app.
 - **Implementation (current main `58ac0c3`).** These gaps are unchanged from
   the comparison above:
   - no whole-clip lock UI or handling of the `blind_in_progress` refusal;
@@ -509,10 +513,9 @@ Publication checklist:
   the separate [ADR 0033 states canvas](https://claude.ai/artifact/F3Ao8ePjGDBE64aStJSH8h).
 - Still open:
   - merge them into the existing Final UI;
-  - check 200% zoom and mobile layouts with the keyboard open;
   - compare against the actual v2 artifact;
-  - verify focus trapping, the inert background and announcements in a browser
-    with a screen reader.
+  - in the built app: verify focus trapping, Escape, the inert background, the
+    mobile keyboard and announcements with a screen reader.
 
 Existing test evidence is listed in the follow-up PR, not presented as
 validation of these unimplemented designs. Keep #117 open for the Final UI merge
