@@ -1,7 +1,9 @@
 # ADR 0058: A Dictation mark is confirmed in place or deleted
 
 - Status: Proposed in the #59 pull request (2026-10-23; Undo amended 2026-10-24 after
-  review); the owner accepts it on merge
+  review). The owner confirmed both open points on 2026-10-24: Transcript may be
+  finished with Dictation marks still `suggested`, and Undo keeps a Dictation mark's
+  source. The ADR is accepted on merge
 - Date: 2026-10-23
 - Implements: FR-TR-3, the Transcript part of AT-4
 - Builds on: ADRs 0047 and 0055
@@ -58,7 +60,7 @@ deleted or kept with a status for analytics; `practice.marks.status` allows only
 ## Consequences
 
 Unconfirmed marks stay `suggested` once Transcript is finished; finishing does not
-require every mark to be confirmed. Card and Shadow read `status` and decide how to
+require every mark to be confirmed (owner decision, 2026-10-24). Card and Shadow read `status` and decide how to
 treat suggested marks. Undo never confirms a mark on the learner's behalf. The
 `mark_created` event is unique per mark id, so a mark brought back by Undo is not
 counted twice.
