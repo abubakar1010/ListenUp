@@ -72,3 +72,53 @@ with suggestions) remain visible for review; this follow-up does not silently
 answer them. Fresh-session independent review and required CI remain merge gates.
 Actual-server latency is **deferred until staging — unverified** under ADR 0039
 and [launch validation tracker #155](https://github.com/abubakar1010/ListenUp/issues/155).
+
+## Review fixes (2026-10-24)
+
+An independent review of `b868f7e` found two defects and four validation gaps. The owner
+chose to keep a Dictation mark's source on Undo through a server-checked restore. The
+existing Dictation marks route (ADR 0055) already checks words against the scored diff
+and inserts by the browser's id, so Undo reuses it. ADR 0057 records this; there is no
+new route, schema or generated client change.
+
+| Finding | Fix | Red (observed) | Green |
+| --- | --- | --- | --- |
+| A reload after Undo of a removal whose DELETE never landed confirmed the suggestion | `restore()` takes only the note from a kept create or restore op | `pnpm vitest run src/features/review/markSync.test.ts -t a_reload_after_undo_of_an_unlanded`: **1 failed** (`confirm` called once) | `pnpm vitest run src/features/review`: 115 passed |
+| Undo after a sent removal (the usual case, since removal is sent at once) remade the mark as manual and confirmed | `MarkSync.undoRemove` and a `restore` op, sent through `POST /dictation/attempts/{id}/marks` | 8 sync tests failed (`undoRemove` missing); `undo_of_a_removed_dictation_mark_brings_it_back_from_dictation_to_confirm` failed (row read "Your mark") | review and dictation web tests: 191 passed |
+
+Named tests for the Undo fix: `undo_of_a_saved_dictation_removal_brings_the_mark_back_from_dictation_to_confirm`,
+`undo_of_a_saved_removal_of_a_confirmed_dictation_mark_keeps_it_confirmed`,
+`undo_during_an_in_flight_dictation_removal_restores_it_once_the_removal_lands`,
+`an_unsent_dictation_undo_survives_a_reload_and_is_sent_then`,
+`a_dictation_undo_on_words_marked_again_since_shows_the_mark_they_have`,
+`a_refused_dictation_undo_brings_the_mark_back_as_the_learners_own`,
+`removing_a_restored_dictation_mark_whose_answer_was_lost_still_deletes_it`,
+`undo_of_a_removed_manual_mark_still_makes_it_again`, and the screen test above.
+
+Tests that passed on arrival and were added for the gaps, each checked by breaking the
+code it guards:
+
+- `test_marks_wait_for_the_transcript_step` now includes `PUT .../status`. With
+  `require_reached` removed from `confirm_mark` it fails (404 instead of 409).
+- `a_refused_dictation_removal_raced_by_undo_keeps_the_note_written_since` changes the
+  note between Undo and the refused DELETE. With `takeBack` keeping the server's note it
+  fails.
+- `test_undo_of_a_removed_dictation_mark_brings_it_back_from_dictation` (API) records
+  that the same id comes back `dictation`/`suggested` with one `mark_created` event.
+- `a_dictation_undo_after_marking_the_words_again_here_keeps_one_mark` covers the
+  remaining branch of the restore answer.
+- The browser test now asserts which mark survives (`m-59`) instead of re-reading its
+  fixture.
+
+### Checks on the fixed head
+
+- Web: lint, format and typecheck pass. `pnpm test:coverage`: **534 passed**. Coverage
+  inventory passes; `diff-cover` against `origin/main`: **100% (112/112 changed
+  executable lines)**. The only partly covered new branch is a guard that mirrors the
+  in-flight DELETE handling (`markSync.ts`, restore answer for a replaced entry).
+- `pnpm e2e`: **41 passed** in Chromium. `pnpm size`: **124.8 kB / 200 kB** gzip.
+- Backend: ruff, format, mypy (strict) and `lint-imports` (6 contracts kept) pass.
+  `test_dictation_marks_in_transcript.py` and `test_marks_api.py` with PostgreSQL
+  required pass. The S3 integration tests cannot run here (no S3 server is reachable);
+  CI runs them with `LISTENUP_REQUIRE_S3=1`.
+- Actual-server latency stays **deferred until staging — unverified** (ADR 0039, #155).

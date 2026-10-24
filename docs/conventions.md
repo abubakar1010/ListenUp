@@ -193,8 +193,9 @@ Read the section for the area you are changing before you change it. The rules e
   confirms in place; removal is the ordinary DELETE, and no `removed` status exists, so
   readers of marks need no filter for rejected marks. In `MarkSync`, an `update` op sends
   whatever differs from the server (note, then confirmation); confirm and remove are sent
-  at once, without the debounce. Show a mark's source in text (description and list
-  label), never by colour alone.
+  at once, without the debounce. Undo of a removed Dictation mark is `undoRemove`, which
+  adds the words again through the Dictation marks route so the mark keeps its source.
+  Show a mark's source in text (description and list label), never by colour alone.
 
 - Mark list/count (#60) read the same `useMarkSync` snapshot as word highlights.
   List rows use native buttons for playback; E opens the note, Delete removes with

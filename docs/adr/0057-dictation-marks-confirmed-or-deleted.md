@@ -1,6 +1,7 @@
 # ADR 0057: A Dictation mark is confirmed in place or deleted
 
-- Status: Proposed in the #59 pull request (2026-10-23); the owner accepts it on merge
+- Status: Proposed in the #59 pull request (2026-10-23; Undo amended 2026-10-24 after
+  review); the owner accepts it on merge
 - Date: 2026-10-23
 - Implements: FR-TR-3, the Transcript part of AT-4
 - Builds on: ADRs 0047 and 0055
@@ -43,12 +44,21 @@ deleted or kept with a status for analytics; `practice.marks.status` allows only
   description ("Marked from Dictation, to confirm" or "Marked from Dictation"), a
   label in the mark list ("From Dictation · To confirm", "From Dictation" or "Your
   mark"), and a line under the word, dashed while it waits, beside the colour fill.
+- **Undo of a removal keeps the source.** Removal is sent at once, so Undo nearly always
+  comes after the DELETE. Undo of a Dictation mark therefore adds its words again through
+  the existing `POST /dictation/attempts/{id}/marks` (ADR 0055) with the mark's own id,
+  not through `POST /sessions/{id}/marks`. The server checks the words against the scored
+  diff, so the browser still cannot claim a Dictation source, and no new route is needed.
+  The mark comes back `dictation` and `suggested`; its note, and a confirmation made
+  before the removal, follow as an update. Words marked again since give back the mark
+  they have. If the server refuses to add them again, the mark comes back as the
+  learner's own (`manual`, confirmed), so Undo never loses it. Undo before the removal is
+  sent cancels it. A manual mark is made again through the Transcript route as before.
 
 ## Consequences
 
 Unconfirmed marks stay `suggested` once Transcript is finished; finishing does not
 require every mark to be confirmed. Card and Shadow read `status` and decide how to
-treat suggested marks. Undo of a removal that has already reached the server makes the
-mark again through `POST /sessions/{id}/marks`, so it comes back as the learner's own
-(`manual`, confirmed): the browser cannot claim the Dictation source. Undo before the
-removal is sent keeps the mark as it was.
+treat suggested marks. Undo never confirms a mark on the learner's behalf. The
+`mark_created` event is unique per mark id, so a mark brought back by Undo is not
+counted twice.
