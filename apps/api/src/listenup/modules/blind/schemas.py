@@ -89,3 +89,20 @@ class GistSubmitted(BaseModel):
     attempt: BlindAttempt
     open_step: Step | None = Field(description="The step that opened next")
     session_version: int
+
+
+class GistKeyPoint(BaseModel):
+    text: str
+    captured: bool
+
+
+class GistFeedback(BaseModel):
+    status: Literal["pending", "ready"]
+    overall: int | None = None
+    level: Literal["needs_work", "fair", "good", "excellent"] | None = None
+    dimension_scores: dict[str, int] | None = None
+    captured_count: int | None = None
+    total_count: int | None = None
+    gist: str | None = None
+    feedback: str | None = None
+    key_points: list[GistKeyPoint] | None = None

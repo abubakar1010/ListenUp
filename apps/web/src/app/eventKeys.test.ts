@@ -39,7 +39,7 @@ test('the other events keep their keys', () => {
   ]);
   expect(queryKeysForEvent(event('attempt.voided'), client)).toEqual([BLIND_KEY]);
   expect(queryKeysForEvent(event('export.ready'), client)).toEqual([EXPORTS_KEY]);
-  expect(queryKeysForEvent(event('grade.ready'), client)).toEqual([]);
+  expect(queryKeysForEvent(event('grade.ready'), client)).toEqual([['sessions', 'gist-grade']]);
 });
 
 test('account.disabled refetches the learner, unless this tab is deleting the account', () => {

@@ -1110,6 +1110,113 @@
         "title": "FailedJob",
         "type": "object"
       },
+      "GistFeedback": {
+        "properties": {
+          "captured_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured Count"
+          },
+          "dimension_scores": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimension Scores"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          },
+          "gist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gist"
+          },
+          "key_points": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GistKeyPoint"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Points"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "enum": ["needs_work", "fair", "good", "excellent"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "overall": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall"
+          },
+          "status": {
+            "enum": ["pending", "ready"],
+            "title": "Status",
+            "type": "string"
+          },
+          "total_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Count"
+          }
+        },
+        "required": ["status"],
+        "title": "GistFeedback",
+        "type": "object"
+      },
       "GistIn": {
         "properties": {
           "text": {
@@ -1121,6 +1228,21 @@
         },
         "required": ["text"],
         "title": "GistIn",
+        "type": "object"
+      },
+      "GistKeyPoint": {
+        "properties": {
+          "captured": {
+            "title": "Captured",
+            "type": "boolean"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": ["text", "captured"],
+        "title": "GistKeyPoint",
         "type": "object"
       },
       "GistSubmitted": {
@@ -3792,6 +3914,51 @@
         },
         "summary": "Events",
         "tags": ["events"]
+      }
+    },
+    "/api/v1/gists/{attempt_id}/grade": {
+      "get": {
+        "description": "D4: details are absent until Transcript opens when Dictation follows.",
+        "operationId": "get_gist_grade_api_v1_gists__attempt_id__grade_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GistFeedback"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Gist Grade",
+        "tags": ["blind"]
       }
     },
     "/api/v1/health": {

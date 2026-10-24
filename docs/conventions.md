@@ -231,6 +231,23 @@ Read the section for the area you are changing before you change it. The rules e
   and `/dev/mqueue` must stay read-only. Media telemetry uses queued OTLP export
   through DB to the default pool; never add a collector route to media-data.
 
+## Gist feedback (ADR 0054, #69)
+
+- `blind.service.read_grade` authorizes the attempt and derives D4 disclosure from
+  the current plan. With Dictation in the plan and Transcript still locked, the
+  response omits written feedback, gist and key-point identities/text entirely.
+  Blind-only and reached Transcript reads include the saved gist even while
+  grading is pending; score and feedback appear when ready.
+- `grading.service.read_gist_grade` reads the grade's exact shared reference through
+  the existing worker-role `transcript_database`, after the learner's attempt has
+  been authorized. Never grant the API role access to `grading.key_points`.
+- Web grade keys include the display context so the Blind summary cannot mask
+  Transcript details. `grade.ready` and reconnect invalidate gist-grade queries;
+  pending reads also poll. Submission keeps the result visible until Continue
+  refreshes both the session and its Blind attempt, including a fresh cached
+  completed listen. Render the saved gist independently of grading readiness.
+  #70 owns unavailable/delayed/retry behavior.
+
 ## Shadow segments (ADR 0057)
 
 - `shadow/domain/segment.py` owns proposal and span validation. Marks are read only
