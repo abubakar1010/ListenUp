@@ -91,3 +91,57 @@ Current main was merged without rebasing. It added the B2 documentation/spike
 change and ADR 0056, then a database-documentation alignment, with no new migration; the new cards revision remains chained
 after `68_gist_grades`. Required CI and independent fresh-session review remain
 pre-merge gates. The owner merges; this task does not merge the PR.
+
+## Review remediation (2026-10-24)
+
+The owner authorized fixes for all three review findings. Current main `757b19d`
+(#207, cross-browser Transcript resume coverage) was merged into the story branch
+without rebasing. Both sets of Transcript browser tests were preserved. Main
+added no migration, so `down_revision` remains `68_gist_grades`.
+
+| Finding | Actual regression red before the fix | Green and resulting behavior |
+| --- | --- | --- |
+| Mark removed between lookup and insert | From `apps/api`: `LISTENUP_REQUIRE_DB=1 uv run pytest tests/integration/test_cards_api.py -k mark_deleted_during -q --tb=short`: **1 failed**, expected 404 but received 500. | The same test passes. It coordinates a real second API DELETE after `review.service.list_marks` returns, then asserts `404 mark_not_found`, no card or analytics event, successful reuse of the same idempotency key and slot, and one card after replay. Only the specific PostgreSQL mark FK failure is translated; the request transaction rolls back. |
+| Failed refresh after the second save leaves a third Save enabled | From `apps/web`: `pnpm exec vitest run src/features/cards/CardScreen.test.tsx -t 'failed count refresh'`: **1 failed**, the expected `0 left` was absent. | The same test passes in the **12-test** Cards suite. Confirmed creation updates the cached list and count before refetch, and a failed list read blocks further creation. The assertion rejects an extra POST even after the form is filled again. |
+| Deletion restores focus to an element subsequently removed | From `apps/web`: `pnpm exec playwright test e2e/cards.spec.ts -g 'fails: false'`: **1 failed**, main did not receive focus while the post-delete read was held. | `pnpm exec playwright test e2e/cards.spec.ts`: **2 passed**. Confirmed deletion removes the cached row before closing the dialog; its existing focus fallback reaches main. Both browser variants hold the post-delete GET and assert focus before and after release. One variant exhausts the production retries on the earlier post-save GET and still blocks a third POST. |
+
+The PostgreSQL regression uses the restricted API role for both concurrent
+requests; the owner connection only inspects the absence of analytics. It does
+not replace the insertion or FK rule with a mock. Browser tests still mock the
+API and do not establish server persistence or security.
+
+Additional tests added after these fixes are supplementary: an unrelated media
+FK failure remains an internal error and rolls back; a lost-response replay keeps
+the same submission key and does not consume another cached slot; an uncertain
+save stays blocked until the failed list read recovers. Cache writes occur
+synchronously inside the existing account-scoped mutation callbacks. No schema,
+route, generated contract, review, Shadow, Blind, grading or AI implementation
+changed during remediation. An initial incorrectly located pnpm command was a
+command/setup failure, not regression-red evidence.
+
+Final remediation verification (supersedes the earlier counts above):
+
+- Backend formatting, Ruff, strict mypy and all six import contracts pass.
+- The full required-PostgreSQL/required-S3 coverage command recorded above:
+  **1,998 passed**, one performance test deselected, no skips, in 530.82 s.
+  This includes migration round trips/drift, access isolation, account deletion
+  and export. `uv run pytest -m performance --no-cov -q --tb=short` then ran
+  separately with the other suites finished: **1 passed**.
+- Web lint, formatting, typecheck and coverage: **526 tests passed**. Production
+  build and size pass (**124.8/200 kB gzip**). Full Chromium: **43 passed**,
+  including #207's independent-browser resume test and both Card variants.
+- OpenAPI export and TypeScript regeneration produce no contract changes.
+- Runtime coverage inventories pass. Against current main, changed executable
+  lines are **176/177** for the API and **93/95** for the web app. The remediation
+  itself has **100%** reported changed-line coverage in both applications. No
+  thresholds, exclusions or assertions were weakened.
+- Cards service has complete line/branch coverage, including the unrelated-FK
+  refusal path. The earlier timezone-less cursor, one-second announcement and
+  manual written-input line gaps remain. Web branch coverage is **90.27%** for
+  CardScreen and **75%** for Cards hooks; the remaining hooks gap is the defensive
+  delete-cache guard when its row/data is already absent. Lost-response key reuse,
+  duplicate replay, failed count reads and recovery now have explicit assertions.
+
+Required CI for the pushed revision and fresh review of the fixes remain merge
+gates. The owner merges. If main gains a migration before merge, merge it without
+rebasing, update `down_revision` and repeat migration/drift validation.
