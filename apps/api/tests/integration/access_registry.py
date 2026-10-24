@@ -154,6 +154,14 @@ def _new_upload(world: World) -> dict[str, object]:
 
 
 REGISTRY: dict[tuple[str, str], Entry] = {
+    ("GET", "/api/v1/sessions/{session_id}/shadow/segment"): Owned(
+        "session_not_found", params=lambda w: {"session_id": w.a.sessions["shadow"]}
+    ),
+    ("PUT", "/api/v1/sessions/{session_id}/shadow/segment"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["shadow"]},
+        body=lambda w: {"start_ms": 0, "end_ms": 60000},
+    ),
     # -- platform ----------------------------------------------------------------------
     ("GET", "/api/v1/health"): Public("liveness probe; returns only the status and version"),
     ("GET", "/api/v1/events"): Stream(

@@ -394,3 +394,10 @@ async def latest_attempt(
         )
     ).first()
     return AttemptRow(*row) if row else None
+
+
+async def lock_session(session: AsyncSession, session_id: uuid.UUID) -> None:
+    """Serialize mode writes with session transitions, under the caller's RLS."""
+    await session.execute(
+        text("SELECT id FROM practice.sessions WHERE id = :id FOR UPDATE"), {"id": session_id}
+    )
