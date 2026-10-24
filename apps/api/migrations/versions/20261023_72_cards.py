@@ -5,7 +5,7 @@ from alembic import op
 from migrations.rls import enable_own_rows
 
 revision = "72_cards"
-down_revision = "68_gist_grades"
+down_revision = "77_shadow_segments"
 branch_labels = None
 depends_on = None
 

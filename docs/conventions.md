@@ -232,7 +232,7 @@ Read the section for the area you are changing before you change it. The rules e
   through DB to the default pool; never add a collector route to media-data.
 
 
-## Cards (ADR 0057)
+## Cards (ADR 0058)
 
 - Cards read marks only through `review.service.list_marks`. Creation and completion
   lock the session row before calling `practice.service.require_step(..., Step.CARD)`;
@@ -241,3 +241,13 @@ Read the section for the area you are changing before you change it. The rules e
 - Keep `at_ms` from the selected mark as a source-time snapshot. A deleted mark sets
   `mark_id` to NULL while the saved forms and time remain. Source links use
   `/contents/{id}?at_ms={absolute_ms}`. Snippets remain #73.
+
+## Shadow segments (ADR 0057)
+
+- `shadow/domain/segment.py` owns proposal and span validation. Marks are read only
+  through `review.service.list_marks`; mode endpoints require `Step.SHADOW`.
+  Saved segments use absolute, half-open media milliseconds. The shared session
+  waveform accepts optional `boundsFor` and `label`, preserving passage defaults.
+- `locked_at` is the database boundary for the future round 1 transaction (#78).
+  Once set, the segment is immutable, including its lock. Do not clear it to adjust
+  a selection. The parent session/account cascade is still allowed.

@@ -21,6 +21,7 @@ from listenup.modules.identity.service import build_accounts, signed_in_learner
 from listenup.modules.library import api as library_api
 from listenup.modules.practice import api as practice_api
 from listenup.modules.review import api as review_api
+from listenup.modules.shadow import api as shadow_api
 from listenup.platform.config import Settings, get_settings
 from listenup.platform.csrf import CsrfMiddleware
 from listenup.platform.database import Database
@@ -96,6 +97,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(practice_api.router)
     api.include_router(review_api.router)
     api.include_router(cards_api.router)
+    api.include_router(shadow_api.router)
     api.include_router(blind_api.router)
     api.include_router(dictation_api.router)
     api.include_router(export_api.router)

@@ -81,7 +81,7 @@ and formatting have no executable behavior requiring artificial red tests.
 
 ## Decisions and handoff
 
-ADR 0057 records the source-time snapshot and slot/completion serialization.
+ADR 0058 records the source-time snapshot and slot/completion serialization.
 The database design and Cards API resource row were synchronized; the requirement
 meaning and audio-snippet scope are unchanged. `SessionPage.tsx` changes only by
 one import and the Card-step registration. No review internals, review feature,
