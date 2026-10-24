@@ -476,7 +476,7 @@ function useMarking(
               type="button"
               className={buttonClass('secondary')}
               onClick={() => {
-                sync.add(removed);
+                sync.undoRemove(removed);
                 setRemoved(null);
                 announce('Mark restored.');
                 focusWord(removed.word_from);

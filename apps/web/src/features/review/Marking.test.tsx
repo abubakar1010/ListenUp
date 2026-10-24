@@ -798,3 +798,52 @@ test('a_word_in_a_manual_phrase_and_a_dictation_mark_says_it_waits_to_be_confirm
   expect(word('Hello')).toHaveAccessibleDescription('Marked from Dictation, to confirm');
   expect(word('world.')).toHaveAccessibleDescription('Marked');
 });
+
+test('undo_of_a_removed_dictation_mark_brings_it_back_from_dictation_to_confirm', async () => {
+  const marks = new Map<string, SavedMark>([
+    [FROM_DICTATION.id, { ...FROM_DICTATION, note: 'linking' }],
+  ]);
+  const restore = `POST /dictation/attempts/attempt-1/marks`;
+  const { calls } = renderMarking(
+    {
+      ...confirmingRoutes(marks),
+      [`GET /sessions/${SESSION.id}/dictation/attempt`]: jsonResponse(200, {
+        id: 'attempt-1',
+        session_id: SESSION.id,
+        status: 'submitted',
+        scoring_status: 'pending',
+        result: null,
+      }),
+      [restore]: (call: Call) => {
+        const [sent] = (call.body as { marks: { id: string }[] }).marks;
+        const mark = serverMark({ id: sent!.id, source: 'dictation', status: 'suggested' });
+        marks.set(mark.id, mark);
+        return jsonResponse(200, { marks: [mark] });
+      },
+      [`PATCH ${MARKS}/d1`]: (call: Call) => {
+        const mark = { ...marks.get('d1')!, note: (call.body as { note: string }).note };
+        marks.set('d1', mark);
+        return jsonResponse(200, mark);
+      },
+    },
+    [...marks.values()],
+  );
+  await ready();
+  fireEvent.click(within(row(/Hello/)).getByRole('button', { name: 'Remove mark Hello' }));
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(marks.has('d1')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+  expect(within(row(/Hello/)).getByText('From Dictation · To confirm')).toBeInTheDocument();
+  await afterDebounce();
+  expect(calls.filter((call) => `${call.method} ${call.path}` === restore)).toMatchObject([
+    { body: { marks: [{ id: 'd1', word_from: 0, word_to: 0 }] } },
+  ]);
+  expect(sent(calls, 'POST')).toEqual([]);
+  expect(marks.get('d1')).toMatchObject({
+    source: 'dictation',
+    status: 'suggested',
+    note: 'linking',
+  });
+  expect(word('Hello')).toHaveAccessibleDescription('Marked from Dictation, to confirm');
+  expect(within(panel()).getByText('Marks saved', { exact: false })).toBeInTheDocument();
+});

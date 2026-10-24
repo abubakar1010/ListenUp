@@ -31,7 +31,9 @@ import {
  * Marks added from Dictation arrive `suggested` (#59, FR-TR-3): the learner confirms or
  * removes each. Both are single deliberate actions, so they go to the server at once
  * rather than after the debounce, and are saved within a second. A note and a
- * confirmation waiting on one mark are both sent.
+ * confirmation waiting on one mark are both sent. Undo of a removed Dictation mark brings
+ * it back through the Dictation route, which checks the words against the scored diff, so
+ * it keeps its source (ADR 0057).
  */
 
 export type SavedMark = components['schemas']['Mark'];
@@ -45,6 +47,8 @@ export interface MarkTransport {
   }): Promise<SavedMark>;
   setNote(id: string, note: string | null): Promise<SavedMark>;
   confirm(id: string): Promise<SavedMark>;
+  /** Add the words again from Dictation; words already marked give back that mark. */
+  restore(mark: { id: string; word_from: number; word_to: number }): Promise<NewLocalMark>;
   remove(id: string): Promise<void>;
   list(): Promise<SavedMark[]>;
 }
@@ -91,8 +95,11 @@ export interface MarkSyncOptions {
   now?: () => number;
 }
 
-/** `update`: the note or the status differs from the server's. */
-type Op = 'none' | 'create' | 'update' | 'delete';
+/**
+ * `update`: the note or the status differs from the server's. `restore`: Undo of a
+ * removed Dictation mark, added again from Dictation.
+ */
+type Op = 'none' | 'create' | 'restore' | 'update' | 'delete';
 
 interface Entry {
   mark: NewLocalMark;
@@ -204,7 +211,8 @@ export class MarkSync {
   /**
    * A new mark, or Undo of a removal. A removal that never reached the server is
    * cancelled and the mark keeps its source; one that did makes the mark again as the
-   * learner's own (`manual`, confirmed), since only Dictation adds Dictation marks.
+   * learner's own (`manual`, confirmed). Undo of a Dictation mark goes through
+   * `undoRemove`, which keeps its source.
    */
   add(draft: MarkDraft): void {
     const previous = this.entries.get(draft.id);
@@ -238,6 +246,26 @@ export class MarkSync {
     this.changed();
   }
 
+  /**
+   * Undo of a removal. A Dictation mark whose removal may have reached the server is added
+   * again from Dictation, so it comes back as it was rather than as the learner's own
+   * (ADR 0057); its note and a confirmation follow as an update.
+   */
+  undoRemove(mark: NewLocalMark): void {
+    const previous = this.entries.get(mark.id);
+    const unsent = previous?.op === 'delete' && previous.server && !previous.deleteAttempted;
+    if (mark.source !== 'dictation' || unsent) return this.add(mark);
+    this.entries.set(mark.id, {
+      mark: local(mark),
+      op: 'restore',
+      rev: 1,
+      server: null,
+      // The removal may land before this is sent: removing it again must still DELETE.
+      attempted: true,
+    });
+    this.changed();
+  }
+
   setNote(id: string, note: string | null): void {
     const entry = this.entries.get(id);
     if (!entry || entry.op === 'delete' || entry.mark.note === note) return;
@@ -264,7 +292,8 @@ export class MarkSync {
     entry.rev += 1;
     // A create that was never sent leaves nothing behind. One that was sent may have
     // reached the server even though its answer was lost, so the removal must be sent.
-    if (entry.op === 'create' && !entry.attempted) this.entries.delete(id);
+    if ((entry.op === 'create' || entry.op === 'restore') && !entry.attempted)
+      this.entries.delete(id);
     else entry.op = 'delete';
     this.changed(0);
   }
@@ -380,6 +409,8 @@ export class MarkSync {
         entry.mark = { ...entry.mark, note: mark.note };
         entry.op = 'update';
       }
+    } else if (op === 'restore') {
+      await this.sendRestore(entry);
     } else if (op === 'update') {
       await this.sendUpdate(entry, rev);
     } else {
@@ -410,6 +441,27 @@ export class MarkSync {
       server = local(stored);
     }
     this.settled(entry, rev, server);
+  }
+
+  /**
+   * Add a removed Dictation mark again. Words marked again since (by hand, or in another
+   * tab) give back the mark they have, which then stands in for this one.
+   */
+  private async sendRestore(entry: Entry): Promise<void> {
+    const { id, word_from, word_to } = entry.mark;
+    const stored = local(await this.options.transport.restore({ id, word_from, word_to }));
+    if (stored.id !== id) {
+      if (this.entries.get(id) === entry) this.entries.delete(id);
+      if (!this.entries.has(stored.id)) this.entries.set(stored.id, fromServer(stored));
+      return;
+    }
+    entry.server = stored;
+    if (differs(entry.mark, stored)) {
+      entry.op = 'update'; // the note, or a confirmation made before the removal
+    } else {
+      entry.mark = stored;
+      entry.op = 'none';
+    }
   }
 
   /** The request finished: keep the server's mark unless the learner changed it since. */
@@ -464,7 +516,7 @@ export class MarkSync {
       // A refused in-flight DELETE left the saved mark intact. Undo may have
       // replaced its entry: reuse that known snapshot instead of recreating it.
       current.server = entry.server;
-      if (current.op === 'create') {
+      if (current.op === 'create' || current.op === 'restore') {
         current.mark = { ...entry.server, note: current.mark.note };
         current.op = differs(current.mark, entry.server) ? 'update' : 'none';
       } else this.takeBack(current);
@@ -472,6 +524,11 @@ export class MarkSync {
     }
     if (entry.op === 'create') {
       this.entries.delete(entry.mark.id);
+    } else if (entry.op === 'restore') {
+      // The words can no longer come back from Dictation: Undo still keeps the mark, as
+      // the learner's own.
+      entry.mark = { ...entry.mark, source: 'manual', status: 'confirmed' };
+      entry.op = 'create';
     } else if (entry.server) {
       entry.mark = entry.server;
       entry.op = 'none';
@@ -543,15 +600,15 @@ export class MarkSync {
     for (const { op, mark: kept, attempted = false } of copy.ops) {
       const mark: NewLocalMark = { source: 'manual', status: 'confirmed', ...kept };
       const entry = this.entries.get(mark.id);
-      if (op === 'create' && !entry) {
-        this.entries.set(mark.id, { mark, op: 'create', rev: 1, server: null, attempted });
+      if ((op === 'create' || op === 'restore') && !entry) {
+        this.entries.set(mark.id, { mark, op, rev: 1, server: null, attempted });
       } else if (!entry && op === 'delete' && attempted) {
         // The page's list may predate a create that landed late: send the removal anyway.
         this.entries.set(mark.id, { mark, op: 'delete', rev: 1, server: null, attempted });
       } else if (entry && op === 'delete') {
         entry.op = 'delete';
         entry.rev = 1;
-      } else if (entry && op === 'create') {
+      } else if (entry && (op === 'create' || op === 'restore')) {
         // The server already holds this mark: the create landed, or Undo replaced a
         // removal that never did. A create is stamped confirmed here, so only its note
         // can still be owed; the status stays the server's.
