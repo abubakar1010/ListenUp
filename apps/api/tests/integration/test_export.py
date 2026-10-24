@@ -300,6 +300,9 @@ def test_export_holds_every_learner_table_and_only_the_learners_data(
     client_a, client_b = make_client(), make_client()
     a = seeded(migrated_url, client_a, storage)
     b = seeded(migrated_url, client_b, storage)
+    for client, world in [(client_a, a), (client_b, b)]:
+        response = client.get(f"/api/v1/sessions/{world.sessions['shadow']}/shadow/segment")
+        assert response.status_code == 200, response.text
     # Corrections are private even when both learners reference the same cache row.
     transcript_id = uuid.uuid4()
     with psycopg.connect(migrated_url) as conn:
@@ -338,6 +341,13 @@ def test_export_holds_every_learner_table_and_only_the_learners_data(
     assert [
         (row["user_id"], row["corrected_text"]) for row in tables["content.transcript_corrections"]
     ] == [(str(a.user_id), "Own correction")]
+    segments = tables["practice.shadow_segments"]
+    assert len(segments) == 1
+    assert segments[0]["session_id"] == str(a.sessions["shadow"])
+    assert segments[0]["chosen_by"] == "system"
+    assert segments[0]["mark_count"] == 0
+    assert segments[0]["locked_at"] is None
+    assert segments[0]["span"] == {"lower": 0, "upper": 90_000, "bounds": "[)"}
     assert {"identity.users", "content.media_objects"} <= set(tables)
     assert [row["id"] for row in tables["identity.users"]] == [str(a.user_id)]
     assert {row["id"] for row in tables["practice.sessions"]} == {

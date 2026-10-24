@@ -67,6 +67,7 @@ __all__ = [
     "get_session",
     "latest_attempt",
     "list_sessions",
+    "lock_session",
     "require_reached",
     "require_step",
     "skip_step",
@@ -238,6 +239,15 @@ async def start_session(
         db, learner, session_id, content_id, path=entry.value, steps=_statuses(plan)
     )
     return await get_session(db, session_id)
+
+
+async def lock_session(db: AsyncSession, session_id: uuid.UUID) -> None:
+    """Hold the session row until commit; call before checking a mode's step.
+
+    The caller must use its learner-scoped transaction. Locking before reading
+    the plan orders a mode write against concurrent step transitions.
+    """
+    await repository.lock_session(db, session_id)
 
 
 async def require_step(db: AsyncSession, session_id: uuid.UUID, step: Step) -> PracticeSession:

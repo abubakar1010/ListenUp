@@ -1936,6 +1936,70 @@
         "title": "SavedDraft",
         "type": "object"
       },
+      "Segment": {
+        "properties": {
+          "chosen_by": {
+            "enum": ["system", "learner"],
+            "title": "Chosen By",
+            "type": "string"
+          },
+          "end_ms": {
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "End Ms",
+            "type": "integer"
+          },
+          "locked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked At"
+          },
+          "mark_count": {
+            "title": "Mark Count",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "start_ms": {
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Start Ms",
+            "type": "integer"
+          }
+        },
+        "required": ["start_ms", "end_ms", "session_id", "chosen_by", "mark_count", "locked_at"],
+        "title": "Segment",
+        "type": "object"
+      },
+      "SegmentChoice": {
+        "properties": {
+          "end_ms": {
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "End Ms",
+            "type": "integer"
+          },
+          "start_ms": {
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Start Ms",
+            "type": "integer"
+          }
+        },
+        "required": ["start_ms", "end_ms"],
+        "title": "SegmentChoice",
+        "type": "object"
+      },
       "Session": {
         "description": "A practice session with its plan, for \"Step N of M\" (UI-1).",
         "properties": {
@@ -4929,6 +4993,102 @@
         },
         "summary": "Change Mark Note",
         "tags": ["review"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/shadow/segment": {
+      "get": {
+        "description": "Resume the saved selection, proposing one on first entry.",
+        "operationId": "read_segment_api_v1_sessions__session_id__shadow_segment_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Segment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Segment",
+        "tags": ["shadow"]
+      },
+      "put": {
+        "operationId": "choose_segment_api_v1_sessions__session_id__shadow_segment_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SegmentChoice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Segment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked` or `segment_locked`"
+          },
+          "422": {
+            "description": "`segment_span` or `validation_failed`"
+          }
+        },
+        "summary": "Choose Segment",
+        "tags": ["shadow"]
       }
     },
     "/api/v1/sessions/{session_id}/steps/{step}/skip": {
