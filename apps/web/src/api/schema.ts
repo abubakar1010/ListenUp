@@ -454,6 +454,36 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/dictation/attempts/{attempt_id}/marks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Marks
+     * @description The marks of the attempt's session in audio order, to show the words already added.
+     */
+    get: operations['list_marks_api_v1_dictation_attempts__attempt_id__marks_get'];
+    put?: never;
+    /**
+     * Add Marks
+     * @description Add missed or wrong words of the scored diff to the mark list (FR-DI-6).
+     *
+     *     Each entry is a word or a run of words next to each other that were all missed or
+     *     wrong, at most 20. The answer has one mark per entry, in order: words that are already
+     *     marked give back the mark they have and a resend gives back the same mark, so adding
+     *     twice never makes a duplicate. The browser-made `id` is the idempotency key, so no
+     *     `Idempotency-Key` is needed (ADR 0047). One refused entry refuses the request.
+     */
+    post: operations['add_marks_api_v1_dictation_attempts__attempt_id__marks_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/dictation/attempts/{attempt_id}/submit': {
     parameters: {
       query?: never;
@@ -943,6 +973,27 @@ export interface paths {
     patch: operations['change_mark_note_api_v1_sessions__session_id__marks__mark_id__patch'];
     trace?: never;
   };
+  '/api/v1/sessions/{session_id}/shadow/segment': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Segment
+     * @description Resume the saved selection, proposing one on first entry.
+     */
+    get: operations['read_segment_api_v1_sessions__session_id__shadow_segment_get'];
+    /** Choose Segment */
+    put: operations['choose_segment_api_v1_sessions__session_id__shadow_segment_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sessions/{session_id}/steps/{step}/skip': {
     parameters: {
       query?: never;
@@ -976,6 +1027,28 @@ export interface paths {
     get: operations['read_transcript_api_v1_sessions__session_id__transcript_get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/transcript/complete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Finish Transcript
+     * @description Finish Transcript and unlock Card (FR-PL-4). No marks are required.
+     *
+     *     An Idempotency-Key replays completion without advancing the next step.
+     */
+    post: operations['finish_transcript_api_v1_sessions__session_id__transcript_complete_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1057,6 +1130,11 @@ export interface components {
      * @enum {string}
      */
     Action: 'continue' | 'resume' | 'stop';
+    /** AddDictationMarks */
+    AddDictationMarks: {
+      /** Marks */
+      marks: components['schemas']['NewDictationMark'][];
+    };
     /**
      * AttemptStatus
      * @enum {string}
@@ -1537,6 +1615,46 @@ export interface components {
       status: components['schemas']['AttemptStatus'];
     };
     /**
+     * DictationMark
+     * @description A mark on the words of the passage, as the diff needs it to show them as added.
+     */
+    DictationMark: {
+      /**
+       * At Ms
+       * @description Absolute media time of the first word
+       */
+      at_ms: number;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Note
+       * @description The learner's own note, so an open Transcript can take the mark as it is
+       */
+      note: string | null;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: 'dictation' | 'manual';
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'suggested' | 'confirmed';
+      /** Word From */
+      word_from: number;
+      /** Word To */
+      word_to: number;
+    };
+    /** DictationMarks */
+    DictationMarks: {
+      /** Marks */
+      marks: components['schemas']['DictationMark'][];
+    };
+    /**
      * DictationPassage
      * @description The part of the clip the player may play, in milliseconds, [start_ms, end_ms).
      */
@@ -1876,6 +1994,27 @@ export interface components {
       id: string;
     };
     /**
+     * NewDictationMark
+     * @description Words of the diff to add to the mark list. The browser names the mark (ADR 0047).
+     */
+    NewDictationMark: {
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Word From
+       * @description `index` of the first diff word
+       */
+      word_from: number;
+      /**
+       * Word To
+       * @description `index` of the last diff word
+       */
+      word_to: number;
+    };
+    /**
      * NewMark
      * @description A mark the learner just made. The browser names it, so a resend is harmless.
      */
@@ -2029,6 +2168,34 @@ export interface components {
        * Format: date-time
        */
       updated_at: string;
+    };
+    /** Segment */
+    Segment: {
+      /**
+       * Chosen By
+       * @enum {string}
+       */
+      chosen_by: 'system' | 'learner';
+      /** End Ms */
+      end_ms: number;
+      /** Locked At */
+      locked_at: string | null;
+      /** Mark Count */
+      mark_count: number;
+      /**
+       * Session Id
+       * Format: uuid
+       */
+      session_id: string;
+      /** Start Ms */
+      start_ms: number;
+    };
+    /** SegmentChoice */
+    SegmentChoice: {
+      /** End Ms */
+      end_ms: number;
+      /** Start Ms */
+      start_ms: number;
     };
     /**
      * Session
@@ -3184,6 +3351,91 @@ export interface operations {
       };
     };
   };
+  list_marks_api_v1_dictation_attempts__attempt_id__marks_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationMarks'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  add_marks_api_v1_dictation_attempts__attempt_id__marks_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AddDictationMarks'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationMarks'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `attempt_not_scored` or `mark_id_taken` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `not_a_mark_candidate` or `mark_too_long` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   submit_api_v1_dictation_attempts__attempt_id__submit_post: {
     parameters: {
       query?: never;
@@ -4257,6 +4509,98 @@ export interface operations {
       };
     };
   };
+  read_segment_api_v1_sessions__session_id__shadow_segment_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Segment'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  choose_segment_api_v1_sessions__session_id__shadow_segment_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SegmentChoice'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Segment'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` or `segment_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `segment_span` or `validation_failed` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   skip_step_api_v1_sessions__session_id__steps__step__skip_post: {
     parameters: {
       query?: never;
@@ -4340,6 +4684,59 @@ export interface operations {
         content?: never;
       };
       /** @description `step_locked`, `transcript_not_ready` or `transcript_failed` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  finish_transcript_api_v1_sessions__session_id__transcript_complete_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `not_signed_in` */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` */
       409: {
         headers: {
           [name: string]: unknown;

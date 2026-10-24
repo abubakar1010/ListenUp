@@ -11,6 +11,7 @@ export interface MarkSyncHandle extends MarkSyncSnapshot {
   add: (mark: NewLocalMark) => void;
   setNote: (id: string, note: string | null) => void;
   remove: (id: string) => void;
+  takeSaved: (marks: NewLocalMark[]) => void;
 }
 
 /**
@@ -29,5 +30,6 @@ export function useMarkSync(options: MarkSyncOptions): MarkSyncHandle {
     add: (mark) => sync.add(mark),
     setNote: (id, note) => sync.setNote(id, note),
     remove: (id) => sync.remove(id),
+    takeSaved: (marks) => sync.takeSaved(marks),
   };
 }

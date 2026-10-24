@@ -1,5 +1,6 @@
 """Pure domain rules for the dictation module: no framework, database or network imports."""
 
+from listenup.modules.dictation.domain.marks import CandidateRange, NotACandidate, candidate_range
 from listenup.modules.dictation.domain.scoring import (
     SPELLING_SLIPS_COUNT_AS_CORRECT,
     DictationScore,
@@ -14,12 +15,15 @@ from listenup.modules.dictation.domain.scoring import (
 
 __all__ = [
     "SPELLING_SLIPS_COUNT_AS_CORRECT",
+    "CandidateRange",
     "DictationScore",
     "ExtraWord",
     "MarkCandidate",
+    "NotACandidate",
     "ReferenceWord",
     "WordResult",
     "WordStatus",
+    "candidate_range",
     "reference_from_arrays",
     "score_dictation",
 ]

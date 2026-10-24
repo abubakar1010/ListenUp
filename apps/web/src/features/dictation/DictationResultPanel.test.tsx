@@ -156,3 +156,15 @@ test('a result nobody is looking at is dropped, so a live event never refetches 
 
   expect(client.getQueryCache().findAll({ queryKey: DICTATION_RESULT_KEY })).toHaveLength(0);
 });
+
+test('a scored result offers its missed and wrong words for the mark list (FR-DI-6)', async () => {
+  mockRoutes({
+    [`GET ${PATH}`]: jsonResponse(200, view('scored', RESULT)),
+    'GET /dictation/attempts/attempt-1/marks': jsonResponse(200, { marks: [] }),
+  });
+
+  renderPanel();
+
+  expect(await screen.findByRole('heading', { name: 'Add to your marks' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Add “to cool” to marks' })).toBeInTheDocument();
+});

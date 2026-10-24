@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
 const PASSAGE = { start_ms: 0, end_ms: 30000 };
 const SESSION = {
@@ -43,9 +43,182 @@ function wav(): Buffer {
 }
 const AUDIO = wav();
 
+test('AT-8: a second browser signs in and resumes Transcript with saved marks', async ({
+  browser,
+}) => {
+  const learner = {
+    id: 'learner-50',
+    email: 'resume@example.com',
+    display_name: null,
+    email_verified: false,
+    deletion_grace_days: 7,
+    consents_required: [],
+  };
+  // Only this fake server state is shared; neither browser gets the other's storage.
+  const marks: Record<string, unknown>[] = [];
+  let signIns = 0;
+  async function server(context: BrowserContext) {
+    let signedIn = false;
+    await context.route('**/api/v1/**', async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname.replace('/api/v1', '');
+      if (path === '/health')
+        return route.fulfill({
+          json: { status: 'ok' },
+          headers: { 'Set-Cookie': 'listenup_csrf=e2e-token; Path=/; SameSite=Lax' },
+        });
+      if (path === '/auth/login' && request.method() === 'POST') {
+        expect(request.postDataJSON()).toEqual({
+          email: learner.email,
+          password: 'correct horse battery',
+        });
+        signedIn = true;
+        signIns += 1;
+        return route.fulfill({ json: learner });
+      }
+      if (!signedIn) return route.fulfill({ status: 401, json: { code: 'not_signed_in' } });
+      if (path === '/me') return route.fulfill({ json: learner });
+      if (path === '/library/contents')
+        return route.fulfill({
+          json: {
+            items: [
+              {
+                id: SESSION.content_id,
+                title: SESSION.content_title,
+                source: 'upload',
+                status: 'playable',
+                duration_ms: 35000,
+                created_at: SESSION.created_at,
+                last_session_status: 'active',
+              },
+            ],
+            next_cursor: null,
+          },
+        });
+      if (path === '/sessions')
+        return route.fulfill({ json: { items: [SESSION], next_cursor: null } });
+      if (path === '/sessions/s-57') return route.fulfill({ json: SESSION });
+      if (path === '/sessions/s-57/dictation/attempt')
+        return route.fulfill({ status: 404, json: { code: 'attempt_not_found' } });
+      if (path === '/sessions/s-57/transcript')
+        return route.fulfill({
+          json: {
+            session_id: SESSION.id,
+            passage: PASSAGE,
+            media_url: '/api/v1/media/m-57',
+            lines: [
+              {
+                index: 0,
+                start_ms: 0,
+                end_ms: 12000,
+                words: [
+                  { index: 0, text: 'Hello.', start_ms: 0, end_ms: 1000 },
+                  { index: 1, text: 'Again.', start_ms: 10000, end_ms: 12000 },
+                ],
+              },
+            ],
+          },
+        });
+      if (path === '/sessions/s-57/marks' && request.method() === 'GET')
+        return route.fulfill({ json: { marks } });
+      if (path === '/sessions/s-57/marks' && request.method() === 'POST') {
+        const body = request.postDataJSON() as { id: string; word_from: number };
+        const existing = marks.find((mark) => mark['id'] === body.id);
+        const mark = existing ?? {
+          ...body,
+          session_id: SESSION.id,
+          at_ms: body.word_from === 0 ? 0 : 10000,
+          note: null,
+          source: 'manual',
+          status: 'confirmed',
+          created_at: '2026-10-23T00:00:00Z',
+        };
+        if (!existing) marks.push(mark);
+        return route.fulfill({ status: existing ? 200 : 201, json: mark });
+      }
+      if (path.startsWith('/sessions/s-57/marks/') && request.method() === 'PATCH') {
+        const mark = marks.find((item) => path.endsWith(`/${String(item['id'])}`));
+        expect(mark).toBeDefined();
+        Object.assign(mark!, request.postDataJSON());
+        return route.fulfill({ json: mark });
+      }
+      if (path === '/media/m-57') return route.fulfill({ contentType: 'audio/wav', body: AUDIO });
+      if (path === '/events')
+        return route.fulfill({ contentType: 'text/event-stream', body: ': connected\n\n' });
+      throw new Error(`Unexpected API request: ${request.method()} ${path}`);
+    });
+  }
+  async function signInAndResume(page: Page) {
+    await page.goto('/library');
+    await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+    await page.getByLabel('Email', { exact: true }).fill(learner.email);
+    await page.getByLabel('Password', { exact: true }).fill('correct horse battery');
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    const plans = page.getByRole('region', { name: 'Your plans' });
+    await expect(plans).toContainText('Step 2 of 4 · Transcript');
+    await plans.getByRole('link', { name: 'Resume Transcript practice' }).click();
+    await expect(page).toHaveURL('/sessions/s-57');
+    await expect(
+      page.getByRole('heading', { name: 'Transcript: Transcript practice' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('list', { name: 'Plan steps' }).getByRole('listitem').nth(1),
+    ).toHaveAttribute('aria-current', 'step');
+  }
+
+  const first = await browser.newContext();
+  try {
+    await server(first);
+    const page = await first.newPage();
+    await signInAndResume(page);
+    const hello = page.getByRole('button', { name: 'Jump to Hello.', exact: true });
+    await hello.focus();
+    await page.keyboard.press('m');
+    await expect(hello).toHaveAccessibleDescription('Marked');
+    await page.getByLabel('Note (optional)').fill('linking sound');
+    const again = page.getByRole('button', { name: 'Jump to Again.', exact: true });
+    await again.focus(); // blur saves the note
+    await page.keyboard.press('m');
+    await expect(page.getByText('2 marks', { exact: true })).toBeVisible();
+    await expect.poll(() => marks.map((mark) => mark['note'])).toEqual(['linking sound', null]);
+    await expect(page.getByRole('region', { name: 'Mark words' })).toContainText('Marks saved');
+  } finally {
+    await first.close();
+  }
+
+  const saved = structuredClone(marks);
+  const second = await browser.newContext();
+  try {
+    expect(await second.storageState()).toEqual({ cookies: [], origins: [] });
+    await server(second);
+    const page = await second.newPage();
+    await signInAndResume(page);
+    await expect(
+      page.getByRole('button', { name: 'Jump to Hello.', exact: true }),
+    ).toHaveAccessibleDescription('Marked');
+    await expect(
+      page.getByRole('button', { name: 'Jump to Again.', exact: true }),
+    ).toHaveAccessibleDescription('Marked');
+    await expect(page.getByText('2 marks', { exact: true })).toBeVisible();
+    const list = page.getByRole('list', { name: 'Your marks' });
+    await expect(list.getByRole('listitem')).toHaveCount(2);
+    await expect(list).toContainText('linking sound');
+    expect(marks).toEqual(saved);
+    expect(signIns).toBe(2);
+  } finally {
+    await second.close();
+  }
+});
+
 test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   const marks: Record<string, unknown>[] = [];
+  let session = SESSION;
+  let completionRequests = 0;
+  let releaseMarkSave!: () => void;
+  const markSaveGate = new Promise<void>((resolve) => {
+    releaseMarkSave = resolve;
+  });
   await page.route('**/api/v1/**', async (route) => {
     const req = route.request();
     const path = new URL(req.url()).pathname.replace('/api/v1', '');
@@ -60,7 +233,22 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
           consents_required: [],
         },
       });
-    if (path === '/sessions/s-57') return route.fulfill({ json: SESSION });
+    if (path === '/sessions/s-57') return route.fulfill({ json: session });
+    if (path === '/sessions/s-57/transcript/complete' && req.method() === 'POST') {
+      completionRequests += 1;
+      expect(req.headers()['idempotency-key']).toBe('transcript-s-57');
+      session = {
+        ...SESSION,
+        version: 2,
+        open_step: 'card',
+        open_position: 3,
+        steps: SESSION.steps.map((step) => ({
+          ...step,
+          status: step.step === 'transcript' ? 'done' : step.step === 'card' ? 'open' : step.status,
+        })),
+      };
+      return route.fulfill({ status: 204 });
+    }
     if (path === '/sessions/s-57/dictation/attempt')
       return route.fulfill({ status: 404, json: { code: 'attempt_not_found' } });
     if (path === '/sessions/s-57/transcript')
@@ -87,6 +275,7 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
       });
     // A server that keeps the marks it is sent (#58).
     if (path === '/sessions/s-57/marks' && req.method() === 'POST') {
+      await markSaveGate;
       const body = req.postDataJSON() as { id: string; word_from: number; word_to: number };
       const mark = {
         ...body,
@@ -97,14 +286,21 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
         status: 'confirmed',
         created_at: '2026-10-19T00:00:00Z',
       };
-      marks.push(mark);
-      return route.fulfill({ status: 201, json: mark });
+      const existing = marks.find((item) => item['id'] === body.id);
+      if (!existing) marks.push(mark);
+      return route.fulfill({ status: existing ? 200 : 201, json: existing ?? mark });
     }
     if (req.method() === 'PATCH' && /^\/sessions\/s-57\/marks\/[^/]+$/.test(path)) {
       const mark = marks.find((m) => path.endsWith(`/${String(m['id'])}`));
       if (!mark) return route.fulfill({ status: 404, json: { code: 'mark_not_found' } });
       mark['note'] = (req.postDataJSON() as { note: string | null }).note;
       return route.fulfill({ json: mark });
+    }
+    if (req.method() === 'DELETE' && /^\/sessions\/s-57\/marks\/[^/]+$/.test(path)) {
+      const index = marks.findIndex((m) => path.endsWith(`/${String(m['id'])}`));
+      if (index < 0) return route.fulfill({ status: 404, json: { code: 'mark_not_found' } });
+      marks.splice(index, 1);
+      return route.fulfill({ status: 204 });
     }
     if (path === '/sessions/s-57/marks') return route.fulfill({ json: { marks } });
     if (path === '/media/m-57') {
@@ -173,6 +369,19 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await expect(second).toHaveAccessibleDescription('Marked');
   const panel = page.getByRole('region', { name: 'Mark words' });
   await expect(panel).toContainText('“Hello. Again.”');
+  // UX-10: pending saves keep Finish in the native Tab order and explain the block.
+  const waitingFinish = page.getByRole('button', { name: 'Finish Transcript', exact: true });
+  await second.focus();
+  await page.keyboard.press('Tab');
+  await expect(waitingFinish).toBeFocused();
+  await expect(waitingFinish).toHaveAttribute('aria-disabled', 'true');
+  await expect(waitingFinish).toHaveAccessibleDescription(
+    'Wait for your marks to save before finishing.',
+  );
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('Wait for your marks to save before finishing.')).toBeFocused();
+  expect(completionRequests).toBe(0);
+  releaseMarkSave();
   await expect(panel).toContainText('Marks saved', { timeout: 5000 });
   expect(marks).toMatchObject([{ word_from: 0, word_to: 1 }]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -202,4 +411,37 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Jump to Again.' })).toHaveAccessibleDescription(
     'Marked',
   );
+  // #60 / AT-4: activate the list's native button by keyboard against real media.
+  await expect(page.getByText('1 mark', { exact: true })).toBeVisible();
+  const list = page.getByRole('list', { name: 'Your marks' });
+  const row = list.getByRole('button', { name: /Play mark/ });
+  await page.getByRole('slider', { name: 'Seek' }).fill('20000');
+  await row.focus();
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(() => page.locator('audio').evaluate((el: HTMLAudioElement) => el.currentTime))
+    .toBeLessThan(2);
+  await expect(first).toHaveClass(/outline-mark-strong/);
+  await expect(second).toHaveClass(/outline-mark-strong/);
+  await page.keyboard.press('e');
+  await expect(page.getByRole('textbox', { name: 'Note (optional)' })).toBeFocused();
+  await page.getByRole('textbox', { name: 'Note (optional)' }).fill('x'.repeat(500));
+  await row.focus(); // blur saves the long note
+  await expect(list).toContainText('x'.repeat(500));
+  await page.keyboard.press('Delete');
+  await expect(page.getByText('0 marks', { exact: true })).toBeVisible();
+  await expect(first).toBeFocused();
+  const undo = page.getByRole('button', { name: 'Undo', exact: true });
+  await undo.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('1 mark', { exact: true })).toBeVisible();
+  await expect(list).toContainText('x'.repeat(500));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const finish = page.getByRole('button', { name: 'Finish Transcript', exact: true });
+  await expect(finish).toBeEnabled({ timeout: 5000 });
+  await finish.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: 'Card: Transcript practice' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Skip Card', exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
