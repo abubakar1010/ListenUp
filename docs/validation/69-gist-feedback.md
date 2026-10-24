@@ -141,3 +141,36 @@ Final remediation validation:
   (96.15%); the remaining gap is a defensive rubric fallback, not disclosure.
 - Final-head CI and independent re-review of the fixes remain owner merge gates.
   The p95 10 s staging criterion remains deferred and unverified under #155.
+
+## Dependency-audit remediation
+
+CI on `04fb4c3` failed the JavaScript vulnerability audit. Reproduced locally
+with `corepack pnpm audit --audit-level=high`: four advisories (two high, two
+moderate) for transitive Zod and Undici. The existing hooks plugin accepts Zod
+4.x, so refreshing that transitive resolution upgrades 4.6.5 to 4.6.7 without
+an override. Updating jsdom within its existing major, 30.1.1 to 30.1.3, allows
+Undici to resolve to 8.12.3 instead of 8.11.2. Both are above the patched
+minimums (4.6.6 and 8.12.2). jsdom's compatible DOM/URL dependencies update with
+the parent; no audit exclusions, severity changes or suppressions were added.
+
+Commands use the repository's pinned pnpm 10.28.0 through Corepack:
+
+- `corepack pnpm update jsdom`, then
+  `corepack pnpm update zod undici --depth 100`.
+- `corepack pnpm audit --audit-level=high`: passes, no known vulnerabilities.
+  A separate JSON audit reports zero vulnerabilities at every severity.
+- `corepack pnpm install --frozen-lockfile`: passes.
+- `corepack pnpm lint`, `corepack pnpm format:check`,
+  `corepack pnpm typecheck`: pass.
+- `corepack pnpm test:coverage`: 51 files / 520 tests pass, 95.74% lines and
+  88.50% branches. Runtime inventory passes; current changed executable lines
+  are 100% (22/22). No runtime source or coverage exclusion changed in this update.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium corepack pnpm e2e`:
+  production build and all 42 mocked-browser tests pass.
+- `corepack pnpm size`: 124.8 KB gzip, within the 200 KB limit.
+
+The failing audit and passing audit establish the dependency regression check;
+existing lint, component and browser suites validate compatibility. No artificial
+application test was added for generated lockfile resolutions. Backend code is
+unchanged by this dependency update; final-head CI must run its full required
+checks again. Independent re-review and owner merge remain separate gates.
