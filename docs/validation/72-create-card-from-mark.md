@@ -145,3 +145,49 @@ Final remediation verification (supersedes the earlier counts above):
 Required CI for the pushed revision and fresh review of the fixes remain merge
 gates. The owner merges. If main gains a migration before merge, merge it without
 rebasing, update `down_revision` and repeat migration/drift validation.
+
+## Dependency audit and main integration (2026-10-24)
+
+CI on `b2a597e` passed functional, migration, browser, build and changed-line
+checks but failed `pnpm audit --audit-level=high`. Before this update, the audit
+reported two high and two moderate advisories: Zod 4.6.5
+(`GHSA-mrhx-c7xc-m3w5`) and Undici 8.11.2 (including
+`GHSA-xjj6-f33q-929c`).
+
+Current main `e8901a4` already contained compatible transitive dependency patches
+from `4bc1448` and the merged #77 Shadow feature. It was merged without rebasing,
+preserving both Card and Shadow registrations, export contributors and access
+entries. No Shadow implementation was changed relative to main. Cards now uses
+ADR **0058** to avoid main's accepted Shadow ADR 0057; the decision is unchanged.
+
+From `apps/web`, `pnpm install --lockfile-only` regenerated/validated the patched
+lockfile, then `CI=true pnpm install --frozen-lockfile` installed it. The lockfile
+matches main's security fix: **Zod 4.6.7** and **Undici 8.12.3**. No direct
+dependency, override, audit suppression or threshold change was needed.
+`pnpm audit --audit-level=high` and `pnpm audit --json` now report **zero
+vulnerabilities at every severity**. This is actual audit red/green evidence;
+no artificial application behavior test was added for transitive resolution.
+
+Main also added `77_shadow_segments`. Before re-chaining, the existing
+`test_history_is_linear` failed with two heads, `72_cards` and
+`77_shadow_segments`. Cards' `down_revision` now points to `77_shadow_segments`;
+`alembic heads` reports only `72_cards`. The original migration decisions above
+describe the earlier base and are superseded by this chain.
+
+Backend format/lint, strict mypy and all six import contracts pass. The affected
+required-service command from `apps/api`:
+
+```sh
+LISTENUP_REQUIRE_DB=1 LISTENUP_REQUIRE_S3=1 uv run pytest tests/integration/test_migrations.py tests/integration/test_cards_api.py tests/integration/test_cards_schema.py tests/integration/test_shadow_segment.py tests/integration/test_export.py tests/integration/test_access_cross_learner.py -q --tb=short
+```
+
+Result: **80 passed**, including migration upgrade/downgrade/upgrade, model drift,
+Card and Shadow rules, export inventory and route isolation. OpenAPI and the
+TypeScript client were regenerated for both modules. The full backend suite and
+its changed-line/performance gates run again in CI for the pushed revision.
+
+Web lint/format/types, **534 tests with coverage**, production build and size
+(**124.8/200 kB gzip**) pass with the patched dependencies. Full Chromium:
+**45 passed**, including Card failure paths, both Shadow passage variants and
+cross-browser Transcript resume. Web coverage inventory and changed-line gate
+pass (**93/95** changed executable lines against current main).
