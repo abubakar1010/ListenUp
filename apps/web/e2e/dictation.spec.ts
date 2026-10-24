@@ -63,6 +63,10 @@ test('reference correction by keyboard updates score and Edited marker at 360px'
   await page.setViewportSize({ width: 360, height: 800 });
   await fakeApi(page, newServer());
   let edited = false;
+  let finishSave!: () => void;
+  const saveResponse = new Promise<void>((resolve) => {
+    finishSave = resolve;
+  });
   const result = () => ({
     id: 'attempt-1',
     session_id: 's-1',
@@ -108,6 +112,7 @@ test('reference correction by keyboard updates score and Edited marker at 360px'
       expect(request.postDataJSON()).toEqual({ word_index: 0, corrected_text: 'cap' });
       expect(request.headers()['idempotency-key']).toBeTruthy();
       expect(request.headers()['x-csrf-token']).toBeTruthy();
+      await saveResponse;
       edited = true;
       return route.fulfill({ json: result() });
     }
@@ -146,6 +151,18 @@ test('reference correction by keyboard updates score and Edited marker at 360px'
   await page.keyboard.press('Tab');
   await expect(dialog.getByRole('button', { name: 'Save correction' })).toBeFocused();
   await page.keyboard.press('Enter');
+  try {
+    await expect(dialog.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    await expect(dialog).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(dialog).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(dialog).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+  } finally {
+    finishSave();
+  }
   await expect(dialog).toHaveCount(0);
   await expect(page.getByText('100%')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Jump to cap (edited)' })).toBeVisible();

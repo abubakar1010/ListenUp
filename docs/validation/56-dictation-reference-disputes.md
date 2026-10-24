@@ -74,3 +74,31 @@ same decision; relevant conventions are updated.
 
 No changes to review mark status/styling, the gist panel, cards, shadow, blind,
 grading or AI. Existing Transcript edited-marker behavior is reused unchanged.
+
+## Review fixes (2026-10-24)
+
+- Account-purge storage: the new test fixture now installs the same `FakeStorage`
+  for requests and background workers and resets it on teardown. The regression
+  refuses real S3 prefix deletion and checks that the learner's file is deleted
+  while another learner's file survives. Before the fix, the file remained;
+  after the fix, the account, correction and file deletion assertions pass.
+- Export isolation: `test_early_expiry_keeps_a_future_job` now creates another
+  learner's valid archive and checks expiry by the requesting learner's exact
+  key. The old all-archives-absent assertion failed; the scoped assertion passes
+  and explicitly preserves the other learner's archive.
+- Pending keyboard focus: `ConfirmDialog` focuses its container while busy,
+  traps Tab/Shift+Tab with no enabled controls, and restores the safe action on
+  failure. The new component test and delayed-response 360px browser regression
+  both failed on lost focus before the fix and pass afterwards. Existing native
+  disabled controls and pending cancellation guards remain in effect.
+- Focused Red commands: `uv run pytest tests/integration/test_dictation_disputes.py::test_corrections_deleted_by_account_purge_while_shared_cache_remains tests/integration/test_export.py::test_early_expiry_keeps_a_future_job -q --tb=short`
+  produced **2 failed**; `pnpm vitest run src/components/ConfirmDialog.test.tsx`
+  produced **1 failed**; `pnpm e2e e2e/dictation.spec.ts -g 'reference correction by keyboard'`
+  produced **1 failed**. The same focused API command then passed **2 tests**;
+  dialog/result component checks passed **13 tests**, and the browser check
+  passed **1 test**. Required PostgreSQL was enabled for API checks.
+- FR-TX-4 is synchronized with issue #56 and the accepted dispute flow, following
+  the owner's request to resolve the review findings. This documentation update
+  needs no artificial failing test.
+
+Final validation after synchronization with current main is recorded below.

@@ -65,6 +65,11 @@ export function ConfirmDialog({
     };
   }, []);
 
+  useEffect(() => {
+    if (busy) dialog.current?.focus();
+    else if (document.activeElement === dialog.current) safe.current?.focus();
+  }, [busy]);
+
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === 'Escape') {
       event.stopPropagation();
@@ -73,7 +78,11 @@ export function ConfirmDialog({
     }
     if (event.key !== 'Tab' || !dialog.current) return;
     const focusable = [...dialog.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
-    if (focusable.length === 0) return;
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialog.current.focus();
+      return;
+    }
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     const active = document.activeElement;
@@ -96,6 +105,7 @@ export function ConfirmDialog({
       <div
         ref={dialog}
         role="dialog"
+        tabIndex={-1}
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={bodyId}

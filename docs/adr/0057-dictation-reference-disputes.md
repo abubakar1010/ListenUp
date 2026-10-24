@@ -17,6 +17,10 @@ submission, or losing marks they already chose to save (#55).
   may be disputed. The transcript service authorizes the session and maps that
   index to the immutable cache-row/local-word identity; clients cannot name cache
   rows. Empty and multiword replacements keep the original word slot and timings.
+- FR-TX-4 follows issue #56's scored-diff correction flow: a dispute happens after
+  initial scoring and re-scores that attempt; saved overlays also apply before
+  future attempts' initial scoring. The owner approved synchronizing FR-TX-4 with
+  this flow on 2026-10-24; no pre-submit editor is introduced.
 - Write only the learner's existing `content.transcript_corrections` overlay.
   Migration `56_dictation_disputes` grants API writes under existing own-row RLS;
   the API still cannot read or mutate the shared cache. Cache reads use the existing

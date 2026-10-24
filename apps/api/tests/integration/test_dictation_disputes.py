@@ -8,6 +8,8 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
+from listenup.platform.storage import S3Storage, use_storage
+
 from tests.integration.conftest import conninfo_to_url
 from tests.integration.dictation_helpers import media_of, seed_transcript
 from tests.integration.intake_helpers import ClientFactory, FakeStorage, client_factory, learner_id
@@ -21,8 +23,16 @@ from tests.integration.test_sessions_api import add_clip, start
 
 
 @pytest.fixture
-def make_client(api_role_url: str, migrated_url: str) -> Iterator[ClientFactory]:
-    yield from client_factory(api_role_url, FakeStorage())
+def storage() -> Iterator[FakeStorage]:
+    fake = FakeStorage()
+    use_storage(fake)
+    yield fake
+    use_storage(None)
+
+
+@pytest.fixture
+def make_client(api_role_url: str, storage: FakeStorage) -> Iterator[ClientFactory]:
+    yield from client_factory(api_role_url, storage)
 
 
 @pytest.fixture
@@ -305,16 +315,26 @@ def test_dispute_maps_partial_passage_index_to_second_cache_span(client, migrate
 
 
 def test_corrections_deleted_by_account_purge_while_shared_cache_remains(
-    client, make_client, attempt, migrated_url
+    client, make_client, attempt, migrated_url, storage, monkeypatch
 ):
+    async def unexpected_s3(*args, **kwargs):
+        pytest.fail("Account purge must use the test's storage, not the real S3 bucket")
+
+    monkeypatch.setattr(S3Storage, "delete_prefix", unexpected_s3)
     other = make_client()
     _, media = share_clip(client, other, attempt, migrated_url)
     assert dispute(client, attempt["id"]).status_code == 200
     user = uuid.UUID(learner_id(client))
+    own_key = f"users/{user}/media/recording.mp4"
+    other_key = f"users/{learner_id(other)}/media/recording.mp4"
+    for key in (own_key, other_key):
+        storage.arrive(key, 10)
     assert delete_me(client).status_code == 202
     make_due(migrated_url, user)
     assert sweep_queues_purge(migrated_url, user)
     deliver(migrated_url)
+    assert own_key not in storage.objects
+    assert other_key in storage.objects
     with psycopg.connect(migrated_url) as conn:
         assert conn.execute(
             "SELECT count(*) FROM identity.users WHERE id=%s", [user]
