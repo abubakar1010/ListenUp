@@ -1015,3 +1015,32 @@ test('undo_of_a_removed_manual_mark_still_makes_it_again', async () => {
   expect(transport.restore).not.toHaveBeenCalled();
   expect(marks.get('m1')).toMatchObject({ source: 'manual', note: 'linking' });
 });
+
+test('a_refused_dictation_removal_raced_by_undo_keeps_the_note_written_since', async () => {
+  const initial = { ...suggested('d1', 0), note: 'linking' };
+  const { transport, marks } = fakeServer([initial]);
+  let reject!: (error: unknown) => void;
+  transport.remove.mockImplementationOnce(
+    () =>
+      new Promise<void>((_, fail) => {
+        reject = fail;
+      }),
+  );
+  const sync = make(transport, memoryStorage(), [initial]);
+  const mark = sync.getSnapshot().marks[0]!;
+  sync.remove(mark.id);
+  sync.flush();
+  sync.undoRemove(mark);
+  sync.setNote(mark.id, 'linking, then a weak form');
+  reject(refusal(403, 'forbidden'));
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.restore).not.toHaveBeenCalled();
+  expect(marks.get('d1')).toMatchObject({
+    source: 'dictation',
+    status: 'suggested',
+    note: 'linking, then a weak form',
+  });
+  expect(sync.getSnapshot().marks).toMatchObject([
+    { source: 'dictation', status: 'suggested', note: 'linking, then a weak form', saved: true },
+  ]);
+});

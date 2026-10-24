@@ -144,6 +144,32 @@ def test_a_removed_dictation_word_can_be_marked_again_by_hand(
     assert again.json()["marks"][0]["id"] != added[0]["id"]
 
 
+def test_undo_of_a_removed_dictation_mark_brings_it_back_from_dictation(
+    client: TestClient, attempt: dict[str, Any], added: list[dict[str, Any]], migrated_url: str
+) -> None:
+    """ADR 0057: Undo adds the words again through the Dictation route with the same id,
+    so the mark keeps its source and waits to be confirmed; its analytics event is not
+    doubled."""
+    session_id = attempt["session_id"]
+    removed = added[0]
+    client.delete(f"{transcript_marks(session_id)}/{removed['id']}")
+
+    again = add(client, attempt["id"], mark(1, mark_id=removed["id"]))
+
+    assert again.status_code == 200, again.text
+    assert again.json()["marks"] == [removed]
+    assert [(r[0], r[4], r[5]) for r in rows(migrated_url, session_id)] == [
+        (removed["id"], "dictation", "suggested"),
+        (added[1]["id"], "dictation", "suggested"),
+    ]
+    with psycopg.connect(migrated_url) as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM ops.analytics_events "
+            "WHERE event_type = 'mark_created' AND subject_id = %s",
+            [removed["id"]],
+        ).fetchone() == (1,)
+
+
 def test_confirming_an_unknown_mark_is_refused(
     client: TestClient, attempt: dict[str, Any], added: list[dict[str, Any]]
 ) -> None:
