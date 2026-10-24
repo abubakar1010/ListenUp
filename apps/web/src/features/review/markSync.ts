@@ -551,12 +551,19 @@ export class MarkSync {
       } else if (entry && op === 'delete') {
         entry.op = 'delete';
         entry.rev = 1;
-      } else if (entry && differs({ ...entry.mark, ...kept }, entry.mark)) {
-        // A confirmation kept here still counts once the server holds the mark.
-        const status = kept.status === 'confirmed' ? kept.status : entry.mark.status;
-        entry.mark = { ...entry.mark, note: kept.note, status };
-        entry.op = 'update';
-        entry.rev = 1;
+      } else if (entry) {
+        // A confirmation kept here still counts once the server holds the mark. A kept
+        // create the server already holds (Undo while its DELETE was in flight) is a
+        // resend: only its note can be newer, and its `manual`/confirmed stamp is not a
+        // confirmation the learner made.
+        const confirmed = op === 'update' && kept.status === 'confirmed';
+        const next = { ...entry.mark, note: kept.note };
+        if (confirmed) next.status = 'confirmed';
+        if (differs(next, entry.mark)) {
+          entry.mark = next;
+          entry.op = 'update';
+          entry.rev = 1;
+        }
       }
       // Anything else is already on the server, or gone from it.
     }
