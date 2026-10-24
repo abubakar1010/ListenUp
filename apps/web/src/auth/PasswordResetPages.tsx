@@ -4,17 +4,16 @@ import { Link, useLocation } from 'react-router';
 
 import { api, ApiError } from '../api/client';
 import type { components } from '../api/schema';
+import { buttonProps } from '../components/button';
+import { AUTH_PAGE_CLASS, inputClass, textLinkClass } from '../components/field';
 import { errorMessage } from './errorMessage';
 import { changeSession } from './session';
 import { BusyButton } from '../components/BusyButton';
 
 type ResetRequested = components['schemas']['PasswordResetRequested'];
 
-const inputClass =
-  'rounded border border-gray-400 px-3 py-2 focus:outline-2 focus:outline-offset-2 focus:outline-blue-700';
-const buttonClass =
-  'rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 focus:outline-2 focus:outline-offset-2 focus:outline-blue-700 aria-disabled:opacity-60';
-const linkClass = 'text-blue-700 underline';
+const submitProps = buttonProps('primary');
+const linkClass = textLinkClass;
 
 /** Asks for a reset email (FR-ACC-3). Route: /forgot-password. */
 export function PasswordResetRequestPage() {
@@ -34,8 +33,8 @@ export function PasswordResetRequestPage() {
   const error = submit.isError ? errorMessage(submit.error) : null;
 
   return (
-    <main className="mx-auto max-w-sm p-6">
-      <h1 className="text-2xl font-semibold">Reset your password</h1>
+    <main className={AUTH_PAGE_CLASS}>
+      <h1 className="font-display text-title-compact md:text-title">Reset your password</h1>
       {submit.isSuccess ? (
         // role="status" announces the outcome without moving focus.
         <p role="status" className="mt-6">
@@ -52,7 +51,7 @@ export function PasswordResetRequestPage() {
             Enter the email you signed up with. We will send you a link to choose a new password.
           </p>
           <div className="flex flex-col gap-1">
-            <label htmlFor={ids.email} className="font-medium">
+            <label htmlFor={ids.email} className="font-bold">
               Email
             </label>
             <input
@@ -68,10 +67,10 @@ export function PasswordResetRequestPage() {
               className={inputClass}
             />
           </div>
-          <p id={ids.error} role="alert" className="min-h-6 text-red-800">
+          <p id={ids.error} role="alert" className="min-h-6 text-danger">
             {error}
           </p>
-          <BusyButton type="submit" busy={submit.isPending} className={buttonClass}>
+          <BusyButton type="submit" busy={submit.isPending} {...submitProps}>
             {submit.isPending ? 'Please wait…' : 'Send reset link'}
           </BusyButton>
         </form>
@@ -143,7 +142,7 @@ export function PasswordResetConfirmPage() {
         aria-describedby={error ? ids.error : undefined}
       >
         <div className="flex flex-col gap-1">
-          <label htmlFor={ids.password} className="font-medium">
+          <label htmlFor={ids.password} className="font-bold">
             New password
           </label>
           <input
@@ -158,11 +157,11 @@ export function PasswordResetConfirmPage() {
             aria-invalid={submit.error instanceof ApiError && submit.error.code === 'weak_password'}
             className={inputClass}
           />
-          <p id={ids.hint} className="text-sm text-gray-700">
+          <p id={ids.hint} className="text-body-s text-ink-muted">
             At least 8 characters.
           </p>
         </div>
-        <div id={ids.error} role="alert" className="min-h-6 text-red-800">
+        <div id={ids.error} role="alert" className="min-h-6 text-danger">
           {error}
           {linkDead && (
             <>
@@ -173,7 +172,7 @@ export function PasswordResetConfirmPage() {
             </>
           )}
         </div>
-        <BusyButton type="submit" busy={submit.isPending} className={buttonClass}>
+        <BusyButton type="submit" busy={submit.isPending} {...submitProps}>
           {submit.isPending ? 'Please wait…' : 'Set new password'}
         </BusyButton>
       </form>
@@ -181,8 +180,8 @@ export function PasswordResetConfirmPage() {
   }
 
   return (
-    <main className="mx-auto max-w-sm p-6">
-      <h1 className="text-2xl font-semibold">Choose a new password</h1>
+    <main className={AUTH_PAGE_CLASS}>
+      <h1 className="font-display text-title-compact md:text-title">Choose a new password</h1>
       {body}
     </main>
   );

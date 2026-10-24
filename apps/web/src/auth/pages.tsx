@@ -1,8 +1,9 @@
 import { Link, useLocation } from 'react-router';
 
+import { textLinkClass } from '../components/field';
 import { AuthForm } from './AuthForm';
 
-const linkClass = 'text-blue-700 underline';
+const linkClass = textLinkClass;
 
 /** Keep `?next=...` when switching between sign-in and register, so the learner still
  * returns to the page that sent them here. */
