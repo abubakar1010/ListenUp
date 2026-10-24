@@ -551,6 +551,15 @@ export class MarkSync {
       } else if (entry && op === 'delete') {
         entry.op = 'delete';
         entry.rev = 1;
+      } else if (entry && op === 'create') {
+        // The server already holds this mark: the create landed, or Undo replaced a
+        // removal that never did. A create is stamped confirmed here, so only its note
+        // can still be owed; the status stays the server's.
+        if (entry.mark.note !== kept.note) {
+          entry.mark = { ...entry.mark, note: kept.note };
+          entry.op = 'update';
+          entry.rev = 1;
+        }
       } else if (entry && differs({ ...entry.mark, ...kept }, entry.mark)) {
         // A confirmation kept here still counts once the server holds the mark.
         const status = kept.status === 'confirmed' ? kept.status : entry.mark.status;

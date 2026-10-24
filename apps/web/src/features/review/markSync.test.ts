@@ -837,3 +837,30 @@ test('undo_of_a_refused_inflight_dictation_deletion_restores_the_saved_source_an
     saved: true,
   });
 });
+
+test('a_reload_after_undo_of_an_unlanded_dictation_removal_leaves_the_mark_to_confirm', async () => {
+  // Undo during the DELETE, then the tab reloads before the DELETE lands: the server
+  // still holds the suggestion, and the kept op must not confirm it for the learner.
+  const initial = { ...suggested('d1', 0), note: 'linking' };
+  const { transport, marks } = fakeServer([initial]);
+  transport.remove.mockImplementationOnce(() => new Promise<void>(() => {}));
+  const storage = memoryStorage();
+  const sync = make(transport, storage, [initial]);
+  const mark = sync.getSnapshot().marks[0]!;
+  sync.remove(mark.id);
+  sync.flush();
+  sync.add(mark);
+  sync.setNote(mark.id, 'linking, then a weak form');
+  closeTab();
+  const reloaded = make(transport, storage, [...marks.values()]);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.confirm).not.toHaveBeenCalled();
+  expect(marks.get('d1')).toMatchObject({
+    source: 'dictation',
+    status: 'suggested',
+    note: 'linking, then a weak form',
+  });
+  expect(reloaded.getSnapshot().marks).toMatchObject([
+    { source: 'dictation', status: 'suggested', note: 'linking, then a weak form', saved: true },
+  ]);
+});
