@@ -441,11 +441,76 @@ describe('submitting (#54)', () => {
     });
   }
 
-  test('Submit is off while there is no text', async () => {
-    renderDictation({ [`POST ${ATTEMPT_PATH}`]: jsonResponse(200, attempt({ draft_text: '' })) });
-    await textArea();
+  /** Presses Submit and confirms in the dialog that asks once (UX-27). */
+  function submitAndConfirm() {
+    fireEvent.click(screen.getByRole('button', { name: 'Submit for scoring' }));
+    const dialog = screen.getByRole('dialog', { name: 'Submit your Dictation?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Submit' }));
+  }
 
-    expect(screen.getByRole('button', { name: 'Submit for scoring' })).toBeDisabled();
+  test('with no text, Submit stays focusable and says why it is unavailable (UX-10)', async () => {
+    const { calls } = renderDictation({
+      [`POST ${ATTEMPT_PATH}`]: jsonResponse(200, attempt({ draft_text: '' })),
+    });
+    await textArea();
+    const submit = screen.getByRole('button', { name: 'Submit for scoring' });
+
+    expect(submit).toBeEnabled();
+    expect(submit).toHaveAttribute('aria-disabled', 'true');
+    expect(submit).toHaveAccessibleDescription(/Type at least one word to submit\./);
+
+    fireEvent.click(submit);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('Type at least one word to submit.')).toHaveFocus();
+    expect(calls.some((c) => c.path === SUBMIT_PATH)).toBe(false);
+  });
+
+  test('Submit asks once with the word count, and Keep typing sends nothing (UX-27)', async () => {
+    const { calls } = renderSubmitting();
+    await textArea();
+    const submit = screen.getByRole('button', { name: 'Submit for scoring' });
+    submit.focus();
+
+    fireEvent.click(submit);
+    const dialog = screen.getByRole('dialog', { name: 'Submit your Dictation?' });
+    expect(dialog).toHaveTextContent('You typed 4 words.');
+    const keep = within(dialog).getByRole('button', { name: 'Keep typing' });
+    expect(keep).toHaveFocus();
+
+    fireEvent.click(keep);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(submit).toHaveFocus());
+    expect(screen.getByRole('textbox', { name: 'Your text' })).toHaveValue('So the first thing');
+    expect(calls.some((c) => c.path === SUBMIT_PATH)).toBe(false);
+  });
+
+  test('player keys do nothing while the submit dialog is open (UX-07)', async () => {
+    renderSubmitting();
+    await textArea();
+    loadAudio();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit for scoring' }));
+    const keep = within(screen.getByRole('dialog')).getByRole('button', { name: 'Keep typing' });
+
+    fireEvent.keyDown(keep, { key: 'r', code: 'KeyR', ctrlKey: true, altKey: true });
+    fireEvent.keyDown(keep, { key: 'j', code: 'KeyJ', ctrlKey: true, altKey: true });
+
+    expect(play).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  test('while the submit is sent, Submit keeps focus and says it is busy', async () => {
+    renderSubmitting({ [`POST ${SUBMIT_PATH}`]: () => new Promise<Response>(() => undefined) });
+    await textArea();
+    screen.getByRole('button', { name: 'Submit for scoring' }).focus();
+
+    submitAndConfirm();
+
+    const busy = await screen.findByRole('button', { name: 'Submitting…' });
+    expect(busy).toHaveAttribute('aria-busy', 'true');
+    expect(busy).toHaveAttribute('aria-disabled', 'true');
+    await waitFor(() => expect(busy).toHaveFocus());
+    fireEvent.click(busy);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   test('sends the text, the session version and the replay count with an Idempotency-Key', async () => {
@@ -455,7 +520,7 @@ describe('submitting (#54)', () => {
     for (let i = 0; i < 3; i += 1)
       fireEvent.click(screen.getByRole('button', { name: 'Replay segment' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Submit for scoring' }));
+    submitAndConfirm();
 
     await waitFor(() => expect(calls.some((c) => c.path === SUBMIT_PATH)).toBe(true));
     const post = calls.find((c) => c.path === SUBMIT_PATH)!;
@@ -472,7 +537,7 @@ describe('submitting (#54)', () => {
     renderSubmitting();
     await textArea();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Submit for scoring' }));
+    submitAndConfirm();
 
     expect(await screen.findByText(/Scoring when the transcript is ready/)).toBeInTheDocument();
     // The Dictation step is complete: the work area is gone and the plan moved on.
@@ -490,7 +555,7 @@ describe('submitting (#54)', () => {
     });
     await textArea();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Submit for scoring' }));
+    submitAndConfirm();
 
     expect(await screen.findByText('90%')).toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Word by word' })).toHaveTextContent('summer.');
@@ -502,7 +567,7 @@ describe('submitting (#54)', () => {
     });
     const text = await textArea();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Submit for scoring' }));
+    submitAndConfirm();
 
     expect(await screen.findByRole('alert')).toHaveTextContent('The session changed. Reload.');
     expect(text).toHaveValue('So the first thing');
@@ -517,7 +582,7 @@ describe('submitting (#54)', () => {
     const text = await textArea();
     fireEvent.change(text, { target: { value: 'So the first thing was' } });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Submit for scoring' }));
+    submitAndConfirm();
 
     await waitFor(() => expect(calls.some((c) => c.path === SUBMIT_PATH)).toBe(true));
     await waitFor(() => expect(screen.getByRole('button', { name: /Submitted/ })).toBeDisabled());
@@ -527,6 +592,9 @@ describe('submitting (#54)', () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 2300));
     });
-    expect(calls.filter((c) => c.path === DRAFT_PATH)).toHaveLength(0);
+    // Opening the dialog moves focus out of the text, which saves the draft before the
+    // submit; nothing is saved after it.
+    const submitAt = calls.findIndex((c) => c.path === SUBMIT_PATH);
+    expect(calls.slice(submitAt).filter((c) => c.path === DRAFT_PATH)).toHaveLength(0);
   });
 });
