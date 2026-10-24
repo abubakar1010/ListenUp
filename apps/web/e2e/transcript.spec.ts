@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
 const PASSAGE = { start_ms: 0, end_ms: 30000 };
 const SESSION = {
@@ -42,6 +42,173 @@ function wav(): Buffer {
   return data;
 }
 const AUDIO = wav();
+
+test('AT-8: a second browser signs in and resumes Transcript with saved marks', async ({
+  browser,
+}) => {
+  const learner = {
+    id: 'learner-50',
+    email: 'resume@example.com',
+    display_name: null,
+    email_verified: false,
+    deletion_grace_days: 7,
+    consents_required: [],
+  };
+  // Only this fake server state is shared; neither browser gets the other's storage.
+  const marks: Record<string, unknown>[] = [];
+  let signIns = 0;
+  async function server(context: BrowserContext) {
+    let signedIn = false;
+    await context.route('**/api/v1/**', async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname.replace('/api/v1', '');
+      if (path === '/health')
+        return route.fulfill({
+          json: { status: 'ok' },
+          headers: { 'Set-Cookie': 'listenup_csrf=e2e-token; Path=/; SameSite=Lax' },
+        });
+      if (path === '/auth/login' && request.method() === 'POST') {
+        expect(request.postDataJSON()).toEqual({
+          email: learner.email,
+          password: 'correct horse battery',
+        });
+        signedIn = true;
+        signIns += 1;
+        return route.fulfill({ json: learner });
+      }
+      if (!signedIn) return route.fulfill({ status: 401, json: { code: 'not_signed_in' } });
+      if (path === '/me') return route.fulfill({ json: learner });
+      if (path === '/library/contents')
+        return route.fulfill({
+          json: {
+            items: [
+              {
+                id: SESSION.content_id,
+                title: SESSION.content_title,
+                source: 'upload',
+                status: 'playable',
+                duration_ms: 35000,
+                created_at: SESSION.created_at,
+                last_session_status: 'active',
+              },
+            ],
+            next_cursor: null,
+          },
+        });
+      if (path === '/sessions')
+        return route.fulfill({ json: { items: [SESSION], next_cursor: null } });
+      if (path === '/sessions/s-57') return route.fulfill({ json: SESSION });
+      if (path === '/sessions/s-57/dictation/attempt')
+        return route.fulfill({ status: 404, json: { code: 'attempt_not_found' } });
+      if (path === '/sessions/s-57/transcript')
+        return route.fulfill({
+          json: {
+            session_id: SESSION.id,
+            passage: PASSAGE,
+            media_url: '/api/v1/media/m-57',
+            lines: [
+              {
+                index: 0,
+                start_ms: 0,
+                end_ms: 12000,
+                words: [
+                  { index: 0, text: 'Hello.', start_ms: 0, end_ms: 1000 },
+                  { index: 1, text: 'Again.', start_ms: 10000, end_ms: 12000 },
+                ],
+              },
+            ],
+          },
+        });
+      if (path === '/sessions/s-57/marks' && request.method() === 'GET')
+        return route.fulfill({ json: { marks } });
+      if (path === '/sessions/s-57/marks' && request.method() === 'POST') {
+        const body = request.postDataJSON() as { id: string; word_from: number };
+        const existing = marks.find((mark) => mark['id'] === body.id);
+        const mark = existing ?? {
+          ...body,
+          session_id: SESSION.id,
+          at_ms: body.word_from === 0 ? 0 : 10000,
+          note: null,
+          source: 'manual',
+          status: 'confirmed',
+          created_at: '2026-10-23T00:00:00Z',
+        };
+        if (!existing) marks.push(mark);
+        return route.fulfill({ status: existing ? 200 : 201, json: mark });
+      }
+      if (path.startsWith('/sessions/s-57/marks/') && request.method() === 'PATCH') {
+        const mark = marks.find((item) => path.endsWith(`/${String(item['id'])}`));
+        expect(mark).toBeDefined();
+        Object.assign(mark!, request.postDataJSON());
+        return route.fulfill({ json: mark });
+      }
+      if (path === '/media/m-57') return route.fulfill({ contentType: 'audio/wav', body: AUDIO });
+      if (path === '/events')
+        return route.fulfill({ contentType: 'text/event-stream', body: ': connected\n\n' });
+      throw new Error(`Unexpected API request: ${request.method()} ${path}`);
+    });
+  }
+  async function signInAndResume(page: Page) {
+    await page.goto('/library');
+    await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+    await page.getByLabel('Email', { exact: true }).fill(learner.email);
+    await page.getByLabel('Password', { exact: true }).fill('correct horse battery');
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    const plans = page.getByRole('region', { name: 'Your plans' });
+    await expect(plans).toContainText('Step 2 of 4 · Transcript');
+    await plans.getByRole('link', { name: 'Resume Transcript practice' }).click();
+    await expect(page).toHaveURL('/sessions/s-57');
+    await expect(
+      page.getByRole('heading', { name: 'Transcript: Transcript practice' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('list', { name: 'Plan steps' }).getByRole('listitem').nth(1),
+    ).toHaveAttribute('aria-current', 'step');
+  }
+
+  const first = await browser.newContext();
+  try {
+    await server(first);
+    const page = await first.newPage();
+    await signInAndResume(page);
+    const hello = page.getByRole('button', { name: 'Jump to Hello.', exact: true });
+    await hello.focus();
+    await page.keyboard.press('m');
+    await expect(hello).toHaveAccessibleDescription('Marked');
+    await page.getByLabel('Note (optional)').fill('linking sound');
+    const again = page.getByRole('button', { name: 'Jump to Again.', exact: true });
+    await again.focus(); // blur saves the note
+    await page.keyboard.press('m');
+    await expect(page.getByText('2 marks', { exact: true })).toBeVisible();
+    await expect.poll(() => marks.map((mark) => mark['note'])).toEqual(['linking sound', null]);
+    await expect(page.getByRole('region', { name: 'Mark words' })).toContainText('Marks saved');
+  } finally {
+    await first.close();
+  }
+
+  const saved = structuredClone(marks);
+  const second = await browser.newContext();
+  try {
+    expect(await second.storageState()).toEqual({ cookies: [], origins: [] });
+    await server(second);
+    const page = await second.newPage();
+    await signInAndResume(page);
+    await expect(
+      page.getByRole('button', { name: 'Jump to Hello.', exact: true }),
+    ).toHaveAccessibleDescription('Marked');
+    await expect(
+      page.getByRole('button', { name: 'Jump to Again.', exact: true }),
+    ).toHaveAccessibleDescription('Marked');
+    await expect(page.getByText('2 marks', { exact: true })).toBeVisible();
+    const list = page.getByRole('list', { name: 'Your marks' });
+    await expect(list.getByRole('listitem')).toHaveCount(2);
+    await expect(list).toContainText('linking sound');
+    expect(marks).toEqual(saved);
+    expect(signIns).toBe(2);
+  } finally {
+    await second.close();
+  }
+});
 
 test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
