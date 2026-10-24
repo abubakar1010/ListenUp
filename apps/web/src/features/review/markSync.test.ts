@@ -1044,3 +1044,15 @@ test('a_refused_dictation_removal_raced_by_undo_keeps_the_note_written_since', a
     { source: 'dictation', status: 'suggested', note: 'linking, then a weak form', saved: true },
   ]);
 });
+
+test('a_dictation_undo_after_marking_the_words_again_here_keeps_one_mark', async () => {
+  const { marks, sync, mark } = await removedAndSaved(suggested('d1', 2));
+  sync.add({ id: 'm9', word_from: 2, word_to: 2, at_ms: 2000, note: 'by hand' });
+  await vi.advanceTimersByTimeAsync(2000);
+  sync.undoRemove(mark);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().marks).toMatchObject([
+    { id: 'm9', source: 'manual', note: 'by hand', saved: true },
+  ]);
+  expect([...marks.keys()]).toEqual(['m9']);
+});
