@@ -75,7 +75,7 @@ export function markTransport(sessionId: string): MarkTransport {
         body: { status: 'confirmed' },
       }),
     // Undo of a removed Dictation mark adds its words again through the Dictation route,
-    // which checks them against the scored diff, so the mark keeps its source (ADR 0057).
+    // which checks them against the scored diff, so the mark keeps its source (ADR 0058).
     restore: async (mark) => {
       const attempt = await api<DictationAttemptView>(
         `/sessions/${encodeURIComponent(sessionId)}/dictation/attempt`,

@@ -984,7 +984,7 @@ export interface paths {
     /**
      * Confirm Mark
      * @description Confirm a mark pre-filled from Dictation (FR-TR-3). Confirming again answers with
-     *     the same mark, so a resend is harmless; to drop the mark, DELETE it (ADR 0057).
+     *     the same mark, so a resend is harmless; to drop the mark, DELETE it (ADR 0058).
      */
     put: operations['confirm_mark_api_v1_sessions__session_id__marks__mark_id__status_put'];
     post?: never;

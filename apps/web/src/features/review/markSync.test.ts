@@ -883,7 +883,7 @@ test('a_reload_after_undo_of_an_unlanded_dictation_removal_leaves_the_mark_to_co
   ]);
 });
 
-// -- Undo of a removed Dictation mark keeps its source (#59, ADR 0057) ---------------------
+// -- Undo of a removed Dictation mark keeps its source (#59, ADR 0058) ---------------------
 
 async function removedAndSaved(initial: SavedMark) {
   const server = fakeServer([initial]);
