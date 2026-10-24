@@ -32,6 +32,8 @@ export function PassagePlayerControls({
   playerId = 'dictation',
   replayDisabled = false,
   errorSuffix = 'Your text is kept.',
+  preload = 'auto',
+  showReplays = true,
 }: {
   audioRef: React.RefObject<HTMLAudioElement | null>;
   player: PassagePlayer;
@@ -41,13 +43,17 @@ export function PassagePlayerControls({
   playerId?: string;
   replayDisabled?: boolean;
   errorSuffix?: string;
+  /** "metadata" where the whole clip may be long and is not played at once. */
+  preload?: 'auto' | 'metadata';
+  /** The replay count matters in practice steps only. */
+  showReplays?: boolean;
 }) {
   const { positionMs, durationMs, status } = player;
   const segment = segmentAt(positionMs, durationMs);
   const disabled = status !== 'ready';
   return (
     <div className="flex flex-col gap-3 rounded-md border border-line bg-surface-raised p-3 md:p-4">
-      <audio ref={audioRef} src={src} preload="auto" className="hidden" />
+      <audio ref={audioRef} src={src} preload={preload} className="hidden" />
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -112,10 +118,12 @@ export function PassagePlayerControls({
         </span>
         <span className="flex-1" />
         <span className="flex items-center gap-3">
-          <span className="text-body-s text-ink-muted">
-            <b className="font-mono text-ink">{player.replays}</b>{' '}
-            {player.replays === 1 ? 'replay' : 'replays'}
-          </span>
+          {showReplays && (
+            <span className="text-body-s text-ink-muted">
+              <b className="font-mono text-ink">{player.replays}</b>{' '}
+              {player.replays === 1 ? 'replay' : 'replays'}
+            </span>
+          )}
           <label className="sr-only" htmlFor={`${playerId}-speed`}>
             Speed
           </label>
@@ -136,7 +144,7 @@ export function PassagePlayerControls({
       <input
         type="range"
         aria-label="Seek"
-        className="w-full accent-[var(--color-accent)]"
+        className="h-11 w-full cursor-pointer accent-[var(--color-accent)] md:h-6"
         min={0}
         max={durationMs}
         step={1000}

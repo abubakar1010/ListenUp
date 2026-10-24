@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { expectFocusKept } from './focus';
 
 const LEARNER = {
   id: '1',
@@ -115,7 +116,21 @@ test('a learner deletes their account and restores it by signing in', async ({ p
   const restore = page.getByRole('dialog', { name: 'Restore your account?' });
   await expect(restore).toBeVisible();
   await expect(restore.getByRole('button', { name: 'Keep it deleted' })).toBeFocused();
+  // The restore answers slowly: while it runs, the dialog's buttons keep focus (#195).
+  let answer: () => void = () => undefined;
+  const answered = new Promise<void>((resolve) => (answer = resolve));
+  await page.route('**/api/v1/auth/login', async (route) => {
+    await answered;
+    await route.fallback();
+  });
   await restore.getByRole('button', { name: 'Restore my account' }).click();
+  await expect(restore.getByRole('button', { name: 'Restoring…' })).toHaveAttribute(
+    'aria-busy',
+    'true',
+  );
+  await expect(restore.getByRole('button', { name: 'Restoring…' })).toBeFocused();
+  await expectFocusKept(page, 'while the restore runs');
+  answer();
 
   await expect(page).toHaveURL('/library');
 });

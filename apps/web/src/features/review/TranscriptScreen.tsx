@@ -50,26 +50,82 @@ import { useMarkSync } from './useMarkSync';
 export function TranscriptScreen({ session, progress }: { session: Session; progress: ReactNode }) {
   const transcript = useTranscript(session.id);
   const marks = useMarks(session.id);
-  if (transcript.data && marks.data)
-    return (
-      <TranscriptWork
-        key={session.id}
-        session={session}
-        progress={progress}
-        data={transcript.data}
-        marks={marks.data.marks}
-      />
-    );
+  const code = transcript.error instanceof ApiError ? transcript.error.code : null;
+  const waiting = code === 'transcript_not_ready';
+  // Once the learner has waited, its arrival is announced politely (UX-04, UX-22). The
+  // region stays mounted across both views so the change is heard.
+  const [waited, setWaited] = useState(false);
+  if (waiting && !waited) setWaited(true);
+  const ready = Boolean(transcript.data && marks.data);
+  return (
+    <>
+      {ready ? (
+        <TranscriptWork
+          key={session.id}
+          session={session}
+          progress={progress}
+          data={transcript.data!}
+          marks={marks.data!.marks}
+        />
+      ) : (
+        <TranscriptPending
+          session={session}
+          progress={progress}
+          transcript={transcript}
+          marks={marks}
+        />
+      )}
+      <p role="status" className="sr-only">
+        {ready && waited ? 'Your transcript is ready.' : ''}
+      </p>
+    </>
+  );
+}
+
+function TranscriptPending({
+  session,
+  progress,
+  transcript,
+  marks,
+}: {
+  session: Session;
+  progress: ReactNode;
+  transcript: ReturnType<typeof useTranscript>;
+  marks: ReturnType<typeof useMarks>;
+}) {
   const code = transcript.error instanceof ApiError ? transcript.error.code : null;
   const waiting = code === 'transcript_not_ready';
   const failed = code === 'transcript_failed';
   return (
     <Layout session={session} progress={progress} player={null}>
-      {waiting || failed ? (
-        <div className="flex flex-col items-start gap-3">
-          <p role={waiting ? 'status' : 'alert'}>
-            {waiting ? 'Preparing your transcript…' : 'The transcript could not be prepared.'}
+      {waiting ? (
+        // Pending: what is happening, that nothing is lost, and that the page refreshes
+        // itself (it polls and listens for transcript.ready); no invented estimate.
+        <div
+          role="status"
+          aria-labelledby="transcript-pending"
+          aria-busy="true"
+          className="flex flex-col items-start gap-3 rounded-md border border-line bg-surface-raised p-4"
+        >
+          <p id="transcript-pending" className="flex items-center gap-2 font-bold">
+            <span
+              aria-hidden="true"
+              className="size-4 animate-spin rounded-full border-2 border-line border-t-accent motion-reduce:animate-none"
+            />
+            Preparing your transcript…
           </p>
+          <p>This page updates by itself when it is ready. Your progress is saved.</p>
+          <button
+            type="button"
+            className={buttonClass('secondary')}
+            onClick={() => void transcript.refetch()}
+          >
+            Check now
+          </button>
+        </div>
+      ) : failed ? (
+        <div className="flex flex-col items-start gap-3">
+          <p role="alert">The transcript could not be prepared.</p>
           <p>Your progress is saved. Try again to check for an updated transcript.</p>
           <button
             type="button"
@@ -95,6 +151,7 @@ function Layout({
   progress,
   player,
   markList,
+  aside,
   children,
 }: {
   session: Session;
@@ -102,6 +159,8 @@ function Layout({
   player: ReactNode;
   /** The transcript's own marks, once it is open, for the Dictation result to share. */
   markList?: OpenMarkList;
+  /** The side panel: the mark list and keys beside the text from 1024 px, after it below. */
+  aside?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -119,6 +178,7 @@ function Layout({
         ) : undefined
       }
       workLabel="Transcript"
+      aside={aside}
     >
       <p className="text-body-s">Transcript can't be skipped: it shows what you missed.</p>
       {session.steps.some((step) => step.step === 'dictation' && step.status === 'done') && (
@@ -168,6 +228,20 @@ function TranscriptWork({
       session={session}
       progress={progress}
       markList={marking.markList}
+      aside={
+        <>
+          <details className="rounded-md border border-line p-3">
+            <summary className="cursor-pointer font-bold">Keyboard shortcuts</summary>
+            <p className="mt-2 text-body-s">
+              Space or K: play/pause. J: back 5 seconds. R: replay line. [ and ]: speed. Tab to a
+              word, then Enter or Space to jump. On a word: Left and Right arrows move, Shift and an
+              arrow select more words, M marks the selection or opens its note, Esc clears it. Use
+              arrow keys on the seek bar.
+            </p>
+          </details>
+          {marking.list}
+        </>
+      }
       player={
         <PassagePlayerControls
           audioRef={audio}
@@ -183,17 +257,7 @@ function TranscriptWork({
     >
       <h2 className="font-display text-heading">Listen with the transcript</h2>
       <p>Choose any word to hear it. Replay the current line as often as you like.</p>
-      <details className="rounded-md border border-line p-3">
-        <summary className="cursor-pointer font-bold">Keyboard shortcuts</summary>
-        <p className="mt-2 text-body-s">
-          Space or K: play/pause. J: back 5 seconds. R: replay line. [ and ]: speed. Tab to a word,
-          then Enter or Space to jump. On a word: Left and Right arrows move, Shift and an arrow
-          select more words, M marks the selection or opens its note, Esc clears it. Use arrow keys
-          on the seek bar.
-        </p>
-      </details>
       {marking.panel}
-      {marking.list}
       {data.lines.length === 0 ? (
         <p>No speech was found in this passage.</p>
       ) : (

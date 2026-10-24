@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { expectFocusKept } from './focus';
 
 const LEARNER = {
   id: '1',
@@ -206,6 +207,22 @@ async function fakeApi(
   return { posts };
 }
 
+test('the volume slider is 44 px tall to touch at 360 px and 24 px on desktop (UX-15)', async ({
+  page,
+}) => {
+  await fakeApi(page);
+  for (const [width, min] of [
+    [360, 44],
+    [1280, 24],
+  ]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto('/sessions/s-1');
+    const volume = page.getByRole('slider', { name: 'Volume' });
+    await expect(volume).toBeVisible();
+    expect((await volume.boundingBox())!.height, `at ${width} px`).toBeGreaterThanOrEqual(min);
+  }
+});
+
 test('Blind plays with Start and volume only, and leaving ends the attempt', async ({ page }) => {
   const { posts } = await fakeApi(page);
   await page.goto('/sessions/s-1');
@@ -218,6 +235,9 @@ test('Blind plays with Start and volume only, and leaving ends the attempt', asy
   await player.getByRole('button', { name: 'Start listening' }).click();
   await expect(player.getByText('Listening', { exact: true })).toBeVisible();
   await expect(player.getByText(/^00:0[1-9] \/ 00:30$/)).toBeVisible();
+  // Start is replaced by the status; focus moves there instead of to the page body.
+  await expect(player.getByTestId('blind-status')).toBeFocused();
+  await expectFocusKept(page, 'after Start listening');
   // No control to pause, seek, rewind or change speed, and no way back while listening.
   await expect(player.getByRole('button')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Library' })).toHaveCount(0);

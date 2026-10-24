@@ -5,6 +5,7 @@ import { usePageTitle } from '../../app/usePageTitle';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { isNotAdmin, useUsageOverview, type UsageOverview } from './adminApi';
+import { BusyButton } from '../../components/BusyButton';
 
 const CELL = 'border-b border-line px-3 py-2 text-left align-top tabular-nums';
 const number = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
@@ -108,14 +109,13 @@ export default function UsagePage() {
     <main className="mx-auto flex w-full min-w-0 max-w-content flex-col gap-6 px-4 py-8 md:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-title-compact md:text-title">AI usage</h1>
-        <button
-          type="button"
+        <BusyButton
           className={buttonClass('secondary')}
-          disabled={report.isFetching}
+          busy={report.isFetching}
           onClick={() => void report.refetch()}
         >
           {report.isFetching ? 'Refreshing…' : 'Refresh'}
-        </button>
+        </BusyButton>
       </div>
       {report.isPending ? (
         <p role="status">Loading usage…</p>

@@ -247,6 +247,22 @@ test('the player plays only the passage and stops at its end', async ({ page }) 
   await expect(player.getByRole('button', { name: 'Pause' })).toBeVisible();
 });
 
+test('the seek slider is 44 px tall to touch at 360 px and 24 px on desktop (UX-15)', async ({
+  page,
+}) => {
+  await fakeApi(page, newServer());
+  for (const [width, min] of [
+    [360, 44],
+    [1280, 24],
+  ]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto('/sessions/s-1');
+    const seek = page.getByRole('slider', { name: 'Seek' });
+    await expect(seek).toBeVisible();
+    expect((await seek.boundingBox())!.height, `at ${width} px`).toBeGreaterThanOrEqual(min);
+  }
+});
+
 test('submitting shows the waiting message, then the diff with labels, at 360 px', async ({
   page,
 }) => {
@@ -311,6 +327,14 @@ test('submitting shows the waiting message, then the diff with labels, at 360 px
   await page.goto('/sessions/s-1');
 
   await page.getByRole('button', { name: 'Submit for scoring' }).click();
+  // Submitting asks once (UX-27); the safe action has focus and sits first on mobile.
+  const dialog = page.getByRole('dialog', { name: 'Submit your Dictation?' });
+  await expect(dialog).toContainText('You typed 4 words.');
+  const keep = dialog.getByRole('button', { name: 'Keep typing' });
+  const send = dialog.getByRole('button', { name: 'Submit' });
+  await expect(keep).toBeFocused();
+  expect((await keep.boundingBox())!.y).toBeLessThan((await send.boundingBox())!.y);
+  await send.click();
 
   await expect(page.getByText(/Scoring when the transcript is ready/)).toBeVisible();
   // No diff, so no reference text, before the score.

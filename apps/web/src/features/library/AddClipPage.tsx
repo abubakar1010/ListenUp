@@ -4,12 +4,14 @@ import { Link, useNavigate } from 'react-router';
 
 import { usePageTitle } from '../../app/usePageTitle';
 import { buttonClass } from '../../components/button';
+import { CautionNotice } from '../../components/CautionNotice';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { AlertIcon, BackIcon } from '../../components/icons';
 import { ACCEPT_ATTRIBUTE, ACCEPTED_NAMES, checkFile, formatSize, type FileProblem } from './files';
-import { checkAllowance, formatReset, refusalFor } from './refusals';
+import { checkAllowance, dailyLimitProblem, formatReset, refusalFor } from './refusals';
 import { StorageError, UploadCancelled, uploadFile, type UploadHandle } from './upload';
 import { LIBRARY_KEY, UPLOAD_USAGE_KEY, useUploadUsage, type StorageUse } from './useLibrary';
+import { BusyButton } from '../../components/BusyButton';
 
 type State =
   | { kind: 'idle' }
@@ -37,6 +39,11 @@ export default function AddClipPage() {
   const [dragging, setDragging] = useState(false);
   const fileNameId = useId();
   const hintId = useId();
+  const limitId = useId();
+  const limitRef = useRef<HTMLDivElement>(null);
+  const daily = usage.data?.daily_audio;
+  // Known before a file is chosen: adding is closed for now (UX-36).
+  const limit = daily && !daily.can_add ? dailyLimitProblem(daily) : null;
 
   const uploading = state.kind === 'uploading';
 
@@ -50,6 +57,10 @@ export default function AddClipPage() {
   }, [uploading]);
 
   const start = (file: File) => {
+    if (limit) {
+      limitRef.current?.focus();
+      return;
+    }
     const problem = checkFile(file, usage.data?.max_file_bytes) ?? checkAllowance(file, usage.data);
     if (problem) {
       setState({ kind: 'refused', problem });
@@ -116,6 +127,18 @@ export default function AddClipPage() {
       </Link>
       <h1 className="font-display text-title-compact md:text-title">Add a clip</h1>
 
+      {limit && (
+        <CautionNotice ref={limitRef} id={limitId} title={limit.title}>
+          <p>{limit.detail}</p>
+          <p>
+            <Link to="/library" className="font-bold">
+              Go to your library
+            </Link>{' '}
+            to practise the clips you have; practice has no daily limit.
+          </p>
+        </CautionNotice>
+      )}
+
       <div
         onDragOver={(event) => {
           event.preventDefault();
@@ -148,15 +171,15 @@ export default function AddClipPage() {
             if (file) start(file);
           }}
         />
-        <button
-          type="button"
+        <BusyButton
           className={buttonClass('primary')}
-          disabled={uploading}
-          aria-describedby={hintId}
-          onClick={() => inputRef.current?.click()}
+          busy={uploading}
+          aria-disabled={limit ? true : undefined}
+          aria-describedby={limit ? `${hintId} ${limitId}` : hintId}
+          onClick={() => (limit ? limitRef.current?.focus() : inputRef.current?.click())}
         >
           Choose a file
-        </button>
+        </BusyButton>
         <span id={hintId} className="text-body-s text-ink-muted">
           {ACCEPTED_NAMES}, up to {formatSize(usage.data?.max_file_bytes ?? 500 * 1024 * 1024)}
         </span>
@@ -239,6 +262,13 @@ function DailyAllowance({ daily }: { daily: NonNullable<StorageUse['daily_audio'
         <b>{Math.floor(used / 60)}</b> of {Math.floor(daily.limit_seconds / 60)} minutes of new
         audio added today; the count starts again {formatReset(daily.resets_at)}.
       </p>
+      {daily.reserved_seconds > 0 && (
+        <p>
+          <b>{Math.floor(daily.reserved_seconds / 60)}</b> minutes held for{' '}
+          {daily.clips_in_progress === 1 ? '1 clip' : `${daily.clips_in_progress} clips`} in
+          progress until they are ready.
+        </p>
+      )}
       <p className="text-ink-muted">
         A clip counts with at most 15 minutes, however long it is. Two of your clips are prepared at
         a time; the others wait in your queue.
@@ -248,6 +278,13 @@ function DailyAllowance({ daily }: { daily: NonNullable<StorageUse['daily_audio'
 }
 
 function RefusedFile({ problem }: { problem: FileProblem }) {
+  if (problem.rule) {
+    return (
+      <CautionNotice title={problem.title}>
+        <p>{problem.detail}</p>
+      </CautionNotice>
+    );
+  }
   return (
     <div
       role="alert"

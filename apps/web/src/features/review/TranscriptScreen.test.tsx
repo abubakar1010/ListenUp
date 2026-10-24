@@ -259,10 +259,54 @@ test.each(['transcript_not_ready', 'transcript_failed'])(
           : 'The transcript could not be prepared.',
       ),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: code === 'transcript_not_ready' ? 'Check now' : 'Try again',
+      }),
+    );
     expect(await screen.findByRole('button', { name: 'Jump to Hello' })).toBeInTheDocument();
   },
 );
+
+test('the mark list and the keys sit in the side panel, after the transcript (#200)', async () => {
+  renderReview();
+  await ready();
+
+  const work = screen.getByRole('region', { name: 'Transcript' });
+  const side = screen.getByRole('complementary', { name: 'Side panel' });
+  expect(within(side).getByRole('region', { name: 'Your marks' })).toBeInTheDocument();
+  expect(within(side).getByText('Keyboard shortcuts')).toBeInTheDocument();
+  expect(within(work).queryByRole('region', { name: 'Your marks' })).not.toBeInTheDocument();
+  // The selection panel stays above the lines, where words are chosen.
+  const panel = within(work).getByRole('region', { name: 'Mark words' });
+  const lines = within(work).getByRole('list', { name: 'Transcript lines' });
+  expect(panel.compareDocumentPosition(lines) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  // Reading order: the transcript and Finish come before the side panel.
+  expect(lines.compareDocumentPosition(side) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+test('while the transcript is prepared the page says so, stays busy and fills in by itself', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  let ready = false;
+  renderReview({
+    [`GET ${PATH}`]: () =>
+      ready
+        ? jsonResponse(200, DATA)
+        : problem(409, 'transcript_not_ready', 'The passage transcript is not ready yet.'),
+  });
+
+  const waiting = await screen.findByRole('status', { name: 'Preparing your transcript…' });
+  expect(waiting).toHaveAttribute('aria-busy', 'true');
+  expect(waiting).toHaveTextContent('This page updates by itself when it is ready.');
+  expect(screen.getByRole('button', { name: 'Check now' })).toBeInTheDocument();
+
+  ready = true;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5000);
+  });
+  expect(await screen.findByRole('button', { name: 'Jump to Hello' })).toBeInTheDocument();
+  expect(screen.getByText('Your transcript is ready.')).toHaveAttribute('role', 'status');
+});
 
 test('shows_other_API_errors_and_media_errors', async () => {
   renderReview();

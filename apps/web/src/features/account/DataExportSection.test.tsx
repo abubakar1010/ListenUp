@@ -55,7 +55,11 @@ test('asking for a copy shows that it is being prepared, then offers the downloa
   expect(region).toHaveTextContent('Files of clips you added from YouTube are not included');
 
   fireEvent.click(within(region).getByRole('button', { name: 'Prepare my download' }));
-  expect(await within(region).findByRole('button', { name: 'Preparing…' })).toBeDisabled();
+  // Busy, but still focusable (UX-10); a second press sends nothing.
+  const busy = await within(region).findByRole('button', { name: 'Preparing…' });
+  expect(busy).toHaveAttribute('aria-busy', 'true');
+  expect(busy).toBeEnabled();
+  fireEvent.click(busy);
   expect(within(region).getByRole('status')).toHaveTextContent('We are preparing your download.');
   expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
   expect(within(region).queryByRole('link')).not.toBeInTheDocument();

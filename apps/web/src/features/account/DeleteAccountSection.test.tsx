@@ -79,6 +79,11 @@ test('step two repeats the date and requires both confirmations', async () => {
   mockAccount(() => jsonResponse(500, {}));
   renderWithProviders(<App />, { route: '/settings/delete-account' });
   const field = await openConfirmation('');
+  // The destructive action looks destructive (UX-12).
+  expect(screen.getByRole('button', { name: 'Delete my account' })).toHaveAttribute(
+    'data-variant',
+    'danger',
+  );
 
   fireEvent.click(screen.getByRole('button', { name: 'Delete my account' }));
   expect(screen.getByRole('alert')).toHaveTextContent('Enter your password');
