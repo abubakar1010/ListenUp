@@ -247,6 +247,22 @@ test('the player plays only the passage and stops at its end', async ({ page }) 
   await expect(player.getByRole('button', { name: 'Pause' })).toBeVisible();
 });
 
+test('the seek slider is 44 px tall to touch at 360 px and 24 px on desktop (UX-15)', async ({
+  page,
+}) => {
+  await fakeApi(page, newServer());
+  for (const [width, min] of [
+    [360, 44],
+    [1280, 24],
+  ]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto('/sessions/s-1');
+    const seek = page.getByRole('slider', { name: 'Seek' });
+    await expect(seek).toBeVisible();
+    expect((await seek.boundingBox())!.height, `at ${width} px`).toBeGreaterThanOrEqual(min);
+  }
+});
+
 test('submitting shows the waiting message, then the diff with labels, at 360 px', async ({
   page,
 }) => {

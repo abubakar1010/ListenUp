@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { usePageTitle } from '../../app/usePageTitle';
@@ -6,6 +7,9 @@ import { ErrorPanel } from '../../components/ErrorPanel';
 import { formatDuration } from '../../components/formatDuration';
 import { AlertIcon, BackIcon } from '../../components/icons';
 import { ApiError } from '../../api/client';
+import { PassagePlayerControls } from '../media/PassagePlayerControls';
+import { usePassagePlayer } from '../media/usePassagePlayer';
+import { usePlayerKeys } from '../media/usePlayerKeys';
 import { stageSentence } from './intakeStatus';
 import { isProcessing, useContent, type ContentDetail } from './useContent';
 
@@ -25,7 +29,10 @@ export default function ContentPage() {
 
   return (
     <main className={PAGE_CLASS}>
-      <Link to="/library" className={buttonClass('quiet', 'self-start')}>
+      <Link
+        to="/library"
+        className="inline-flex min-h-11 items-center gap-1 self-start font-bold text-accent no-underline"
+      >
         <BackIcon />
         Library
       </Link>
@@ -144,9 +151,14 @@ function statusText(item: ContentDetail): string {
   }
 }
 
+/** The browser's own controls get the app's focus ring (WCAG 2.4.7). */
+const NATIVE_FOCUS =
+  'focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring';
+
 function Player({ item, url }: { item: ContentDetail; url: string }) {
   const label = `Play ${item.title}`;
   if (item.has_video) {
+    // A video needs its picture and full-screen control, so it keeps the browser's player.
     return (
       <video
         controls
@@ -154,9 +166,39 @@ function Player({ item, url }: { item: ContentDetail; url: string }) {
         playsInline
         src={url}
         aria-label={label}
-        className="w-full max-w-[640px] rounded-md bg-ink"
+        className={`w-full max-w-[640px] rounded-md bg-ink ${NATIVE_FOCUS}`}
       />
     );
   }
-  return <audio controls preload="metadata" src={url} aria-label={label} className="w-full" />;
+  if (item.duration_ms === null) {
+    return (
+      <audio
+        controls
+        preload="metadata"
+        src={url}
+        aria-label={label}
+        className={`w-full ${NATIVE_FOCUS}`}
+      />
+    );
+  }
+  return <ClipAudioPlayer url={url} durationMs={item.duration_ms} />;
+}
+
+/** Audio uses the same player as the practice steps, with the same keys (UX-07, #198). */
+function ClipAudioPlayer({ url, durationMs }: { url: string; durationMs: number }) {
+  const audio = useRef<HTMLAudioElement>(null);
+  const player = usePassagePlayer(audio, 0, durationMs);
+  usePlayerKeys(player);
+  return (
+    <PassagePlayerControls
+      audioRef={audio}
+      player={player}
+      src={url}
+      playerId="clip"
+      description="Whole clip"
+      errorSuffix=""
+      preload="metadata"
+      showReplays={false}
+    />
+  );
 }

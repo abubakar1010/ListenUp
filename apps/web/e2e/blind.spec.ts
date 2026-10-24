@@ -207,6 +207,22 @@ async function fakeApi(
   return { posts };
 }
 
+test('the volume slider is 44 px tall to touch at 360 px and 24 px on desktop (UX-15)', async ({
+  page,
+}) => {
+  await fakeApi(page);
+  for (const [width, min] of [
+    [360, 44],
+    [1280, 24],
+  ]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto('/sessions/s-1');
+    const volume = page.getByRole('slider', { name: 'Volume' });
+    await expect(volume).toBeVisible();
+    expect((await volume.boundingBox())!.height, `at ${width} px`).toBeGreaterThanOrEqual(min);
+  }
+});
+
 test('Blind plays with Start and volume only, and leaving ends the attempt', async ({ page }) => {
   const { posts } = await fakeApi(page);
   await page.goto('/sessions/s-1');
