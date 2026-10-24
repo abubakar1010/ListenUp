@@ -197,6 +197,105 @@ test('save remains blocked while the authoritative count refreshes', async () =>
   await screen.findByText('0 left');
 });
 
+test('a failed count refresh after the second save still blocks a third card', async () => {
+  const { calls } = setup([card]);
+  await screen.findByRole('option', { name: /could have/ });
+  await screen.findByText('1 left');
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input).includes('/cards?')) return problem(503, 'unavailable', 'Cards unavailable');
+    return original(input, init);
+  });
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: mark.id } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Heard form' }), {
+    target: { value: 'kuduv' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Save card' }));
+  await screen.findByText('Cards unavailable');
+  expect(screen.getByText('0 left')).toBeVisible();
+  const save = screen.getByRole('button', { name: 'Save card' });
+  expect(save).toHaveAttribute('aria-disabled', 'true');
+  fireEvent.change(screen.getByRole('textbox', { name: 'Heard form' }), {
+    target: { value: 'another sound' },
+  });
+  fireEvent.click(save);
+  expect(calls.filter((call) => call.method === 'POST' && call.path === path)).toHaveLength(1);
+});
+
+test('a replay after a lost response does not consume another cached slot', async () => {
+  setup();
+  await screen.findByRole('option', { name: /could have/ });
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  const keys: string[] = [];
+  let saved = card;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (init?.method === 'POST') {
+      keys.push((init.headers as Record<string, string>)['Idempotency-Key']);
+      if (keys.length === 1) {
+        saved = await (await original(input, init)).json();
+        throw new TypeError('Response lost');
+      }
+      return jsonResponse(201, saved);
+    }
+    if (keys.length === 2 && String(input).includes('/cards?'))
+      return problem(503, 'unavailable', 'Cards unavailable');
+    return original(input, init);
+  });
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: mark.id } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Heard form' }), {
+    target: { value: 'kuduv' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Save card' }));
+  await screen.findByText('1 left');
+  await screen.findByRole('alert');
+  fireEvent.click(screen.getByRole('button', { name: 'Save card' }));
+  await screen.findByText('Cards unavailable');
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBeTruthy();
+  expect(keys[1]).toBe(keys[0]);
+  expect(screen.getByText('1 left')).toBeVisible();
+  expect(
+    within(screen.getByRole('list', { name: 'Saved cards' })).getAllByRole('listitem'),
+  ).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Save card' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+});
+
+test('an uncertain save stays blocked until the failed list read recovers', async () => {
+  const { calls } = setup([card]);
+  await screen.findByRole('option', { name: /could have/ });
+  await screen.findByText('1 left');
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let unavailable = true;
+  let writes = 0;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (init?.method === 'POST') {
+      writes++;
+      throw new TypeError('Response lost');
+    }
+    if (unavailable && String(input).includes('/cards?'))
+      return problem(503, 'unavailable', 'Cards unavailable');
+    return original(input, init);
+  });
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: mark.id } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Heard form' }), {
+    target: { value: 'kuduv' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Save card' }));
+  await screen.findByText('Cards unavailable');
+  const save = screen.getByRole('button', { name: 'Save card' });
+  expect(save).toHaveAttribute('aria-disabled', 'true');
+  fireEvent.click(save);
+  expect(writes).toBe(1);
+  unavailable = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  await waitFor(() => expect(save).toHaveAttribute('aria-disabled', 'false'));
+  expect(calls.filter((call) => call.path === listPath)).toHaveLength(2);
+  expect(screen.getByRole('textbox', { name: 'Heard form' })).toHaveValue('kuduv');
+});
+
 test('empty marks and unavailable transcript still allow finishing', async () => {
   mockRoutes({
     [`GET /sessions/${session.id}/marks`]: jsonResponse(200, { marks: [] }),

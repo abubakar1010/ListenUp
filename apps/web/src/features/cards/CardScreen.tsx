@@ -41,7 +41,7 @@ export function CardScreen({ session, progress }: { session: Session; progress: 
   const skip = useSkipStep(session);
   const remaining = cards.data?.remaining ?? 0;
   const busy = create.isPending || remove.isPending || finish.isPending || skip.isPending;
-  const blocked = !cards.data || remaining === 0 || busy;
+  const blocked = !cards.data || cards.isError || remaining === 0 || busy;
   useEffect(() => {
     heading.current?.focus();
   }, []);
@@ -161,7 +161,9 @@ export function CardScreen({ session, progress }: { session: Session; progress: 
           <p id="card-save-reason">
             {remaining === 0 && cards.data
               ? 'Two cards saved. Delete a card to free a slot.'
-              : 'Wait until your cards are ready.'}
+              : cards.isError
+                ? 'Reload your cards before saving another card.'
+                : 'Wait until your cards are ready.'}
           </p>
         )}
       </form>

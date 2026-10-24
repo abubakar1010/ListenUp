@@ -6,6 +6,7 @@ import { LIBRARY_KEY } from '../library/useLibrary';
 
 export type Card = components['schemas']['Card'];
 export type NewCard = components['schemas']['NewCard'];
+type CardList = components['schemas']['CardList'];
 export const cardsKey = (id: string) => ['cards', id] as const;
 export function useCards(id: string) {
   return useQuery({
@@ -23,7 +24,18 @@ export function useCreateCard(id: string, onCreated: () => void) {
         body,
         headers: { 'Idempotency-Key': key },
       }),
-    onSuccess: () => {
+    onSuccess: (card) => {
+      // A confirmed write stays visible even if the following read fails.
+      // A replay may already be present after a lost response and refetch.
+      client.setQueryData<CardList>(cardsKey(id), (previous) => {
+        if (!previous || previous.cards.some((saved) => saved.id === card.id)) return previous;
+        return {
+          ...previous,
+          cards: [card, ...previous.cards],
+          remaining:
+            previous.remaining == null ? previous.remaining : Math.max(0, previous.remaining - 1),
+        };
+      });
       onCreated();
       return client.invalidateQueries({ queryKey: cardsKey(id) });
     },
@@ -37,7 +49,16 @@ export function useDeleteCard(id: string, onDeleted: () => void) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (card: string) => api<void>(`/cards/${card}`, { method: 'DELETE' }),
-    onSuccess: () => {
+    onSuccess: (_data, cardId) => {
+      // Remove the opener before closing its dialog, so focus falls back to main.
+      client.setQueryData<CardList>(cardsKey(id), (previous) => {
+        if (!previous || !previous.cards.some((saved) => saved.id === cardId)) return previous;
+        return {
+          ...previous,
+          cards: previous.cards.filter((saved) => saved.id !== cardId),
+          remaining: previous.remaining == null ? previous.remaining : previous.remaining + 1,
+        };
+      });
       onDeleted();
       void client.invalidateQueries({ queryKey: cardsKey(id) });
     },
