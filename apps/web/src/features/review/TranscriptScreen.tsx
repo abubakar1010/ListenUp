@@ -8,6 +8,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
+import { TranscriptGistPanel } from '../blind/GistFeedback';
 import { ApiError } from '../../api/client';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
@@ -112,6 +113,11 @@ function Layout({
       progress={progress}
       player={player}
       rule={STEP_RULES.transcript}
+      aside={
+        session.steps.some((step) => step.step === 'blind' && step.status === 'done') ? (
+          <TranscriptGistPanel sessionId={session.id} />
+        ) : undefined
+      }
       workLabel="Transcript"
     >
       <p className="text-body-s">Transcript can't be skipped: it shows what you missed.</p>
