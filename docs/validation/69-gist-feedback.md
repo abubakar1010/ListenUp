@@ -86,3 +86,58 @@ Measure submission-to-visible-result latency on the actual staging host with the
 real grading adapter and a representative workload, including grade.ready delivery.
 Synthetic response tests and local browser timing do not establish this target.
 This remains a pre-launch gate.
+
+## Review remediation
+
+The Codex review on `ca286c6` identified two P2 regressions: a fresh cached
+completed listen could leave Transcript feedback pending indefinitely, and the
+saved gist was hidden until grading finished. Continue now refreshes both the
+session and its Blind attempt. Disclosable gist text is returned and rendered
+independently of grade readiness; D4 still withholds it before Transcript on the
+Blind-then-Dictation path. No grading jobs, prompts, cards, Shadow or marks changed.
+
+Actual regression evidence:
+
+- API Red: `LISTENUP_REQUIRE_DB=1 uv run pytest tests/integration/test_gist_feedback.py -q -k pending_gist`:
+  2 failed because pending responses omitted the saved gist after Transcript opened
+  on both paths. Green: the full feedback API file passed all 7 tests. The new
+  `test_pending_gist_is_visible_when_transcript_opens[blind/both]` asserts the exact
+  pending response; the both-path case first asserts that the locked response
+  remains exactly `{"status": "pending"}`.
+- UI Red: `pnpm vitest run src/features/blind/BlindStep.test.tsx src/features/blind/GistFeedback.test.tsx -t 'fresh completed-listen|saved gist remains'`:
+  3 failed (cached attempt prevented the Transcript grade panel; pending hid the
+  gist in both contexts). Dependency setup errors before this run were not Red.
+  Green: the affected Blind/review/event suite passed 75 tests. The cache regression
+  uses the production query client with its 30-second stale time, submits a freshly
+  loaded completed listen, clicks Continue and asserts gist and feedback inside
+  the Transcript side panel. The pending rendering cases assert gist visibility
+  and absence of fabricated scores or key points. The test re-queries the side
+  panel while Transcript replaces its loading layout, avoiding a detached-node race.
+
+Final remediation validation:
+
+- Web coverage: 51 files / 520 tests passed; 95.74% lines, 88.50% branches.
+  Runtime inventory passes; changed executable lines are 100% (21/21) against
+  current `origin/main` with this report. The earlier 22/22 count above belongs
+  to the original implementation run.
+- Web lint, formatting, types, production build and size pass (124.8 KB gzip).
+  Browser suite: 42 passed using system Chromium, mocked API, including both
+  360 px Transcript gist paths. OpenAPI export and client regeneration are clean.
+- Backend format, lint, strict mypy and all 6 import contracts pass.
+  Uninstrumented performance regression: 1 passed.
+- Required-service backend coverage was run in two parts: the documented full
+  coverage command with `--ignore=tests/integration/test_backup.py` passed 1,967
+  tests (1 performance test deselected), then the 7 backup tests passed with
+  `--cov --cov-append --cov-report=term-missing:skip-covered --cov-report=xml --cov-report=html`.
+  Both runs set `LISTENUP_REQUIRE_DB=1 LISTENUP_REQUIRE_S3=1`; PostgreSQL 16 client
+  binaries were obtained from the official `postgres:16-bookworm` image for the
+  second run because the host lacked them. A resumed-environment attempt before
+  restarting PostgreSQL was a setup failure, not a test result.
+  Combined evidence covers all 1,974 non-performance tests; CI must still run
+  the single full required-service command on the final commit.
+- Backend changed executable lines: 48/49 (97% in diff-cover's integer display);
+  the uncovered line remains `grading.service`'s missing-reference pending return.
+  Both runtime inventories pass. The feedback component now covers 25/26 branches
+  (96.15%); the remaining gap is a defensive rubric fallback, not disclosure.
+- Final-head CI and independent re-review of the fixes remain owner merge gates.
+  The p95 10 s staging criterion remains deferred and unverified under #155.

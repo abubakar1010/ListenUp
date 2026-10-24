@@ -36,6 +36,12 @@ export function GistFeedback({
       <p aria-live={context === 'blind' ? 'polite' : 'off'}>
         {ready ? 'Your gist feedback is ready.' : 'Preparing your gist feedback…'}
       </p>
+      {grade?.gist && (
+        <div>
+          <h3 className="font-bold">Your gist</h3>
+          <p className="whitespace-pre-wrap">{grade.gist}</p>
+        </div>
+      )}
       {ready && (
         <>
           <p className="font-bold">{grade.overall} / 100</p>
@@ -50,12 +56,6 @@ export function GistFeedback({
           <p>
             You captured {grade.captured_count} of {grade.total_count} key points
           </p>
-          {grade.gist && (
-            <div>
-              <h3 className="font-bold">Your gist</h3>
-              <p className="whitespace-pre-wrap">{grade.gist}</p>
-            </div>
-          )}
           {grade.feedback && <p>{grade.feedback}</p>}
           {grade.key_points && (
             <ul aria-label="Key points" className="flex flex-col gap-2">

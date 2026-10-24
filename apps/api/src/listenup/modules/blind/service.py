@@ -394,6 +394,7 @@ async def read_grade(
     result = await grading.read_gist_grade(
         db, references, learner, attempt_id, reveal_details=reveal
     )
-    if reveal and result["status"] == "ready":
+    # FR-BL-5: the learner can compare their gist before grading finishes.
+    if reveal:
         result["gist"] = row.gist_text
     return result

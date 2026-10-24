@@ -24,6 +24,20 @@ const full = {
 
 afterEach(() => vi.restoreAllMocks());
 
+test.each(['blind', 'transcript'] as const)(
+  'saved gist remains visible while the %s grade is pending',
+  async (context) => {
+    mockRoutes({
+      'GET /gists/attempt-1/grade': jsonResponse(200, { status: 'pending', gist: full.gist }),
+    });
+    renderWithProviders(<GistFeedback attemptId="attempt-1" context={context} />);
+    expect(await screen.findByText(full.gist)).toBeInTheDocument();
+    expect(screen.getByText('Preparing your gist feedback…')).toBeInTheDocument();
+    expect(screen.queryByText(/\/ 100/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Key points' })).not.toBeInTheDocument();
+  },
+);
+
 test('D4 summary shows score parts and count without detail', async () => {
   mockRoutes({ 'GET /gists/attempt-1/grade': jsonResponse(200, summary) });
   renderWithProviders(<GistFeedback attemptId="attempt-1" context="blind" />);

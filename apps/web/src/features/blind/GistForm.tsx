@@ -6,7 +6,7 @@ import { ErrorPanel } from '../../components/ErrorPanel';
 import { AlertIcon, CheckIcon } from '../../components/icons';
 import { sessionKey } from '../session/api';
 import { GistFeedback } from './GistFeedback';
-import { useSubmitGist } from './api';
+import { blindKey, useSubmitGist } from './api';
 import { MAX_GIST_CHARS, MIN_SENTENCES, countSentences, sentenceStatus } from './gist';
 
 const draftKey = (attemptId: string) => `listenup:blind-gist:${attemptId}`;
@@ -74,7 +74,10 @@ export function GistForm({ sessionId, attemptId }: { sessionId: string; attemptI
         <button
           type="button"
           className={buttonClass('primary')}
-          onClick={() => void queryClient.invalidateQueries({ queryKey: sessionKey(sessionId) })}
+          onClick={() => {
+            void queryClient.invalidateQueries({ queryKey: blindKey(sessionId) });
+            void queryClient.invalidateQueries({ queryKey: sessionKey(sessionId) });
+          }}
         >
           Continue to {submit.data.open_step === 'dictation' ? 'Dictation' : 'Transcript'}
         </button>

@@ -39,6 +39,27 @@ def submitted(client, clock, migrated_url, entry):
 
 
 @pytest.mark.parametrize("entry", ["blind", "both"])
+def test_pending_gist_is_visible_when_transcript_opens(client, clock, migrated_url, entry):
+    session, attempt = submitted(client, clock, migrated_url, entry)
+    if entry == "both":
+        assert client.get(f"/api/v1/gists/{attempt}/grade").json() == {"status": "pending"}
+
+        async def advance():
+            from listenup.modules.practice import service as practice
+
+            database = Database(conninfo_to_url(migrated_url), 1)
+            async with database.transaction(uuid.UUID(learner_id(client))) as db:
+                state = await practice.get_session(db, uuid.UUID(session))
+                await practice.complete_step(db, state, practice.Step.DICTATION)
+            await database.dispose()
+
+        asyncio.run(advance())
+    response = client.get(f"/api/v1/gists/{attempt}/grade")
+    assert response.status_code == 200
+    assert response.json() == {"status": "pending", "gist": SENTENCES_3}
+
+
+@pytest.mark.parametrize("entry", ["blind", "both"])
 def test_d4_grade_details_follow_transcript_gate(client, clock, migrated_url, entry):
     original = client.app.state.transcript_database
     privileged = Database(conninfo_to_url(migrated_url), 1)

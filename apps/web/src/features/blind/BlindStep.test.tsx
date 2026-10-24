@@ -1,11 +1,73 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { Route, Routes } from 'react-router';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { createMemoryRouter, Route, RouterProvider, Routes } from 'react-router';
+import { createQueryClient } from '../../app/queryClient';
 
 import { jsonResponse, renderWithProviders } from '../../test-utils';
 import { sessionFixture } from '../session/fixtures';
 import SessionPage from '../session/SessionPage';
 import { mockRoutes } from '../session/testApi';
 import { attemptFixture, blindStepFixture } from './fixtures';
+
+test('Continue refreshes a fresh completed-listen cache before showing Transcript feedback', async () => {
+  let submitted = false;
+  const gist = 'This is the idea. Here is another detail. I heard this too.';
+  mockRoutes({
+    [SESSION]: () => jsonResponse(200, sessionFixture({ entry: 'blind', done: submitted ? 1 : 0 })),
+    [BLIND]: () =>
+      jsonResponse(
+        200,
+        blindStepFixture(
+          attemptFixture({
+            listen_complete: true,
+            status: submitted ? 'submitted' : 'active',
+            gist_text: submitted ? gist : null,
+          }),
+        ),
+      ),
+    'POST /blind/attempts/attempt-1/gist': () => {
+      submitted = true;
+      return jsonResponse(201, {
+        attempt: attemptFixture({ status: 'submitted', gist_text: gist }),
+        open_step: 'transcript',
+        session_version: 1,
+      });
+    },
+    'GET /gists/attempt-1/grade': jsonResponse(200, {
+      status: 'ready',
+      overall: 80,
+      gist,
+      feedback: 'Full feedback beside Transcript.',
+    }),
+    'GET /sessions/session-1/transcript': jsonResponse(200, {
+      session_id: 'session-1',
+      passage: sessionFixture().passage,
+      media_url: '/api/v1/media/test',
+      lines: [],
+    }),
+    'GET /sessions/session-1/marks': jsonResponse(200, { marks: [] }),
+  });
+  // Preserve the production 30-second freshness window; the shared test helper resets it.
+  const queryClient = createQueryClient();
+  const router = createMemoryRouter([{ path: '/sessions/:sessionId', element: <SessionPage /> }], {
+    initialEntries: ['/sessions/session-1'],
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+  fireEvent.change(await screen.findByRole('textbox', { name: 'Your gist' }), {
+    target: { value: gist },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Submit gist' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Continue to Transcript' }));
+  await waitFor(() => {
+    const aside = screen.getByRole('complementary', { name: 'Side panel' });
+    expect(within(aside).getByText(gist)).toBeInTheDocument();
+    expect(within(aside).getByText('Full feedback beside Transcript.')).toBeInTheDocument();
+  });
+});
 
 beforeEach(() => {
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
