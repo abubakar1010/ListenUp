@@ -608,21 +608,19 @@ export class MarkSync {
       } else if (entry && op === 'delete') {
         entry.op = 'delete';
         entry.rev = 1;
-      } else if (entry && (op === 'create' || op === 'restore')) {
-        // The server already holds this mark: the create landed, or Undo replaced a
-        // removal that never did. A create is stamped confirmed here, so only its note
-        // can still be owed; the status stays the server's.
-        if (entry.mark.note !== kept.note) {
-          entry.mark = { ...entry.mark, note: kept.note };
+      } else if (entry) {
+        // A confirmation kept here still counts once the server holds the mark. A kept
+        // create or restore the server already holds (Undo while its DELETE was in
+        // flight) is a resend: only its note can be newer, and its status is not a
+        // confirmation the learner made.
+        const confirmed = op === 'update' && kept.status === 'confirmed';
+        const next = { ...entry.mark, note: kept.note };
+        if (confirmed) next.status = 'confirmed';
+        if (differs(next, entry.mark)) {
+          entry.mark = next;
           entry.op = 'update';
           entry.rev = 1;
         }
-      } else if (entry && differs({ ...entry.mark, ...kept }, entry.mark)) {
-        // A confirmation kept here still counts once the server holds the mark.
-        const status = kept.status === 'confirmed' ? kept.status : entry.mark.status;
-        entry.mark = { ...entry.mark, note: kept.note, status };
-        entry.op = 'update';
-        entry.rev = 1;
       }
       // Anything else is already on the server, or gone from it.
     }

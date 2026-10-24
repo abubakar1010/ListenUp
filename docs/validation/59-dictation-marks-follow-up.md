@@ -110,6 +110,12 @@ code it guards:
 - The browser test now asserts which mark survives (`m-59`) instead of re-reading its
   fixture.
 
+While these fixes were made, commits `89a9563` and `a56030f` reached the branch from
+another session with the same reload fix, the same gate and browser test changes, and
+three more sync tests. They were merged in (no rebase or force-push). The merged
+`restore()` keeps their branch, extended in its comment to the `restore` op, and every
+test from both sides is kept.
+
 ### Checks on the fixed head
 
 - Web: lint, format and typecheck pass. `pnpm test:coverage`: **534 passed**. Coverage

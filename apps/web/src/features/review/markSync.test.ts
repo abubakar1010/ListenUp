@@ -1056,3 +1056,91 @@ test('a_dictation_undo_after_marking_the_words_again_here_keeps_one_mark', async
   ]);
   expect([...marks.keys()]).toEqual(['m9']);
 });
+
+test('a_create_kept_after_an_interrupted_undo_never_confirms_the_dictation_mark_on_reload', async () => {
+  // Remove, then Undo while the DELETE was in flight; the tab reloads before it lands.
+  const { transport, marks } = fakeServer([suggested('d1', 1)]);
+  const storage = memoryStorage();
+  storage.setItem(
+    KEY,
+    JSON.stringify({
+      ops: [
+        {
+          op: 'create',
+          mark: { id: 'd1', word_from: 1, word_to: 1, at_ms: 1000, note: null },
+          attempted: true,
+        },
+      ],
+    }),
+  );
+  const sync = make(transport, storage, [suggested('d1', 1)]);
+  expect(sync.getSnapshot().marks[0]).toMatchObject({
+    source: 'dictation',
+    status: 'suggested',
+    saved: true,
+  });
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(transport.confirm).not.toHaveBeenCalled();
+  expect(marks.get('d1')!.status).toBe('suggested');
+});
+
+test('a_create_kept_after_an_interrupted_undo_still_brings_its_newer_note', async () => {
+  const { transport, marks } = fakeServer([suggested('d1', 1)]);
+  const storage = memoryStorage();
+  storage.setItem(
+    KEY,
+    JSON.stringify({
+      ops: [
+        {
+          op: 'create',
+          mark: {
+            id: 'd1',
+            word_from: 1,
+            word_to: 1,
+            at_ms: 1000,
+            note: 'linking',
+            source: 'manual',
+            status: 'confirmed',
+          },
+          attempted: true,
+        },
+      ],
+    }),
+  );
+  make(transport, storage, [suggested('d1', 1)]);
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(transport.confirm).not.toHaveBeenCalled();
+  expect(marks.get('d1')).toMatchObject({ note: 'linking', status: 'suggested' });
+});
+
+test('undo_of_a_refused_inflight_dictation_deletion_keeps_the_note_written_after_undo', async () => {
+  const initial = {
+    ...saved('d1', 0, 'linking'),
+    source: 'dictation',
+    status: 'suggested',
+  } as const;
+  const { transport, marks } = fakeServer([initial]);
+  let reject!: (error: unknown) => void;
+  transport.remove.mockImplementationOnce(
+    () =>
+      new Promise((_, fail) => {
+        reject = fail;
+      }),
+  );
+  const sync = make(transport, memoryStorage(), [initial]);
+  const mark = sync.getSnapshot().marks[0]!;
+  sync.remove(mark.id);
+  sync.flush();
+  sync.add(mark);
+  sync.setNote(mark.id, 'weak form');
+  reject(refusal(403, 'forbidden'));
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().marks[0]).toMatchObject({
+    source: 'dictation',
+    status: 'suggested',
+    note: 'weak form',
+    saved: true,
+  });
+  expect(marks.get('d1')).toMatchObject({ note: 'weak form', status: 'suggested' });
+  expect(transport.confirm).not.toHaveBeenCalled();
+});

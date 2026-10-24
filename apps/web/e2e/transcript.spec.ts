@@ -396,6 +396,7 @@ test('dictation_marks_confirm_and_remove_with_reload_and_noncolour_cues_at_360px
   await expect(word).not.toHaveAccessibleDescription(/Dictation/);
   await expect(page.getByRole('region', { name: 'Mark words' })).toContainText('Marks saved');
   await expect(page.getByText('1 mark', { exact: true })).toBeVisible();
+  // The Dictation mark is gone from the server; only the learner's own mark is left.
   expect(marks.map((mark) => mark.id)).toEqual(['m-59']);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
