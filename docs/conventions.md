@@ -230,3 +230,13 @@ Read the section for the area you are changing before you change it. The rules e
   changes as well as detachment. Do not bypass this with auto-reaping. `/dev/shm`
   and `/dev/mqueue` must stay read-only. Media telemetry uses queued OTLP export
   through DB to the default pool; never add a collector route to media-data.
+
+## Shadow segments (ADR 0057)
+
+- `shadow/domain/segment.py` owns proposal and span validation. Marks are read only
+  through `review.service.list_marks`; mode endpoints require `Step.SHADOW`.
+  Saved segments use absolute, half-open media milliseconds. The shared session
+  waveform accepts optional `boundsFor` and `label`, preserving passage defaults.
+- `locked_at` is the database boundary for the future round 1 transaction (#78).
+  Once set, the segment is immutable, including its lock. Do not clear it to adjust
+  a selection. The parent session/account cascade is still allowed.
