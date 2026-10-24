@@ -504,7 +504,7 @@ The design rests on eleven decisions (0001 to 0011), and the build has added mor
 
 | Risk | Effect | Mitigation |
 | --- | --- | --- |
-| Accent and articulation scores are unreliable on CPU-friendly models | Wrong feedback damages trust | Ship accent as "experimental", calibrate on the teacher set, test across speaker accents before launch |
+| Accent and articulation scores are unreliable on CPU-friendly models | Wrong feedback damages trust | Do not ship the seven measures as calibrated grades on current evidence ([ADR 0050](../adr/0050-shadow-measures-model-choices-and-go-no-go.md)); build rounds, recording, replay and completion now with "Feedback unavailable"; gate launch on #21, #22 and #110 (needs #107), including teacher calibration and tests across speaker accents; accent stays "experimental" until it passes calibration and the fairness check |
 | Whisper-style models drop filler words | Filler counts too low | Benchmark filler recall on the golden set; use a disfluency-aware transcription setting or model; label the count as an estimate until it passes |
 | CPU speech jobs too slow on a free server | Feedback arrives minutes late | Benchmark early (milestone 1); queue with progress events; limit passage and segment length (already 15 minutes and 90 seconds) |
 | YouTube changes break yt-dlp | Intake fails for links | Keep yt-dlp updated automatically; upload fallback; isolated downloader |
