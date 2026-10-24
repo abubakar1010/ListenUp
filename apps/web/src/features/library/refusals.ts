@@ -50,11 +50,13 @@ export function dailyLimitProblem(daily: DailyFacts, now: Date = new Date()): Fi
     return {
       title: "You have reached today's limit of new audio",
       detail: `You have added ${minutes(daily.limit_seconds)} of new audio today, the daily limit. You can add more ${when}.`,
+      rule: true,
     };
   }
   return {
     title: 'Wait for your clips in progress',
     detail: `The clips you are adding now may use the rest of today's ${minutes(daily.limit_seconds)} of new audio. Add this one when they are ready, or ${when}.`,
+    rule: true,
   };
 }
 
@@ -113,7 +115,7 @@ export function refusalFor(error: unknown, now: Date = new Date()): FileProblem 
           now,
         );
       }
-      return { title: "You have reached today's limit of new audio", detail };
+      return { title: "You have reached today's limit of new audio", detail, rule: true };
     case 'upload_expired':
     case 'upload_incomplete':
     case 'upload_size_mismatch':

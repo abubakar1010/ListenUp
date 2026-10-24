@@ -230,7 +230,8 @@ test("today's allowance of new audio is shown with when it resets", async () => 
   expect(screen.getByText(/Two of your clips are prepared at a time/)).toBeInTheDocument();
 });
 
-test('a new file is refused before upload once the daily allowance is used up', async () => {
+test('at the daily limit the page says so calmly before a file is chosen (UX-36)', async () => {
+  const pick = vi.spyOn(HTMLInputElement.prototype, 'click');
   const calls = mockUploadApi({
     'GET /uploads/usage': () =>
       jsonResponse(200, {
@@ -239,18 +240,47 @@ test('a new file is refused before upload once the daily allowance is used up', 
       }),
   });
   renderPage();
-  await screen.findByText(/minutes of new audio added today/);
 
-  choose(file('talk.mp3', MB, 'audio/mpeg'));
-
-  const alert = await screen.findByRole('alert');
-  expect(within(alert).getByRole('heading')).toHaveTextContent(
-    "You have reached today's limit of new audio",
-  );
-  expect(alert).toHaveTextContent(
+  const notice = await screen.findByRole('status', {
+    name: "You have reached today's limit of new audio",
+  });
+  expect(notice).toHaveAttribute('data-tone', 'caution');
+  expect(notice).toHaveTextContent(
     /You have added 120 minutes of new audio today, the daily limit\. You can add more at \d\d:\d\d/,
   );
+  expect(within(notice).getByRole('link', { name: 'Go to your library' })).toHaveAttribute(
+    'href',
+    '/library',
+  );
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+  const button = screen.getByRole('button', { name: 'Choose a file' });
+  expect(button).toBeEnabled();
+  expect(button).toHaveAttribute('aria-disabled', 'true');
+  expect(button).toHaveAccessibleDescription(/today's limit of new audio/);
+  fireEvent.click(button);
+  expect(pick).not.toHaveBeenCalled();
+  expect(notice).toHaveFocus();
+
+  // A file dropped or chosen anyway is not sent.
+  choose(file('talk.mp3', MB, 'audio/mpeg'));
+  expect(notice).toHaveFocus();
   expect(calls.filter((c) => c.method !== 'GET')).toEqual([]);
+});
+
+test('minutes held for clips in progress are shown apart from the minutes counted', async () => {
+  mockUploadApi({
+    'GET /uploads/usage': () =>
+      jsonResponse(200, {
+        ...USAGE,
+        daily_audio: { ...DAILY, clips_in_progress: 2, reserved_seconds: 30 * 60 },
+      }),
+  });
+  renderPage();
+
+  expect(await screen.findByText(/held for 2 clips in progress/)).toHaveTextContent(
+    '30 minutes held for 2 clips in progress until they are ready.',
+  );
 });
 
 test('a file that would fill the storage is refused before upload', async () => {
@@ -286,8 +316,9 @@ test("the server's daily limit refusal says when to come back", async () => {
 
   choose(file('talk.mp3', MB, 'audio/mpeg'));
 
-  const alert = await screen.findByRole('alert');
-  expect(within(alert).getByRole('heading')).toHaveTextContent('Wait for your clips in progress');
+  // A rule, not a mistake: a calm notice, announced politely (UX-12, UX-22).
+  const alert = await screen.findByRole('status', { name: 'Wait for your clips in progress' });
+  expect(alert).toHaveAttribute('data-tone', 'caution');
   expect(alert).toHaveTextContent(
     /may use the rest of today's 120 minutes of new audio\. Add this one when they are ready, or at \d\d:\d\d/,
   );
