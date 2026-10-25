@@ -409,6 +409,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/dictation/attempts/{attempt_id}/disputes': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Dispute Word
+     * @description Correct a reference word for this learner and return the re-scored attempt (FR-TX-4).
+     */
+    post: operations['dispute_word_api_v1_dictation_attempts__attempt_id__disputes_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/dictation/attempts/{attempt_id}/draft': {
     parameters: {
       query?: never;
@@ -1776,6 +1796,19 @@ export interface components {
        * @description The reference word; empty for an extra word
        */
       word: string;
+    };
+    /** DisputeWord */
+    DisputeWord: {
+      /**
+       * Corrected Text
+       * @description Replacement text; empty removes the word
+       */
+      corrected_text: string;
+      /**
+       * Word Index
+       * @description Reference word index in the scored diff
+       */
+      word_index: number;
     };
     /**
      * Entry
@@ -3343,6 +3376,56 @@ export interface operations {
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
         };
+      };
+    };
+  };
+  dispute_word_api_v1_dictation_attempts__attempt_id__disputes_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DisputeWord'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationAttemptView'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `attempt_not_scored`, `transcript_not_ready`, `transcript_failed` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `word_out_of_range`, `validation_failed`, `idempotency_key_reused` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

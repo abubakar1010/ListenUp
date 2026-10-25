@@ -41,6 +41,8 @@ from listenup.modules.dictation.domain.scoring import (
 from listenup.modules.practice import service as practice
 from listenup.modules.practice.service import Attempt, AttemptStatus, Passage, Step
 from listenup.modules.review import service as review
+from listenup.modules.transcript import service as transcript
+from listenup.platform.database import Database
 from listenup.platform.errors import ProblemError
 from listenup.platform.events import EventType, publish
 from listenup.platform.export import ExportPart, learner_rows
@@ -55,6 +57,7 @@ __all__ = [
     "NewMark",
     "TranscriptUnavailable",
     "add_marks",
+    "dispute_word",
     "export_data",
     "get_attempt",
     "latest_attempt",
@@ -298,9 +301,8 @@ def reference_words(
 ) -> tuple[ReferenceWord, ...]:
     """The reference the submission is scored against: the passage transcript.
 
-    The one seam where the learner's own corrections will apply (FR-TX-4, #56): that
-    story replaces words here, and re-scoring after a dispute calls `score_submission`
-    again with the corrected reference.
+    Transcript's authorized read has already applied this learner's corrections
+    (FR-TX-4); initial scoring and disputes both use these unchanged timing arrays.
     """
     return reference_from_arrays(words, start_ms, end_ms)
 
@@ -315,6 +317,7 @@ async def score_submission(
     then `scoring_unavailable` (announced once) until a later transcript scores it.
     The score and `dictation.scored` commit together (FR-DI-5).
     """
+    await transcript.lock_corrections(db, learner)
     waiting = await repository.get_waiting(db, attempt_id)
     if waiting is None:
         return False
@@ -465,6 +468,38 @@ async def list_marks(db: AsyncSession, attempt_id: uuid.UUID) -> list[review.Mar
     """The marks of the attempt's session, so the diff shows the words already added."""
     attempt = await _dictation_attempt(db, attempt_id)
     return await review.session_marks(db, attempt.session_id)
+
+
+async def dispute_word(
+    db: AsyncSession,
+    worker_database: Database,
+    learner: uuid.UUID,
+    attempt_id: uuid.UUID,
+    word_index: int,
+    corrected_text: str,
+) -> AttemptView:
+    """Correct this learner's reference and re-score atomically (FR-TX-3/4, ADR 0059).
+
+    Existing marks are learner choices: retain them, including notes/status. Only the
+    score's candidates change. Shared reference rows are never written.
+    """
+    attempt = await _dictation_attempt(db, attempt_id)
+    await transcript.lock_corrections(db, learner)
+    row = await repository.get_submission(db, attempt_id)
+    if row is None or row.scoring_status != repository.SCORED:
+        raise ProblemError(
+            409, "attempt_not_scored", "Wait for this Dictation's score before correcting it."
+        )
+    passage = await transcript.correct_word(
+        db, worker_database, learner, attempt.session_id, word_index, corrected_text
+    )
+    score = score_dictation(
+        reference_words(passage.words, passage.start_ms, passage.end_ms),
+        await repository.submitted_text(db, attempt_id),
+    )
+    await repository.rescore(db, attempt_id, score.diff_json(), score.accuracy)
+    await publish(db, learner, EventType.DICTATION_SCORED, attempt_id)
+    return await _view(db, attempt)
 
 
 async def record_listen_started(db: AsyncSession, attempt_id: uuid.UUID) -> None:

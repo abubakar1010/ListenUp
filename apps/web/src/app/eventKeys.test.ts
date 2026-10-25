@@ -7,6 +7,7 @@ import { EXPORTS_KEY } from '../features/account/exportApi';
 import { BLIND_KEY } from '../features/blind/api';
 import { contentKey } from '../features/content/useContent';
 import { DICTATION_RESULT_KEY } from '../features/dictation/api';
+import { REVIEW_KEY } from '../features/review/api';
 import { LIBRARY_KEY, UPLOAD_USAGE_KEY } from '../features/library/useLibrary';
 import { PENDING_KEYS, queryKeysForEvent } from './eventKeys';
 
@@ -19,6 +20,7 @@ const event = (type: LiveEventType, resourceId = 'r-1'): LiveEvent => ({
 test('dictation.scored refreshes every Dictation result, whichever session it names', () => {
   expect(queryKeysForEvent(event('dictation.scored', 'attempt-1'), new QueryClient())).toEqual([
     DICTATION_RESULT_KEY,
+    REVIEW_KEY,
   ]);
 });
 

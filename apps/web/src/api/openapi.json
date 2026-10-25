@@ -1069,6 +1069,26 @@
         "title": "DiffItem",
         "type": "object"
       },
+      "DisputeWord": {
+        "properties": {
+          "corrected_text": {
+            "description": "Replacement text; empty removes the word",
+            "maxLength": 60,
+            "title": "Corrected Text",
+            "type": "string"
+          },
+          "word_index": {
+            "description": "Reference word index in the scored diff",
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Word Index",
+            "type": "integer"
+          }
+        },
+        "required": ["word_index", "corrected_text"],
+        "title": "DisputeWord",
+        "type": "object"
+      },
       "Entry": {
         "enum": ["blind", "dictation", "both"],
         "title": "Entry",
@@ -3622,6 +3642,75 @@
           }
         },
         "summary": "Get Attempt",
+        "tags": ["dictation"]
+      }
+    },
+    "/api/v1/dictation/attempts/{attempt_id}/disputes": {
+      "post": {
+        "description": "Correct a reference word for this learner and return the re-scored attempt (FR-TX-4).",
+        "operationId": "dispute_word_api_v1_dictation_attempts__attempt_id__disputes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisputeWord"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictationAttemptView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "409": {
+            "description": "`attempt_not_scored`, `transcript_not_ready`, `transcript_failed`"
+          },
+          "422": {
+            "description": "`word_out_of_range`, `validation_failed`, `idempotency_key_reused`"
+          }
+        },
+        "summary": "Dispute Word",
         "tags": ["dictation"]
       }
     },

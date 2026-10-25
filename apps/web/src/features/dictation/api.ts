@@ -5,6 +5,7 @@ import { api, ApiError } from '../../api/client';
 import type { components } from '../../api/schema';
 import { SaveConflict, type SaveResult } from '../../lib/autosave';
 import type { Range } from '../review/selection';
+import { REVIEW_KEY } from '../review/api';
 import { SESSIONS_KEY, SESSIONS_LIST_KEY, sessionKey } from '../session/api';
 
 export type DictationAttempt = components['schemas']['DictationAttempt'];
@@ -77,6 +78,26 @@ export const MAX_DRAFT_CHARS = 20_000;
 export const DICTATION_RESULT_KEY = [...SESSIONS_KEY, 'dictation-result'] as const;
 export const dictationResultKey = (sessionId: string) =>
   [...DICTATION_RESULT_KEY, sessionId] as const;
+
+/** Learner-only reference edits; a lost response retries the same submission key. */
+export function useDisputeWord(sessionId: string, attemptId: string, onSaved: () => void) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { wordIndex: number; text: string; key: string }) =>
+      api<DictationAttemptView>(`/dictation/attempts/${encodeURIComponent(attemptId)}/disputes`, {
+        method: 'POST',
+        body: { word_index: input.wordIndex, corrected_text: input.text },
+        headers: { 'Idempotency-Key': input.key },
+      }),
+    onSuccess: (view) => {
+      client.setQueryData(dictationResultKey(sessionId), view);
+      // An idempotent replay can describe an older edit than another tab's latest score.
+      void client.invalidateQueries({ queryKey: dictationResultKey(sessionId) });
+      void client.invalidateQueries({ queryKey: REVIEW_KEY });
+      onSaved();
+    },
+  });
+}
 
 /**
  * The session's Dictation attempt with its score once scored (FR-DI-5). 404
