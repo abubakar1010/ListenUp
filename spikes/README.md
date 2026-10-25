@@ -47,6 +47,7 @@ the results documents in `docs/spikes/` quote them and keep the JSON next to the
 | #20 Shadow measures | `spike-shadow data/shadow --fillers-model small.en` | 10 folders, each with `original.<audio>`, `original.txt`, `good.<audio>` and `poor.<audio>` (mumbled, late) recorded by consenting team members, not learners | good beats poor on most measures; each measure rated works / weak / fails |
 | #21 B3 round latency | same command, 30 learner recordings | as #20 | p95 analysis <= 50 s per round |
 | #22 B4 fillers | `spike-b4 data/fillers --model small.en` | 20 recordings, each with `NAME.fillers` holding the teacher-marked filler count | recall >= 80% for the chosen setting |
+| #94 B5 load test | `spike-b5 --out results/b5-<host>` (add `--stage0` only on the stage-0 server) | none: seeds its own learners | read p95 < 200 ms, write p95 < 300 ms, server CPU < 30% at 15 req/s plus 20 Blind learners |
 
 Build the B1/B2 passages (licence-safe: LibriSpeech is LibriVox public-domain audio with
 CC BY 4.0 text, VoxPopuli is CC0). Each is about 3 minutes plus 5 s of real neighbouring
@@ -66,6 +67,40 @@ spike-passages voxpopuli data/raw/vp_en_test.parquet data/passages --set vp-en -
 spike-passages voxpopuli data/raw/vp_acc_test_0.parquet data/raw/vp_acc_test_1.parquet \
     data/passages --set vp-accented --count 3
 ```
+
+## B5 load test (#94)
+
+`spike-b5` needs Docker (with Compose), `uv`, and the backend dependencies (`cd apps/api && uv sync`). It:
+
+1. starts PostgreSQL, storage, the migrations, the API and the default worker as the
+   Compose project `listenup-b5` (`infra/compose/compose.yml` plus
+   [`load/compose.b5.yml`](load/compose.b5.yml): pg_stat_statements preloaded, the
+   API as one process without reload, the fake AI configuration, PostgreSQL on port
+   55432; no media worker, ClamAV or speech models);
+2. seeds `--learners` learners (default 150) with `apps/api/scripts/seed_load.py`: the
+   fixture script's clip and a session at each step, an active Blind attempt, a cached
+   transcript, `--history` extra clips, a login session, and fresh Blind sessions for
+   the first `--blind-learners` (default 20);
+3. runs [`load/b5.js`](load/b5.js) in `grafana/k6:1.3.0`: `--mixed-rps` (default 15)
+   requests per second of mixed reads and writes at a constant arrival rate, plus the
+   Blind learners' heartbeats every 5 s, for `--warmup` (60 s) and then `--duration`
+   (600 s) measured;
+4. samples `docker stats` and dumps pg_stat_statements, reset at the end of warm-up.
+
+It writes `results.json`, `results.md` and `requests.csv.gz` (every request: phase,
+kind, route, status, duration, k6 error code), then deletes the seed manifest, which
+holds session tokens. p95 is nearest-rank over every measured request, failed ones
+included; CPU is each container's share of all host cores, and the server is the API,
+database and worker together. Sign-in is seeded, not posted: the per-IP sign-in limit
+would refuse N learners from one load generator; CSRF uses the real double-submit
+check with one fixed token per learner. The exit code is 1 when a target is missed.
+
+A run without `--stage0` is labelled local and is never stage-0 evidence. On the stage-0
+server, run against the deployed release candidate (#112) with `--skip-up`,
+`--base-url`, `--health-url` and `--database-url` pointing at it, and the load
+generator on another machine where possible; record the deployment's own CPU if
+`docker stats` cannot see it. Clean up with
+`docker compose -p listenup-b5 -f infra/compose/compose.yml -f spikes/load/compose.b5.yml down -v`.
 
 `spike-summary b1|b2 <results folder>` prints the tables used in `docs/spikes/`.
 

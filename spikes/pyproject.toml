@@ -27,6 +27,7 @@ spike-compare = "listenup_spikes.compare:main"
 spike-labelkit = "listenup_spikes.labelkit:main"
 spike-perf2 = "listenup_spikes.perf2:main"
 spike-summary = "listenup_spikes.summary:main"
+spike-b5 = "listenup_spikes.b5_load:main"
 
 [dependency-groups]
 dev = ["pytest>=8.3", "ruff>=0.6"]
