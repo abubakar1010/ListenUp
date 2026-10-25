@@ -167,15 +167,17 @@ test('shows_learner_edits_and_removed_words_with_original_audio_targets', async 
       ],
     }),
   });
-  const changed = await screen.findByRole('button', { name: 'Jump to Greetings (edited)' });
+  const changed = await screen.findByRole('button', { name: 'Jump to Greetings, edited' });
   const audio = document.querySelector('audio')!;
   fireEvent.loadedMetadata(audio);
   expect(within(changed).getByText('Edited')).toBeVisible();
+  // The visible words read as the name does, so speech input finds it (WCAG 2.5.3, #98).
+  expect(changed).toHaveTextContent('Greetings Edited');
   expect(screen.queryByRole('button', { name: 'Jump to Hello' })).not.toBeInTheDocument();
   fireEvent.click(changed);
   expect(audioTime).toBe(131);
-  const removed = screen.getByRole('button', { name: 'Jump to removed word (edited)' });
-  expect(removed).toHaveTextContent('(removed word)');
+  const removed = screen.getByRole('button', { name: 'Jump to removed word, edited' });
+  expect(removed).toHaveTextContent('(removed word) Edited');
   expect(within(removed).getByText('Edited')).toBeVisible();
   fireEvent.click(removed);
   expect(audioTime).toBe(132);

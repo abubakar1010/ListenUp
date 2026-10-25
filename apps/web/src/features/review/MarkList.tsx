@@ -59,7 +59,6 @@ export function MarkList({
                     'secondary',
                     'w-full text-left whitespace-normal [overflow-wrap:anywhere]',
                   )}
-                  aria-label={`Play mark ${phrase} at ${formatClock(mark.at_ms)}`}
                   onClick={() => onPlay(mark)}
                   onKeyDown={(event) => {
                     if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
@@ -72,7 +71,8 @@ export function MarkList({
                     }
                   }}
                 >
-                  {formatClock(mark.at_ms)} · {phrase}
+                  {/* The name holds the visible words, so speech input finds it (WCAG 2.5.3). */}
+                  <span className="sr-only">Play mark</span> {formatClock(mark.at_ms)} · {phrase}
                 </button>
                 <p className="mt-2 text-body-s font-bold">{markOrigin(mark)}</p>
                 {mark.note && <p className="mt-2 [overflow-wrap:anywhere]">{mark.note}</p>}
@@ -94,7 +94,7 @@ export function MarkList({
                   <button
                     type="button"
                     className={buttonClass('quiet')}
-                    aria-label={`Edit mark ${phrase}`}
+                    aria-label={`Edit note for mark ${phrase}`}
                     onClick={() => onEdit(mark)}
                   >
                     Edit note
