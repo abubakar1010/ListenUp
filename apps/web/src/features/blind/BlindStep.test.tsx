@@ -140,6 +140,7 @@ test('Start begins one attempt, loads the passage and hides the way out', async 
   expect(audio.preload).toBe('auto');
   expect(screen.queryByRole('link', { name: 'Library' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Change entry' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Plan' })).toBeNull(); // UX-19
   expect(screen.queryByRole('button', { name: 'Start listening' })).toBeNull();
   expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
 });
@@ -338,6 +339,8 @@ test('an attempt that ended says why and how to go on', async () => {
 
   const alert = await screen.findByRole('alert');
   expect(alert).toHaveTextContent('Your Blind attempt ended');
+  // The rule working, not an error: the calm caution style (UX-12, UX-17).
+  expect(alert).toHaveAttribute('data-tone', 'caution');
   expect(alert).toHaveTextContent(
     'You left the page at 01:12. Blind needs one full listen, so you start again from 00:00.',
   );

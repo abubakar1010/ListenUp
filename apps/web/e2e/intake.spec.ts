@@ -148,17 +148,25 @@ test("a new file is refused before upload once today's new audio is used up", as
 
   await page.goto('/library/add');
   await expect(page.getByText(/120 of 120 minutes of new audio added today/)).toBeVisible();
+
+  // Said calmly before any file is chosen (UX-36); Choose a file points to it.
+  const notice = page.getByRole('status', { name: "You have reached today's limit of new audio" });
+  await expect(notice).toContainText(
+    /You have added 120 minutes of new audio today, the daily limit\. You can add more at \d\d:\d\d/,
+  );
+  await expect(notice.getByRole('link', { name: 'Go to your library' })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  const choose = page.getByRole('button', { name: 'Choose a file' });
+  await expect(choose).toHaveAttribute('aria-disabled', 'true');
+  await choose.focus();
+  await page.keyboard.press('Enter');
+  await expect(notice).toBeFocused();
+
   await page.locator('input[type="file"]').setInputFiles({
     name: 'talk.mp3',
     mimeType: 'audio/mpeg',
     buffer: Buffer.alloc(1024, 1),
   });
-
-  const alert = page.getByRole('alert');
-  await expect(alert).toContainText("You have reached today's limit of new audio");
-  await expect(alert).toContainText(
-    /You have added 120 minutes of new audio today, the daily limit\. You can add more at \d\d:\d\d/,
-  );
   expect(posted).toBe(false);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

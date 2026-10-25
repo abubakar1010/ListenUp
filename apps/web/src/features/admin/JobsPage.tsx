@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 
 import { ApiError } from '../../api/client';
@@ -15,11 +15,12 @@ import {
   type LaneBacklog,
 } from './adminApi';
 import { formatWait } from './formatWait';
+import { BusyButton } from '../../components/BusyButton';
 
 const PAGE_CLASS =
   'mx-auto flex w-full max-w-content flex-col gap-6 px-4 pt-4 pb-8 md:gap-8 md:px-6 md:pt-8 md:pb-12 xl:px-8';
 const SECTION_CLASS =
-  'flex flex-col gap-4 rounded-md border border-line bg-surface-raised p-4 md:p-6';
+  'flex min-w-0 flex-col gap-4 rounded-md border border-line bg-surface-raised p-4 md:p-6';
 const CELL = 'border-b border-line px-3 py-2 text-left align-top';
 const NUMBER = `${CELL} text-right tabular-nums`;
 
@@ -52,9 +53,21 @@ function retryProblem(error: unknown, jobId: number): string {
   return `Job ${jobId} was not retried. ${view.detail} ${view.nextStep}`;
 }
 
+/**
+ * A table wider than the screen scrolls here, not the page, and Tab reaches it (WCAG 1.4.10,
+ * 2.1.1). `relative` keeps the absolutely placed sr-only header text inside the scroller.
+ */
+function ScrollRegion({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="relative min-w-0 overflow-x-auto" role="region" aria-label={label} tabIndex={0}>
+      {children}
+    </div>
+  );
+}
+
 function BacklogTable({ lanes }: { lanes: LaneBacklog[] }) {
   return (
-    <div className="overflow-x-auto">
+    <ScrollRegion label="Backlog table">
       <table className="w-full border-collapse text-body-s">
         <caption className="sr-only">Jobs per lane, highest priority first</caption>
         <thead>
@@ -90,7 +103,7 @@ function BacklogTable({ lanes }: { lanes: LaneBacklog[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollRegion>
   );
 }
 
@@ -105,7 +118,7 @@ function FailedTable({
 }) {
   if (jobs.length === 0) return <p>No failed jobs.</p>;
   return (
-    <div className="overflow-x-auto">
+    <ScrollRegion label="Failed jobs table">
       <table className="w-full border-collapse text-body-s">
         <caption className="sr-only">Failed jobs, newest first</caption>
         <thead>
@@ -137,21 +150,20 @@ function FailedTable({
               <td className={NUMBER}>{job.attempts}</td>
               <td className={CELL}>{formatTime(job.failed_at)}</td>
               <td className={CELL}>
-                <button
-                  type="button"
+                <BusyButton
                   className={buttonClass('secondary')}
-                  disabled={retrying !== null}
+                  busy={retrying !== null}
                   onClick={() => onRetry(job)}
                   aria-label={`Retry job ${job.id}, ${job.name}`}
                 >
                   {retrying === job.id ? 'Retrying…' : 'Retry'}
-                </button>
+                </BusyButton>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollRegion>
   );
 }
 
@@ -186,14 +198,13 @@ export default function JobsPage() {
     <main className={PAGE_CLASS}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-title-compact md:text-title">Jobs</h1>
-        <button
-          type="button"
+        <BusyButton
           className={buttonClass('secondary')}
           onClick={() => void overview.refetch()}
-          disabled={overview.isFetching}
+          busy={overview.isFetching}
         >
           {overview.isFetching ? 'Refreshing…' : 'Refresh'}
-        </button>
+        </BusyButton>
       </div>
 
       {/* Always in the page, so screen readers announce what a retry did. */}

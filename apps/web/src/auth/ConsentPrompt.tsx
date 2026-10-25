@@ -9,6 +9,7 @@ import { ErrorPanel } from '../components/ErrorPanel';
 import { DOCUMENTS, useConsentVersions, useGrantConsents } from './consentApi';
 import { errorMessage } from './errorMessage';
 import { changeSession } from './session';
+import { BusyButton } from '../components/BusyButton';
 
 type Required = Me['consents_required'];
 
@@ -75,22 +76,20 @@ export default function ConsentPrompt({ required }: { required: Required }) {
         , or sign out.
       </p>
       <div className="flex flex-wrap gap-3">
-        <button
-          type="button"
+        <BusyButton
           className={buttonClass('primary')}
           onClick={accept}
-          disabled={!versions.data || grant.isPending}
+          busy={!versions.data || grant.isPending}
         >
           {grant.isPending ? 'Saving…' : 'Accept and continue'}
-        </button>
-        <button
-          type="button"
+        </BusyButton>
+        <BusyButton
           className={buttonClass('secondary')}
           onClick={() => signOut.mutate()}
-          disabled={signOut.isPending}
+          busy={signOut.isPending}
         >
-          Sign out
-        </button>
+          {signOut.isPending ? 'Signing out…' : 'Sign out'}
+        </BusyButton>
       </div>
     </main>
   );

@@ -207,6 +207,8 @@ Read the section for the area you are changing before you change it. The rules e
 - Mark list/count (#60) read the same `useMarkSync` snapshot as word highlights.
   List rows use native buttons for playback; E opens the note, Delete removes with
   Undo. Keep the list outside the sticky selection panel so it can grow at 360 px.
+  The list and the keyboard help sit in the practice side panel (beside the text from
+  1024 px, after Finish below it); the selection panel stays above the lines (#200).
   `POST /sessions/{id}/transcript/complete` calls `review.service.finish_transcript`,
   which uses `practice.service.require_step` and `complete_step` in the request
   transaction. The browser waits for mark sync before finishing and reloads the

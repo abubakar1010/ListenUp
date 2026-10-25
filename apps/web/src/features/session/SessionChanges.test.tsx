@@ -55,7 +55,15 @@ test('before Transcript, changing Blind to both turns "Step 1 of 4" into "Step 1
   const panel = screen.getByRole('region', { name: 'Change how you start' });
   expect(within(panel).getByRole('checkbox', { name: /Blind/ })).toBeChecked();
   expect(within(panel).getByText('Your plan becomes: 4 steps')).toBeInTheDocument();
-  expect(within(panel).getByRole('button', { name: 'Save change' })).toBeDisabled();
+  // Unchanged: Save stays focusable and says why it cannot save yet (UX-10).
+  const save = within(panel).getByRole('button', { name: 'Save change' });
+  expect(save).toHaveAttribute('aria-disabled', 'true');
+  expect(save).toHaveAccessibleDescription(
+    'This is your plan now. Tick or clear a box to change it.',
+  );
+  fireEvent.click(save);
+  expect(within(panel).getByText(/This is your plan now/)).toHaveFocus();
+  expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
 
   fireEvent.click(within(panel).getByRole('checkbox', { name: /Dictation/ }));
   expect(within(panel).getByText('Your plan becomes: 5 steps')).toBeInTheDocument();
