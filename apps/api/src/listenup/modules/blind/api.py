@@ -190,3 +190,23 @@ async def submit_gist(
         return 201, out.model_dump(mode="json")
 
     return await run_once(db, learner, idempotency_key, await request_fingerprint(request), submit)
+
+
+@router.get(
+    "/gists/{attempt_id}/grade",
+    response_model_exclude_none=True,
+    responses={404: {"description": "`attempt_not_found`"}},
+)
+async def get_gist_grade(
+    attempt_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    learner: CurrentLearner,
+    db: DbSession,
+) -> schemas.GistFeedback:
+    """D4: details are absent until Transcript opens when Dictation follows."""
+    response.headers["Cache-Control"] = "private, no-store"
+    result = await service.read_grade(
+        db, request.app.state.transcript_database, learner, attempt_id
+    )
+    return schemas.GistFeedback.model_validate(result)

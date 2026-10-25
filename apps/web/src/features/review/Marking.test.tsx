@@ -545,7 +545,10 @@ describe('the Dictation result beside the transcript (#55)', () => {
     const { calls } = renderWithDictation();
     await ready();
     fireEvent.click(await screen.findByRole('button', { name: 'Add “world.” to marks' }));
-    await waitFor(() => expect(word('world.')).toHaveAccessibleDescription('Marked'));
+    // Pre-filled for Transcript to confirm (#59).
+    await waitFor(() =>
+      expect(word('world.')).toHaveAccessibleDescription('Marked from Dictation, to confirm'),
+    );
     expect(sent(calls, 'POST')).toEqual([]); // not sent a second time through Transcript
   });
 
@@ -695,4 +698,152 @@ test('undo_keeps_the_saved_count_and_note_when_a_create_would_be_refused', async
   expect(server.marks.get(mark.id)).toEqual(mark);
   expect(sent(calls, 'POST')).toEqual([]);
   expect(sent(calls, 'DELETE')).toEqual([]);
+});
+
+// -- Dictation marks pre-filled: confirm or remove (#59; FR-TR-3, AT-4) --------------------
+
+const FROM_DICTATION = serverMark({ id: 'd1', source: 'dictation', status: 'suggested' });
+const MINE = serverMark({ id: 'm1', word_from: 2, word_to: 2, at_ms: 140125 });
+
+/** Confirm and remove against one server copy that outlives a reload. */
+function confirmingRoutes(marks: Map<string, SavedMark>) {
+  return {
+    [`GET ${MARKS}`]: () => jsonResponse(200, { marks: [...marks.values()] }),
+    [`PUT ${MARKS}/d1/status`]: () => {
+      const mark = { ...marks.get('d1')!, status: 'confirmed' as const };
+      marks.set('d1', mark);
+      return jsonResponse(200, mark);
+    },
+    [`DELETE ${MARKS}/d1`]: () => {
+      marks.delete('d1');
+      return new Response(null, { status: 204 });
+    },
+  };
+}
+const list = () => screen.getByRole('list', { name: 'Your marks' });
+const row = (phrase: RegExp) =>
+  within(list())
+    .getAllByRole('listitem')
+    .find((item) => phrase.test(item.textContent ?? ''))!;
+
+test('after_dictation_its_marks_are_pre_filled_and_told_apart_from_manual_marks_in_words', async () => {
+  renderMarking({}, [FROM_DICTATION, MINE]);
+  await ready();
+  // Text, not colour: the description names the source and that it waits for the learner.
+  expect(word('Hello')).toHaveAccessibleDescription('Marked from Dictation, to confirm');
+  expect(word('Again.')).toHaveAccessibleDescription('Marked');
+  expect(within(row(/Hello/)).getByText('From Dictation · To confirm')).toBeInTheDocument();
+  expect(within(row(/Again/)).getByText('Your mark')).toBeInTheDocument();
+  expect(within(row(/Again/)).queryByRole('button', { name: /Confirm/ })).toBeNull();
+  expect(
+    screen.getByText('1 mark from Dictation to confirm', { exact: false }),
+  ).toBeInTheDocument();
+});
+
+test('confirming_a_dictation_mark_is_saved_within_a_second_and_survives_a_reload', async () => {
+  const marks = new Map([FROM_DICTATION, MINE].map((mark) => [mark.id, mark]));
+  const { calls, rendered } = renderMarking(confirmingRoutes(marks), [FROM_DICTATION, MINE]);
+  await ready();
+  fireEvent.click(within(row(/Hello/)).getByRole('button', { name: 'Confirm mark Hello' }));
+  expect(within(row(/Hello/)).getByText('From Dictation')).toBeInTheDocument();
+  expect(word('Hello')).toHaveAccessibleDescription('Marked from Dictation');
+  expect(screen.getByText('Mark confirmed: Hello.')).toBeInTheDocument();
+  await act(() => vi.advanceTimersByTimeAsync(1000));
+  expect(sent(calls, 'PUT')).toMatchObject([
+    { path: `${MARKS}/d1/status`, body: { status: 'confirmed' } },
+  ]);
+  expect(within(panel()).getByText('Marks saved', { exact: false })).toBeInTheDocument();
+  rendered.unmount();
+  renderMarking(confirmingRoutes(marks));
+  await ready();
+  expect(within(row(/Hello/)).getByText('From Dictation')).toBeInTheDocument();
+  expect(within(row(/Hello/)).queryByRole('button', { name: /Confirm/ })).toBeNull();
+});
+
+test('removing_a_dictation_mark_is_saved_within_a_second_and_survives_a_reload', async () => {
+  const marks = new Map([FROM_DICTATION, MINE].map((mark) => [mark.id, mark]));
+  const { calls, rendered } = renderMarking(confirmingRoutes(marks), [FROM_DICTATION, MINE]);
+  await ready();
+  fireEvent.click(within(row(/Hello/)).getByRole('button', { name: 'Remove mark Hello' }));
+  expect(word('Hello')).not.toHaveAccessibleDescription(/Marked/);
+  await act(() => vi.advanceTimersByTimeAsync(1000));
+  expect(sent(calls, 'DELETE')).toMatchObject([{ path: `${MARKS}/d1` }]);
+  rendered.unmount();
+  renderMarking(confirmingRoutes(marks));
+  await ready();
+  expect(word('Hello')).not.toHaveAccessibleDescription(/Marked/);
+  expect(within(list()).getAllByRole('listitem')).toHaveLength(1);
+});
+
+test('a_selected_dictation_mark_can_be_confirmed_from_the_panel_by_keyboard', async () => {
+  const marks = new Map([[FROM_DICTATION.id, FROM_DICTATION]]);
+  const { calls } = renderMarking(confirmingRoutes(marks), [FROM_DICTATION]);
+  const hello = await ready();
+  hello.focus();
+  fireEvent.keyDown(hello, { key: 'm' }); // selects the mark and opens its note
+  expect(within(panel()).getByText('From Dictation, not confirmed yet.')).toBeInTheDocument();
+  fireEvent.click(within(panel()).getByRole('button', { name: 'Confirm mark' }));
+  expect(within(panel()).queryByRole('button', { name: 'Confirm mark' })).toBeNull();
+  expect(within(panel()).getByText('From Dictation.')).toBeInTheDocument();
+  await act(() => vi.advanceTimersByTimeAsync(1000));
+  expect(sent(calls, 'PUT')).toHaveLength(1);
+});
+
+test('a_word_in_a_manual_phrase_and_a_dictation_mark_says_it_waits_to_be_confirmed', async () => {
+  renderMarking({}, [
+    serverMark({ id: 'm1', word_from: 0, word_to: 1 }),
+    serverMark({ id: 'd2', word_from: 0, word_to: 0, source: 'dictation', status: 'suggested' }),
+  ]);
+  await ready();
+  expect(word('Hello')).toHaveAccessibleDescription('Marked from Dictation, to confirm');
+  expect(word('world.')).toHaveAccessibleDescription('Marked');
+});
+
+test('undo_of_a_removed_dictation_mark_brings_it_back_from_dictation_to_confirm', async () => {
+  const marks = new Map<string, SavedMark>([
+    [FROM_DICTATION.id, { ...FROM_DICTATION, note: 'linking' }],
+  ]);
+  const restore = `POST /dictation/attempts/attempt-1/marks`;
+  const { calls } = renderMarking(
+    {
+      ...confirmingRoutes(marks),
+      [`GET /sessions/${SESSION.id}/dictation/attempt`]: jsonResponse(200, {
+        id: 'attempt-1',
+        session_id: SESSION.id,
+        status: 'submitted',
+        scoring_status: 'pending',
+        result: null,
+      }),
+      [restore]: (call: Call) => {
+        const [sent] = (call.body as { marks: { id: string }[] }).marks;
+        const mark = serverMark({ id: sent!.id, source: 'dictation', status: 'suggested' });
+        marks.set(mark.id, mark);
+        return jsonResponse(200, { marks: [mark] });
+      },
+      [`PATCH ${MARKS}/d1`]: (call: Call) => {
+        const mark = { ...marks.get('d1')!, note: (call.body as { note: string }).note };
+        marks.set('d1', mark);
+        return jsonResponse(200, mark);
+      },
+    },
+    [...marks.values()],
+  );
+  await ready();
+  fireEvent.click(within(row(/Hello/)).getByRole('button', { name: 'Remove mark Hello' }));
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(marks.has('d1')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+  expect(within(row(/Hello/)).getByText('From Dictation · To confirm')).toBeInTheDocument();
+  await afterDebounce();
+  expect(calls.filter((call) => `${call.method} ${call.path}` === restore)).toMatchObject([
+    { body: { marks: [{ id: 'd1', word_from: 0, word_to: 0 }] } },
+  ]);
+  expect(sent(calls, 'POST')).toEqual([]);
+  expect(marks.get('d1')).toMatchObject({
+    source: 'dictation',
+    status: 'suggested',
+    note: 'linking',
+  });
+  expect(word('Hello')).toHaveAccessibleDescription('Marked from Dictation, to confirm');
+  expect(within(panel()).getByText('Marks saved', { exact: false })).toBeInTheDocument();
 });

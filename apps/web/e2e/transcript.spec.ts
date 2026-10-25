@@ -445,3 +445,125 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Skip Card', exact: true })).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test('dictation_marks_confirm_and_remove_with_reload_and_noncolour_cues_at_360px', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  const marks = [
+    {
+      id: 'd-59',
+      session_id: SESSION.id,
+      word_from: 0,
+      word_to: 0,
+      at_ms: 0,
+      note: 'linking',
+      source: 'dictation',
+      status: 'suggested',
+      created_at: '2026-10-23T00:00:00Z',
+    },
+    {
+      id: 'm-59',
+      session_id: SESSION.id,
+      word_from: 1,
+      word_to: 1,
+      at_ms: 10000,
+      note: null,
+      source: 'manual',
+      status: 'confirmed',
+      created_at: '2026-10-23T00:00:00Z',
+    },
+  ];
+  let confirmations = 0;
+  let removals = 0;
+  await page.route('**/api/v1/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace('/api/v1', '');
+    if (path === '/me')
+      return route.fulfill({
+        json: {
+          id: 'learner-59',
+          email: 'test@example.com',
+          display_name: null,
+          email_verified: false,
+          deletion_grace_days: 7,
+          consents_required: [],
+        },
+      });
+    if (path === `/sessions/${SESSION.id}`) return route.fulfill({ json: SESSION });
+    if (path.endsWith('/dictation/attempt'))
+      return route.fulfill({ status: 404, json: { code: 'attempt_not_found' } });
+    if (path.endsWith('/transcript'))
+      return route.fulfill({
+        json: {
+          session_id: SESSION.id,
+          passage: PASSAGE,
+          media_url: '/api/v1/media/m-59',
+          lines: [
+            {
+              index: 0,
+              start_ms: 0,
+              end_ms: 12000,
+              words: [
+                { index: 0, text: 'Hello.', start_ms: 0, end_ms: 1000 },
+                { index: 1, text: 'Again.', start_ms: 10000, end_ms: 12000 },
+              ],
+            },
+          ],
+        },
+      });
+    if (path.endsWith('/marks/d-59/status')) {
+      expect(request.method()).toBe('PUT');
+      expect(request.postDataJSON()).toEqual({ status: 'confirmed' });
+      confirmations += 1;
+      if (confirmations === 1) return route.abort('internetdisconnected');
+      marks[0]!.status = 'confirmed';
+      return route.fulfill({ json: marks[0] });
+    }
+    if (path.endsWith('/marks/d-59') && request.method() === 'DELETE') {
+      removals += 1;
+      if (removals === 1) return route.abort('internetdisconnected');
+      marks.splice(0, 1);
+      return route.fulfill({ status: 204 });
+    }
+    if (path.endsWith('/marks')) return route.fulfill({ json: { marks } });
+    if (path === '/events')
+      return route.fulfill({ contentType: 'text/event-stream', body: ': connected\n\n' });
+    if (path === '/media/m-59') return route.fulfill({ contentType: 'audio/wav', body: AUDIO });
+    return route.fulfill({ json: { status: 'ok' } });
+  });
+  await page.goto(`/sessions/${SESSION.id}`);
+  const word = page.getByRole('button', { name: 'Jump to Hello.' });
+  await expect(word).toHaveAccessibleDescription('Marked from Dictation, to confirm');
+  await expect(word).toHaveClass(/border-dashed/);
+  const list = page.getByRole('list', { name: 'Your marks' });
+  await expect(list.getByText('Your mark', { exact: true })).toBeVisible();
+  await expect(page.getByText('2 marks', { exact: true })).toBeVisible();
+  await list.getByRole('button', { name: 'Confirm mark Hello.' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(list.getByRole('button', { name: /Play mark Hello/ })).toBeFocused();
+  await expect.poll(() => confirmations).toBe(1);
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('listenup:marks:s-57')), { timeout: 1000 })
+    .toContain('confirmed');
+  // The first save lost its connection: reload must retain and retry confirmation.
+  await page.reload();
+  await expect(word).toHaveAccessibleDescription('Marked from Dictation');
+  await expect(word).toHaveClass(/border-solid/);
+  await expect(page.getByRole('region', { name: 'Mark words' })).toContainText('Marks saved');
+  await expect(page.getByText('2 marks', { exact: true })).toBeVisible();
+  await list.getByRole('button', { name: 'Remove mark Hello.' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('1 mark', { exact: true })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('listenup:marks:s-57')), { timeout: 1000 })
+    .toContain('delete');
+  await expect.poll(() => removals).toBe(1);
+  await page.reload();
+  await expect(word).not.toHaveAccessibleDescription(/Dictation/);
+  await expect(page.getByRole('region', { name: 'Mark words' })).toContainText('Marks saved');
+  await expect(page.getByText('1 mark', { exact: true })).toBeVisible();
+  // The Dictation mark is gone from the server; only the learner's own mark is left.
+  expect(marks.map((mark) => mark.id)).toEqual(['m-59']);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

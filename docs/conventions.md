@@ -195,6 +195,13 @@ Read the section for the area you are changing before you change it. The rules e
   so no request walks further than the diff. Beside an open transcript the Dictation
   panel reads and adds through Transcript's `MarkSync` (`markList`, `takeSaved`), so the
   page keeps one mark list.
+- Confirm or remove Dictation marks (#59, ADR 0058): `PUT .../marks/{id}/status`
+  confirms in place; removal is the ordinary DELETE, and no `removed` status exists, so
+  readers of marks need no filter for rejected marks. In `MarkSync`, an `update` op sends
+  whatever differs from the server (note, then confirmation); confirm and remove are sent
+  at once, without the debounce. Undo of a removed Dictation mark is `undoRemove`, which
+  adds the words again through the Dictation marks route so the mark keeps its source.
+  Show a mark's source in text (description and list label), never by colour alone.
 
 - Mark list/count (#60) read the same `useMarkSync` snapshot as word highlights.
   List rows use native buttons for playback; E opens the note, Delete removes with
@@ -236,6 +243,23 @@ Read the section for the area you are changing before you change it. The rules e
   changes as well as detachment. Do not bypass this with auto-reaping. `/dev/shm`
   and `/dev/mqueue` must stay read-only. Media telemetry uses queued OTLP export
   through DB to the default pool; never add a collector route to media-data.
+
+## Gist feedback (ADR 0054, #69)
+
+- `blind.service.read_grade` authorizes the attempt and derives D4 disclosure from
+  the current plan. With Dictation in the plan and Transcript still locked, the
+  response omits written feedback, gist and key-point identities/text entirely.
+  Blind-only and reached Transcript reads include the saved gist even while
+  grading is pending; score and feedback appear when ready.
+- `grading.service.read_gist_grade` reads the grade's exact shared reference through
+  the existing worker-role `transcript_database`, after the learner's attempt has
+  been authorized. Never grant the API role access to `grading.key_points`.
+- Web grade keys include the display context so the Blind summary cannot mask
+  Transcript details. `grade.ready` and reconnect invalidate gist-grade queries;
+  pending reads also poll. Submission keeps the result visible until Continue
+  refreshes both the session and its Blind attempt, including a fresh cached
+  completed listen. Render the saved gist independently of grading readiness.
+  #70 owns unavailable/delayed/retry behavior.
 
 ## Shadow segments (ADR 0057)
 

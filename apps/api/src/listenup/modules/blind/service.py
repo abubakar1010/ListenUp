@@ -26,6 +26,7 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,6 +48,7 @@ from listenup.modules.content import service as content
 from listenup.modules.grading import service as grading
 from listenup.modules.practice import service as practice
 from listenup.modules.practice.service import Attempt, AttemptStatus, Step, StepStatus
+from listenup.platform.database import Database
 from listenup.platform.errors import ProblemError
 from listenup.platform.events import EventType, publish
 from listenup.platform.export import ExportPart, learner_rows
@@ -375,3 +377,24 @@ async def gist_for_grading(
         item.media_object_id,
         (session.passage.start_ms, session.passage.end_ms),
     )
+
+
+async def read_grade(
+    db: AsyncSession, references: Database, learner: uuid.UUID, attempt_id: uuid.UUID
+) -> dict[str, Any]:
+    """FR-DI-3/D4: derive disclosure on the server from the current plan."""
+    attempt, row = await _load(db, attempt_id)
+    if attempt.user_id != learner:
+        raise _not_found()
+    if attempt.status is not AttemptStatus.SUBMITTED:
+        return {"status": "pending"}
+    session = await practice.get_session(db, attempt.session_id)
+    transcript = next(s for s in session.steps if s.step is Step.TRANSCRIPT)
+    reveal = session.entry is practice.Entry.BLIND or transcript.status is not StepStatus.LOCKED
+    result = await grading.read_gist_grade(
+        db, references, learner, attempt_id, reveal_details=reveal
+    )
+    # FR-BL-5: the learner can compare their gist before grading finishes.
+    if reveal:
+        result["gist"] = row.gist_text
+    return result

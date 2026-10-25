@@ -8,6 +8,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
+import { TranscriptGistPanel } from '../blind/GistFeedback';
 import { ApiError } from '../../api/client';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
@@ -112,6 +113,11 @@ function Layout({
       progress={progress}
       player={player}
       rule={STEP_RULES.transcript}
+      aside={
+        session.steps.some((step) => step.step === 'blind' && step.status === 'done') ? (
+          <TranscriptGistPanel sessionId={session.id} />
+        ) : undefined
+      }
       workLabel="Transcript"
     >
       <p className="text-body-s">Transcript can't be skipped: it shows what you missed.</p>
@@ -212,7 +218,7 @@ function TranscriptWork({
                       }}
                       aria-label={`Jump to ${word.text || 'removed word'}${word.edited ? ' (edited)' : ''}`}
                       aria-describedby={marking.describedBy(word.index)}
-                      className={`min-h-11 max-w-full rounded-sm px-1 text-left underline decoration-dotted underline-offset-4 [overflow-wrap:anywhere] hover:bg-surface-raised ${marking.isMarked(word.index) ? 'bg-mark-bg' : ''} ${marking.isSelected(word.index) ? 'outline-2 outline-mark-strong' : ''}`}
+                      className={`min-h-11 max-w-full rounded-sm px-1 text-left underline decoration-dotted underline-offset-4 [overflow-wrap:anywhere] hover:bg-surface-raised ${marking.markClass(word.index)} ${marking.isSelected(word.index) ? 'outline-2 outline-mark-strong' : ''}`}
                       onClick={(event) => {
                         // Choosing a range (Shift+click) must not move the audio.
                         if (!marking.choose(word.index, event)) jump(word.start_ms);
@@ -263,7 +269,27 @@ function TranscriptWork({
 
 const LIMIT_MESSAGE = `A mark covers at most ${MAX_MARK_WORDS} words.`;
 const MARKED = 'mark-description-marked';
+const FROM_DICTATION = 'mark-description-dictation';
+const TO_CONFIRM = 'mark-description-suggested';
 const SELECTED = 'mark-description-selected';
+
+/** How a marked word shows its mark; a word in several marks shows the most pressing. */
+type MarkKind = 'suggested' | 'dictation' | 'manual';
+const KIND_ORDER: MarkKind[] = ['suggested', 'dictation', 'manual'];
+const kindOf = (mark: LocalMark): MarkKind =>
+  mark.status === 'suggested' ? 'suggested' : mark.source === 'dictation' ? 'dictation' : 'manual';
+const KIND_DESCRIPTION: Record<MarkKind, string> = {
+  suggested: TO_CONFIRM,
+  dictation: FROM_DICTATION,
+  manual: MARKED,
+};
+// FR-TR-3: Dictation marks carry a line under the word as well as the fill, dashed while
+// they wait to be confirmed, so the source never rests on colour alone.
+const KIND_CLASS: Record<MarkKind, string> = {
+  suggested: 'bg-mark-bg border-b-2 border-dashed border-mark-strong',
+  dictation: 'bg-mark-bg border-b-2 border-solid border-mark-strong',
+  manual: 'bg-mark-bg',
+};
 
 function covers(range: Range, word: number): boolean {
   return range.word_from <= word && word <= range.word_to;
@@ -296,10 +322,15 @@ function useMarking(
   const [removed, setRemoved] = useState<LocalMark | null>(null);
   const wordRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const marked = useMemo(() => {
-    const indices = new Set<number>();
-    for (const mark of sync.marks)
-      for (let i = mark.word_from; i <= mark.word_to; i += 1) indices.add(i);
-    return indices;
+    const kinds = new Map<number, MarkKind>();
+    for (const mark of sync.marks) {
+      const kind = kindOf(mark);
+      for (let i = mark.word_from; i <= mark.word_to; i += 1) {
+        const had = kinds.get(i);
+        if (!had || KIND_ORDER.indexOf(kind) < KIND_ORDER.indexOf(had)) kinds.set(i, kind);
+      }
+    }
+    return kinds;
   }, [sync.marks]);
   const range = selection ? rangeOf(selection) : null;
   const current = markAt(selection, sync.marks);
@@ -378,12 +409,25 @@ function useMarking(
     focusWord(mark.word_from);
   };
 
+  const confirmMark = (id: string) => {
+    const mark = sync.marks.find((item) => item.id === id);
+    if (!mark || mark.status === 'confirmed') return;
+    sync.confirm(id);
+    announce(`Mark confirmed: ${phraseOf(mark) || 'removed words'}.`);
+  };
+
   const onNoteFocused = useCallback(() => setFocusNote(false), []);
 
   const panel = (
     <>
       <span id={MARKED} hidden>
         Marked
+      </span>
+      <span id={FROM_DICTATION} hidden>
+        Marked from Dictation
+      </span>
+      <span id={TO_CONFIRM} hidden>
+        Marked from Dictation, to confirm
       </span>
       <span id={SELECTED} hidden>
         Selected
@@ -404,6 +448,7 @@ function useMarking(
           focusWord(selection.focus);
         }}
         onNote={sync.setNote}
+        onConfirm={confirmMark}
         onRemove={removeMark}
         onNoteFocused={onNoteFocused}
       />
@@ -427,6 +472,7 @@ function useMarking(
             setSelection({ anchor: mark.word_from, focus: mark.word_to });
             setFocusNote(true);
           }}
+          onConfirm={(mark) => confirmMark(mark.id)}
           onRemove={(mark) => removeMark(mark.id)}
         />
         {removed && !sync.marks.some((mark) => mark.id === removed.id) && (
@@ -436,7 +482,7 @@ function useMarking(
               type="button"
               className={buttonClass('secondary')}
               onClick={() => {
-                sync.add(removed);
+                sync.undoRemove(removed);
                 setRemoved(null);
                 announce('Mark restored.');
                 focusWord(removed.word_from);
@@ -451,13 +497,19 @@ function useMarking(
     wordRefs,
     onWordKey,
     choose,
-    isMarked: (index: number) => marked.has(index),
+    markClass: (index: number) => {
+      const kind = marked.get(index);
+      return kind ? KIND_CLASS[kind] : '';
+    },
     isSelected: (index: number) => (range ? covers(range, index) : false),
     // Marks added from the Dictation result join this list, and words marked here show
     // as added there (#55): one list on the page, so the two never disagree.
     markList: { marks: sync.marks, take: sync.takeSaved } satisfies OpenMarkList,
-    describedBy: (index: number) =>
-      marked.has(index) ? MARKED : range && covers(range, index) ? SELECTED : undefined,
+    describedBy: (index: number) => {
+      const kind = marked.get(index);
+      if (kind) return KIND_DESCRIPTION[kind];
+      return range && covers(range, index) ? SELECTED : undefined;
+    },
   };
 }
 
