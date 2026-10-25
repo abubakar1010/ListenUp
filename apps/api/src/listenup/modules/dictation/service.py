@@ -478,7 +478,7 @@ async def dispute_word(
     word_index: int,
     corrected_text: str,
 ) -> AttemptView:
-    """Correct this learner's reference and re-score atomically (FR-TX-3/4, ADR 0058).
+    """Correct this learner's reference and re-score atomically (FR-TX-3/4, ADR 0059).
 
     Existing marks are learner choices: retain them, including notes/status. Only the
     score's candidates change. Shared reference rows are never written.

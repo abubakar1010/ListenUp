@@ -65,7 +65,7 @@ edit; the concurrent test requires both independent edits in the final score.
 These assertions cover plausible scoring/security defects; no mutation result is
 claimed.
 
-ADR 0058 preserves all saved marks (including phrase snapshots, notes and status),
+ADR 0059 preserves all saved marks (including phrase snapshots, notes and status),
 re-scores only the named historical attempt, and applies overlays to future initial
 scoring. The migration changes permissions and lifecycle cleanup on the existing
 table; the shared cache never changes. A key-share parent lock prevents deletion
@@ -102,7 +102,7 @@ grading or AI. Existing Transcript edited-marker behavior is reused unchanged.
   needs no artificial failing test.
 
 Synchronization with `origin/main` at `e8901a4` keeps Shadow's accepted ADR 0057
-and renumbers this decision to ADR 0058. The dispute migration now follows
+and initially renumbered this decision to ADR 0058 (now ADR 0059). The dispute migration now follows
 `77_shadow_segments`, so Alembic has one head; upgrade/check/downgrade/upgrade
 pass. OpenAPI/client regeneration produces no additional diff after the merge.
 The PR adds no changes to the excluded modules relative to that main.
@@ -142,3 +142,15 @@ Final backend validation after synchronization with current main:
 - Required GitHub CI will rerun on the pushed fix commits. The original run's
   account-purge failure is retained as historical evidence, not reported green.
   The owner merges after the current required checks pass.
+
+## Final main synchronization before merge (2026-10-25)
+
+Required CI passed on `67afd66`, but strict branch protection required another
+synchronization after main advanced to `ee09123` with #59 and #69. Those changes
+merged cleanly. Main reserves ADR 0058 for mark confirmation/removal, so this
+dispute decision is now ADR 0059; all its links and references are synchronized.
+No new product behavior is introduced by this numbering update. Generated-client
+regeneration adds no changes to the merged schema/types. Focused UI checks pass
+**82 tests** across dialog, Dictation result, mark synchronization and event keys;
+TypeScript checks pass. Required CI reruns the complete backend, web and browser
+checks before the owner-authorized merge.

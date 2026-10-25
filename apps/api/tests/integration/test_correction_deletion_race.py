@@ -1,4 +1,4 @@
-"""Correction writes cannot outlive an owned content parent (#56, ADR 0058)."""
+"""Correction writes cannot outlive an owned content parent (#56, ADR 0059)."""
 
 import asyncio
 import concurrent.futures

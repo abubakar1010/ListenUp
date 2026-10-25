@@ -1,4 +1,4 @@
-# ADR 0058: Learner reference disputes and existing marks
+# ADR 0059: Learner reference disputes and existing marks
 
 - Status: Accepted
 - Date: 2026-10-23
