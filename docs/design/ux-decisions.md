@@ -283,7 +283,9 @@ version 13 (`1792847518-2445`). After the mobile keyboard check, they were
 republished as version 15 (`1792848519-dd38`). After review of #189, the
 reservation-refusal copy was corrected and republished as version 16
 (`1792935877-4310`). Only that text changed; it is shorter than before and
-was not re-rendered.
+was not re-rendered. After the design review of 2026-10-25 (below), all 16
+findings were fixed and the boards republished as version 17
+(`1792936761-35c1`), rendered and audited again.
 The canvas is private until the owner shares it.
 
 It has one page per flow, plus an overview and a page of the five reusable state
@@ -293,14 +295,15 @@ announcement and the rule it follows.
 
 | Page | Decision | States (each at 360 and 1280, light and dark) |
 | --- | --- | --- |
-| D02 Blind leave | UX-37 | In-app link; Browser Back; Leaving… pending; leave failed with Try again; completed while open; destination after leaving |
-| D04 Listen and gist | UX-38 | Server acknowledgement pending; saving, saved and restored on this device; storage failure with Retry save; Leave without saving your gist? |
-| Whole-clip lock | UX-39 | Blocked with another-tab guidance; checking; still blocked; available with no autoplay; network failure |
-| B01 Intake | UX-40 | Allowance loading; counted and reserved shown separately; admission checking; admitted and uploading; reservation refusal; counted limit reached; crossing clip admitted (119 → 134 of 120); recheck at reset; check failed; B02 YouTube link behind the D10 flag only |
+| D02 Blind leave | UX-37 | In-app link; Browser Back; Leaving… pending; leave failed with Try leaving again; attempt ended while open; completed while open; destination after leaving |
+| D04 Listen and gist | UX-38 | Server acknowledgement pending; server cannot be reached; saving, saved and restored on this device; storage failure with Copy text and Retry save; Leave without saving your gist? |
+| Whole-clip lock | UX-39 | Blocked with another-tab-or-device guidance; checking; still blocked; available with no autoplay; network failure |
+| B01 Intake | UX-40 | Allowance loading; counted and reserved shown separately; admission checking; admitted and uploading; reservation refusal; counted limit reached; focus on the reason after Choose a file; crossing clip admitted (119 → 134 of 120); recheck at reset; check failed; B02 YouTube link behind the D10 flag only |
 | A01 Restore | UX-41 | Restore or keep deleted; Restoring… pending; Keeping it deleted… pending; failure with retry; restored; kept deleted and signed out; grace expired or refused |
 
-That makes 34 states, each in four variants: 136 frames. (An earlier count of
-33 states and 132 frames was wrong.) The colours, type
+That makes 37 states, each in four variants: 148 frames. (Before the 2026-10-25
+review there were 34 states and 136 frames; an earlier count of 33 and 132 was
+wrong.) The colours, type
 scale, radii, 3 px focus ring with a 2 px offset, scrim and dialog shadow are
 taken from main's v2 token mirror (`apps/web/src/index.css`). They are not taken
 from the v2 artifact, which could not be read.
@@ -309,7 +312,8 @@ Three conventions apply on every frame:
 - Dialogs are bottom sheets at 360 with stacked 48 px actions, and centred
   dialogs at most 448 px wide at 1280.
 - The safe action comes first on mobile and right-most on desktop.
-- Busy actions stay focusable with aria-disabled.
+- Busy actions stay focusable with aria-disabled, and are drawn with a dashed
+  line-strong boundary so they do not depend on colour alone.
 
 Verification of the published boards:
 
@@ -324,6 +328,48 @@ Verification of the published boards:
 | Mobile on-screen keyboard | Every frame with a text field (gist saving, saved, restored and storage-failed; B02 YouTube link; the restore sign-in error), in both themes. Each frame was cut to the 440, 384 and 320 CSS px left visible on a 360 × 720 phone, with the practice header sticky as in `PracticeLayout.tsx`. The field was then scrolled into view as a browser does on focus | Done after a fix (version 15). The label, description and field were always visible, and Submit, Add link and Sign in were reachable by scrolling. The restore sign-in error stayed visible above both fields. But the gist status line was cut off, and the storage-failure warning was off-screen at every height while typing (field plus warning 306 px against 264 px visible). Fixes: the short warning now also appears in the status line, and a UX-38 rule keeps that line in view on focus. The gist 360 px frame is 760 px tall to fit the wrapped line. After the fix, the field, label, description and status line are visible together at every height (256 px in 264 px at worst). This was a simulation with a reduced viewport, not a real phone keyboard |
 | Focus trapping, Escape, inert background, no playback shortcuts under a modal; reduced motion; a real phone keyboard | Live check in the built app | **Not performed.** The static boards have no such behaviour, so it can only be tested in the implementation |
 | Screen-reader names, descriptions and live announcements | Live check | **Not performed** |
+
+### Design review fixes — 2026-10-25
+
+A UX review of version 15 against UX-37 to UX-41, ADR 0033, D10, WCAG 2.2 AA
+and the 10 heuristics found no policy change and no measured AA failure, but 16
+copy, status and announcement defects. All were fixed on the canvas
+(version 17, `1792936761-35c1`) and in the handoff text above. Product rules are
+unchanged.
+
+| Finding | State | Decision | Fix |
+| --- | --- | --- | --- |
+| M1 | B01 reservation refusal | UX-40 | The copy promised space “when they are ready”, although a ready clip still counts up to 15 minutes. Already corrected in version 16 (“This page checks again as they finish, or you can add more at 06:00 tomorrow.”); kept, and Choose a file is now also described by it |
+| M2 | B01 recheck at reset | UX-40 | No longer says the count has started again before the server confirms; stale figures give way to loading lines |
+| M3 | B01 check failed | UX-40 | Choose a file stays available; the panel says the allowance is unavailable instead of showing loading lines under an error |
+| M4 | D04 acknowledgement | UX-38 | Neutral “Listen finished” until the server confirms; new “server cannot be reached” state with Try now |
+| M5 | Whole-clip blocked | UX-39 | Names another tab or device and says to check again after closing it |
+| L1 | D02 leave failed; attempt ended | UX-37 | “Try leaving again”; new state for an attempt the server ends while the dialog is open |
+| L2 | D02 completed while open | UX-37 | The description is a polite live region, so the change is announced |
+| L3 | B01 crossing clip | UX-40 | Meter drawn in proportion (119 of 120) |
+| L4 | B01 refusals | UX-40 | Choose a file is described by the reason's heading and text; new frame with focus on the reason |
+| L5 | B02 YouTube tabs | UX-40, D10 | Roving tabindex and labelled tabpanel |
+| L6 | A01 grace expired | UX-41 | Focus only, no alert role, so the error is read once |
+| L7 | Whole-clip checking | UX-39 | Button keeps its label; only the status line says “Checking playback…” |
+| L8 | D04 gist | UX-38 | Description reads “If you leave, you can come back and write your gist.”; Copy text added on storage failure |
+| L9 | Busy actions (all) | UX-37 to UX-41 | Dashed line-strong boundary as a non-colour disabled cue |
+| L10 | D02 at 1280 | UX-37 | Desktop actions 48 px, as in the other dialogs |
+| L11 | B01 uploading | UX-40 | Both clips being prepared are listed |
+
+Verification of version 17, in headless Chromium with the canvas's own runtime
+(a local render, not the claude.ai canvas editor):
+
+| Check | Result |
+| --- | --- |
+| Text contrast, focus-ring contrast, targets, clipping and sideways overflow, all 148 frames | No text pair below 4.5:1 (3:1 for large text); every drawn focus ring 6.99:1 or better; no focusable target under 44 × 44 px; no clipped text and no sideways overflow |
+| 200% zoom: every 360 frame (74) laid out at 320 and 640 CSS px | No sideways overflow and every sheet fits. The only hit is the long YouTube URL scrolling inside its own field, as text inputs do |
+| DOM order against visual order of tab stops, every frame | No inversions |
+| Changed frames reviewed by eye, both themes | Done; the overview board grew to 1320 px to fit the longer state lists |
+
+The mobile on-screen keyboard simulation was not repeated: no text field
+changed, and the new Copy text button sits below the gist status line it checks.
+Live focus trapping, Escape, inert background, playback shortcuts and
+screen-reader announcements still need the built app.
 
 Remaining gaps after publication:
 - **Final UI.** The boards are not in the existing Final UI, and they have not
@@ -405,15 +451,22 @@ per cancelled Back. Focus Stay on open; Tab/Shift+Tab wrap; Enter/Space activate
 the focused button; Escape and scrim choose Stay. Make background UI inert without
 stopping the audio. Stay returns focus to the initiating control, or the practice
 heading when Back has no in-page opener. A labelled/described modal supplies the
-opening announcement; do not duplicate it in a live region.
+opening announcement; do not duplicate it in a separate live region. The
+description itself is a polite live region from open, so only a later change to
+its text (completion or an ended attempt) is spoken. Desktop actions are 48 px
+tall, as in the other dialogs of this revision.
 
 Leave changes its label to “Leaving…” and reports “Ending your Blind attempt…”
 politely. Keep focus on a focusable aria-disabled action while awaiting the server;
 ignore duplicate activation and dismissal until settlement. Failure retains the
 dialog, announces “We could not confirm leaving. Try again.” and relabels the
-Leave Blind button “Try again”, which retries the void request; do not
-navigate. An attempt already voided uses the ended-state reason, not a
-claim that playback continues. After acknowledged leave, focus the destination
+Leave Blind button “Try leaving again”, which retries the void request; do not
+navigate. If the server ends the attempt while the dialog is open (for example
+a second interruption, UX-17), replace the body with the ended-state reason, for
+example “This Blind attempt ended because the connection dropped a second time.
+You can start a new listen from the library.”, relabel the action “Leave”, keep
+focus where it was and never claim that playback continues. After acknowledged
+leave, focus the destination
 heading. If server completion arrives first, replace the warning with “Your listen
 is complete. Leaving will keep it.” and announce that once, politely; the Leave
 Blind button then reads “Leave”, and leaving must preserve completion.
@@ -421,11 +474,18 @@ External hide/close/reload cannot guarantee this custom
 sheet and still ends an unfinished listen under ADR 0033.
 
 **D04 — complete, saving and returned gist (UX-38).** Keep the locked player
-with “Listen complete” and the normal gist form; never show replay. During server
-completion acknowledgement show “Saving your listen. Keep this screen open.” with
-a polite status; gist/navigation unlock only after acknowledgement. Then focus
-Your gist and include “Your listen is complete. You can return to write your gist.”
-as its description. Under the textarea show “Saving draft on this device…” then
+and the normal gist form; never show replay. During server completion
+acknowledgement the player heading reads “Listen finished” in ink, with no tick,
+and a polite status says “Saving your listen. Keep this screen open.”; gist and
+navigation unlock only after acknowledgement, when the heading becomes “Listen
+complete” with the success tick. If the server cannot be reached, keep the
+screen locked and show “We cannot reach ListenUp to save your listen. Keep this
+screen open. We keep trying.” with Try now, announced politely once; focus stays
+on the heading. Never unlock the gist on a client timer; if the server then
+reports the attempt ended, show the ended state (UX-17). After acknowledgement,
+focus Your gist and include “Your listen is complete. If you leave, you can come
+back and write your gist.” as its description. Under the textarea show “Saving
+draft on this device…” then
 “Draft saved on this device”. On return use “Draft restored on this device” and
 announce once with the textarea description. Ordinary saved updates remain quiet;
 announce sentence-count changes politely after a one-second debounce.
@@ -435,7 +495,8 @@ same completed attempt. Persist the latest text before in-app departure and flus
 pending writes for reload; do not describe the current debounce as guaranteed
 durability. If browser storage fails, show “Your listen is kept, but this draft
 could not be saved on this device. Copy your text before leaving.” Announce once
-politely, keep the text selectable/editable and provide Retry save. If leaving
+politely, keep the text selectable/editable and provide Copy text (which puts the
+gist on the clipboard and says “Text copied” politely) and Retry save. If leaving
 would lose that text, offer a distinct “Leave without saving your gist?” sheet
 with Stay / Leave without saving; a native unload prompt is best effort only.
 The gist's existing sentence validation and focusable Submit remain unchanged.
@@ -447,13 +508,17 @@ header. A learner who is typing then still sees the failure.
 
 **Whole-clip blocked variant (UX-39).** In the clip page's player slot show a lock
 icon, “Whole-clip playback is unavailable” and “Finish or leave the Blind listen
-before playing this clip. If it is open in another tab, return to that tab.” Keep
+before playing this clip. If it is open in another tab or on another device,
+return to it. If you closed it, wait a few seconds and check again.” (A closed
+tab voids its attempt after the 15-second heartbeat gap, ADR 0033.) Keep
 the title and Library link. Replace the player and all its shortcuts/controls;
 the attempt-bound Blind player is unaffected. Show Check again with a linked
 reason, not a fabricated session link (the current refusal exposes no target).
 On initial load the heading is read in normal order. On a failed user play/check,
 announce the reason politely and focus the lock-card heading if the player was
-removed. Check again retains focus and says “Checking playback…”; still blocked
+removed. Check again retains focus and its label, shows a spinner and is
+aria-disabled; a status line says “Checking playback…” once, so the text is not
+read twice. Still blocked
 announces once, without moving focus. After a successful check, restore the player
 without autoplay, announce “Whole-clip playback is available” and focus its play
 control if the check action was replaced. A network failure keeps the card and
@@ -478,15 +543,22 @@ refusal (“Wait for your clips in progress”, then “The clips you are adding
 may use the rest of today’s 120 minutes. This page checks again as they finish,
 or you can add more at {reset}.”; a ready clip still counts up to 15 minutes, so
 never promise that it can be added once they are ready); counted limit
-reached; checking again
-after reset; check failed with Retry. At 119 counted minutes and no reservations,
+reached; focus on the reason after Choose a file; checking again after reset
+(“It is past the reset time. Checking today's allowance…”, with the old figures
+replaced by loading lines, because the local clock is not permission); check
+failed with Retry, where the panel says “Today's allowance is not available
+right now. You can still choose a file. We check the allowance when you add
+it.” and Choose a file stays available, because a failed display check is not a
+known limit. Draw the meter in proportion to the server values, capped at 120;
+list every clip being prepared. At 119 counted minutes and no reservations,
 a crossing clip is accepted whole when the server admits it; at 90 counted plus
 30 reserved it must wait. Pending reservations can be released before midnight;
 do not promise the learner must always wait until reset. At refusal retain
 “You can still practise clips in your library” and a Library link.
 
 At a known limit, Choose a file stays focusable with aria-disabled and a visible,
-linked reason; activation focuses that reason instead of opening the picker.
+linked reason (described by the reason's heading and text); activation focuses
+that reason, drawn with the focus ring, instead of opening the picker.
 Drop and confirmation use the same server-backed admission rule. During checking
 retain focus on the initiating control, prevent duplicate requests and mark only
 the status panel busy. Announce checking and the eventual reservation/admission
@@ -496,6 +568,8 @@ on return to the page, and after reservation changes; show checking until confir
 Format the reset instant using the learner's current zone (including DST/date
 rollover), never calculate local midnight. Do not announce a ticking countdown.
 B02 reuses these variants only when YouTube intake is enabled; keep D10 intact.
+Its Upload/YouTube tabs use roving tabindex (only the selected tab is in the Tab
+order, arrow keys move between tabs) and each controls a labelled tabpanel.
 
 **A01/I02 — grace-period choice (UX-41).** Use the same restore sheet/dialog for
 password and Google sign-in: “Restore your account?”; “Your account will be
@@ -516,8 +590,10 @@ destination heading and announces “Your account is restored.” Keep it delete
 leaves the schedule unchanged, clears authentication continuation state and goes
 to a signed-out confirmation with the same date and Go to sign in; focus its
 heading and announce “Your account stays deleted. You are not signed in.”
-An expired/refused restoration shows the server's normal sign-in error and focuses
-that message, with Go to sign in. Never unlock practice based on the displayed
+An expired/refused restoration shows the server's normal sign-in error on the
+sign-in page and focuses that message (tabindex −1, no alert role, so it is read
+once); the page is already the sign-in form, so no separate Go to sign in.
+Never unlock practice based on the displayed
 clock. The server's atomic status/deadline check decides restoration. The already
 deleted-after-grace state must not offer Restore.
 
