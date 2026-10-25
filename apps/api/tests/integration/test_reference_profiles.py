@@ -692,3 +692,14 @@ async def test_profile_subscription_is_in_learner_export(reference, learner, pro
     assert len(subscriptions.rows) == 1
     assert subscriptions.rows[0]["session_id"] == reference.session
     assert subscriptions.rows[0]["user_id"] == learner
+
+
+@pytest.mark.anyio
+async def test_profile_uses_original_words_without_learner_corrections(
+    reference, learner, processing
+):
+    async with reference.database.transaction(learner) as db:
+        await repository.correct_word(db, learner, reference.transcript, 0, "private replacement")
+    fingerprint = await subscribe(reference, learner)
+    await process(reference, fingerprint)
+    assert processing == ["Hello. Again."]
