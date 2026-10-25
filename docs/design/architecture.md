@@ -174,7 +174,7 @@ Scoring is a pure, deterministic function in `dictation/domain`, with no AI:
 
 The Dictation player permits unlimited replays of the passage with speeds 1x, 0.9x and 0.75x. Before a transcript exists, “replay segment” uses an 8-second chunk (the previous chunk within 1 s of a boundary), later replaced by sentence boundaries. Leaving/reloading preserves the active draft. Its control policy lives in `features/dictation/policy.ts`, alongside Blind's policy in its own feature, until they can move to the shared media folder together ([ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)).
 
-If the learner believes the reference transcript is wrong at some word, they can dispute that word from the diff. The corrected reference is saved (FR-TX-4) and the attempt is re-scored. This resolves the conflict between hiding the transcript and letting learners fix it.
+If the learner believes the reference transcript is wrong at some word, they can dispute that word from the diff. The corrected reference is saved only in that learner's overlay (FR-TX-4) and the named attempt is re-scored with the same pure function. Saved marks, notes and statuses remain learner choices; only the score's mark candidates change ([ADR 0059](../adr/0059-dictation-reference-disputes.md)). This resolves the conflict between hiding the transcript and letting learners fix it.
 
 ### 5.4 Gist grading
 
@@ -347,7 +347,7 @@ The API is JSON over HTTPS under `/api/v1`, described by the OpenAPI schema Fast
 | Blind | `POST /sessions/{id}/blind/attempts`, `GET /blind/attempts/{id}/media/{token}`, `POST /blind/attempts/{id}/heartbeat`, `POST /blind/attempts/{id}/void` (leave with `fetch(..., {keepalive: true})` and CSRF header), `POST /blind/attempts/{id}/gist` ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)) |
 | Dictation | `POST /sessions/{id}/dictation/attempts` (201 new or 200 with `resumed: true` for the live draft), `PUT /dictation/attempts/{id}/draft` (`draft_version`; stale differing text gets 409 `draft_conflict`, identical resend succeeds; [ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)), `POST /dictation/attempts/{id}/submit` (202; stores the text, completes the step, queues scoring; [ADR 0042](../adr/0042-dictation-submission-and-asynchronous-scoring.md)), `GET /dictation/attempts/{id}` and `GET /sessions/{id}/dictation/attempt` (state and, once scored, the diff and accuracy; `dictation.scored` event), `POST /dictation/attempts/{id}/disputes` |
 | Transcript step | `GET /sessions/{id}/transcript` (only from the Transcript step on), `GET`, `POST`, `PATCH`, `DELETE /sessions/{id}/marks` |
-| Cards | `POST /sessions/{id}/cards`, `GET /cards`, `DELETE /cards/{id}` |
+| Cards | `POST /sessions/{id}/cards`, `GET /cards`, `DELETE /cards/{id}`, `POST /sessions/{id}/cards/complete` |
 | Shadow | `PUT /sessions/{id}/shadow/segment`, `POST /sessions/{id}/shadow/rounds` (returns a signed upload URL), `POST /shadow/rounds/{id}/complete`, `GET /sessions/{id}/shadow/comparison` |
 | Grades | `GET /gists/{attempt_id}/grade`, `GET /shadow/rounds/{id}/grade`, `POST /grades/{id}/retry` |
 | Library | `GET /library/contents`, `GET /library/trends` |

@@ -17,6 +17,7 @@ const IDLE = {
   onSelect: () => {},
   onMark: () => {},
   onNote: () => {},
+  onConfirm: () => {},
   onRemove: () => {},
   onNoteFocused: () => {},
 };
@@ -62,6 +63,8 @@ test('a_panel_that_scrolls_with_the_page_leaves_the_scroll_padding_to_the_header
     word_to: 0,
     at_ms: 1000,
     note: null,
+    source: 'manual' as const,
+    status: 'confirmed' as const,
     saved: true,
   };
   render(<MarkPanel {...IDLE} selection={{ anchor: 0, focus: 0 }} phrase="Hello" mark={marked} />);

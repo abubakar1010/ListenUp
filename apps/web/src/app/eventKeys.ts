@@ -4,7 +4,7 @@ import { ME_KEY } from '../auth/useMe';
 import type { LiveEvent } from '../events/useLiveEvents';
 import { DELETE_ACCOUNT_KEY } from '../features/account/deletionApi';
 import { EXPORTS_KEY } from '../features/account/exportApi';
-import { BLIND_KEY } from '../features/blind/api';
+import { BLIND_KEY, GIST_GRADE_KEY } from '../features/blind/api';
 import { CONTENTS_KEY, contentKey } from '../features/content/useContent';
 import { DICTATION_RESULT_KEY } from '../features/dictation/api';
 import { LIBRARY_KEY, UPLOAD_USAGE_KEY } from '../features/library/useLibrary';
@@ -14,6 +14,7 @@ const NO_KEYS: readonly QueryKey[] = [];
 
 export const PENDING_KEYS: readonly QueryKey[] = [
   LIBRARY_KEY,
+  GIST_GRADE_KEY,
   CONTENTS_KEY,
   DICTATION_RESULT_KEY,
   REVIEW_KEY,
@@ -33,9 +34,11 @@ export function queryKeysForEvent(event: LiveEvent, queryClient: QueryClient): r
     case 'transcript.ready':
     case 'transcript.failed':
       return [transcriptKey(event.resourceId)];
+    case 'grade.ready':
+      return [GIST_GRADE_KEY];
     case 'dictation.scored':
-      // The event names the attempt only; refresh every Dictation result shown (ADR 0042).
-      return [DICTATION_RESULT_KEY];
+      // Re-scoring may follow a private correction: other tabs refresh Transcript too.
+      return [DICTATION_RESULT_KEY, REVIEW_KEY];
     case 'attempt.voided':
       // The event names the attempt only; refresh every Blind step shown (ADR 0024).
       return [BLIND_KEY];

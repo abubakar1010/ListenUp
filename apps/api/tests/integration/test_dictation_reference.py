@@ -65,9 +65,7 @@ async def test_reference_for_scoring_says_not_ready_without_a_cached_passage(mig
 
 
 @pytest.mark.anyio
-async def test_transcript_overlay_does_not_change_dictation_scoring_reference(
-    migrated_url, learner
-):
+async def test_transcript_overlay_applies_to_own_dictation_scoring_reference(migrated_url, learner):
     from listenup.modules.transcript import service
 
     _, content, _ = add_clip(migrated_url, learner)
@@ -86,8 +84,8 @@ async def test_transcript_overlay_does_not_change_dictation_scoring_reference(
         session = await start_dictation(database, learner, content)
         async with database.transaction(learner) as db:
             reference = await service.reference_for_scoring(db, database, learner, session.id)
-        assert reference.words == REFERENCE_WORDS
-        assert reference.edited_word_indices == []
+        assert reference.words == ["Learner edit", *REFERENCE_WORDS[1:]]
+        assert reference.edited_word_indices == [0]
         async with database.transaction(learner) as db:
             await practice.complete_step(
                 db, await practice.get_session(db, session.id), practice.Step.DICTATION

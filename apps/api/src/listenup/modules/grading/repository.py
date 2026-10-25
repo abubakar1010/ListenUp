@@ -78,3 +78,7 @@ async def finish_grade(
         .returning(GistGrade.attempt_id)
     )
     return result is not None
+
+
+async def points_by_id(db: AsyncSession, key: uuid.UUID) -> list[dict[str, str]] | None:
+    return await db.scalar(select(KeyPoints.points).where(KeyPoints.id == key))

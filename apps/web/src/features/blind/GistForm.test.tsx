@@ -103,3 +103,20 @@ test('the draft is kept on this device and comes back', async () => {
   renderForm();
   expect(screen.getByRole('textbox', { name: 'Your gist' })).toHaveValue(TWO);
 });
+
+test('submitted gist stays with its pending feedback until Continue', async () => {
+  mockRoutes({
+    [SUBMIT]: jsonResponse(201, {
+      attempt: attemptFixture({ status: 'submitted', gist_text: THREE }),
+      open_step: 'dictation',
+      session_version: 1,
+    }),
+    'GET /gists/attempt-1/grade': jsonResponse(200, { status: 'pending' }),
+  });
+  renderForm();
+  type(THREE);
+  fireEvent.click(screen.getByRole('button', { name: 'Submit gist' }));
+  expect(await screen.findByText('Preparing your gist feedback…')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Continue to Dictation' })).toBeInTheDocument();
+  expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+});

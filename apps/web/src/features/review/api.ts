@@ -42,6 +42,8 @@ export function useTranscript(id: string) {
 }
 
 export type MarkList = components['schemas']['MarkList'];
+type DictationAttemptView = components['schemas']['DictationAttemptView'];
+type DictationMarks = components['schemas']['DictationMarks'];
 export const marksKey = (id: string) => [...SESSIONS_KEY, 'marks', id] as const;
 
 /**
@@ -67,6 +69,23 @@ export function markTransport(sessionId: string): MarkTransport {
     create: (mark) => api<SavedMark>(path, { method: 'POST', body: mark }),
     setNote: (id, note) =>
       api<SavedMark>(`${path}/${encodeURIComponent(id)}`, { method: 'PATCH', body: { note } }),
+    confirm: (id) =>
+      api<SavedMark>(`${path}/${encodeURIComponent(id)}/status`, {
+        method: 'PUT',
+        body: { status: 'confirmed' },
+      }),
+    // Undo of a removed Dictation mark adds its words again through the Dictation route,
+    // which checks them against the scored diff, so the mark keeps its source (ADR 0058).
+    restore: async (mark) => {
+      const attempt = await api<DictationAttemptView>(
+        `/sessions/${encodeURIComponent(sessionId)}/dictation/attempt`,
+      );
+      const { marks } = await api<DictationMarks>(
+        `/dictation/attempts/${encodeURIComponent(attempt.id)}/marks`,
+        { method: 'POST', body: { marks: [mark] } },
+      );
+      return marks[0]!;
+    },
     remove: (id) => api<void>(`${path}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     list: async () => (await api<MarkList>(path)).marks,
   };
