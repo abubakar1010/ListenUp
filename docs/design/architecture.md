@@ -174,7 +174,7 @@ Scoring is a pure, deterministic function in `dictation/domain`, with no AI:
 
 The Dictation player permits unlimited replays of the passage with speeds 1x, 0.9x and 0.75x. Before a transcript exists, “replay segment” uses an 8-second chunk (the previous chunk within 1 s of a boundary), later replaced by sentence boundaries. Leaving/reloading preserves the active draft. Its control policy lives in `features/dictation/policy.ts`, alongside Blind's policy in its own feature, until they can move to the shared media folder together ([ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)).
 
-If the learner believes the reference transcript is wrong at some word, they can dispute that word from the diff. The corrected reference is saved (FR-TX-4) and the attempt is re-scored. This resolves the conflict between hiding the transcript and letting learners fix it.
+If the learner believes the reference transcript is wrong at some word, they can dispute that word from the diff. The corrected reference is saved only in that learner's overlay (FR-TX-4) and the named attempt is re-scored with the same pure function. Saved marks, notes and statuses remain learner choices; only the score's mark candidates change ([ADR 0059](../adr/0059-dictation-reference-disputes.md)). This resolves the conflict between hiding the transcript and letting learners fix it.
 
 ### 5.4 Gist grading
 

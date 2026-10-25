@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router';
 
@@ -10,6 +10,7 @@ import { mockRoutes } from '../session/testApi';
 import { DICTATION_RESULT_KEY, useDictationResult } from './api';
 import { DictationResultPanel } from './DictationResultPanel';
 import { RESULT } from './fixtures';
+import { transcriptKey } from '../review/api';
 
 const WAITING = /Scoring when the transcript is ready/;
 const PATH = '/sessions/session-1/dictation/attempt';
@@ -68,7 +69,135 @@ function renderPanel() {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return client;
 }
+
+test('disputing cat as cap updates accuracy and refreshes the Transcript', async () => {
+  const original = {
+    accuracy: 0,
+    counts: { correct: 0, spelling_slip: 0, wrong: 1, missing: 0, extra: 0 },
+    items: [{ index: 0, word: 'cat', typed: 'cap', status: 'wrong' }],
+  };
+  const corrected = {
+    accuracy: 100,
+    counts: { ...original.counts, correct: 1, wrong: 0 },
+    items: [{ index: 0, word: 'cap', typed: 'cap', status: 'correct' }],
+  };
+  let saved = false;
+  const { calls } = mockRoutes({
+    [`GET ${PATH}`]: () => jsonResponse(200, view('scored', saved ? corrected : original)),
+    'GET /dictation/attempts/attempt-1/marks': jsonResponse(200, { marks: [] }),
+    'POST /dictation/attempts/attempt-1/disputes': () => {
+      saved = true;
+      return jsonResponse(200, view('scored', corrected));
+    },
+  });
+  const client = renderPanel();
+  client.setQueryData(transcriptKey('session-1'), { lines: [] });
+  fireEvent.click(await screen.findByRole('button', { name: 'Correct reference word cat' }));
+  const input = screen.getByRole('textbox', { name: 'Corrected text' });
+  fireEvent.change(input, { target: { value: 'cap' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+  expect(await screen.findByText('100%')).toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  const sent = calls.find((call) => call.path.endsWith('/disputes'))!;
+  expect(sent.body).toEqual({ word_index: 0, corrected_text: 'cap' });
+  expect(sent.headers['Idempotency-Key']).toBeTruthy();
+  expect(client.getQueryState(transcriptKey('session-1'))?.isInvalidated).toBe(true);
+});
+
+test('a replayed correction refreshes the authoritative score after a newer edit', async () => {
+  let saved = false;
+  const authoritative = { ...RESULT, accuracy: 0 };
+  const replayed = { ...RESULT, accuracy: 100 };
+  const { calls } = mockRoutes({
+    [`GET ${PATH}`]: () => jsonResponse(200, view('scored', saved ? authoritative : RESULT)),
+    'GET /dictation/attempts/attempt-1/marks': jsonResponse(200, { marks: [] }),
+    'POST /dictation/attempts/attempt-1/disputes': () => {
+      saved = true;
+      return jsonResponse(200, view('scored', replayed));
+    },
+  });
+  renderPanel();
+  fireEvent.click(await screen.findByRole('button', { name: 'Correct reference word Cities' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+  expect(await screen.findByText('0%')).toBeInTheDocument();
+  expect(calls.filter((call) => call.path === PATH)).toHaveLength(2);
+});
+
+test('correction cancellation and Escape preserve the result and return focus', async () => {
+  const { calls } = mockRoutes({
+    [`GET ${PATH}`]: jsonResponse(200, view('scored', RESULT)),
+    'GET /dictation/attempts/attempt-1/marks': jsonResponse(200, { marks: [] }),
+  });
+  renderPanel();
+  const opener = await screen.findByRole('button', { name: 'Correct reference word Cities' });
+  opener.focus();
+  fireEvent.click(opener);
+  expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+  fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  await waitFor(() => expect(opener).toHaveFocus());
+  fireEvent.click(opener);
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(calls.filter((call) => call.path.endsWith('/disputes'))).toHaveLength(0);
+  expect(
+    screen.queryByRole('button', { name: 'Correct reference word quickly' }),
+  ).not.toBeInTheDocument();
+});
+
+test('a failed correction keeps the text and retries with the same key; editing makes a new key', async () => {
+  const { calls } = mockRoutes({
+    [`GET ${PATH}`]: jsonResponse(200, view('scored', RESULT)),
+    'GET /dictation/attempts/attempt-1/marks': jsonResponse(200, { marks: [] }),
+    'POST /dictation/attempts/attempt-1/disputes': problem(503, 'unavailable', 'Try later.'),
+  });
+  renderPanel();
+  fireEvent.click(await screen.findByRole('button', { name: 'Correct reference word Cities' }));
+  const input = screen.getByRole('textbox', { name: 'Corrected text' });
+  expect(input).toHaveAttribute('maxlength', '60');
+  fireEvent.change(input, { target: { value: 'Towns' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Try later.');
+  expect(input).toHaveValue('Towns');
+  fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+  await waitFor(() =>
+    expect(calls.filter((call) => call.path.endsWith('/disputes'))).toHaveLength(2),
+  );
+  await screen.findByRole('alert');
+  fireEvent.change(input, { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+  await waitFor(() =>
+    expect(calls.filter((call) => call.path.endsWith('/disputes'))).toHaveLength(3),
+  );
+  const sent = calls.filter((call) => call.path.endsWith('/disputes'));
+  expect(sent[0].headers['Idempotency-Key']).toBe(sent[1].headers['Idempotency-Key']);
+  expect(sent[2].headers['Idempotency-Key']).not.toBe(sent[1].headers['Idempotency-Key']);
+  expect(sent[2].body).toEqual({ word_index: 0, corrected_text: '' });
+});
+
+test('a pending correction prevents duplicate saves and cancellation', async () => {
+  let finish!: (response: Response) => void;
+  const { calls } = mockRoutes({
+    [`GET ${PATH}`]: jsonResponse(200, view('scored', RESULT)),
+    'GET /dictation/attempts/attempt-1/marks': jsonResponse(200, { marks: [] }),
+    'POST /dictation/attempts/attempt-1/disputes': () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  });
+  renderPanel();
+  fireEvent.click(await screen.findByRole('button', { name: 'Correct reference word Cities' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+  expect(await screen.findByRole('button', { name: 'Saving…' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+  expect(screen.getByRole('textbox', { name: 'Corrected text' })).toBeDisabled();
+  fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  await act(async () => finish(jsonResponse(200, view('scored', RESULT))));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(calls.filter((call) => call.path.endsWith('/disputes'))).toHaveLength(1);
+});
 
 beforeEach(() => vi.stubGlobal('EventSource', FakeEventSource));
 afterEach(() => {

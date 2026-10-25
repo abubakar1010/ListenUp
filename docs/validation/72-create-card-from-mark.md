@@ -81,7 +81,7 @@ and formatting have no executable behavior requiring artificial red tests.
 
 ## Decisions and handoff
 
-ADR 0059 records the source-time snapshot and slot/completion serialization.
+ADR 0060 records the source-time snapshot and slot/completion serialization.
 The database design and Cards API resource row were synchronized; the requirement
 meaning and audio-snippet scope are unchanged. `SessionPage.tsx` changes only by
 one import and the Card-step registration. No review internals, review feature,
@@ -214,3 +214,19 @@ before rerunning the affected restricted-role integration checks. The updated
 head must pass required CI before merge; GitHub enforces this gate. The rerun
 passed **67 integration tests** across Cards, Dictation marks in Transcript,
 gist feedback, export and cross-learner route isolation.
+
+Main subsequently advanced to `e5c50ee` (#206, Dictation reference disputes) while
+that head's CI was running. All 14 applicable checks passed, but the strict
+up-to-date rule correctly blocked merge again. The latest synchronization keeps
+the main dispute/correction implementation unchanged. Cards is now ADR **0060**,
+because main owns ADR 0059 for disputes.
+
+The new `56_dictation_disputes` migration initially made the existing
+`test_history_is_linear` fail with two heads (`56_dictation_disputes`,
+`72_cards`). Cards now follows `56_dictation_disputes`, yielding one linear chain
+through Shadow and disputes. The required-service migration/Card/dispute/export/
+cross-learner checks then passed: **76 integration tests**, including migration
+round trips and model drift. Targeted Cards/dialog/Dictation-result UI checks:
+**26 passed**. Cards/Dictation/Transcript Chromium: **12 passed**, including
+reference correction and deletion-focus regressions. Combined OpenAPI/types were
+regenerated. Required CI must pass on this synchronized head before owner merge.

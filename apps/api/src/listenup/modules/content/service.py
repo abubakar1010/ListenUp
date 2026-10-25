@@ -484,6 +484,13 @@ async def find_content(session: AsyncSession, content_id: uuid.UUID) -> ContentS
     return _summary(row) if row else None
 
 
+async def retain_content(session: AsyncSession, learner: uuid.UUID, content_id: uuid.UUID) -> None:
+    """Hold the owned parent while writing its corrections; deletion waits for commit."""
+    found = await repository.retain_content(session, learner, content_id)
+    if not found:
+        raise ProblemError(404, "content_not_found", "This content was not found.")
+
+
 async def content_titles(
     session: AsyncSession, content_ids: list[uuid.UUID]
 ) -> dict[uuid.UUID, str]:

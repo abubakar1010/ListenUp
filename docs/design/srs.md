@@ -112,7 +112,7 @@ These requirements cover everything around the practice modes: accounts, content
 | FR-TX-1 | Produce a reference transcript with start and end times per segment, and per word where the provider supports it. | M |
 | FR-TX-2 | Use creator captions for YouTube when available, otherwise generate from the downloaded audio. | M |
 | FR-TX-3 | Record the origin of each transcript (creator captions, generated, edited). | M |
-| FR-TX-4 | Let the learner correct transcript text before Dictation scoring. | S |
+| FR-TX-4 | Let the learner dispute reference text from the scored Dictation diff and re-score that attempt; save corrections for that learner only and apply them to future initial scoring ([ADR 0059](../adr/0059-dictation-reference-disputes.md)). | S |
 | FR-TX-5 | Keep the transcript hidden in Blind and Dictation until the learner reaches the Transcript step. | M |
 
 ### 4.4 Plan and session

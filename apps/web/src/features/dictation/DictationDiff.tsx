@@ -1,5 +1,6 @@
 import type { DiffItem, DictationResult } from './api';
 import { formatAccuracy } from './accuracy';
+import { buttonClass } from '../../components/button';
 
 type Marked = Exclude<DiffItem['status'], 'correct' | 'not_scored'>;
 
@@ -43,7 +44,13 @@ function typedHint(item: DiffItem): string | null {
  * of the passage in order, with the words that went wrong marked. The reference text is
  * shown here and nowhere before scoring (FR-DI-3).
  */
-export function DictationDiff({ result }: { result: DictationResult }) {
+export function DictationDiff({
+  result,
+  onCorrect,
+}: {
+  result: DictationResult;
+  onCorrect?: (item: DiffItem) => void;
+}) {
   const { counts } = result;
   return (
     <div className="flex flex-col gap-4">
@@ -81,7 +88,19 @@ export function DictationDiff({ result }: { result: DictationResult }) {
         className="flex flex-wrap gap-x-3 gap-y-4 rounded-md border border-line bg-surface-raised p-4 text-body-l"
       >
         {result.items.map((item, position) => (
-          <DiffWord key={`${item.index ?? 'x'}-${position}`} item={item} />
+          <li key={`${item.index ?? 'x'}-${position}`} className="flex flex-col">
+            <DiffWord item={item} />
+            {onCorrect && item.index !== null && (
+              <button
+                type="button"
+                className={buttonClass('quiet')}
+                aria-label={`Correct reference word ${item.word || '(removed word)'}`}
+                onClick={() => onCorrect(item)}
+              >
+                Correct reference
+              </button>
+            )}
+          </li>
         ))}
       </ul>
     </div>
@@ -90,21 +109,17 @@ export function DictationDiff({ result }: { result: DictationResult }) {
 
 function DiffWord({ item }: { item: DiffItem }) {
   if (item.status === 'correct' || item.status === 'not_scored') {
-    return (
-      <li>
-        <span data-word>{item.word}</span>
-      </li>
-    );
+    return <span data-word>{item.word || '(removed word)'}</span>;
   }
   const mark = MARKS[item.status];
   const hint = typedHint(item);
   return (
-    <li className="flex flex-col">
+    <>
       <span data-word className={mark.word}>
         {item.status === 'extra' ? item.typed : item.word}
       </span>
       <span className="text-label font-bold text-ink-muted">{mark.label}</span>
       {hint && <span className="text-body-s text-ink-muted">{hint}</span>}
-    </li>
+    </>
   );
 }
