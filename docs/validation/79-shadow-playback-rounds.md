@@ -69,7 +69,11 @@ claimed as successful checks or fabricated TDD evidence.
 
 ## Validation
 
-Final results are recorded below after the complete checks finish.
+Implementation commit `96efc5385dc7ab0364de673f6f49cbf9cb024350` passed
+[CI run 40208791517](https://github.com/abubakar1010/ListenUp/actions/runs/40208791517).
+Current main was rechecked as `5db1333`; its migration chain ends at `72_cards`,
+so `79_shadow_rounds` follows it without a fork. The validation-document follow-up
+changes no runtime, test, generated or migration files.
 
 - Backend formatting/lint, strict mypy (194 source files) and all six import
   contracts pass. Migration upgrade, drift check, downgrade and upgrade pass;
@@ -80,18 +84,39 @@ Final results are recorded below after the complete checks finish.
   timeout and subsequent missing textbox); 59/60 files passed. Both failing cases
   pass in isolation (2 passed, 27 deselected). No assertions or timeouts changed.
   These are retained as failed outcomes; resource contention is a possible cause,
-  not a proven root cause. Full final-head CI remains required.
+  not a proven root cause. The complete implementation-commit CI run passes all
+  621 frontend tests and supersedes these local failures for the full-suite gate.
 - Latest focused Shadow coverage: 21 passed; includes the delayed-refresh fix and
   end-callback-to-API/status interaction. Its application-wide percentage is not a
   whole-suite baseline. Changed-line and inventory results are recorded below.
-- Full backend coverage: pending.
+- Complete required-service backend coverage in CI: **2089 passed**, 1 performance
+  test deselected, no skips; 619.02 seconds. Separate uninstrumented performance:
+  **1 passed**. Spike harness regressions: **62 passed**. The second local full
+  backend run has no completion summary (its log ends during Dictation tests), so
+  it supplies no whole-suite passing result; CI supplies the complete evidence.
+- Complete frontend coverage in CI: **621 passed**, 60 files. Whole-suite coverage:
+  **96.25% lines / 88.66% branches**. This is the complete CI result, distinct from
+  the focused Shadow report.
+- Downloaded the implementation-commit CI coverage artifacts and ran the same
+  inventory and `diff-cover --compare-branch origin/main --fail-under 90` checks
+  from each app directory: both inventories pass; **backend 81/81 (100%)** changed
+  executable lines and **web 161/164 (98%)**. The three uncovered web lines are
+  initial/cached round-read and content-read error/retry render callbacks in
+  `ShadowRounds.tsx` (37, 113, 115). Normal lifecycle, disclosure, rate enforcement,
+  API end callback, selection race and mutation retry have direct assertions.
+  No source, threshold or coverage exclusion was changed to satisfy the gate.
 - Web lint, formatting, TypeScript and build pass; size is 125.6 kB gzip against
-  200 kB. Full browser suite and generated-file reproducibility: pending.
+  200 kB. Complete CI Playwright suite: **55 passed**. API export, TypeScript
+  generation and committed-file reproducibility pass in CI. Dependency scans,
+  Docker builds, the real media sandbox/scanner contract and observability checks
+  pass. AI smoke is correctly skipped because no AI smoke paths changed.
+- The push workflow skips its PR-only changed-coverage job by design; the explicit
+  artifact checks above pass. The PR workflow must also pass that job before merge.
 
 An early backend coverage run was stopped after API documentation changes and is
 not a final result. An initial concurrent frontend coverage run produced failures
-in untouched asynchronous tests and was stopped; the final run limits Vitest to
-one worker. Neither stopped run is claimed green. No timeout, assertion, coverage
+in untouched asynchronous tests and was stopped; a subsequent one-worker local
+run finished with the two failures recorded above. Neither stopped run is claimed green. No timeout, assertion, coverage
 threshold or exclusion was weakened.
 
 ## Assertion quality and remaining gates
