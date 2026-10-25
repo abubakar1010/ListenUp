@@ -3,7 +3,7 @@
 ## Scope and decisions
 
 FR-CA-2 and NFR-SEC-2; owner-approved plan, including refusing marked phrases
-longer than six seconds. ADR 0061 records timing, private delivery, retries,
+longer than six seconds. ADR 0063 records timing, private delivery, retries,
 cleanup and legacy-card behavior. YouTube intake remains disabled; no card review,
 shared-player, gist recovery, reference-profile or Shadow implementation changes.
 
@@ -12,7 +12,10 @@ isolated checkout on `feat/73-card-audio-snippets`, initially from main `2281d73
 Open PRs were checked: #210 overlapped nearby media UI and conventions, without
 changing Cards. It subsequently merged; main `cfc7197` was integrated before broad
 checks. Main `5db1333` was integrated before the final web checks; its only further
-change is `docs/design/ux-decisions.md`. No migration/generated-file conflict arose.
+change is `docs/design/ux-decisions.md`. No migration/generated-file conflict arose. A later open-PR check found ADR 0061
+reused by #215, #217 and #218, with #214 using 0062; this story was renamed
+to ADR 0063. #214/#218 also touch generated contracts, and #218 adds a migration.
+Their unmerged implementation stays outside this PR; current main remains `5db1333`.
 Migration `73_card_audio` follows the current `72_cards` head. API contracts were
 regenerated after reconciliation.
 
@@ -82,25 +85,68 @@ Supplementary evidence is distinguished from test-first work:
 - `LISTENUP_REQUIRE_DB=1 LISTENUP_REQUIRE_S3=1 uv run pytest tests/integration/test_card_audio.py tests/integration/test_card_retry_contract.py tests/unit/test_card_snippet.py -q`: **27 passed**, including the final disabled-account and tone-position checks.
 - A real Procrastinate intake worker generated and exposed the new card in **2.336 s** locally. This includes queue drain and AAC generation, without model loading or staging contention. It is **not staging performance evidence**.
 - Backend Ruff formatting/lint, strict mypy and all **6 import contracts** passed.
-- OpenAPI export and `pnpm api:generate` completed. Web typecheck, lint, format, build and size passed before the final readiness announcement; affected final checks are being repeated.
+- OpenAPI export and `pnpm api:generate` completed. Final web typecheck, lint and formatting pass locally; full web build/size and suite checks pass in CI as detailed below.
 - Initial JavaScript: **125.6/200 kB gzip**.
 - Branch-name validation and `git diff --check` pass.
 
-## Checks still running at draft PR creation
+## Broad checks, coverage and follow-up
 
-- Complete required-service backend coverage suite and separate uninstrumented
-  performance test; coverage inventory and changed-line gate.
-- Final serial web lint/format/types/coverage, build/size and full Chromium suite.
-- CI image builds, sandbox contract, audits and remaining repository CI checks.
+[CI run 636](https://github.com/abubakar1010/ListenUp/actions/runs/40208496763)
+validated implementation head `f9a764f`:
 
-Earlier overlapping broad runs on this two-CPU environment caused unrelated
-Testing Library/Playwright timeouts. The web coverage and browser runs were
-interrupted; **they are not passing results**. Final web coverage uses one worker,
-then browser checks run separately. No assertions, production exclusions or
-coverage thresholds were relaxed.
+- Backend: **2,104 passed, 1 failed, 1 performance test deselected**, with
+  PostgreSQL/S3 required. The sole failure was the exact scheduled-job inventory
+  still expecting three jobs after adding card cleanup. Local reproduction:
+  `uv run pytest tests/unit/test_worker_modules.py -q`: **1 failed, 3 passed**.
+  The inventory now explicitly checks the fourth job, its cron and background-only
+  pool, plus intake registration for generation. The same command: **4 passed**.
+- All migration upgrade/downgrade/upgrade/drift, lint/types/import checks passed.
+  Web checks: **58 files, 615 tests passed**, lint/format/types/build/size passed.
+  API regeneration, dependency audits, all four Docker images, real media sandbox
+  and scanner, branch naming and observability checks passed. Synthetic AI smoke
+  was correctly skipped by its path filter.
+- Browser CI reported **53 passed, 1 flaky**: the failing count-refresh Cards case
+  passed its configured retry. This is not accepted as clean browser evidence.
+  The test could see the stale Save label immediately after Enter, before the
+  mutation entered its busy state; the count then changed while refetch/retries
+  were still pending. It now waits for the observable form busy state to finish
+  **after** the confirmed count update, retaining the limit/focus assertions.
+  `pnpm exec playwright test e2e/cards.spec.ts --workers=1 --retries=0`:
+  **2 passed**. No blanket timeout or retry policy was changed.
+- `uv run pytest -m performance --no-cov`: **1 passed, 2,105 deselected** locally.
+- Three supplementary playback-state tests cover pause/end, rejected play and
+  duplicate busy presses, and legacy unavailable audio. Final Cards/event command
+  `pnpm vitest run src/features/cards/CardScreen.test.tsx src/app/eventKeys.test.ts
+  --maxWorkers=1`: **26 passed**. These are characterization/coverage additions,
+  not claimed as new test-first behavior.
+- CI's initial web report exposed **83%** changed-line coverage (six missing lines).
+  The added interaction tests cover those branches. Final targeted coverage and
+  the completeness inventory: **37/37 changed web lines, 100%**. This targeted
+  report is not a whole-application coverage baseline; full web evidence is CI's
+  separate suite. No production exclusions or thresholds changed.
+- Full CI backend artifact independently passed the completeness inventory and
+  `diff-cover`: **146/150 changed lines, 97%**. The four uncovered lines are local
+  ffmpeg cancellation cleanup and defensive unexpected-error/missing-span handling.
+  Platform process-supervisor/sandbox checks separately pass; a Cards-specific
+  cancellation assertion and those impossible-through-create DB states remain
+  untested. All user-facing state, ownership, storage and deletion paths are covered.
+
+The final CI run and exact latest-head status are recorded in
+[PR #212](https://github.com/abubakar1010/ListenUp/pull/212). The inventory correction,
+three web characterization cases and browser synchronization change do not alter
+production behavior; the rerun validates the combined final test tree.
+
+Earlier overlapping broad local runs on this two-CPU environment caused unrelated
+Testing Library/Playwright timeouts. Web coverage and browser runs were interrupted;
+a later one-worker web run and full local backend coverage run were also stopped
+once equivalent complete CI runs were available. **None is reported as passing or
+used as a whole-application coverage baseline.** CI supplies the full-suite evidence;
+local required-service integration and focused runs supply the detailed boundary
+checks. Docker image, audit and scanner checks ran in CI rather than locally.
 
 Required CI and fresh-session independent review remain merge gates. No merge is
 authorized. Actual-host latency remains unverified under the repository's staging
 and pre-launch validation policy (#155). Existing cards have no backfill, and
 expired/missing playback cannot produce a new snippet until source media exists.
-Documentation and generated output have no artificial TDD requirement.
+Documentation/generated output, the scheduler inventory update and synchronization
+of an existing browser assertion have no artificial TDD requirement.

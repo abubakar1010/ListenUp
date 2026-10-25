@@ -163,10 +163,10 @@ for (const refreshFails of [false, true]) {
       .toBe(true);
     await page.getByRole('textbox', { name: 'Heard form' }).fill('kuduv');
     await page.getByRole('button', { name: 'Save card' }).press('Enter');
-    await expect(page.getByRole('button', { name: 'Save card', exact: true })).toBeVisible({
-      timeout: 15000,
-    });
     await expect(page.getByText('0 left', { exact: true }).first()).toBeVisible();
+    // The confirmed write updates the count before its failed refresh settles.
+    // Wait for mutation completion, rather than observing the stale pre-click label.
+    await expect(page.locator('form')).toHaveAttribute('aria-busy', 'false', { timeout: 15000 });
     await expect(page.getByRole('button', { name: 'Save card' })).toHaveAttribute(
       'aria-disabled',
       'true',

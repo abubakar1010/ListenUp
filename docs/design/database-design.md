@@ -434,7 +434,7 @@ CREATE TABLE practice.cards (
      AND upper(snippet_span) - lower(snippet_span) BETWEEN 3000 AND 6000))
 );
 CREATE INDEX cards_user_idx ON practice.cards (user_id, created_at DESC, id);
--- ADR 0061: existing cards remain unavailable, without backfill.
+-- ADR 0063: existing cards remain unavailable, without backfill.
 -- A deletion trigger stores this tombstone, including session cascades. A worker
 -- deletes its deterministic learner/card object before removing the tombstone.
 CREATE TABLE practice.card_snippet_cleanup (

@@ -420,3 +420,50 @@ test('pending audio polls and announces when it becomes playable without an even
     'false',
   );
 });
+
+test('playing audio can be paused and its ended state returns to Play', async () => {
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  setup([card]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Play audio: could have' }));
+  const element = document.querySelector('audio')!;
+  fireEvent.playing(element);
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Pause audio: could have' })).toHaveAttribute(
+      'aria-busy',
+      'false',
+    ),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Pause audio: could have' }));
+  expect(pause).toHaveBeenCalled();
+  fireEvent.pause(element);
+  expect(screen.getByRole('button', { name: 'Play audio: could have' })).toBeVisible();
+  fireEvent.playing(element);
+  fireEvent.ended(element);
+  expect(screen.getByRole('button', { name: 'Play audio: could have' })).toBeVisible();
+});
+
+test('a refused play promise is announced and loading blocks duplicate presses', async () => {
+  let reject!: (error: Error) => void;
+  const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(
+    () =>
+      new Promise<void>((_resolve, no) => {
+        reject = no;
+      }),
+  );
+  setup([card]);
+  const button = await screen.findByRole('button', { name: 'Play audio: could have' });
+  fireEvent.click(button);
+  expect(button).toHaveAttribute('aria-busy', 'true');
+  fireEvent.click(button);
+  expect(play).toHaveBeenCalledTimes(1);
+  reject(new Error('Playback refused'));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Audio could not play');
+  expect(button).toHaveAttribute('aria-busy', 'false');
+});
+
+test('older cards explain unavailable audio without offering a retry', async () => {
+  setup([{ ...card, audio_status: 'unavailable' }]);
+  expect(await screen.findByText('Audio is unavailable for this older card.')).toBeVisible();
+  expect(screen.queryByRole('button', { name: /Retry audio/ })).not.toBeInTheDocument();
+});

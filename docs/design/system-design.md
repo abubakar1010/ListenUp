@@ -171,7 +171,7 @@ Storage stays small by keeping one compact playback file per clip, sharing YouTu
 | Analysis audio | 16 kHz mono PCM | about 1.9 MB per minute | **No**: decoded into worker scratch space when needed, deleted after the job |
 | Source download or upload | As received | varies | **No** for YouTube (deleted after conversion); uploads converted, then the original is deleted |
 | Shadow recording | Opus 24 kbit/s (WebM) or AAC (Safari), as recorded | about 0.2 MB per round | 90 days, scores kept |
-| Card snippet | AAC-LC, mono, 64 kbit/s, faststart MP4, 3 to 6 s | about 50 KB | Until the card is deleted, so cards survive media expiry; retryable background deletion (ADR 0061) |
+| Card snippet | AAC-LC, mono, 64 kbit/s, faststart MP4, 3 to 6 s | about 50 KB | Until the card is deleted, so cards survive media expiry; retryable background deletion (ADR 0063) |
 | Waveform peaks | JSON, computed at intake | about 2 KB per minute | With the clip; the browser never decodes audio to draw it |
 
 ### 6.2 Shared YouTube media

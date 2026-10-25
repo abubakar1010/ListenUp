@@ -1,4 +1,4 @@
-# ADR 0061: Private card audio and durable cleanup
+# ADR 0063: Private card audio and durable cleanup
 
 - Status: Accepted
 - Date: 2026-10-25

@@ -248,7 +248,7 @@ Read the section for the area you are changing before you change it. The rules e
   through DB to the default pool; never add a collector route to media-data.
 
 
-## Cards (ADR 0060)
+## Cards (ADRs 0060, 0063)
 
 - Cards read marks only through `review.service.list_marks`. Creation and completion
   lock the session row before calling `practice.service.require_step(..., Step.CARD)`;
@@ -257,7 +257,7 @@ Read the section for the area you are changing before you change it. The rules e
 - Keep `at_ms` from the selected mark as a source-time snapshot. A deleted mark sets
   `mark_id` to NULL while the saved forms and time remain. Source links use
   `/contents/{id}?at_ms={absolute_ms}`.
-- Snippets (#73, ADR 0061) snapshot authorized word timings on creation. Refuse
+- Snippets (#73, ADR 0063) snapshot authorized word timings on creation. Refuse
   phrases longer than six seconds before inserting a card. Generation uses the
   intake lane and deterministic learner/card storage keys; never resolve audio
   through source playback after it is ready. Card JSON exposes status only.
