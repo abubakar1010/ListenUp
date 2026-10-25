@@ -283,6 +283,8 @@ test('after the whole passage the gist needs three sentences', async ({ page }) 
   await gist.fill('Cities plant trees on streets. Shade cools the air. Roots can break pipes.');
   await page.getByRole('button', { name: 'Submit gist' }).click();
 
+  await expect(page.getByText('Preparing your gist feedback…')).toBeVisible();
+  await page.getByRole('button', { name: 'Continue to Transcript' }).click();
   await expect(page.getByText('Step 2 of 4')).toBeVisible();
   const submitted = posts.filter((p) => p.path.endsWith('/gist'));
   expect(submitted).toHaveLength(1);

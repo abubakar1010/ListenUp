@@ -1,11 +1,73 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { Route, Routes } from 'react-router';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { createMemoryRouter, Route, RouterProvider, Routes } from 'react-router';
+import { createQueryClient } from '../../app/queryClient';
 
 import { jsonResponse, renderWithProviders } from '../../test-utils';
 import { sessionFixture } from '../session/fixtures';
 import SessionPage from '../session/SessionPage';
 import { mockRoutes } from '../session/testApi';
 import { attemptFixture, blindStepFixture } from './fixtures';
+
+test('Continue refreshes a fresh completed-listen cache before showing Transcript feedback', async () => {
+  let submitted = false;
+  const gist = 'This is the idea. Here is another detail. I heard this too.';
+  mockRoutes({
+    [SESSION]: () => jsonResponse(200, sessionFixture({ entry: 'blind', done: submitted ? 1 : 0 })),
+    [BLIND]: () =>
+      jsonResponse(
+        200,
+        blindStepFixture(
+          attemptFixture({
+            listen_complete: true,
+            status: submitted ? 'submitted' : 'active',
+            gist_text: submitted ? gist : null,
+          }),
+        ),
+      ),
+    'POST /blind/attempts/attempt-1/gist': () => {
+      submitted = true;
+      return jsonResponse(201, {
+        attempt: attemptFixture({ status: 'submitted', gist_text: gist }),
+        open_step: 'transcript',
+        session_version: 1,
+      });
+    },
+    'GET /gists/attempt-1/grade': jsonResponse(200, {
+      status: 'ready',
+      overall: 80,
+      gist,
+      feedback: 'Full feedback beside Transcript.',
+    }),
+    'GET /sessions/session-1/transcript': jsonResponse(200, {
+      session_id: 'session-1',
+      passage: sessionFixture().passage,
+      media_url: '/api/v1/media/test',
+      lines: [],
+    }),
+    'GET /sessions/session-1/marks': jsonResponse(200, { marks: [] }),
+  });
+  // Preserve the production 30-second freshness window; the shared test helper resets it.
+  const queryClient = createQueryClient();
+  const router = createMemoryRouter([{ path: '/sessions/:sessionId', element: <SessionPage /> }], {
+    initialEntries: ['/sessions/session-1'],
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+  fireEvent.change(await screen.findByRole('textbox', { name: 'Your gist' }), {
+    target: { value: gist },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Submit gist' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Continue to Transcript' }));
+  await waitFor(() => {
+    const aside = screen.getByRole('complementary', { name: 'Side panel' });
+    expect(within(aside).getByText(gist)).toBeInTheDocument();
+    expect(within(aside).getByText('Full feedback beside Transcript.')).toBeInTheDocument();
+  });
+});
 
 beforeEach(() => {
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
@@ -340,4 +402,40 @@ test('a listen heard to the end shows the gist form, with no replay', async () =
   expect(screen.getByText('Blind plays once. No replay.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Start listening' })).toBeNull();
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Your gist' })).toHaveFocus());
+});
+
+test('submission keeps feedback visible until Continue opens the next step', async () => {
+  let submitted = false;
+  mockRoutes({
+    [SESSION]: () => jsonResponse(200, sessionFixture({ entry: 'both', done: submitted ? 1 : 0 })),
+    [BLIND]: jsonResponse(
+      200,
+      blindStepFixture(attemptFixture({ listen_complete: true, position_ms: 280000 })),
+    ),
+    'POST /blind/attempts/attempt-1/gist': () => {
+      submitted = true;
+      return jsonResponse(201, {
+        attempt: attemptFixture({ status: 'submitted' }),
+        open_step: 'dictation',
+        session_version: 1,
+      });
+    },
+    'GET /gists/attempt-1/grade': jsonResponse(200, {
+      status: 'ready',
+      overall: 80,
+      level: 'good',
+      dimension_scores: { main_idea: 90 },
+      captured_count: 2,
+      total_count: 3,
+    }),
+  });
+  renderBlind();
+  fireEvent.change(await screen.findByRole('textbox', { name: 'Your gist' }), {
+    target: { value: 'This is the idea. Here is another detail. I heard this too.' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Submit gist' }));
+  expect(await screen.findByText('80 / 100')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Continue to Dictation' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Continue to Dictation' }));
+  expect(await screen.findByRole('heading', { name: /Dictation:/ })).toBeInTheDocument();
 });

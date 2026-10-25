@@ -1110,6 +1110,113 @@
         "title": "FailedJob",
         "type": "object"
       },
+      "GistFeedback": {
+        "properties": {
+          "captured_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured Count"
+          },
+          "dimension_scores": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimension Scores"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          },
+          "gist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gist"
+          },
+          "key_points": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GistKeyPoint"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Points"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "enum": ["needs_work", "fair", "good", "excellent"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "overall": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall"
+          },
+          "status": {
+            "enum": ["pending", "ready"],
+            "title": "Status",
+            "type": "string"
+          },
+          "total_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Count"
+          }
+        },
+        "required": ["status"],
+        "title": "GistFeedback",
+        "type": "object"
+      },
       "GistIn": {
         "properties": {
           "text": {
@@ -1121,6 +1228,21 @@
         },
         "required": ["text"],
         "title": "GistIn",
+        "type": "object"
+      },
+      "GistKeyPoint": {
+        "properties": {
+          "captured": {
+            "title": "Captured",
+            "type": "boolean"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": ["text", "captured"],
+        "title": "GistKeyPoint",
         "type": "object"
       },
       "GistSubmitted": {
@@ -1547,6 +1669,19 @@
         },
         "required": ["note"],
         "title": "MarkNote",
+        "type": "object"
+      },
+      "MarkStatus": {
+        "description": "FR-TR-3: a suggested Dictation mark is confirmed; it never goes back to suggested.",
+        "properties": {
+          "status": {
+            "const": "confirmed",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": ["status"],
+        "title": "MarkStatus",
         "type": "object"
       },
       "Me": {
@@ -3794,6 +3929,51 @@
         "tags": ["events"]
       }
     },
+    "/api/v1/gists/{attempt_id}/grade": {
+      "get": {
+        "description": "D4: details are absent until Transcript opens when Dictation follows.",
+        "operationId": "get_gist_grade_api_v1_gists__attempt_id__grade_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GistFeedback"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Gist Grade",
+        "tags": ["blind"]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "health_api_v1_health_get",
@@ -4903,6 +5083,77 @@
           }
         },
         "summary": "Change Mark Note",
+        "tags": ["review"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/marks/{mark_id}/status": {
+      "put": {
+        "description": "Confirm a mark pre-filled from Dictation (FR-TR-3). Confirming again answers with\nthe same mark, so a resend is harmless; to drop the mark, DELETE it (ADR 0058).",
+        "operationId": "confirm_mark_api_v1_sessions__session_id__marks__mark_id__status_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mark_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mark Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkStatus"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mark"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "`not_signed_in`"
+          },
+          "404": {
+            "description": "`session_not_found` or `mark_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Mark",
         "tags": ["review"]
       }
     },

@@ -530,6 +530,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/gists/{attempt_id}/grade': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Gist Grade
+     * @description D4: details are absent until Transcript opens when Dictation follows.
+     */
+    get: operations['get_gist_grade_api_v1_gists__attempt_id__grade_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/health': {
     parameters: {
       query?: never;
@@ -971,6 +991,27 @@ export interface paths {
      * @description Replace the mark's note; an empty or null note removes it.
      */
     patch: operations['change_mark_note_api_v1_sessions__session_id__marks__mark_id__patch'];
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/marks/{mark_id}/status': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Confirm Mark
+     * @description Confirm a mark pre-filled from Dictation (FR-TR-3). Confirming again answers with
+     *     the same mark, so a resend is harmless; to drop the mark, DELETE it (ADR 0058).
+     */
+    put: operations['confirm_mark_api_v1_sessions__session_id__marks__mark_id__status_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   '/api/v1/sessions/{session_id}/shadow/segment': {
@@ -1757,12 +1798,45 @@ export interface components {
        */
       name: string;
     };
+    /** GistFeedback */
+    GistFeedback: {
+      /** Captured Count */
+      captured_count?: number | null;
+      /** Dimension Scores */
+      dimension_scores?: {
+        [key: string]: number;
+      } | null;
+      /** Feedback */
+      feedback?: string | null;
+      /** Gist */
+      gist?: string | null;
+      /** Key Points */
+      key_points?: components['schemas']['GistKeyPoint'][] | null;
+      /** Level */
+      level?: ('needs_work' | 'fair' | 'good' | 'excellent') | null;
+      /** Overall */
+      overall?: number | null;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'pending' | 'ready';
+      /** Total Count */
+      total_count?: number | null;
+    };
     /** GistIn */
     GistIn: {
       /**
        * Text
        * @description Three sentences or more
        */
+      text: string;
+    };
+    /** GistKeyPoint */
+    GistKeyPoint: {
+      /** Captured */
+      captured: boolean;
+      /** Text */
       text: string;
     };
     /** GistSubmitted */
@@ -1968,6 +2042,17 @@ export interface components {
     MarkNote: {
       /** Note */
       note: string | null;
+    };
+    /**
+     * MarkStatus
+     * @description FR-TR-3: a suggested Dictation mark is confirmed; it never goes back to suggested.
+     */
+    MarkStatus: {
+      /**
+       * Status
+       * @constant
+       */
+      status: 'confirmed';
     };
     /** Me */
     Me: {
@@ -3517,6 +3602,44 @@ export interface operations {
       };
     };
   };
+  get_gist_grade_api_v1_gists__attempt_id__grade_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GistFeedback'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   health_api_v1_health_get: {
     parameters: {
       query?: never;
@@ -4506,6 +4629,63 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  confirm_mark_api_v1_sessions__session_id__marks__mark_id__status_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+        mark_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MarkStatus'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Mark'];
+        };
+      };
+      /** @description `not_signed_in` */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `session_not_found` or `mark_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
       };
     };
   };
