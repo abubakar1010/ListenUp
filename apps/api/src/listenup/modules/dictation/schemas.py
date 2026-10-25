@@ -44,6 +44,15 @@ class SaveDraft(BaseModel):
     draft_version: int = Field(ge=0, description="The `draft_version` this text was based on")
 
 
+class DisputeWord(BaseModel):
+    word_index: int = Field(
+        ge=0, le=2**31 - 1, description="Reference word index in the scored diff"
+    )
+    corrected_text: str = Field(
+        max_length=60, description="Replacement text; empty removes the word"
+    )
+
+
 class SavedDraft(BaseModel):
     draft_version: int = Field(description="The new version; base the next save on it")
     updated_at: datetime

@@ -124,11 +124,9 @@ test('a learner deletes their account and restores it by signing in', async ({ p
     await route.fallback();
   });
   await restore.getByRole('button', { name: 'Restore my account' }).click();
-  await expect(restore.getByRole('button', { name: 'Restoring…' })).toHaveAttribute(
-    'aria-busy',
-    'true',
-  );
-  await expect(restore.getByRole('button', { name: 'Restoring…' })).toBeFocused();
+  // While it runs the buttons wait and the dialog itself holds focus (#206, #195).
+  await expect(restore.getByRole('button', { name: 'Restoring…' })).toBeDisabled();
+  await expect(restore).toBeFocused();
   await expectFocusKept(page, 'while the restore runs');
   answer();
 

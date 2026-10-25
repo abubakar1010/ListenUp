@@ -37,8 +37,8 @@ export function queryKeysForEvent(event: LiveEvent, queryClient: QueryClient): r
     case 'grade.ready':
       return [GIST_GRADE_KEY];
     case 'dictation.scored':
-      // The event names the attempt only; refresh every Dictation result shown (ADR 0042).
-      return [DICTATION_RESULT_KEY];
+      // Re-scoring may follow a private correction: other tabs refresh Transcript too.
+      return [DICTATION_RESULT_KEY, REVIEW_KEY];
     case 'attempt.voided':
       // The event names the attempt only; refresh every Blind step shown (ADR 0024).
       return [BLIND_KEY];

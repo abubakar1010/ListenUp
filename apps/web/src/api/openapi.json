@@ -170,6 +170,112 @@
         "title": "BlindStep",
         "type": "object"
       },
+      "Card": {
+        "properties": {
+          "at_ms": {
+            "title": "At Ms",
+            "type": "integer"
+          },
+          "content_id": {
+            "format": "uuid",
+            "title": "Content Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "heard_form": {
+            "title": "Heard Form",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "mark_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mark Id"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "slot": {
+            "title": "Slot",
+            "type": "integer"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "written_form": {
+            "title": "Written Form",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "slot",
+          "mark_id",
+          "written_form",
+          "heard_form",
+          "at_ms",
+          "content_id",
+          "source_url",
+          "created_at"
+        ],
+        "title": "Card",
+        "type": "object"
+      },
+      "CardList": {
+        "properties": {
+          "cards": {
+            "items": {
+              "$ref": "#/components/schemas/Card"
+            },
+            "title": "Cards",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining"
+          }
+        },
+        "required": ["cards", "next_cursor"],
+        "title": "CardList",
+        "type": "object"
+      },
       "ChangeEntry": {
         "properties": {
           "entry": {
@@ -1069,6 +1175,26 @@
         "title": "DiffItem",
         "type": "object"
       },
+      "DisputeWord": {
+        "properties": {
+          "corrected_text": {
+            "description": "Replacement text; empty removes the word",
+            "maxLength": 60,
+            "title": "Corrected Text",
+            "type": "string"
+          },
+          "word_index": {
+            "description": "Reference word index in the scored diff",
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Word Index",
+            "type": "integer"
+          }
+        },
+        "required": ["word_index", "corrected_text"],
+        "title": "DisputeWord",
+        "type": "object"
+      },
       "Entry": {
         "enum": ["blind", "dictation", "both"],
         "title": "Entry",
@@ -1734,6 +1860,31 @@
           "consents_required"
         ],
         "title": "Me",
+        "type": "object"
+      },
+      "NewCard": {
+        "additionalProperties": false,
+        "properties": {
+          "heard_form": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Heard Form",
+            "type": "string"
+          },
+          "mark_id": {
+            "format": "uuid",
+            "title": "Mark Id",
+            "type": "string"
+          },
+          "written_form": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Written Form",
+            "type": "string"
+          }
+        },
+        "required": ["mark_id", "written_form", "heard_form"],
+        "title": "NewCard",
         "type": "object"
       },
       "NewDictationMark": {
@@ -3403,6 +3554,119 @@
         "tags": ["blind"]
       }
     },
+    "/api/v1/cards": {
+      "get": {
+        "operationId": "list_cards_api_v1_cards_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Cards",
+        "tags": ["cards"]
+      }
+    },
+    "/api/v1/cards/{card_id}": {
+      "delete": {
+        "operationId": "delete_card_api_v1_cards__card_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "card_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Card Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`card_not_found`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Card",
+        "tags": ["cards"]
+      }
+    },
     "/api/v1/contents": {
       "get": {
         "description": "The learner's content items, newest first, in keyset pages.",
@@ -3622,6 +3886,75 @@
           }
         },
         "summary": "Get Attempt",
+        "tags": ["dictation"]
+      }
+    },
+    "/api/v1/dictation/attempts/{attempt_id}/disputes": {
+      "post": {
+        "description": "Correct a reference word for this learner and return the re-scored attempt (FR-TX-4).",
+        "operationId": "dispute_word_api_v1_dictation_attempts__attempt_id__disputes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisputeWord"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictationAttemptView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found`"
+          },
+          "409": {
+            "description": "`attempt_not_scored`, `transcript_not_ready`, `transcript_failed`"
+          },
+          "422": {
+            "description": "`word_out_of_range`, `validation_failed`, `idempotency_key_reused`"
+          }
+        },
+        "summary": "Dispute Word",
         "tags": ["dictation"]
       }
     },
@@ -4694,6 +5027,136 @@
         },
         "summary": "Start Attempt",
         "tags": ["blind"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/cards": {
+      "post": {
+        "operationId": "create_card_api_v1_sessions__session_id__cards_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewCard"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Card"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "`not_signed_in`"
+          },
+          "404": {
+            "description": "`session_not_found` or `mark_not_found`"
+          },
+          "409": {
+            "description": "`step_locked` or `card_limit_reached`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Card",
+        "tags": ["cards"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/cards/complete": {
+      "post": {
+        "operationId": "complete_cards_api_v1_sessions__session_id__cards_complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Cards",
+        "tags": ["cards"]
       }
     },
     "/api/v1/sessions/{session_id}/dictation/attempt": {

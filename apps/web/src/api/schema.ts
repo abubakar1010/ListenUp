@@ -334,6 +334,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/cards': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Cards */
+    get: operations['list_cards_api_v1_cards_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/cards/{card_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete Card */
+    delete: operations['delete_card_api_v1_cards__card_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/contents': {
     parameters: {
       query?: never;
@@ -403,6 +437,26 @@ export interface paths {
     get: operations['get_attempt_api_v1_dictation_attempts__attempt_id__get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/dictation/attempts/{attempt_id}/disputes': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Dispute Word
+     * @description Correct a reference word for this learner and return the re-scored attempt (FR-TX-4).
+     */
+    post: operations['dispute_word_api_v1_dictation_attempts__attempt_id__disputes_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -874,6 +928,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sessions/{session_id}/cards': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Card */
+    post: operations['create_card_api_v1_sessions__session_id__cards_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/cards/complete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Complete Cards */
+    post: operations['complete_cards_api_v1_sessions__session_id__cards_complete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sessions/{session_id}/dictation/attempt': {
     parameters: {
       query?: never;
@@ -1247,6 +1335,50 @@ export interface components {
        */
       session_id: string;
       step_status: components['schemas']['StepStatus'];
+    };
+    /** Card */
+    Card: {
+      /** At Ms */
+      at_ms: number;
+      /**
+       * Content Id
+       * Format: uuid
+       */
+      content_id: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Heard Form */
+      heard_form: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Mark Id */
+      mark_id: string | null;
+      /**
+       * Session Id
+       * Format: uuid
+       */
+      session_id: string;
+      /** Slot */
+      slot: number;
+      /** Source Url */
+      source_url: string;
+      /** Written Form */
+      written_form: string;
+    };
+    /** CardList */
+    CardList: {
+      /** Cards */
+      cards: components['schemas']['Card'][];
+      /** Next Cursor */
+      next_cursor: string | null;
+      /** Remaining */
+      remaining?: number | null;
     };
     /** ChangeEntry */
     ChangeEntry: {
@@ -1777,6 +1909,19 @@ export interface components {
        */
       word: string;
     };
+    /** DisputeWord */
+    DisputeWord: {
+      /**
+       * Corrected Text
+       * @description Replacement text; empty removes the word
+       */
+      corrected_text: string;
+      /**
+       * Word Index
+       * @description Reference word index in the scored diff
+       */
+      word_index: number;
+    };
     /**
      * Entry
      * @enum {string}
@@ -2077,6 +2222,18 @@ export interface components {
        * Format: uuid
        */
       id: string;
+    };
+    /** NewCard */
+    NewCard: {
+      /** Heard Form */
+      heard_form: string;
+      /**
+       * Mark Id
+       * Format: uuid
+       */
+      mark_id: string;
+      /** Written Form */
+      written_form: string;
     };
     /**
      * NewDictationMark
@@ -3186,6 +3343,75 @@ export interface operations {
       };
     };
   };
+  list_cards_api_v1_cards_get: {
+    parameters: {
+      query?: {
+        session_id?: string | null;
+        cursor?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CardList'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  delete_card_api_v1_cards__card_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        card_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `card_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   list_contents_api_v1_contents_get: {
     parameters: {
       query?: {
@@ -3343,6 +3569,56 @@ export interface operations {
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
         };
+      };
+    };
+  };
+  dispute_word_api_v1_dictation_attempts__attempt_id__disputes_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DisputeWord'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationAttemptView'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `attempt_not_scored`, `transcript_not_ready`, `transcript_failed` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `word_out_of_range`, `validation_failed`, `idempotency_key_reused` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };
@@ -4254,6 +4530,97 @@ export interface operations {
       };
       /** @description `step_locked`, or `attempt_active` with `attempt_id` */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_card_api_v1_sessions__session_id__cards_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['NewCard'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Card'];
+        };
+      };
+      /** @description `not_signed_in` */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `session_not_found` or `mark_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` or `card_limit_reached` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  complete_cards_api_v1_sessions__session_id__cards_complete_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
         headers: {
           [name: string]: unknown;
         };

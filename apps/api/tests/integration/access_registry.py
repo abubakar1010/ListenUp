@@ -255,6 +255,24 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         owner_status=409,
         owner_code="step_locked",
     ),
+    ("POST", "/api/v1/sessions/{session_id}/cards"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["card"]},
+        body=lambda w: {
+            "mark_id": str(w.a.mark_id),
+            "written_form": "could have",
+            "heard_form": "kuduv",
+        },
+    ),
+    ("POST", "/api/v1/sessions/{session_id}/cards/complete"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["card"]},
+    ),
+    ("GET", "/api/v1/cards"): Scoped(a_sees=lambda w: [w.a.card_id]),
+    ("DELETE", "/api/v1/cards/{card_id}"): Owned(
+        "card_not_found",
+        params=lambda w: {"card_id": w.a.card_id},
+    ),
     # -- marks (#58) -------------------------------------------------------------------
     ("GET", "/api/v1/sessions/{session_id}/marks"): Owned(
         "session_not_found", params=lambda w: {"session_id": w.a.sessions["transcript"]}
@@ -338,6 +356,13 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         body=lambda w: {"text": "B was here", "version": 0, "replay_count": 0},
     ),
     # B holds A's attempt id and adds nothing to A's marks (#55).
+    ("POST", "/api/v1/dictation/attempts/{attempt_id}/disputes"): Owned(
+        "attempt_not_found",
+        params=lambda w: {"attempt_id": w.a.dictation_attempt_id},
+        body=lambda w: {"word_index": 0, "corrected_text": "cap"},
+        owner_status=409,
+        owner_code="attempt_not_scored",
+    ),
     ("POST", "/api/v1/dictation/attempts/{attempt_id}/marks"): Owned(
         "attempt_not_found",
         params=lambda w: {"attempt_id": w.a.dictation_attempt_id},

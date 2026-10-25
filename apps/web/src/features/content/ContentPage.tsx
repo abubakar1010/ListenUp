@@ -1,5 +1,5 @@
-import { useRef } from 'react';
-import { Link, useParams } from 'react-router';
+import { useEffect, useRef } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router';
 
 import { usePageTitle } from '../../app/usePageTitle';
 import { buttonClass } from '../../components/button';
@@ -156,6 +156,11 @@ const NATIVE_FOCUS =
   'focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus-ring';
 
 function Player({ item, url }: { item: ContentDetail; url: string }) {
+  const [params] = useSearchParams();
+  const at = Number(params.get('at_ms'));
+  const source =
+    Number.isFinite(at) && at > 0 && at <= (item.duration_ms ?? 0) ? `${url}#t=${at / 1000}` : url;
+  const startMs = source === url ? 0 : at;
   const label = `Play ${item.title}`;
   if (item.has_video) {
     // A video needs its picture and full-screen control, so it keeps the browser's player.
@@ -164,7 +169,7 @@ function Player({ item, url }: { item: ContentDetail; url: string }) {
         controls
         preload="metadata"
         playsInline
-        src={url}
+        src={source}
         aria-label={label}
         className={`w-full max-w-[640px] rounded-md bg-ink ${NATIVE_FOCUS}`}
       />
@@ -175,20 +180,38 @@ function Player({ item, url }: { item: ContentDetail; url: string }) {
       <audio
         controls
         preload="metadata"
-        src={url}
+        src={source}
         aria-label={label}
         className={`w-full ${NATIVE_FOCUS}`}
       />
     );
   }
-  return <ClipAudioPlayer url={url} durationMs={item.duration_ms} />;
+  return <ClipAudioPlayer url={url} durationMs={item.duration_ms} startMs={startMs} />;
 }
 
-/** Audio uses the same player as the practice steps, with the same keys (UX-07, #198). */
-function ClipAudioPlayer({ url, durationMs }: { url: string; durationMs: number }) {
+/**
+ * Audio uses the same player as the practice steps, with the same keys (UX-07, #198).
+ * A card opens it at its phrase (`?at_ms=`, #205): the player seeks there once ready.
+ */
+function ClipAudioPlayer({
+  url,
+  durationMs,
+  startMs,
+}: {
+  url: string;
+  durationMs: number;
+  startMs: number;
+}) {
   const audio = useRef<HTMLAudioElement>(null);
   const player = usePassagePlayer(audio, 0, durationMs);
   usePlayerKeys(player);
+  const { status, seek } = player;
+  const started = useRef(false);
+  useEffect(() => {
+    if (status !== 'ready' || started.current) return;
+    started.current = true;
+    if (startMs > 0) seek(startMs);
+  }, [status, seek, startMs]);
   return (
     <PassagePlayerControls
       audioRef={audio}

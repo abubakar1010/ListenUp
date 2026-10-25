@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router';
 
 import { jsonResponse, mockApi, problem, renderWithProviders } from '../../test-utils';
@@ -26,13 +26,13 @@ function clip(overrides: Partial<ContentDetail> = {}): ContentDetail {
   };
 }
 
-function renderPage() {
+function renderPage(route = '/contents/content-1') {
   return renderWithProviders(
     <Routes>
       <Route path="/contents/:contentId" element={<ContentPage />} />
       <Route path="/library" element={<h1>Library</h1>} />
     </Routes>,
-    { route: '/contents/content-1' },
+    { route },
   );
 }
 
@@ -230,3 +230,53 @@ test('a copy of a clip the learner has links to that clip', async () => {
     '/contents/content-0',
   );
 });
+
+test('a card source link starts a video at its saved time', async () => {
+  mockApi({ '/contents/content-1': jsonResponse(200, clip({ has_video: true })) });
+  renderPage('/contents/content-1?at_ms=11000');
+  expect(await screen.findByLabelText('Play Why cities plant street trees')).toHaveAttribute(
+    'src',
+    '/api/v1/media/media-1#t=11',
+  );
+});
+
+/** The shared audio player's element, with a settable time (jsdom plays nothing). */
+async function loadedClipAudio() {
+  let time = 0;
+  Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', {
+    configurable: true,
+    get: () => time,
+    set: (value: number) => {
+      time = value;
+    },
+  });
+  await screen.findByRole('button', { name: 'Play' });
+  const audio = document.querySelector('audio')!;
+  act(() => {
+    audio.dispatchEvent(new Event('loadedmetadata'));
+  });
+  return () => time;
+}
+
+test('a card source link opens the audio player at its saved time (#205, #198)', async () => {
+  mockApi({ '/contents/content-1': jsonResponse(200, clip()) });
+  renderPage('/contents/content-1?at_ms=11000');
+
+  const time = await loadedClipAudio();
+
+  await waitFor(() => expect(time()).toBe(11));
+  expect(screen.getByText('00:11 / 03:20')).toBeInTheDocument();
+});
+
+test.each(['-1', 'NaN', 'Infinity', '200001'])(
+  'an invalid source time %s starts the audio at the beginning',
+  async (at) => {
+    mockApi({ '/contents/content-1': jsonResponse(200, clip()) });
+    renderPage(`/contents/content-1?at_ms=${at}`);
+
+    const time = await loadedClipAudio();
+
+    expect(time()).toBe(0);
+    expect(screen.getByText('00:00 / 03:20')).toBeInTheDocument();
+  },
+);

@@ -2,7 +2,6 @@ import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 're
 import { createPortal } from 'react-dom';
 
 import { buttonClass } from './button';
-import { BusyButton } from './BusyButton';
 
 interface ConfirmDialogProps {
   title: string;
@@ -66,6 +65,11 @@ export function ConfirmDialog({
     };
   }, []);
 
+  useEffect(() => {
+    if (busy) dialog.current?.focus();
+    else if (document.activeElement === dialog.current) safe.current?.focus();
+  }, [busy]);
+
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === 'Escape') {
       event.stopPropagation();
@@ -74,14 +78,24 @@ export function ConfirmDialog({
     }
     if (event.key !== 'Tab' || !dialog.current) return;
     const focusable = [...dialog.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
-    if (focusable.length === 0) return;
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialog.current.focus();
+      return;
+    }
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     const active = document.activeElement;
-    if (event.shiftKey && (active === first || !dialog.current.contains(active))) {
+    if (
+      event.shiftKey &&
+      (active === first || active === dialog.current || !dialog.current.contains(active))
+    ) {
       event.preventDefault();
       last.focus();
-    } else if (!event.shiftKey && (active === last || !dialog.current.contains(active))) {
+    } else if (
+      !event.shiftKey &&
+      (active === last || active === dialog.current || !dialog.current.contains(active))
+    ) {
       event.preventDefault();
       first.focus();
     }
@@ -97,6 +111,7 @@ export function ConfirmDialog({
       <div
         ref={dialog}
         role="dialog"
+        tabIndex={-1}
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={bodyId}
@@ -109,12 +124,23 @@ export function ConfirmDialog({
         <div id={bodyId}>{children}</div>
         {footer}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <BusyButton className={buttonClass('secondary')} onClick={onConfirm} busy={busy}>
+          <button
+            type="button"
+            className={buttonClass('secondary')}
+            onClick={onConfirm}
+            disabled={busy}
+          >
             {busy ? busyLabel : confirmLabel}
-          </BusyButton>
-          <BusyButton ref={safe} className={buttonClass('primary')} onClick={onCancel} busy={busy}>
+          </button>
+          <button
+            ref={safe}
+            type="button"
+            className={buttonClass('primary')}
+            onClick={onCancel}
+            disabled={busy}
+          >
             {cancelLabel}
-          </BusyButton>
+          </button>
         </div>
       </div>
     </div>,
