@@ -96,6 +96,24 @@ test('an admin sees the job backlog and retries a failed job', async ({ page }) 
   await expect(page.getByText('No failed jobs.')).toBeVisible();
 });
 
+test('at 360 px the job tables scroll inside their own regions, not the page', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 });
+  await answerApi(page, true);
+
+  await page.goto('/admin/jobs');
+  await expect(page.getByRole('table', { name: 'Failed jobs, newest first' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+
+  for (const name of ['Backlog table', 'Failed jobs table']) {
+    const region = page.getByRole('region', { name });
+    await region.focus();
+    await expect(region).toBeFocused();
+  }
+  const retry = page.getByRole('button', { name: 'Retry job 12, content.convert_upload' });
+  await retry.focus();
+  await expect(retry).toBeInViewport();
+});
+
 test('a learner who opens the admin page sees page-not-found', async ({ page }) => {
   await answerApi(page, false);
 

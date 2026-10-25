@@ -29,6 +29,8 @@ export const MAX_FILE_BYTES = 500 * MB;
 export interface FileProblem {
   title: string;
   detail: string;
+  /** A rule the learner has met (the daily limit), shown calmly, not as an error. */
+  rule?: boolean;
 }
 
 export function extension(filename: string): string {
