@@ -99,7 +99,12 @@ services:
       - --proxy-headers
       - --forwarded-allow-ips
       - 172.31.250.10
-    networks: [default, edge]
+    networks:
+      default: {}
+      # Caddy proxies to this alias, which exists on the edge network only, so its
+      # requests always come from 172.31.250.10 (the one trusted address).
+      edge:
+        aliases: [api-via-edge]
     healthcheck:
       test:
         - CMD
@@ -216,7 +221,6 @@ services:
   db-relay:
     <<: *hardened
     image: haproxy:3.2.4-alpine
-    read_only: true
     configs:
       - source: db-relay
         target: /usr/local/etc/haproxy/haproxy.cfg

@@ -124,6 +124,26 @@ def test_the_api_trusts_forwarded_client_addresses_only_from_the_edge() -> None:
     assert "ports" not in SERVICES["api"]
 
 
+def test_the_edge_reaches_the_api_only_over_the_edge_network() -> None:
+    # Both also sit on the egress network; proxying to the service name could pick that
+    # network, and the API would then see Caddy's other address and trust no client
+    # address at all (found in the rehearsal). An alias on the edge network alone
+    # pins the route to the trusted address.
+    caddyfile = (REPO / "infra/caddy/Caddyfile").read_text()
+    [upstream] = re.findall(r"reverse_proxy (\S+):8000", caddyfile)
+    assert upstream in SERVICES["api"]["networks"]["edge"]["aliases"]
+    assert upstream not in SERVICES
+    other_aliases = [
+        alias
+        for service in SERVICES.values()
+        if isinstance(service.get("networks"), dict)
+        for network, config in service["networks"].items()
+        if network != "edge"
+        for alias in (config or {}).get("aliases", [])
+    ]
+    assert upstream not in other_aliases
+
+
 SANDBOX = [
     "user",
     "init",
@@ -172,7 +192,11 @@ def test_the_relay_forwards_exactly_two_upstreams_without_inspecting_them() -> N
     ]
     relay = SERVICES["db-relay"]
     assert relay["cap_drop"] == ["ALL"]
-    assert relay["read_only"] is True
+    assert relay["security_opt"] == ["no-new-privileges:true"]
+    # Compose cannot place an inline config in a read-only container (found in the
+    # rehearsal); the relay holds no secrets and runs as HAProxy's own user.
+    assert "read_only" not in relay
+    assert "user" not in relay  # the image's non-root haproxy user
 
 
 def test_the_backup_service_always_runs_in_production() -> None:

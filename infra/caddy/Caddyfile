@@ -36,7 +36,9 @@
 	handle /api/* {
 		# Server-sent events (GET /api/v1/events) are streamed: Caddy flushes them as
 		# they arrive.
-		reverse_proxy api:8000 {
+		# api-via-edge resolves on the edge network only: the API trusts forwarded
+		# client addresses from this container's address there and nowhere else.
+		reverse_proxy api-via-edge:8000 {
 			header_down -Server
 		}
 	}
