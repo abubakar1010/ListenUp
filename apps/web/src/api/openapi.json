@@ -2167,6 +2167,76 @@
         "title": "RetriedJob",
         "type": "object"
       },
+      "Round": {
+        "properties": {
+          "playback_status": {
+            "enum": ["ready", "ended"],
+            "title": "Playback Status",
+            "type": "string"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded At"
+          },
+          "round": {
+            "title": "Round",
+            "type": "integer"
+          },
+          "transcript_shown": {
+            "title": "Transcript Shown",
+            "type": "boolean"
+          }
+        },
+        "required": ["round", "transcript_shown", "playback_status", "recorded_at"],
+        "title": "Round",
+        "type": "object"
+      },
+      "Rounds": {
+        "properties": {
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Round"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rounds": {
+            "items": {
+              "$ref": "#/components/schemas/Round"
+            },
+            "title": "Rounds",
+            "type": "array"
+          },
+          "segment": {
+            "$ref": "#/components/schemas/Segment"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": ["segment", "current", "rounds"],
+        "title": "Rounds",
+        "type": "object"
+      },
       "SaveDraft": {
         "properties": {
           "draft_text": {
@@ -5618,6 +5688,187 @@
         },
         "summary": "Confirm Mark",
         "tags": ["review"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/shadow/rounds": {
+      "get": {
+        "operationId": "read_rounds_api_v1_sessions__session_id__shadow_rounds_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Rounds"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`, `session_closed`, `round_order` or `round_limit`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Rounds",
+        "tags": ["shadow"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/shadow/rounds/{number}/playback-ended": {
+      "post": {
+        "operationId": "end_playback_api_v1_sessions__session_id__shadow_rounds__number__playback_ended_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`, `session_closed`, `round_order` or `round_limit`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "End Playback",
+        "tags": ["shadow"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/shadow/rounds/{number}/start": {
+      "post": {
+        "operationId": "start_round_api_v1_sessions__session_id__shadow_rounds__number__start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`, `session_closed`, `round_order` or `round_limit`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Round",
+        "tags": ["shadow"]
       }
     },
     "/api/v1/sessions/{session_id}/shadow/segment": {

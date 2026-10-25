@@ -290,7 +290,7 @@ The table below is a summary of the main tables, named by schema; the [ListenUp 
 | `practice.marks` | review | id, session\_id, word\_from, word\_to, at\_ms, tag, note, source (dictation, manual), status |
 | `practice.cards` | cards | id, user\_id, session\_id, slot (1, 2), mark\_id, media\_object\_id, written\_form, heard\_form, snippet\_key |
 | `practice.shadow_segments` | shadow | session\_id, span (60 to 90 s, or the whole 30 to 60 s passage), chosen\_by, locked\_at |
-| `practice.shadow_rounds` | shadow | id, session\_id, round (1 to 3), transcript\_shown, status, recording\_key |
+| `practice.shadow_rounds` | shadow | id, session\_id, user\_id, round (1 to 3), transcript\_shown, playback\_status, created\_at, recorded\_at; recording/upload metadata follows in #81 ([ADR 0061](../adr/0061-shadow-playback-rounds.md)) |
 | `grading.key_points` | grading | id, media\_object\_id, span, prompt\_version, points (JSONB) |
 | `grading.gist_grades` | grading | attempt\_id, status, dimension\_scores, overall, level, covered\_points, wrong\_claims, feedback, provider\_info |
 | `grading.round_grades` | grading | round\_id, status (pending, scored, ready, unavailable), measures (JSONB), word\_labels (JSONB), feedback, feedback\_mode (ai, template), speech\_info, text\_info |
@@ -348,7 +348,7 @@ The API is JSON over HTTPS under `/api/v1`, described by the OpenAPI schema Fast
 | Dictation | `POST /sessions/{id}/dictation/attempts` (201 new or 200 with `resumed: true` for the live draft), `PUT /dictation/attempts/{id}/draft` (`draft_version`; stale differing text gets 409 `draft_conflict`, identical resend succeeds; [ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)), `POST /dictation/attempts/{id}/submit` (202; stores the text, completes the step, queues scoring; [ADR 0042](../adr/0042-dictation-submission-and-asynchronous-scoring.md)), `GET /dictation/attempts/{id}` and `GET /sessions/{id}/dictation/attempt` (state and, once scored, the diff and accuracy; `dictation.scored` event), `POST /dictation/attempts/{id}/disputes` |
 | Transcript step | `GET /sessions/{id}/transcript` (only from the Transcript step on), `GET`, `POST`, `PATCH`, `DELETE /sessions/{id}/marks` |
 | Cards | `POST /sessions/{id}/cards`, `GET /cards`, `DELETE /cards/{id}`, `POST /sessions/{id}/cards/complete` |
-| Shadow | `PUT /sessions/{id}/shadow/segment`, `POST /sessions/{id}/shadow/rounds` (returns a signed upload URL), `POST /shadow/rounds/{id}/complete`, `GET /sessions/{id}/shadow/comparison` |
+| Shadow | `GET/PUT /sessions/{id}/shadow/segment`, `GET /sessions/{id}/shadow/rounds`, `POST /sessions/{id}/shadow/rounds/{number}/start`, `POST /sessions/{id}/shadow/rounds/{number}/playback-ended` ([ADR 0061](../adr/0061-shadow-playback-rounds.md)); recording upload/complete and comparison follow in their stories |
 | Grades | `GET /gists/{attempt_id}/grade`, `GET /shadow/rounds/{id}/grade`, `POST /grades/{id}/retry` |
 | Library | `GET /library/contents`, `GET /library/trends` |
 | Admin | `GET /admin/usage`, `GET /admin/jobs`, `POST /admin/takedowns` |

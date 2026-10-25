@@ -281,6 +281,26 @@ Read the section for the area you are changing before you change it. The rules e
   through `review.service.list_marks`; mode endpoints require `Step.SHADOW`.
   Saved segments use absolute, half-open media milliseconds. The shared session
   waveform accepts optional `boundsFor` and `label`, preserving passage defaults.
-- `locked_at` is the database boundary for the future round 1 transaction (#78).
+- `locked_at` is the database boundary set atomically by round 1 insertion (#79).
   Once set, the segment is immutable, including its lock. Do not clear it to adjust
   a selection. The parent session/account cascade is still allowed.
+
+## Shadow playback rounds (ADR 0061)
+
+- `shadow.service.change_round` serializes numbered starts and playback-ended writes
+  through `practice.service.lock_session`, then `require_step(Step.SHADOW)`. The
+  database also enforces sequential rounds 1–3 and locks the segment on insertion
+  of round 1. Round identity and an ended playback cannot be reset.
+- Round start/end submissions use `run_once` but store only bodyless 204 results.
+  `GET /sessions/{id}/shadow/rounds` includes segment text only while the current
+  round is 1; round 2/3 omit it entirely, including history. Reference words come
+  only through `transcript.service`, never through its repository. All responses
+  use private/no-store; transcript is cleared before client mutations.
+- Shadow controls enforce 1x in preview and rounds. Numbered playbacks have a
+  three-second count-in and explicit advancement. Stop, hidden pages and reload
+  restart the same unended round; native buttons support Enter/Space. Keep round
+  status inside Shadow; use the shared busy button to preserve focus.
+- `playback_status = ended` is not recorded/uploaded success: leave `recorded_at`
+  unset, do not emit `record_shadow_round_completed` and do not complete the step.
+  #78/#81/#87 add microphone/consent, recording/upload and completion respectively.
+  No reference-profile readiness check gates playback (ADR 0050).

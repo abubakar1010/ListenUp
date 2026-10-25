@@ -154,6 +154,15 @@ def _new_upload(world: World) -> dict[str, object]:
 
 
 REGISTRY: dict[tuple[str, str], Entry] = {
+    ("GET", "/api/v1/sessions/{session_id}/shadow/rounds"): Owned(
+        "session_not_found", params=lambda w: {"session_id": w.a.sessions["shadow"]}
+    ),
+    ("POST", "/api/v1/sessions/{session_id}/shadow/rounds/{number}/start"): Owned(
+        "session_not_found", params=lambda w: {"session_id": w.a.sessions["shadow"], "number": 1}
+    ),
+    ("POST", "/api/v1/sessions/{session_id}/shadow/rounds/{number}/playback-ended"): Owned(
+        "session_not_found", params=lambda w: {"session_id": w.a.sessions["shadow"], "number": 1}
+    ),
     ("GET", "/api/v1/sessions/{session_id}/shadow/segment"): Owned(
         "session_not_found", params=lambda w: {"session_id": w.a.sessions["shadow"]}
     ),
