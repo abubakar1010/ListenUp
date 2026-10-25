@@ -1742,6 +1742,18 @@
             "title": "Status",
             "type": "string"
           },
+          "tag": {
+            "anyOf": [
+              {
+                "enum": ["linking", "reduction", "weak_form", "unknown_word"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag"
+          },
           "word_from": {
             "title": "Word From",
             "type": "integer"
@@ -1760,6 +1772,7 @@
           "note",
           "source",
           "status",
+          "tag",
           "created_at"
         ],
         "title": "Mark",
@@ -1808,6 +1821,26 @@
         },
         "required": ["status"],
         "title": "MarkStatus",
+        "type": "object"
+      },
+      "MarkTagChange": {
+        "description": "FR-TR-4: the mark's optional tag. Checked by the service so a refusal has its code.",
+        "properties": {
+          "tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One of linking, reduction, weak_form, unknown_word, or null for no tag; any other value is refused with `mark_tag_invalid`.",
+            "title": "Tag"
+          }
+        },
+        "required": ["tag"],
+        "title": "MarkTagChange",
         "type": "object"
       },
       "Me": {
@@ -1932,6 +1965,18 @@
               }
             ],
             "title": "Note"
+          },
+          "tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One of linking, reduction, weak_form, unknown_word, or null for no tag; any other value is refused with `mark_tag_invalid`.",
+            "title": "Tag"
           },
           "word_from": {
             "maximum": 2147483647.0,
@@ -5426,7 +5471,7 @@
             "description": "`step_locked`, `transcript_not_ready`, `transcript_failed`, `mark_exists` (with `mark_id`) or `mark_id_taken`"
           },
           "422": {
-            "description": "`mark_out_of_range`, `mark_no_words`, `mark_too_long` or `note_too_long`"
+            "description": "`mark_out_of_range`, `mark_no_words`, `mark_too_long`, `note_too_long` or `mark_tag_invalid`"
           }
         },
         "summary": "Create Mark",
@@ -5617,6 +5662,70 @@
           }
         },
         "summary": "Confirm Mark",
+        "tags": ["review"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/marks/{mark_id}/tag": {
+      "put": {
+        "description": "Set, change or clear (null) the mark's tag (FR-TR-4). The whole tag is sent, so a\nresend answers with the same mark and needs no Idempotency-Key (ADR 0062).",
+        "operationId": "change_mark_tag_api_v1_sessions__session_id__marks__mark_id__tag_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mark_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mark Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkTagChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mark"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "`not_signed_in`"
+          },
+          "404": {
+            "description": "`session_not_found` or `mark_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`"
+          },
+          "422": {
+            "description": "`mark_tag_invalid`"
+          }
+        },
+        "summary": "Change Mark Tag",
         "tags": ["review"]
       }
     },

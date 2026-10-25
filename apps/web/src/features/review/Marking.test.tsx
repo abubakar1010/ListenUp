@@ -43,6 +43,7 @@ function serverMark(values: Partial<SavedMark> & { id: string }): SavedMark {
     note: null,
     source: 'manual',
     status: 'confirmed',
+    tag: null,
     created_at: '2026-10-19T10:00:00Z',
     ...values,
   };

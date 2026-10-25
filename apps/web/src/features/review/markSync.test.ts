@@ -13,6 +13,7 @@ function saved(id: string, word_from: number, note: string | null = null): Saved
     note,
     source: 'manual',
     status: 'confirmed',
+    tag: null,
     created_at: '2026-10-19T10:00:00Z',
   };
 }

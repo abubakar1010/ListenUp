@@ -1,4 +1,4 @@
-"""Transcript step HTTP boundary (FR-TR-1, FR-TR-2, FR-TR-3, FR-TX-5)."""
+"""Transcript step HTTP boundary (FR-TR-1 to FR-TR-4, FR-TX-5)."""
 
 import uuid
 from typing import Any
@@ -93,8 +93,8 @@ async def list_marks(
             "`mark_exists` (with `mark_id`) or `mark_id_taken`"
         },
         422: {
-            "description": "`mark_out_of_range`, `mark_no_words`, `mark_too_long` or "
-            "`note_too_long`"
+            "description": "`mark_out_of_range`, `mark_no_words`, `mark_too_long`, "
+            "`note_too_long` or `mark_tag_invalid`"
         },
     },
 )
@@ -136,6 +136,29 @@ async def change_mark_note(
     """Replace the mark's note; an empty or null note removes it."""
     response.headers.update(_NO_STORE)
     return await service.change_note(db, session_id, mark_id, body.note)
+
+
+@router.put(
+    "/sessions/{session_id}/marks/{mark_id}/tag",
+    responses={
+        **_GATE,
+        404: {"description": "`session_not_found` or `mark_not_found`"},
+        422: {"description": "`mark_tag_invalid`"},
+    },
+)
+async def change_mark_tag(
+    session_id: uuid.UUID,
+    mark_id: uuid.UUID,
+    body: schemas.MarkTagChange,
+    response: Response,
+    learner: CurrentLearner,
+    db: DbSession,
+) -> schemas.Mark:
+    """Set, change or clear (null) the mark's tag (FR-TR-4). The whole tag is sent, so a
+    resend answers with the same mark and needs no Idempotency-Key (ADR 0062).
+    """
+    response.headers.update(_NO_STORE)
+    return await service.change_tag(db, session_id, mark_id, body.tag)
 
 
 @router.put(
