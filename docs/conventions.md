@@ -84,6 +84,17 @@ Read the section for the area you are changing before you change it. The rules e
   scoring uses the learner overlay. Transcript's existing edited marker shows it;
   `dictation.scored` refreshes both result and Transcript queries across tabs.
 
+- Limited original profiles (#76, ADR 0061) belong to `transcript`: queue from the
+  committed transcript-ready hook on intake, deduplicate by transcript cache id and
+  processing fingerprint, and never apply learner corrections. Alignment stays on
+  the ADR 0034 gateway/model/settings; Parselmouth supplies pitch and intensity only.
+  Preserve actual model/runtime/settings provenance and explicit unknown frames.
+- Serialize subscription and finish transactions with the same media lock; never
+  hold a transaction through inference. Profile events carry authorized session ids
+  only and commit with complete results. Ready cache reuse queues no processing job.
+  `reference_profile` checks ownership/reached Shadow before worker-cache access;
+  pending/failed profiles must not gate playback, recording or plan completion.
+
 ## Data export (ADR 0030)
 
 - Expiry handlers raise `Reschedule(deadline)` when not due; the worker postpones the job without producer deduplication or failure-budget consumption. Exhausted export builds queue independent `export.cleanup_archive` work; exhausted cleanup cycles schedule another cycle an hour later, preserving cleanup after restoration or purge.
