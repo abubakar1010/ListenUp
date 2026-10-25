@@ -174,3 +174,46 @@ def test_retry_recovers_reference_work_while_grading_is_already_waiting(
             ).fetchone()[0]
             == 1
         )
+
+
+@pytest.mark.parametrize("ready", [False, True])
+def test_retry_leaves_ready_or_missing_grades_and_jobs_unchanged(
+    client, clock, migrated_url, ready
+):
+    from types import SimpleNamespace
+
+    from tests.integration.intake_helpers import learner_id
+    from tests.integration.test_gist_grades import insert
+
+    session, attempt = submitted(client, clock, migrated_url, "blind")
+    before = client.get(f"/api/v1/sessions/{session}").json()
+    with psycopg.connect(migrated_url) as conn:
+        conn.execute("DELETE FROM grading.gist_grades WHERE attempt_id=%s", [attempt])
+        if ready:
+            insert(conn, SimpleNamespace(id=attempt, user_id=learner_id(client)))
+        jobs_before = conn.execute(
+            "SELECT id,status FROM procrastinate.procrastinate_jobs ORDER BY id"
+        ).fetchall()
+        row_before = conn.execute(
+            "SELECT * FROM grading.gist_grades WHERE attempt_id=%s", [attempt]
+        ).fetchone()
+    response = client.post(f"/api/v1/grades/{attempt}/retry")
+    assert response.status_code == (202 if ready else 404)
+    if ready:
+        assert response.json() == {"status": "accepted"}
+    else:
+        assert response.json()["code"] == "grade_not_found"
+    with psycopg.connect(migrated_url) as conn:
+        assert (
+            conn.execute(
+                "SELECT id,status FROM procrastinate.procrastinate_jobs ORDER BY id"
+            ).fetchall()
+            == jobs_before
+        )
+        assert (
+            conn.execute(
+                "SELECT * FROM grading.gist_grades WHERE attempt_id=%s", [attempt]
+            ).fetchone()
+            == row_before
+        )
+    assert client.get(f"/api/v1/sessions/{session}").json() == before

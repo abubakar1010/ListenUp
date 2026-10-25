@@ -52,7 +52,7 @@ the focused regression passed. The first full backend run was intentionally stop
 when this gap was found; it is not reported as a completed run. Initial web lint
 rejected synchronous state reset in an effect; timer expiration now identifies its
 originating read and the synchronous reset was removed.
-Final checks and changed-line coverage are recorded below when completed.
+Final checks and changed-line coverage are recorded below.
 
 Completed frontend checks: lint, format, types, build and size (125.6 KB gzip,
 200 KB budget) pass. Full component coverage: **611 passed / 58 files**, 96.15%
@@ -65,8 +65,8 @@ checks competed for CPU. The production build was then served independently.
 The default 30-second test-budget run finished **54 passed, 2 timed out** (account
 restoration and the unavailable-feedback browser case). Both exhausted the total
 budget before a next action; the unavailable case also exceeded browser teardown.
-A full run with a 60-second host test budget, unchanged assertions and assertion
-timeouts, and no automatic retries is recorded below when complete. This is a
+A subsequent local run used a 60-second host test budget with unchanged
+assertions and assertion timeouts and no automatic retries, but was interrupted. This is a
 local runner adjustment, not a product deadline or repository configuration change.
 
 The two-test reference-retry follow-up initially counted another test's reference
@@ -80,3 +80,66 @@ Browser tests mock API responses. Real database/API integration tests separately
 prove ownership, persisted state, rollback and queue admission. No live provider
 was called or enabled; model quality and actual-server latency are not established
 by these tests. Required CI and fresh-session independent review remain merge gates.
+
+## CI evidence
+
+Implementation commit: `b9bfd04bac29237c7ce1993abf9b25a5b428a773`.
+[Push validation run](https://github.com/abubakar1010/ListenUp/actions/runs/40230592892).
+CI web checks, the full Playwright suite with the normal repository timeouts,
+API generation, dependency scan, observability checks and real media sandbox pass.
+The preceding local 60-second run was interrupted and is not a completed result;
+it exposed the existing Blind browser fake's missing grade endpoint, now fixed to
+return an explicit pending response. Its separate passage playback assertion also
+failed under contention; that shared UI was not changed in this story. CI's full
+browser pass validates the final fixture with the normal time budgets.
+
+The local coverage run was interrupted when the environment stopped during the
+previous active turn; its partial output is not reported as passed. Final full
+backend and coverage evidence follows below. The final focused recovery
+run passed **17 tests**. No inference, rubric, eligibility or enabled-provider
+configuration changed.
+
+The initial published commit body contains literal newline escapes from command
+quoting. Its subject and owner authorship are correct; published history is kept
+in accordance with the no-rewrite rule.
+
+## Final validation against current main
+
+Main was re-fetched and reconciled at `2764892` (#211). Its only changes are
+conventions and #69 review evidence; production source is identical to the green
+implementation run. After that reconciliation, Ruff format/check, strict mypy
+(194 source files), all six import contracts and diff checks pass again.
+
+The complete push CI run above passed:
+
+- Backend required-PostgreSQL/S3 coverage suite: **2,095 passed**, one performance
+  test deliberately deselected, 619.93 seconds. Full backend coverage: **98%**.
+- Separate uninstrumented performance suite: **1 passed**.
+- Spike pure-helper regressions: **62 passed**.
+- Web: **611 passed / 58 files**; **56 browser tests passed** with the normal
+  repository test timeouts. Lint, format, types, build and bundle size pass.
+- API generation matches; all four images build; dependency vulnerability,
+  observability and real media sandbox/scanner checks pass.
+- Synthetic AI smoke is skipped by the push path detector; both synthetic suites
+  were explicitly run locally and passed, as recorded above.
+
+The restricted environment could not download the coverage archive through the
+Actions blob redirect. The authorized GitHub connector downloaded the same CI
+artifact instead. Local inventory validation confirms every backend runtime file
+resolves in that XML report. `diff-cover` against current main reports **97% of
+134 changed executable backend lines**, and **100% of 16 web lines**. No threshold,
+ignore directive or coverage exclusion changed.
+
+Coverage review found three unexecuted backend lines: missing reference fallback,
+missing-grade refusal and ready-grade retry no-op. Two additional characterization
+cases now explicitly assert that ready/missing retries preserve the grade, queue
+and practice state; **2 passed** locally. They were added after implementation,
+not claimed as Red cycles. The reported CI coverage remains the conservative 97%
+from before those two additions. The absent-reference defensive display fallback
+remains outside that report; normal successful grading always stores a reference.
+
+Local broad coverage reruns were stopped/interrupted without a completed result;
+full-suite evidence is the linked CI run, not partial local progress. The final
+recovery-specific run passed **17 tests**, followed by the two characterization
+cases above. Full CI reruns for the final test/documentation commit and PR.
+Fresh-session independent review remains required before the owner merges.
