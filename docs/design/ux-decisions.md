@@ -433,6 +433,10 @@ mirror and the media API. Three files behind the comparison changed:
 The other comparison rows stand. This is source inspection, not a rendered
 comparison.
 
+Later the same day, main `2281d73` (#208, ADR 0057) changed `AuthForm.tsx` for
+the sign-in lockout warning only. The restore dialog, its copy and the
+kept-deleted message are unchanged, so the A01/I02 row still stands.
+
 ### New decisions
 
 All decisions below refine [ADR 0033](../adr/0033-design-review-policy-resolutions.md),
