@@ -2,7 +2,8 @@
 
 Owner approved the plan before implementation. The session uses the isolated checkout
 on `feat/76-passage-reference-profiles`, initially from main `2281d73`, reconciled to
-main `5db1333` before final checks. Prerequisite #45 is merged by PR #154, merge
+main `5db1333` before final checks, then merged documentation-only main
+`2764892` during final reconciliation (no new migrations or generated API changes). Prerequisite #45 is merged by PR #154, merge
 `f2220fbb85033e24b21612e31729299bdb799d04`, verified as an ancestor. Its historical
 stage-0 and independent-review gaps are not repaired or claimed passed here.
 
@@ -21,7 +22,7 @@ change, round implementation, card snippets or gist recovery is included.
 | Partial cache, retries and failures | `test_profile_ready_requires_complete_coverage_and_retry_keeps_completed_spans`, `test_failed_profile_never_announces_ready_and_retry_recovers`, `test_permanent_processing_failures_publish_only_failed` (missing audio, invalid alignment/provenance, bad acoustics, frame count, changed recipe) |
 | Versioned identity and SQL integrity | `test_processing_fingerprint_changes_with_versions_and_settings`, `test_changed_recipe_creates_new_cache_identity`, `test_ready_profile_rejects_invalid_provenance` |
 | Atomic readiness | `test_profile_provenance_round_trip_and_atomic_readiness`, `test_ready_event_rolls_back_with_profile`; readiness waits for complete padded coverage, events contain learner/session ids only |
-| Ownership, gating, private data | `test_profile_schema_is_worker_only`, `test_profile_access_boundaries_and_playback_independence`, `test_profile_subscriptions_are_learner_scoped`, `test_profile_queue_rejects_foreign_session_and_incomplete_transcript` |
+| Ownership, gating, private data (including `test_profile_uses_original_words_without_learner_corrections`) | `test_profile_schema_is_worker_only`, `test_profile_access_boundaries_and_playback_independence`, `test_profile_subscriptions_are_learner_scoped`, `test_profile_queue_rejects_foreign_session_and_incomplete_transcript` |
 | Nonblocking rounds contract | `test_profile_access_boundaries_and_playback_independence`, `test_failed_profile_still_allows_shadow_step_and_reports_failed`: playable content and the existing Shadow step boundary remain available with pending/failed profiles. No round module or grading UI is added; those owners consume the optional service boundary. |
 | Cancellation/deletion/export | `test_profile_cancellation_cleans_scratch_and_releases_lock`, `test_deleted_media_during_processing_never_resurrects`, `test_deleted_queued_profile_is_a_noop`, `test_profile_subscription_is_in_learner_export` |
 | Unobservable values and tiny spans | `test_real_silence_is_unobservable_not_perfect`, `test_short_window_retains_unknown_frames`; retain NULL rather than zero/perfect evidence or a changed pitch floor |
@@ -112,7 +113,48 @@ work remain intact. This story does not enable learner grading.
 
 ## Final validation
 
-Final check, coverage and mutation results are recorded below after execution.
+- Focused final backend run with PostgreSQL/S3 required: **66 passed**. The later
+  private-correction characterization test separately passed. This is a targeted
+  run, not a whole-repository coverage baseline.
+- Complete backend runtime inventory passes. Changed executable backend coverage:
+  **281/290 lines (96% as reported by diff-cover)**; no exclusions weakened.
+  Nine uncovered defensive lines cover unknown deployment/library versions,
+  the real extraction wrapper (exercised in the separate uninstrumented real run),
+  absent profile/active source, disabled subscribers, and readiness reads before
+  subscription/with missing transcript coverage. SQL integrity, denial, partial
+  readiness, rollback and relevant failure assertions are exercised.
+- Ruff lint/format, strict mypy (199 source files), all six import contracts,
+  migration upgrade/drift/downgrade/re-upgrade, and API export/client generation pass.
+  No new HTTP route was introduced; access-registry coverage remains applicable.
+- Web lint/format/types and production build pass. Initial JavaScript is
+  **125.6 KB gzip / 200 KB budget**. Local Playwright: **54 passed** against mocked
+  API responses; this is not a full live-stack browser test.
+- Real processing/size evidence and limitations are recorded above.
+
+Local broad-check failures are retained rather than relabelled as passes:
+
+- The first concurrent web coverage attempt reported failures in existing
+  Dictation/Transcript-mark tests and was interrupted for diagnosis. A clean
+  `origin/main` snapshot passed all 64 tests in those two files under coverage.
+- The full one-worker web run completed with **607 passed / 2 failed**: five-second
+  timeouts in existing `BusyButton` and `BlindStep` tests. It reported line coverage
+  96.13% and branch coverage 88.72%; those totals do not make the failed run pass.
+  A subsequent run during other local checks also encountered existing UI failures.
+  No mode module, assertion, timeout or threshold was changed to hide these results.
+- The original local whole-backend run ended without a final summary after the
+  environment interruption. It is **incomplete**, not passed.
+- The local uninstrumented existing Dictation budget test failed: best 0.462 s
+  against its unchanged 0.2 s limit while other checks ran on this two-CPU executor.
+  This is an existing scoring budget, not stage-0 profile performance acceptance.
+
+CI performs the full backend/web suites, uninstrumented budget, complete/changed
+coverage, all images, real sandbox/scanner, generated client, vulnerability scan,
+AI smoke, observability and Playwright checks on the pushed branch. The PR checks
+and [branch workflow runs](https://github.com/abubakar1010/ListenUp/actions?query=branch%3Afeat%2F76-passage-reference-profiles)
+provide the final-head results; local failures above remain disclosed even when
+those checks pass. The initial source push is
+[run 40230431319](https://github.com/abubakar1010/ListenUp/actions/runs/40230431319).
+Fresh-session independent review has not been performed and is required before merge.
 
 Mutation checks used copied source trees under `work/76-mutations`, without editing
 the active checkout or creating a Git worktree. Each mutation was caught by an
