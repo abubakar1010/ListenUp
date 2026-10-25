@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 from pydantic import SecretStr
 
 from listenup.ops.storage_check import (
@@ -280,3 +280,32 @@ def test_main_prints_one_json_line_per_bucket(
             "policy": "no bucket policy",
         }
     ]
+
+
+def test_a_storage_endpoint_that_cannot_be_reached_to_write_the_probe_is_an_error() -> None:
+    class Unreachable(FakeWriter):
+        def put_object(self, *, Bucket: str, Key: str, Body: bytes) -> object:
+            raise EndpointConnectionError(endpoint_url="https://s3.example")
+
+    report = check_bucket(target(Unreachable()), answering())
+
+    assert report.errors == ["could not write the probe object: EndpointConnectionError"]
+    assert exit_code([report]) == 2
+
+
+def test_a_policy_status_call_that_fails_in_transport_is_recorded_not_failed() -> None:
+    writer = FakeWriter(policy=EndpointConnectionError(endpoint_url="https://s3.example"))
+
+    report = check_bucket(target(writer), answering())
+
+    assert report.policy == "unsupported (EndpointConnectionError)"
+    assert report.public == []
+    assert report.errors == []
+
+
+def test_anonymous_requests_ignore_proxies_from_the_environment() -> None:
+    from listenup.ops import storage_check
+
+    with storage_check._http_client() as http:
+        assert http.trust_env is False
+        assert http.timeout.connect == 10.0
