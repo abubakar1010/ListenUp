@@ -113,6 +113,22 @@ async def set_note(
     return MarkRow(*row) if row else None
 
 
+async def confirm(
+    session: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UUID
+) -> MarkRow | None:
+    row = (
+        await session.execute(
+            text(f"""
+            UPDATE practice.marks SET status = 'confirmed'
+             WHERE id = :id AND session_id = :session_id
+            RETURNING {_COLUMNS}
+            """),
+            {"id": mark_id, "session_id": session_id},
+        )
+    ).first()
+    return MarkRow(*row) if row else None
+
+
 async def delete(session: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UUID) -> bool:
     deleted = await session.execute(
         text("DELETE FROM practice.marks WHERE id = :id AND session_id = :session_id RETURNING id"),

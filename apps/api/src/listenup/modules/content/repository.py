@@ -369,6 +369,15 @@ async def delete_content_item(session: AsyncSession, content_id: uuid.UUID) -> N
     await session.execute(text("DELETE FROM content.contents WHERE id = :id"), {"id": content_id})
 
 
+async def retain_content(session: AsyncSession, learner: uuid.UUID, content_id: uuid.UUID) -> bool:
+    return (
+        await session.scalar(
+            text("SELECT id FROM content.contents WHERE id=:id AND user_id=:learner FOR KEY SHARE"),
+            {"id": content_id, "learner": learner},
+        )
+    ) is not None
+
+
 async def delete_media(session: AsyncSession, media_id: uuid.UUID) -> None:
     await session.execute(
         text("DELETE FROM content.media_objects WHERE id = :id"), {"id": media_id}

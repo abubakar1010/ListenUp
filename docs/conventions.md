@@ -22,7 +22,7 @@ Read the section for the area you are changing before you change it. The rules e
 - Session writes carry the version the client last saw: `PATCH /sessions/{id}/entry` and `POST /sessions/{id}/steps/{step}/skip` take `version` in the body (409 `session_changed`). Plans start only on playable clips through `practice.service.start_plan` (409 `content_not_ready`, ADR 0023).
 - Blind (ADR 0024): the heartbeat rules are the pure `judge` in `modules/blind/domain/listen.py`, and the gist sentence rule is `domain/gist.py` (mirrored in `apps/web/src/features/blind/gist.ts`). Routes take the time from the `server_now` dependency, which tests override. Blind media goes only through `GET /blind/attempts/{id}/media/{token}`, a redirect signed with `signed_download(..., ttl_seconds=...)` for the attempt's window.
 - Dictation drafts save with `PUT /dictation/attempts/{id}/draft` and the `draft_version` the client last saw (409 `draft_conflict` with the current draft); `POST /sessions/{id}/dictation/attempts` resumes the live attempt instead of voiding it (ADR 0025).
-- Dictation submit (#54, ADR 0042): `POST /dictation/attempts/{id}/submit` stores the text as `waiting_transcript`, completes the step and queues `dictation.score_attempt`; the job is the only scorer (idempotent conditional update, then `dictation.scored`). Reference words come only from `transcript.service.reference_for_scoring` and reach a response only inside `result.items`. A mode that must wait for the passage words registers with `transcript.service.on_passage_ready` (and `on_passage_failed`) from its `jobs.py`; hooks run in their own learner-scoped transaction after `transcript.ready` is committed, so a failing hook retries the job and never takes the event with it; `transcript.jobs` imports no mode (`practice` would reach it, `lint-imports`). Learner corrections (#56) plug in at `dictation.service.reference_words`.
+- Dictation submit (#54, ADR 0042): `POST /dictation/attempts/{id}/submit` stores the text as `waiting_transcript`, completes the step and queues `dictation.score_attempt`; the job computes the initial score (idempotent conditional update, then `dictation.scored`). Reference words come only from `transcript.service.reference_for_scoring`, with the learner's overlays applied, and reach a response only inside `result.items`. A mode that must wait for the passage words registers with `transcript.service.on_passage_ready` (and `on_passage_failed`) from its `jobs.py`; hooks run in their own learner-scoped transaction after `transcript.ready` is committed, so a failing hook retries the job and never takes the event with it; `transcript.jobs` imports no mode (`practice` would reach it, `lint-imports`). Disputes synchronously re-score with the same pure function (ADR 0059).
 
 - Blind's first network recovery must arrive before five minutes after its last accepted heartbeat (ADR 0024). `Listen.abandonment_deadline()` is shared by heartbeat validation and worker expiry. Granting a resume queues the shorter expiry check; a completed listen is preserved. Dictation's analytics callback runs on media `playing`, not `play`.
 
@@ -74,9 +74,15 @@ Read the section for the area you are changing before you change it. The rules e
 - Queue passage transcription through `transcript.service.queue_passage` in the plan-start transaction. Jobs use intake, a per-session unique key and per-media lock; all AI calls remain inside `transcript` through the existing gateway.
 - Cache spans and word timings are absolute, half-open milliseconds. Only ready spans cover audio; process missing windows, preserve committed gaps on retry, and retain each span's provenance. Never weaken the database exclusion constraint to resolve a race.
 - Transcript reads go through `transcript.service.read_passage` with the learner's RLS session and an explicit worker-role database. Ownership and `require_reached(TRANSCRIPT)` precede privileged reads. No direct API-role grant on the cache.
-- Learner correction overlays use `(user_id, passage_transcript_id, word_index)` in `content.transcript_corrections` (ADR 0044). Read them in the learner's RLS transaction with an explicit learner filter after the gate; never mutate the cache. Preserve original sentence boundaries, word indices and timings, including empty replacements. The API has SELECT only; the editor/dispute write boundary remains #56. Export corrections through `transcript.service.export_data`.
+- Learner correction overlays use `(user_id, passage_transcript_id, word_index)` in `content.transcript_corrections` (ADRs 0044, 0059). Read/write them through `transcript.service` in the learner's RLS transaction after the gate; never mutate the cache. Preserve original sentence boundaries, word indices and timings, including empty replacements. Scoring and disputes take `lock_corrections` before reading overlays; disputes retain the owned content parent through commit. The API has correction CRUD but no cache access. The content-delete trigger cleans up that learner's overlays even when shared cache rows survive. Export corrections through `transcript.service.export_data`.
 - `sentence_starts` follows sentence-ending punctuation across provider chunks; do not equate acoustic segments with sentences. Ready cache rows require provider/model/version provenance and valid confidence/sentence-index arrays.
 - `transcript.ready` and `transcript.failed` carry session IDs only. They are invalidation signals and may repeat after retries. Do not expose text through progress events.
+
+- Dictation disputes (#56, ADR 0059) use `run_once`, re-score only the named scored
+  attempt with pure `score_dictation`, and publish `dictation.scored` atomically.
+  Preserve saved marks and notes/status; only score candidates change. Future initial
+  scoring uses the learner overlay. Transcript's existing edited marker shows it;
+  `dictation.scored` refreshes both result and Transcript queries across tabs.
 
 ## Data export (ADR 0030)
 
@@ -189,6 +195,13 @@ Read the section for the area you are changing before you change it. The rules e
   so no request walks further than the diff. Beside an open transcript the Dictation
   panel reads and adds through Transcript's `MarkSync` (`markList`, `takeSaved`), so the
   page keeps one mark list.
+- Confirm or remove Dictation marks (#59, ADR 0058): `PUT .../marks/{id}/status`
+  confirms in place; removal is the ordinary DELETE, and no `removed` status exists, so
+  readers of marks need no filter for rejected marks. In `MarkSync`, an `update` op sends
+  whatever differs from the server (note, then confirmation); confirm and remove are sent
+  at once, without the debounce. Undo of a removed Dictation mark is `undoRemove`, which
+  adds the words again through the Dictation marks route so the mark keeps its source.
+  Show a mark's source in text (description and list label), never by colour alone.
 
 - Mark list/count (#60) read the same `useMarkSync` snapshot as word highlights.
   List rows use native buttons for playback; E opens the note, Delete removes with
@@ -230,3 +243,41 @@ Read the section for the area you are changing before you change it. The rules e
   changes as well as detachment. Do not bypass this with auto-reaping. `/dev/shm`
   and `/dev/mqueue` must stay read-only. Media telemetry uses queued OTLP export
   through DB to the default pool; never add a collector route to media-data.
+
+
+## Cards (ADR 0060)
+
+- Cards read marks only through `review.service.list_marks`. Creation and completion
+  lock the session row before calling `practice.service.require_step(..., Step.CARD)`;
+  completion calls `complete_step` in that transaction. Two live slots are enforced
+  independently by the database. Deletion frees a slot (D14).
+- Keep `at_ms` from the selected mark as a source-time snapshot. A deleted mark sets
+  `mark_id` to NULL while the saved forms and time remain. Source links use
+  `/contents/{id}?at_ms={absolute_ms}`. Snippets remain #73.
+
+## Gist feedback (ADR 0054, #69)
+
+- `blind.service.read_grade` authorizes the attempt and derives D4 disclosure from
+  the current plan. With Dictation in the plan and Transcript still locked, the
+  response omits written feedback, gist and key-point identities/text entirely.
+  Blind-only and reached Transcript reads include the saved gist even while
+  grading is pending; score and feedback appear when ready.
+- `grading.service.read_gist_grade` reads the grade's exact shared reference through
+  the existing worker-role `transcript_database`, after the learner's attempt has
+  been authorized. Never grant the API role access to `grading.key_points`.
+- Web grade keys include the display context so the Blind summary cannot mask
+  Transcript details. `grade.ready` and reconnect invalidate gist-grade queries;
+  pending reads also poll. Submission keeps the result visible until Continue
+  refreshes both the session and its Blind attempt, including a fresh cached
+  completed listen. Render the saved gist independently of grading readiness.
+  #70 owns unavailable/delayed/retry behavior.
+
+## Shadow segments (ADR 0057)
+
+- `shadow/domain/segment.py` owns proposal and span validation. Marks are read only
+  through `review.service.list_marks`; mode endpoints require `Step.SHADOW`.
+  Saved segments use absolute, half-open media milliseconds. The shared session
+  waveform accepts optional `boundsFor` and `label`, preserving passage defaults.
+- `locked_at` is the database boundary for the future round 1 transaction (#78).
+  Once set, the segment is immutable, including its lock. Do not clear it to adjust
+  a selection. The parent session/account cascade is still allowed.

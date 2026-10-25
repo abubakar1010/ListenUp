@@ -334,6 +334,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/cards': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Cards */
+    get: operations['list_cards_api_v1_cards_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/cards/{card_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete Card */
+    delete: operations['delete_card_api_v1_cards__card_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/contents': {
     parameters: {
       query?: never;
@@ -403,6 +437,26 @@ export interface paths {
     get: operations['get_attempt_api_v1_dictation_attempts__attempt_id__get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/dictation/attempts/{attempt_id}/disputes': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Dispute Word
+     * @description Correct a reference word for this learner and return the re-scored attempt (FR-TX-4).
+     */
+    post: operations['dispute_word_api_v1_dictation_attempts__attempt_id__disputes_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -522,6 +576,26 @@ export interface paths {
      *     Each event carries only its type and the id of the resource to refetch.
      */
     get: operations['events_api_v1_events_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/gists/{attempt_id}/grade': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Gist Grade
+     * @description D4: details are absent until Transcript opens when Dictation follows.
+     */
+    get: operations['get_gist_grade_api_v1_gists__attempt_id__grade_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -854,6 +928,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sessions/{session_id}/cards': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Card */
+    post: operations['create_card_api_v1_sessions__session_id__cards_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/cards/complete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Complete Cards */
+    post: operations['complete_cards_api_v1_sessions__session_id__cards_complete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sessions/{session_id}/dictation/attempt': {
     parameters: {
       query?: never;
@@ -971,6 +1079,48 @@ export interface paths {
      * @description Replace the mark's note; an empty or null note removes it.
      */
     patch: operations['change_mark_note_api_v1_sessions__session_id__marks__mark_id__patch'];
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/marks/{mark_id}/status': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Confirm Mark
+     * @description Confirm a mark pre-filled from Dictation (FR-TR-3). Confirming again answers with
+     *     the same mark, so a resend is harmless; to drop the mark, DELETE it (ADR 0058).
+     */
+    put: operations['confirm_mark_api_v1_sessions__session_id__marks__mark_id__status_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/shadow/segment': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Segment
+     * @description Resume the saved selection, proposing one on first entry.
+     */
+    get: operations['read_segment_api_v1_sessions__session_id__shadow_segment_get'];
+    /** Choose Segment */
+    put: operations['choose_segment_api_v1_sessions__session_id__shadow_segment_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   '/api/v1/sessions/{session_id}/steps/{step}/skip': {
@@ -1185,6 +1335,50 @@ export interface components {
        */
       session_id: string;
       step_status: components['schemas']['StepStatus'];
+    };
+    /** Card */
+    Card: {
+      /** At Ms */
+      at_ms: number;
+      /**
+       * Content Id
+       * Format: uuid
+       */
+      content_id: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Heard Form */
+      heard_form: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Mark Id */
+      mark_id: string | null;
+      /**
+       * Session Id
+       * Format: uuid
+       */
+      session_id: string;
+      /** Slot */
+      slot: number;
+      /** Source Url */
+      source_url: string;
+      /** Written Form */
+      written_form: string;
+    };
+    /** CardList */
+    CardList: {
+      /** Cards */
+      cards: components['schemas']['Card'][];
+      /** Next Cursor */
+      next_cursor: string | null;
+      /** Remaining */
+      remaining?: number | null;
     };
     /** ChangeEntry */
     ChangeEntry: {
@@ -1715,6 +1909,19 @@ export interface components {
        */
       word: string;
     };
+    /** DisputeWord */
+    DisputeWord: {
+      /**
+       * Corrected Text
+       * @description Replacement text; empty removes the word
+       */
+      corrected_text: string;
+      /**
+       * Word Index
+       * @description Reference word index in the scored diff
+       */
+      word_index: number;
+    };
     /**
      * Entry
      * @enum {string}
@@ -1736,12 +1943,45 @@ export interface components {
        */
       name: string;
     };
+    /** GistFeedback */
+    GistFeedback: {
+      /** Captured Count */
+      captured_count?: number | null;
+      /** Dimension Scores */
+      dimension_scores?: {
+        [key: string]: number;
+      } | null;
+      /** Feedback */
+      feedback?: string | null;
+      /** Gist */
+      gist?: string | null;
+      /** Key Points */
+      key_points?: components['schemas']['GistKeyPoint'][] | null;
+      /** Level */
+      level?: ('needs_work' | 'fair' | 'good' | 'excellent') | null;
+      /** Overall */
+      overall?: number | null;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'pending' | 'ready';
+      /** Total Count */
+      total_count?: number | null;
+    };
     /** GistIn */
     GistIn: {
       /**
        * Text
        * @description Three sentences or more
        */
+      text: string;
+    };
+    /** GistKeyPoint */
+    GistKeyPoint: {
+      /** Captured */
+      captured: boolean;
+      /** Text */
       text: string;
     };
     /** GistSubmitted */
@@ -1948,6 +2188,17 @@ export interface components {
       /** Note */
       note: string | null;
     };
+    /**
+     * MarkStatus
+     * @description FR-TR-3: a suggested Dictation mark is confirmed; it never goes back to suggested.
+     */
+    MarkStatus: {
+      /**
+       * Status
+       * @constant
+       */
+      status: 'confirmed';
+    };
     /** Me */
     Me: {
       /**
@@ -1971,6 +2222,18 @@ export interface components {
        * Format: uuid
        */
       id: string;
+    };
+    /** NewCard */
+    NewCard: {
+      /** Heard Form */
+      heard_form: string;
+      /**
+       * Mark Id
+       * Format: uuid
+       */
+      mark_id: string;
+      /** Written Form */
+      written_form: string;
     };
     /**
      * NewDictationMark
@@ -2147,6 +2410,34 @@ export interface components {
        * Format: date-time
        */
       updated_at: string;
+    };
+    /** Segment */
+    Segment: {
+      /**
+       * Chosen By
+       * @enum {string}
+       */
+      chosen_by: 'system' | 'learner';
+      /** End Ms */
+      end_ms: number;
+      /** Locked At */
+      locked_at: string | null;
+      /** Mark Count */
+      mark_count: number;
+      /**
+       * Session Id
+       * Format: uuid
+       */
+      session_id: string;
+      /** Start Ms */
+      start_ms: number;
+    };
+    /** SegmentChoice */
+    SegmentChoice: {
+      /** End Ms */
+      end_ms: number;
+      /** Start Ms */
+      start_ms: number;
     };
     /**
      * Session
@@ -3052,6 +3343,75 @@ export interface operations {
       };
     };
   };
+  list_cards_api_v1_cards_get: {
+    parameters: {
+      query?: {
+        session_id?: string | null;
+        cursor?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CardList'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  delete_card_api_v1_cards__card_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        card_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `card_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   list_contents_api_v1_contents_get: {
     parameters: {
       query?: {
@@ -3209,6 +3569,56 @@ export interface operations {
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
         };
+      };
+    };
+  };
+  dispute_word_api_v1_dictation_attempts__attempt_id__disputes_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DisputeWord'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DictationAttemptView'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `attempt_not_scored`, `transcript_not_ready`, `transcript_failed` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `word_out_of_range`, `validation_failed`, `idempotency_key_reused` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };
@@ -3456,6 +3866,44 @@ export interface operations {
         content: {
           'text/event-stream': string;
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_gist_grade_api_v1_gists__attempt_id__grade_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GistFeedback'];
+        };
+      };
+      /** @description `attempt_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Validation Error */
       422: {
@@ -4098,6 +4546,97 @@ export interface operations {
       };
     };
   };
+  create_card_api_v1_sessions__session_id__cards_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['NewCard'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Card'];
+        };
+      };
+      /** @description `not_signed_in` */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `session_not_found` or `mark_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` or `card_limit_reached` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  complete_cards_api_v1_sessions__session_id__cards_complete_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   get_session_attempt_api_v1_sessions__session_id__dictation_attempt_get: {
     parameters: {
       query?: never;
@@ -4452,6 +4991,155 @@ export interface operations {
         content?: never;
       };
       /** @description `note_too_long` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  confirm_mark_api_v1_sessions__session_id__marks__mark_id__status_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+        mark_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MarkStatus'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Mark'];
+        };
+      };
+      /** @description `not_signed_in` */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `session_not_found` or `mark_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  read_segment_api_v1_sessions__session_id__shadow_segment_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Segment'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  choose_segment_api_v1_sessions__session_id__shadow_segment_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SegmentChoice'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Segment'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` or `segment_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `segment_span` or `validation_failed` */
       422: {
         headers: {
           [name: string]: unknown;

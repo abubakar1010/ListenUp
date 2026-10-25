@@ -41,6 +41,12 @@ def test_early_expiry_keeps_a_future_job(
     client = make_client()
     user = learner_id(client)
     started = request_export(client)
+    own_key = f"users/{user}/exports/{started['id']}.zip"
+    other = make_client()
+    other_user = learner_id(other)
+    other_export = request_export(other)
+    run_build(migrated_url, other_export["id"], other_user)
+    other_key = f"users/{other_user}/exports/{other_export['id']}.zip"
     run_build(migrated_url, started["id"], user)
     with psycopg.connect(migrated_url, autocommit=True) as conn:
         conn.execute("UPDATE procrastinate.procrastinate_jobs SET scheduled_at = now()")
@@ -52,7 +58,7 @@ def test_early_expiry_keeps_a_future_job(
             [jobs.EXPIRE_ARCHIVE, started["id"]],
         ).fetchone()
     assert waiting == (1,)
-    assert any("/exports/" in key for key in storage.objects)
+    assert own_key in storage.objects
     with psycopg.connect(migrated_url, autocommit=True) as conn:
         conn.execute(
             "UPDATE ops.data_exports SET expires_at = now() - interval '1 second' WHERE id = %s",
@@ -60,8 +66,9 @@ def test_early_expiry_keeps_a_future_job(
         )
         conn.execute("UPDATE procrastinate.procrastinate_jobs SET scheduled_at = now()")
     deliver(migrated_url)
-    assert not any("/exports/" in key for key in storage.objects)
+    assert own_key not in storage.objects
     assert latest(client)["status"] == "expired"
+    assert other_key in storage.objects
 
 
 @pytest.mark.parametrize("status", ["pending", "building", "ready", "expired", "failed", "purged"])
@@ -260,12 +267,42 @@ def learner_tables(migrated_url: str) -> set[str]:
     return {str(row[0]) for row in rows}
 
 
+def test_export_includes_disputed_reference_only_for_its_learner(
+    make_client: ClientFactory, storage: FakeStorage, migrated_url: str
+) -> None:
+    from tests.integration.test_dictation_disputes import dispute, share_clip
+    from tests.integration.test_dictation_marks import scored_attempt
+    from tests.integration.test_sessions_api import add_clip
+
+    client = make_client(
+        transcript_read_database_url=conninfo_to_url(migrated_url)
+        + "?options=-c%20role%3Dlistenup_worker"
+    )
+    other = make_client()
+    user = learner_id(client)
+    clip = add_clip(migrated_url, user)
+    attempt = scored_attempt(client, migrated_url, clip, "cap", ["cat"])
+    share_clip(client, other, attempt, migrated_url)
+    assert dispute(client, attempt["id"]).status_code == 200
+    for actor, expected in [(client, ["cap"]), (other, [])]:
+        started = request_export(actor)
+        run_build(migrated_url, started["id"], learner_id(actor))
+        with read_archive(storage, learner_id(actor), started["id"]) as archive:
+            exported = json.loads(archive.read("data.json"))
+        corrections = exported["tables"]["content.transcript_corrections"]
+        assert [row["corrected_text"] for row in corrections] == expected
+        assert all(row["user_id"] == user for row in corrections)
+
+
 def test_export_holds_every_learner_table_and_only_the_learners_data(
     make_client: ClientFactory, storage: FakeStorage, migrated_url: str
 ) -> None:
     client_a, client_b = make_client(), make_client()
     a = seeded(migrated_url, client_a, storage)
     b = seeded(migrated_url, client_b, storage)
+    for client, world in [(client_a, a), (client_b, b)]:
+        response = client.get(f"/api/v1/sessions/{world.sessions['shadow']}/shadow/segment")
+        assert response.status_code == 200, response.text
     # Corrections are private even when both learners reference the same cache row.
     transcript_id = uuid.uuid4()
     with psycopg.connect(migrated_url) as conn:
@@ -304,6 +341,13 @@ def test_export_holds_every_learner_table_and_only_the_learners_data(
     assert [
         (row["user_id"], row["corrected_text"]) for row in tables["content.transcript_corrections"]
     ] == [(str(a.user_id), "Own correction")]
+    segments = tables["practice.shadow_segments"]
+    assert len(segments) == 1
+    assert segments[0]["session_id"] == str(a.sessions["shadow"])
+    assert segments[0]["chosen_by"] == "system"
+    assert segments[0]["mark_count"] == 0
+    assert segments[0]["locked_at"] is None
+    assert segments[0]["span"] == {"lower": 0, "upper": 90_000, "bounds": "[)"}
     assert {"identity.users", "content.media_objects"} <= set(tables)
     assert [row["id"] for row in tables["identity.users"]] == [str(a.user_id)]
     assert {row["id"] for row in tables["practice.sessions"]} == {
