@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router';
 
 import { jsonResponse, mockApi, problem, renderWithProviders } from '../../test-utils';
@@ -36,22 +36,60 @@ function renderPage(route = '/contents/content-1') {
   );
 }
 
-test('a ready clip plays from the media URL with labelled native controls', async () => {
+test('a ready audio clip plays in the shared player (#198)', async () => {
   mockApi({ '/contents/content-1': jsonResponse(200, clip()) });
-  renderPage();
+  const { container } = renderPage();
 
   expect(
     await screen.findByRole('heading', { name: 'Why cities plant street trees', level: 1 }),
   ).toBeInTheDocument();
   expect(screen.getByText('Ready to play.')).toHaveAttribute('role', 'status');
   expect(screen.getByText('03:20')).toBeInTheDocument();
-  const player = screen.getByLabelText('Play Why cities plant street trees');
-  expect(player.tagName).toBe('AUDIO');
-  expect(player).toHaveAttribute('src', '/api/v1/media/media-1');
-  expect(player).toHaveAttribute('controls');
-  expect(player).toHaveAttribute('preload', 'metadata');
+  const audio = container.ownerDocument.querySelector('audio')!;
+  expect(audio).toHaveAttribute('src', '/api/v1/media/media-1');
+  expect(audio).toHaveAttribute('preload', 'metadata');
+  expect(audio).not.toHaveAttribute('controls');
+  for (const name of ['Back 5 seconds', 'Play', 'Replay segment']) {
+    expect(screen.getByRole('button', { name })).toBeInTheDocument();
+  }
+  expect(screen.getByRole('slider', { name: 'Seek' })).toBeInTheDocument();
+  expect(screen.getByRole('combobox', { name: 'Speed' })).toBeInTheDocument();
+  expect(screen.getByText('Whole clip')).toBeInTheDocument();
+  expect(screen.queryByText(/replays?$/)).not.toBeInTheDocument();
   expect(document.title).toBe('Why cities plant street trees · ListenUp');
   expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute('href', '/library');
+});
+
+test('outside text fields, Space plays and [ slows down on the clip page (UX-07)', async () => {
+  const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+  mockApi({ '/contents/content-1': jsonResponse(200, clip()) });
+  const { container } = renderPage();
+  await screen.findByRole('button', { name: 'Play' });
+  const audio = container.ownerDocument.querySelector('audio')!;
+  act(() => {
+    audio.dispatchEvent(new Event('loadedmetadata'));
+  });
+
+  fireEvent.keyDown(document.body, { key: ' ', code: 'Space' });
+  expect(play).toHaveBeenCalledTimes(1);
+  fireEvent.keyDown(document.body, { key: '[', code: 'BracketLeft' });
+  expect(audio.playbackRate).toBe(0.9);
+  // Keys typed into a field are text.
+  const field = document.createElement('input');
+  document.body.append(field);
+  fireEvent.keyDown(field, { key: ' ', code: 'Space' });
+  expect(play).toHaveBeenCalledTimes(1);
+  field.remove();
+});
+
+test('a ready clip of unknown length keeps the browser player, with the focus ring', async () => {
+  mockApi({ '/contents/content-1': jsonResponse(200, clip({ duration_ms: null })) });
+  renderPage();
+
+  const player = await screen.findByLabelText('Play Why cities plant street trees');
+  expect(player.tagName).toBe('AUDIO');
+  expect(player).toHaveAttribute('controls');
+  expect(player.className).toContain('focus-visible:outline-focus-ring');
 });
 
 test('a clip that kept its video plays in a video player', async () => {
@@ -97,7 +135,7 @@ test('a clip still processing is checked again until it is ready', async () => {
     await vi.advanceTimersByTimeAsync(5000);
 
     expect(await screen.findByText('Ready to play.')).toBeInTheDocument();
-    expect(screen.getByLabelText('Play Why cities plant street trees')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
   } finally {
     vi.useRealTimers();
   }
@@ -193,26 +231,52 @@ test('a copy of a clip the learner has links to that clip', async () => {
   );
 });
 
-test.each([false, true])(
-  'a card source link starts the media at its saved time (video: %s)',
-  async (has_video) => {
-    mockApi({ '/contents/content-1': jsonResponse(200, clip({ has_video })) });
-    renderPage('/contents/content-1?at_ms=11000');
-    expect(await screen.findByLabelText('Play Why cities plant street trees')).toHaveAttribute(
-      'src',
-      '/api/v1/media/media-1#t=11',
-    );
-  },
-);
+test('a card source link starts a video at its saved time', async () => {
+  mockApi({ '/contents/content-1': jsonResponse(200, clip({ has_video: true })) });
+  renderPage('/contents/content-1?at_ms=11000');
+  expect(await screen.findByLabelText('Play Why cities plant street trees')).toHaveAttribute(
+    'src',
+    '/api/v1/media/media-1#t=11',
+  );
+});
+
+/** The shared audio player's element, with a settable time (jsdom plays nothing). */
+async function loadedClipAudio() {
+  let time = 0;
+  Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', {
+    configurable: true,
+    get: () => time,
+    set: (value: number) => {
+      time = value;
+    },
+  });
+  await screen.findByRole('button', { name: 'Play' });
+  const audio = document.querySelector('audio')!;
+  act(() => {
+    audio.dispatchEvent(new Event('loadedmetadata'));
+  });
+  return () => time;
+}
+
+test('a card source link opens the audio player at its saved time (#205, #198)', async () => {
+  mockApi({ '/contents/content-1': jsonResponse(200, clip()) });
+  renderPage('/contents/content-1?at_ms=11000');
+
+  const time = await loadedClipAudio();
+
+  await waitFor(() => expect(time()).toBe(11));
+  expect(screen.getByText('00:11 / 03:20')).toBeInTheDocument();
+});
 
 test.each(['-1', 'NaN', 'Infinity', '200001'])(
-  'an invalid source time %s starts normally',
+  'an invalid source time %s starts the audio at the beginning',
   async (at) => {
     mockApi({ '/contents/content-1': jsonResponse(200, clip()) });
     renderPage(`/contents/content-1?at_ms=${at}`);
-    expect(await screen.findByLabelText('Play Why cities plant street trees')).toHaveAttribute(
-      'src',
-      '/api/v1/media/media-1',
-    );
+
+    const time = await loadedClipAudio();
+
+    expect(time()).toBe(0);
+    expect(screen.getByText('00:00 / 03:20')).toBeInTheDocument();
   },
 );

@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
@@ -18,6 +18,16 @@ export function ChangeEntryPanel({ session, onClose }: { session: Session; onClo
   const [blind, setBlind] = useState(entryIncludes(session.entry, 'blind'));
   const [dictation, setDictation] = useState(entryIncludes(session.entry, 'dictation'));
   const entry = entryFrom(blind, dictation);
+  const reasonId = useId();
+  const reasonRef = useRef<HTMLParagraphElement>(null);
+  // Why Save cannot act yet; an empty choice is explained by the choice's own error.
+  const reason = session.entry_locked
+    ? 'The start is locked: Transcript has opened.'
+    : entry === session.entry
+      ? 'This is your plan now. Tick or clear a box to change it.'
+      : undefined;
+  const busy = change.isPending;
+  const unavailable = !entry || reason !== undefined || busy;
 
   const done = (step: 'blind' | 'dictation') =>
     session.steps.some((s) => s.step === step && s.status === 'done');
@@ -45,6 +55,11 @@ export function ChangeEntryPanel({ session, onClose }: { session: Session; onClo
       <div className="rounded-md bg-surface-sunken p-4">
         <PlanPreview entry={entry} lead="Your plan becomes" />
       </div>
+      {reason && (
+        <p id={reasonId} ref={reasonRef} tabIndex={-1} className="text-body-s text-ink-muted">
+          {reason}
+        </p>
+      )}
       {change.isError && <ErrorPanel error={change.error} />}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <button type="button" className={buttonClass('quiet')} onClick={onClose}>
@@ -53,10 +68,17 @@ export function ChangeEntryPanel({ session, onClose }: { session: Session; onClo
         <button
           type="button"
           className={buttonClass('primary')}
-          disabled={!entry || entry === session.entry || session.entry_locked || change.isPending}
-          onClick={() => entry && change.mutate(entry, { onSuccess: onClose })}
+          aria-disabled={unavailable}
+          aria-busy={busy}
+          aria-describedby={reason ? reasonId : undefined}
+          onClick={() => {
+            // Save stays focusable when it cannot act, and points to why (UX-10).
+            if (reason) reasonRef.current?.focus();
+            if (unavailable || !entry) return;
+            change.mutate(entry, { onSuccess: onClose });
+          }}
         >
-          {change.isPending ? 'Saving…' : 'Save change'}
+          {busy ? 'Saving…' : 'Save change'}
         </button>
       </div>
     </section>

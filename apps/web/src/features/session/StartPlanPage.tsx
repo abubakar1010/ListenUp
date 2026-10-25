@@ -15,6 +15,7 @@ import { defaultRange, firstSpeechMs, MIN_PASSAGE_MS } from './passage';
 import { commitAll, initialPassage, passageReducer, selectedRange } from './passageState';
 import { formatClock } from './time';
 import { usePeaks } from './usePeaks';
+import { BusyButton } from '../../components/BusyButton';
 
 const PAGE_CLASS =
   'mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 pt-4 pb-8 md:gap-8 md:px-6 md:pt-8 md:pb-12';
@@ -193,13 +194,13 @@ function PlanForm({ clip, durationMs }: { clip: ContentDetail; durationMs: numbe
       </section>
 
       {start.isError && <ErrorPanel error={start.error} />}
-      <button
+      <BusyButton
         type="submit"
         className={buttonClass('primary', 'self-stretch sm:self-start')}
-        disabled={start.isPending}
+        busy={start.isPending}
       >
         {start.isPending ? 'Starting…' : 'Start plan'}
-      </button>
+      </BusyButton>
     </form>
   );
 }

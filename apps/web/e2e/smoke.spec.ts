@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 import { expect, test, type Page } from '@playwright/test';
+import { expectFocusKept } from './focus';
 
 const LEARNER = {
   id: '1',
@@ -158,6 +159,42 @@ test('a paused sign-in shows the time, the minutes left and the reset link at 36
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test('a refused sign-in keeps focus on Sign in, which says it is busy while waiting', async ({
+  page,
+}) => {
+  await fakeApi(page);
+  let answer: () => void = () => undefined;
+  const answered = new Promise<void>((resolve) => (answer = resolve));
+  await page.route('**/api/v1/auth/login', async (route) => {
+    await answered;
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/problem+json',
+      json: {
+        type: '/problems/invalid_credentials',
+        title: 'Unauthorized',
+        status: 401,
+        detail: 'The email or password is wrong. Check both and try again.',
+        code: 'invalid_credentials',
+      },
+    });
+  });
+  await page.goto('/sign-in');
+  await page.getByLabel('Email').fill('learner@example.com');
+  await page.getByLabel('Password').fill('wrong horse');
+
+  const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
+  await signIn.click();
+  const busy = page.getByRole('button', { name: 'Please wait…' });
+  await expect(busy).toHaveAttribute('aria-busy', 'true');
+  await expect(busy).toBeFocused();
+  answer();
+
+  await expect(page.getByRole('alert')).toContainText('The email or password is wrong.');
+  await expect(signIn).toBeFocused();
+  await expectFocusKept(page, 'after a refused sign-in');
 });
 
 test('the shell fits a 360 px screen without sideways scrolling', async ({ page }) => {
@@ -370,9 +407,11 @@ test('a learner opens a ready clip from the library and plays it', async ({ page
 
     await expect(page).toHaveURL('/contents/content-1');
     await expect(page).toHaveTitle('Why cities plant street trees · ListenUp');
-    await expect(page.getByRole('status')).toHaveText('Ready to play.');
-    const player = page.getByLabel('Play Why cities plant street trees');
-    await expect(player).toHaveAttribute('controls', '');
+    // The player has its own status while the audio loads; this is the clip's.
+    await expect(page.getByRole('status').filter({ hasText: 'Ready to play.' })).toBeVisible();
+    // Audio plays in the shared player (#198), with the hidden element behind it.
+    const player = page.locator('audio');
+    await expect(player).not.toHaveAttribute('controls', '');
 
     // The player follows the redirect to storage and reads the file's length.
     await expect
@@ -389,9 +428,23 @@ test('a learner opens a ready clip from the library and plays it', async ({ page
     expect(seeked).toBeCloseTo(2, 1);
     expect(storage.ranges.length).toBeGreaterThan(0);
 
-    // The native controls are reachable from the keyboard.
-    await player.focus();
-    await expect(player).toBeFocused();
+    // The controls are reachable from the keyboard, with the visible focus ring.
+    const play = page.getByRole('button', { name: 'Play', exact: true });
+    await page.getByRole('button', { name: 'Back 5 seconds' }).focus();
+    await page.keyboard.press('Tab');
+    await expect(play).toBeFocused();
+    const ring = await play.evaluate((el) => getComputedStyle(el).outlineStyle);
+    expect(ring).not.toBe('none');
+
+    // At 360 px the back link starts on the same edge as the title.
+    await page.setViewportSize({ width: 360, height: 740 });
+    const back = (await page
+      .getByRole('link', { name: 'Library' })
+      .last()
+      .locator('svg')
+      .boundingBox())!;
+    const title = (await page.getByRole('heading', { level: 1 }).boundingBox())!;
+    expect(Math.abs(back.x - title.x)).toBeLessThanOrEqual(2);
   } finally {
     await storage.close();
   }

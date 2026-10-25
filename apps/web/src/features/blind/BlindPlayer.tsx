@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react';
+
 import { buttonClass } from '../../components/button';
 import { CheckIcon, LockIcon } from '../../components/icons';
 import { formatClock, spokenLength } from '../session/time';
@@ -46,6 +48,15 @@ export function BlindPlayer({
   onVolume,
   onStart,
 }: BlindPlayerProps) {
+  const statusRef = useRef<HTMLSpanElement>(null);
+  const started = status !== 'before';
+  // Start is replaced by the status once pressed; focus follows it there instead of
+  // falling to the page body (WCAG 2.4.3). The status holds no control (UX-07, UX-19).
+  useEffect(() => {
+    if (!started) return;
+    const active = document.activeElement;
+    if (active === null || active === document.body) statusRef.current?.focus();
+  }, [started]);
   const played = Math.min(Math.max(0, playedMs), lengthMs);
   const percent = lengthMs > 0 ? (played / lengthMs) * 100 : 0;
   return (
@@ -67,7 +78,12 @@ export function BlindPlayer({
             Start listening
           </button>
         ) : (
-          <span className="flex min-h-13 items-center gap-2 px-2 font-bold">
+          <span
+            ref={statusRef}
+            tabIndex={-1}
+            data-testid="blind-status"
+            className="flex min-h-13 items-center gap-2 px-2 font-bold"
+          >
             {status === 'done' ? (
               <CheckIcon className="size-5 text-success" />
             ) : status === 'listening' ? (
@@ -111,7 +127,7 @@ export function BlindPlayer({
               step={5}
               value={Math.round(volume * 100)}
               onChange={(event) => onVolume(Number(event.target.value) / 100)}
-              className="w-28 accent-accent"
+              className="h-11 w-28 cursor-pointer accent-accent md:h-6"
             />
           </label>
         )}

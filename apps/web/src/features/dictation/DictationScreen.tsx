@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { buttonClass } from '../../components/button';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { SaveStatus, saveStatusText, useAutosave } from '../../lib/autosave';
 import type { Session } from '../session/api';
@@ -139,6 +140,8 @@ function DictationWork({
   }, [submitted, discard]);
   const textArea = useRef<HTMLTextAreaElement>(null);
   const [announcement, setAnnouncement] = useState('');
+  const [confirming, setConfirming] = useState(false);
+  const noTextReason = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => textArea.current?.focus(), []);
   usePlayerKeys(player, textArea);
@@ -151,6 +154,29 @@ function DictationWork({
       : '';
 
   const words = wordCount(draft.value);
+  const empty = words === 0;
+  const busy = submit.isPending;
+  const unavailable = empty || busy || submitted;
+
+  // Submit stays focusable when it cannot act, and says why (UX-10).
+  function onSubmitPress() {
+    if (busy || submitted) return;
+    if (empty) {
+      noTextReason.current?.focus();
+      return;
+    }
+    setConfirming(true);
+  }
+
+  function onConfirm() {
+    setConfirming(false);
+    submit.mutate({
+      text: draft.value,
+      version: session.version,
+      replayCount: player.replays,
+    });
+  }
+
   return (
     <Layout
       session={session}
@@ -211,23 +237,44 @@ function DictationWork({
         <button
           type="button"
           className={buttonClass('primary')}
-          disabled={words === 0 || submit.isPending || submitted}
-          onClick={() =>
-            submit.mutate({
-              text: draft.value,
-              version: session.version,
-              replayCount: player.replays,
-            })
-          }
+          disabled={submitted}
+          aria-disabled={unavailable}
+          aria-busy={busy}
+          aria-describedby={empty ? 'dictation-submit-reason' : undefined}
+          onClick={onSubmitPress}
         >
-          {submit.isPending ? 'Submitting…' : submitted ? 'Submitted' : 'Submit for scoring'}
+          {busy ? 'Submitting…' : submitted ? 'Submitted' : 'Submit for scoring'}
         </button>
+        {empty && (
+          <p
+            id="dictation-submit-reason"
+            ref={noTextReason}
+            tabIndex={-1}
+            className="text-body-s font-bold text-ink"
+          >
+            Type at least one word to submit.
+          </p>
+        )}
         <p className="text-body-s text-ink-muted">
           Submitting ends this step and shows what you missed. Your text is saved as you go, here
           and on any browser you sign in on.
         </p>
         {submit.isError && <ErrorPanel error={submit.error} />}
       </div>
+      {confirming && (
+        <ConfirmDialog
+          title="Submit your Dictation?"
+          confirmLabel="Submit"
+          cancelLabel="Keep typing"
+          onConfirm={onConfirm}
+          onCancel={() => setConfirming(false)}
+        >
+          <p>
+            You typed {words} {words === 1 ? 'word' : 'words'}. After you submit, the text
+            can&apos;t change and you see what you missed.
+          </p>
+        </ConfirmDialog>
+      )}
       <p role="status" aria-live="polite" className="sr-only">
         {problemText || announcement}
       </p>
@@ -248,6 +295,8 @@ function usePlayerKeys(
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.repeat) return;
       const target = event.target as HTMLElement | null;
+      // No player key acts while a dialog is open (UX-07).
+      if (target?.closest?.('[role="dialog"]')) return;
       const inTextArea = target === textArea.current;
       const chord = event.ctrlKey && event.altKey;
       // Other controls keep their own keys (Space presses a button, letters pick options).

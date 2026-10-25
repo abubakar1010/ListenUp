@@ -6,7 +6,7 @@ import { PageLoading } from '../../app/PageLoading';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
-import { AlertIcon } from '../../components/icons';
+import { CautionNotice } from '../../components/CautionNotice';
 import type { Session } from '../session/api';
 import { PracticeLayout } from '../session/PracticeLayout';
 import { StepProgress } from '../session/StepProgress';
@@ -290,7 +290,7 @@ export function BlindStep({ session, progress }: BlindStepProps) {
             : `Passage ${formatClock(start_ms)} to ${formatClock(end_ms)}`
         }
         back={listening ? null : { to: '/library', label: 'Library' }}
-        progress={listening ? <StepProgress session={session} /> : progress}
+        progress={listening ? <StepProgress session={session} plan={false} /> : progress}
         player={
           <>
             {/* No controls and not focusable: start and volume are the only controls. */}
@@ -316,17 +316,11 @@ export function BlindStep({ session, progress }: BlindStepProps) {
 
 function EndedNotice({ attempt }: { attempt: BlindAttempt }) {
   return (
-    <div
-      role="alert"
-      className="flex gap-3 rounded-md border-2 border-danger bg-surface-raised p-4"
-    >
-      <AlertIcon className="size-5 flex-none text-danger" />
-      <div className="flex flex-col gap-1">
-        <h2 className="font-display text-heading">Your Blind attempt ended</h2>
-        <p>{endedMessage(attempt)}</p>
-        <p className="text-body-s text-ink-muted">Press Start listening when you're ready.</p>
-      </div>
-    </div>
+    // The rule working, not an error (UX-12, UX-17); still assertive (UX-22).
+    <CautionNotice role="alert" title="Your Blind attempt ended">
+      <p>{endedMessage(attempt)}</p>
+      <p className="text-body-s text-ink-muted">Press Start listening when you're ready.</p>
+    </CautionNotice>
   );
 }
 
