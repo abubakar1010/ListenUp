@@ -176,6 +176,11 @@
             "title": "At Ms",
             "type": "integer"
           },
+          "audio_status": {
+            "enum": ["pending", "ready", "failed", "unavailable"],
+            "title": "Audio Status",
+            "type": "string"
+          },
           "content_id": {
             "format": "uuid",
             "title": "Content Id",
@@ -234,6 +239,7 @@
           "heard_form",
           "at_ms",
           "content_id",
+          "audio_status",
           "source_url",
           "created_at"
         ],
@@ -3664,6 +3670,86 @@
           }
         },
         "summary": "Delete Card",
+        "tags": ["cards"]
+      }
+    },
+    "/api/v1/cards/{card_id}/audio": {
+      "get": {
+        "operationId": "card_audio_api_v1_cards__card_id__audio_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "card_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Card Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`card_not_found`"
+          },
+          "409": {
+            "description": "`card_audio_not_ready`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Card Audio",
+        "tags": ["cards"]
+      }
+    },
+    "/api/v1/cards/{card_id}/audio/retry": {
+      "post": {
+        "operationId": "retry_audio_api_v1_cards__card_id__audio_retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "card_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Card Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`card_not_found`"
+          },
+          "409": {
+            "description": "`card_audio_not_failed`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Audio",
         "tags": ["cards"]
       }
     },

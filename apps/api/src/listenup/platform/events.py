@@ -53,6 +53,7 @@ RETRY_MILLISECONDS = 3000
 
 
 class EventType(StrEnum):
+    CARD_AUDIO_UPDATED = "card.audio_updated"
     JOB_PROGRESS = "job.progress"
     CONTENT_READY = "content.ready"
     TRANSCRIPT_READY = "transcript.ready"

@@ -54,3 +54,10 @@ test('account.disabled refetches the learner, unless this tab is deleting the ac
   void deleting.execute(undefined);
   expect(queryKeysForEvent(event('account.disabled'), client)).toEqual([]);
 });
+
+test('card audio changes and reconnect refresh cards', () => {
+  expect(queryKeysForEvent(event('card.audio_updated', 'session-1'), new QueryClient())).toEqual([
+    ['cards', 'session-1'],
+  ]);
+  expect(PENDING_KEYS).toContainEqual(['cards']);
+});

@@ -1,8 +1,10 @@
 """Cards SQL, always under learner RLS in the request transaction."""
 
 import uuid
+from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.cards import schemas
@@ -10,7 +12,7 @@ from listenup.modules.cards.domain.cursor import Cursor
 
 _COLUMNS = (
     "c.id, c.session_id, c.slot, c.mark_id, c.written_form, c.heard_form, "
-    "c.at_ms, c.created_at, s.content_id"
+    "c.at_ms, c.created_at, c.audio_status, s.content_id"
 )
 
 
@@ -26,9 +28,9 @@ async def insert(db: AsyncSession, values: dict[str, object]) -> uuid.UUID | Non
         await db.execute(
             text("""
         INSERT INTO practice.cards (id, session_id, user_id, slot, mark_id, media_object_id,
-                                   at_ms, written_form, heard_form)
+                                   at_ms, written_form, heard_form, snippet_span, audio_status)
         SELECT :id, :session_id, :user_id, slot, :mark_id, :media_object_id, :at_ms,
-               :written_form, :heard_form
+               :written_form, :heard_form, int4range(:snippet_start,:snippet_end), 'pending'
         FROM generate_series(1,2) AS candidate(slot)
         WHERE NOT EXISTS (SELECT 1 FROM practice.cards WHERE session_id=:session_id
                           AND cards.slot=candidate.slot)
@@ -98,3 +100,21 @@ async def delete(db: AsyncSession, card_id: uuid.UUID) -> bool:
             text("DELETE FROM practice.cards WHERE id=:id RETURNING id"), {"id": card_id}
         )
     ).first() is not None
+
+
+async def audio_row(
+    db: AsyncSession, card_id: uuid.UUID, learner: uuid.UUID, *, lock: bool = False
+) -> Row[Any] | None:
+    return (
+        await db.execute(
+            text(
+                """
+        SELECT c.*, s.content_id FROM practice.cards c JOIN practice.sessions s
+        ON s.id=c.session_id AND s.user_id=c.user_id
+        WHERE c.id=:id AND c.user_id=:user
+    """
+                + (" FOR UPDATE OF c" if lock else "")
+            ),
+            {"id": card_id, "user": learner},
+        )
+    ).first()

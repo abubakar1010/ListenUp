@@ -368,6 +368,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/cards/{card_id}/audio': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Card Audio */
+    get: operations['card_audio_api_v1_cards__card_id__audio_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/cards/{card_id}/audio/retry': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Retry Audio */
+    post: operations['retry_audio_api_v1_cards__card_id__audio_retry_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/contents': {
     parameters: {
       query?: never;
@@ -1340,6 +1374,11 @@ export interface components {
     Card: {
       /** At Ms */
       at_ms: number;
+      /**
+       * Audio Status
+       * @enum {string}
+       */
+      audio_status: 'pending' | 'ready' | 'failed' | 'unavailable';
       /**
        * Content Id
        * Format: uuid
@@ -3396,6 +3435,92 @@ export interface operations {
       };
       /** @description `card_not_found` */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  card_audio_api_v1_cards__card_id__audio_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        card_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `card_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `card_audio_not_ready` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  retry_audio_api_v1_cards__card_id__audio_retry_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        card_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `card_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `card_audio_not_failed` */
+      409: {
         headers: {
           [name: string]: unknown;
         };

@@ -420,12 +420,28 @@ CREATE TABLE practice.cards (
   written_form    text NOT NULL CHECK (char_length(written_form) BETWEEN 1 AND 100),
   heard_form      text NOT NULL CHECK (char_length(heard_form) BETWEEN 1 AND 100),
   at_ms           int4 NOT NULL CHECK (at_ms >= 0), -- source-time snapshot (ADR 0060)
+  audio_status    text NOT NULL DEFAULT 'unavailable'
+                  CHECK (audio_status IN ('unavailable','pending','ready','failed')),
   snippet_key     text,                 -- 3 to 6 s clip; survives media expiry
   snippet_span    int4range,
   created_at      timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (session_id, slot)
+  UNIQUE (session_id, slot),
+  CONSTRAINT cards_ready_audio CHECK
+    (audio_status <> 'ready' OR (snippet_key IS NOT NULL AND snippet_span IS NOT NULL)),
+  CONSTRAINT cards_snippet_bounds CHECK
+    (snippet_span IS NULL OR (NOT isempty(snippet_span) AND NOT lower_inf(snippet_span)
+     AND NOT upper_inf(snippet_span) AND lower(snippet_span) >= 0
+     AND upper(snippet_span) - lower(snippet_span) BETWEEN 3000 AND 6000))
 );
 CREATE INDEX cards_user_idx ON practice.cards (user_id, created_at DESC, id);
+-- ADR 0061: existing cards remain unavailable, without backfill.
+-- A deletion trigger stores this tombstone, including session cascades. A worker
+-- deletes its deterministic learner/card object before removing the tombstone.
+CREATE TABLE practice.card_snippet_cleanup (
+  card_id    uuid PRIMARY KEY,
+  user_id    uuid NOT NULL REFERENCES identity.users(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
 
 CREATE TABLE practice.card_reviews (
   id          uuid PRIMARY KEY,

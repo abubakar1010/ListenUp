@@ -256,7 +256,17 @@ Read the section for the area you are changing before you change it. The rules e
   independently by the database. Deletion frees a slot (D14).
 - Keep `at_ms` from the selected mark as a source-time snapshot. A deleted mark sets
   `mark_id` to NULL while the saved forms and time remain. Source links use
-  `/contents/{id}?at_ms={absolute_ms}`. Snippets remain #73.
+  `/contents/{id}?at_ms={absolute_ms}`.
+- Snippets (#73, ADR 0061) snapshot authorized word timings on creation. Refuse
+  phrases longer than six seconds before inserting a card. Generation uses the
+  intake lane and deterministic learner/card storage keys; never resolve audio
+  through source playback after it is ready. Card JSON exposes status only.
+- Deletion records a cleanup tombstone through a trigger, including cascades.
+  Background cleanup removes the tombstone only after successful object deletion;
+  the minute sweep recovers missed/exhausted cleanup jobs. Generation rechecks and
+  locks the card before storage writes, preventing deletion races.
+- Cards-local playback pauses on unmount; pending cards poll and readiness/failure
+  events invalidate `['cards', sessionId]`. Keep shared-player behavior unchanged.
 
 ## Gist feedback (ADR 0054, #69)
 

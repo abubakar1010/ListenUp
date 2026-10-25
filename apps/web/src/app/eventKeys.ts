@@ -13,6 +13,7 @@ import { REVIEW_KEY, transcriptKey } from '../features/review/api';
 const NO_KEYS: readonly QueryKey[] = [];
 
 export const PENDING_KEYS: readonly QueryKey[] = [
+  ['cards'],
   LIBRARY_KEY,
   GIST_GRADE_KEY,
   CONTENTS_KEY,
@@ -26,6 +27,8 @@ export const PENDING_KEYS: readonly QueryKey[] = [
  */
 export function queryKeysForEvent(event: LiveEvent, queryClient: QueryClient): readonly QueryKey[] {
   switch (event.type) {
+    case 'card.audio_updated':
+      return [['cards', event.resourceId]];
     case 'content.ready':
       // A converted clip also changes storage use and today's new audio.
       return [LIBRARY_KEY, contentKey(event.resourceId), UPLOAD_USAGE_KEY];

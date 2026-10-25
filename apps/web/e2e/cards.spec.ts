@@ -1,5 +1,25 @@
 import { expect, test } from '@playwright/test';
 
+function audibleSnippet() {
+  const rate = 8000;
+  const buffer = Buffer.alloc(44 + rate * 3 * 2);
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(buffer.length - 8, 4);
+  buffer.write('WAVEfmt ', 8);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(rate, 24);
+  buffer.writeUInt32LE(rate * 2, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(buffer.length - 44, 40);
+  for (let i = 0; i < rate * 3; i++)
+    buffer.writeInt16LE(Math.round(Math.sin((i * 2 * Math.PI * 440) / rate) * 1000), 44 + i * 2);
+  return buffer;
+}
+
 // Browser behavior against a mocked API; DB limits are proved by test_cards_api.py.
 for (const refreshFails of [false, true]) {
   test(`cards_keyboard_at_360px (count refresh fails: ${refreshFails})`, async ({ page }) => {
@@ -13,6 +33,8 @@ for (const refreshFails of [false, true]) {
       const request = route.request();
       const url = new URL(request.url());
       const path = url.pathname.replace('/api/v1', '');
+      if (path.endsWith('/audio'))
+        return route.fulfill({ contentType: 'audio/wav', body: audibleSnippet() });
       if (path === '/me')
         return route.fulfill({
           json: {
@@ -84,6 +106,7 @@ for (const refreshFails of [false, true]) {
         writes++;
         const card = {
           ...request.postDataJSON(),
+          audio_status: 'ready',
           id: `card-${writes}`,
           source_url: '/contents/c-72?at_ms=11000',
           at_ms: 11000,
@@ -123,6 +146,21 @@ for (const refreshFails of [false, true]) {
     await expect(page.getByRole('button', { name: 'Save card' })).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.getByText('1 left', { exact: true }).first()).toBeVisible();
+    const play = page.getByRole('button', { name: 'Play audio: could have', exact: true });
+    await play.focus();
+    await page.keyboard.press('Enter');
+    const pause = page.getByRole('button', { name: 'Pause audio: could have', exact: true });
+    await expect(pause).toBeFocused();
+    await expect
+      .poll(() =>
+        page.locator('audio').evaluate((element) => (element as HTMLAudioElement).currentTime),
+      )
+      .toBeGreaterThan(0);
+    await page.keyboard.press('Space');
+    await expect(play).toBeFocused();
+    await expect
+      .poll(() => page.locator('audio').evaluate((element) => (element as HTMLAudioElement).paused))
+      .toBe(true);
     await page.getByRole('textbox', { name: 'Heard form' }).fill('kuduv');
     await page.getByRole('button', { name: 'Save card' }).press('Enter');
     await expect(page.getByRole('button', { name: 'Save card', exact: true })).toBeVisible({
