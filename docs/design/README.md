@@ -9,7 +9,7 @@ The files in this folder are the source of truth for ListenUp's design. They wer
 | [architecture.md](architecture.md) | Software architecture: the stack, components and their boundaries, key flows, the API table, the repository layout and deployment |
 | [system-design.md](system-design.md) | System design: capacity and cost estimates, the job system and its lanes, speech and storage efficiency, the data layer, real-time updates, failure modes and scaling stages |
 | [database-design.md](database-design.md) | Database design: the full schema with DDL, constraints, indexes, row-level security and access rules, and data retention |
-| [ux-decisions.md](ux-decisions.md) | UX decision log: every UI and UX decision behind the final interface (UX-01 to UX-36), the product decisions D1 to D18, and the audit findings with their fixes |
+| [ux-decisions.md](ux-decisions.md) | UX decision log: every UI and UX decision behind the final interface (UX-01 to UX-36, and UX-42 to UX-46 from the 2026-10-23 implementation review), the product decisions D1 to D18, and the audit findings with their fixes |
 
 ## Visual documents (not copied here)
 
