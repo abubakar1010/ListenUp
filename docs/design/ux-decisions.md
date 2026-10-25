@@ -89,7 +89,7 @@ Decisions made while drawing the final screens:
 | UX-31 | Blind resume (D13) is automatic: on a stall the player freezes and says "Waiting for connection" with "Resume 1 of 1"; when audio is buffered again a 3 s count runs and playback goes on from 3 s before the stop. "Carry on now" only shortens the count; there is no control to stay paused. After the resume, the rule line says the resume is used. A second interruption opens the "attempt ended" dialog naming when the resume was used. Status: accepted by the user (D18, 2026-10-03). | Keeps the one unbroken listen honest: a resume the learner starts at will would work as a pause. The 3 s lead-in rebuilds context without a real rewind. | Resume button with no time limit (works as a pause); restart from the exact stop (loses the sentence) | FR-BL-3, SR-5, NFR-REL-3, D13, D18 |
 | UX-32 | Feature-flag variants are drawn beside the MVP default, never instead of it: the main frames show upload only (D10) and flagged states carry a boxed accent tag "Flag on · youtube\_intake". With the flag on, YouTube stays a secondary action. | Developers build the default first and can see exactly what the flag adds. | Draw both routes as equals; leave YouTube out of the canvas | FR-CI-1, FR-CI-2, OQ-6, D10 |
 | UX-33 | Accent (D11) moves out of the measures list into its own "Accent guidance" block with the words "Not in your score" and "compared with this speaker"; the comparison table gives it its own row group. The overall score is the average of the six scored measures (D3). | A number among scored measures reads as a verdict; a separate, labelled block makes the exclusion visible in words, not colour. | Keep accent in the list with a footnote; hide accent entirely | FR-SH-4, FR-SH-9, FR-SH-15, D3, D11 |
-| UX-34 | Account deletion with a 7-day grace (D9): step 1 states the date the account is deleted for good; step 2's checkbox repeats it; after step 2 the account is "switched off" (not "locked"); signing in within 7 days opens "Restore your account?" with Restore as the primary action and "Keep it deleted" (signs out). The action emphasis is superseded by UX-41: Keep it deleted is the focused, accent-filled safe action. | The grace period only helps if the learner knows the date and how to undo; an explicit restore step prevents an accidental restore by a shared device. | Silent restore on sign-in; immediate deletion | FR-ACC-4, DR-1, NFR-SEC-4, D9 |
+| UX-34 | Account deletion with a 7-day grace (D9): step 1 states the date the account is deleted for good; step 2's checkbox repeats it; after step 2 the account is "switched off" (not "locked"); signing in within 7 days opens "Restore your account?" with Restore and "Keep it deleted" (signs out). Originally drawn with Restore as the primary action; that emphasis is superseded by UX-41, where Keep it deleted is the focused, accent-filled safe action. | The grace period only helps if the learner knows the date and how to undo; an explicit restore step prevents an accidental restore by a shared device. | Silent restore on sign-in; immediate deletion | FR-ACC-4, DR-1, NFR-SEC-4, D9 |
 | UX-35 | Sign-in lockout (D17): the 4th failed try shows a calm warning, "One try left", with the reset link. The 5th opens a paused state that gives the clock time ("Sign-in is paused until 10:57 AM") and the minutes left, with Reset password as the next action; Sign in stays focusable with aria-disabled and points to the time. The same words show whether or not the email has an account. Assumption, to confirm in the security review: a completed password reset ends the pause and Continue with Google is not paused. | A clock time is a number the learner can act on; warning one try early prevents the lock (error prevention). Identical messages keep the lock from revealing accounts. The minute countdown updates silently so screen readers are not flooded. | "Too many tries, wait a while" with no time; a live seconds countdown; a CAPTCHA instead of a pause | FR-ACC-2, NFR-SEC-1, NFR-USE-3, D17 |
 | UX-36 | Daily intake limit (D16): B01 shows "13 min of 120 min of new audio added today" under the storage meter. The server checks admission before upload and again on confirmation: each playable clip counts at most 15 minutes, pending clips reserve 15 minutes each, and a clip admitted below the allowance is accepted whole even if it crosses it. Browser duration is not an admission check; at the limit, a caution (not an error) says when adding opens again and points to the library, and "Choose a file" is aria-disabled with that reason. Practice is never limited. The day resets at midnight UTC; show the server's reset time in the learner's local time. Supersedes the remaining-minutes refusal and local-midnight assumption ([ADR 0033](../adr/0033-design-review-policy-resolutions.md); ADR 0027). | Showing usage before the learner chooses a file prevents a wasted upload. The limit is a rule, not a mistake, so it uses the neutral caution style and points to what the learner can do now. | Refuse only after upload; an error-red banner; hide the limit until it is reached | FR-CI-1, FR-CI-3, NFR-USE-3, D16 |
 
@@ -189,7 +189,7 @@ or browser audit. No application implementation is changed by this specification
 
 | Area | What main builds | Gap the revised boards must label |
 | --- | --- | --- |
-| D02 leave warning | `features/blind/BlindStep.tsx` uses router blocking, including Back. “Leave Blind?” offers “Stay” and “Leave Blind”; playback continues. Navigation waits for the void request; failure stays in the dialog with Retry. `components/ConfirmDialog.tsx` focuses the safe action, traps Tab and handles Escape/scrim. | Busy dialogs disable both buttons, potentially losing usable focus; background content is not made inert. The component switches to a centred dialog at 640 px, while UX-18 specifies 768 px. Specify completion while the dialog is open and destination focus explicitly. |
+| D02 leave warning | `features/blind/BlindStep.tsx` uses router blocking, including Back. “Leave Blind?” offers “Stay” and “Leave Blind”; playback continues. Navigation waits for the void request; failure stays in the dialog with Retry. `components/ConfirmDialog.tsx` focuses the safe action, traps Tab and handles Escape/scrim. | Busy dialogs disable both buttons, potentially losing usable focus (since changed; see the recheck of 2026-10-25); background content is not made inert. The component switches to a centred dialog at 640 px, while UX-18 specifies 768 px. Specify completion while the dialog is open and destination focus explicitly. |
 | D04 completed listen/gist | The gist unlocks only after server acknowledgement. Reload of a completed listen opens the gist without voiding it. `GistForm.tsx` saves an attempt-keyed local draft after a 500 ms debounce, restores it on mount and focuses the textarea. | Immediate departure can cancel the pending local write. Storage failure silently removes “Draft saved”; there is no save-failure explanation or restored-draft announcement. Do not promise server draft sync. |
 | Whole-clip player | `content/ContentPage.tsx` renders a native audio/video player with a media URL. The media API checks ownership, then returns 409 `blind_in_progress` for unfinished listens on the learner's copies of that media. | No dedicated blocked-player UI or client handling of that media refusal. A native player failure does not expose the API's actionable reason. Do not claim an existing signed storage URL is revoked (ADR 0033). |
 | B01 intake | `library/AddClipPage.tsx` shows counted minutes (visually capped at the allowance), the local reset time, and processing concurrency. `library/refusals.ts` distinguishes counted-limit and pending-clip refusals; `content/intakeStatus.ts` names queue/stage feedback. | No numeric reservation row, no admission-checking state, and no automatic allowance recheck at reset on this page. Choose a file still opens at the limit; refusal follows selection and uses error-red alert styling. Keep server admission authoritative. |
@@ -263,7 +263,9 @@ The comparison table above therefore stood for main at `58ac0c3`. Main has since
 changed `ConfirmDialog.tsx`; see the recheck of 2026-10-25 below.
 
 Verification in this session (2026-10-23, before any board existed; the
-publication section below supersedes its “Not performed” rows):
+publication section below records the later rendered, keyboard, zoom and
+simulated mobile-keyboard checks; the live and screen-reader checks remain not
+performed):
 
 | Check | Kind | Result |
 | --- | --- | --- |
@@ -283,7 +285,11 @@ version 13 (`1792847518-2445`). After the mobile keyboard check, they were
 republished as version 15 (`1792848519-dd38`). After review of #189, the
 reservation-refusal copy was corrected and republished as version 16
 (`1792935877-4310`). Only that text changed; it is shorter than before and
-was not re-rendered.
+was not re-rendered. Version 17 (`1792936761-35c1`) came from another editor
+and changed the intake component (a “Choose a file pressed at the limit” state,
+an allowance-unavailable variant and tab semantics); this log does not yet
+record those changes. Version 18 (`1792936994-371f`) applies the reset wording
+below on top of version 17.
 The canvas is private until the owner shares it.
 
 It has one page per flow, plus an overview and a page of the five reusable state
@@ -417,8 +423,8 @@ claim that playback continues. After acknowledged leave, focus the destination
 heading. If server completion arrives first, replace the warning with “Your listen
 is complete. Leaving will keep it.” and announce that once, politely; the Leave
 Blind button then reads “Leave”, and leaving must preserve completion.
-External hide/close/reload cannot guarantee this custom
-sheet and still ends an unfinished listen under ADR 0033.
+External hide/close/reload cannot guarantee this custom sheet and still ends
+an unfinished listen under ADR 0033.
 
 **D04 — complete, saving and returned gist (UX-38).** Keep the locked player
 with “Listen complete” and the normal gist form; never show replay. During server
@@ -444,6 +450,9 @@ saved on this device. Copy your text before leaving.”, with a warning icon.
 When the textarea takes focus with an on-screen keyboard open, scroll so that
 the status line stays in view as well as the textarea, clear of the sticky
 header. A learner who is typing then still sees the failure.
+The unsent gist draft stays in this browser on this device only, as on main;
+ADR 0033's server synchronization after a two-second debounce does not apply to
+it (owner decision, 2026-10-25).
 
 **Whole-clip blocked variant (UX-39).** In the clip page's player slot show a lock
 icon, “Whole-clip playback is unavailable” and “Finish or leave the Blind listen
@@ -476,10 +485,11 @@ in flight (“Checking whether this clip can be added…”); admitted/uploading
 pending reservation with the existing queue/stage text; temporary reservation
 refusal (“Wait for your clips in progress”, then “The clips you are adding now
 may use the rest of today’s 120 minutes. This page checks again as they finish,
-or you can add more at {reset}.”; a ready clip still counts up to 15 minutes, so
-never promise that it can be added once they are ready); counted limit
-reached; checking again
-after reset; check failed with Retry. At 119 counted minutes and no reservations,
+or check again at {reset}.”; a ready clip still counts up to 15 minutes, and a
+clip still pending at the reset counts on the new day (ADR 0027), so promise
+neither that it can be added once they are ready nor that it can be added at
+the reset); counted limit reached; checking again after reset; check failed
+with Retry. At 119 counted minutes and no reservations,
 a crossing clip is accepted whole when the server admits it; at 90 counted plus
 30 reserved it must wait. Pending reservations can be released before midnight;
 do not promise the learner must always wait until reset. At refusal retain
