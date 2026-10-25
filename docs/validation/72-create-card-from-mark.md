@@ -81,7 +81,7 @@ and formatting have no executable behavior requiring artificial red tests.
 
 ## Decisions and handoff
 
-ADR 0058 records the source-time snapshot and slot/completion serialization.
+ADR 0059 records the source-time snapshot and slot/completion serialization.
 The database design and Cards API resource row were synchronized; the requirement
 meaning and audio-snippet scope are unchanged. `SessionPage.tsx` changes only by
 one import and the Card-step registration. No review internals, review feature,
@@ -191,3 +191,26 @@ Web lint/format/types, **534 tests with coverage**, production build and size
 **45 passed**, including Card failure paths, both Shadow passage variants and
 cross-browser Transcript resume. Web coverage inventory and changed-line gate
 pass (**93/95** changed executable lines against current main).
+
+## Final owner-merge synchronization (2026-10-25)
+
+The owner requested merge. GitHub's strict up-to-date rule first required the
+ADR 0050 documentation commit, then main advanced to `ee09123` with #203 (gist
+feedback) and #204 (confirm/remove Dictation marks). Main was merged without
+rebasing in each case. The latter merge preserves the main implementations and
+all Card regressions; combined OpenAPI/types were regenerated. No new migration
+landed, so Cards still follows `77_shadow_segments`.
+
+Main now owns ADR 0058 for Dictation mark confirmation, so the unmerged Cards
+decision is renumbered to **0059**, with its meaning unchanged. The documentation
+conflict retains both sets of conventions. Main's jsdom 30.1.3 lockfile update is
+installed with frozen resolution; the dependency audit remains clean.
+
+Targeted UI checks: **35 passed**. Cards, Transcript and gist-feedback Chromium
+checks: **7 passed**, including the newly merged mark confirmation/reload flow.
+The first local API attempt was blocked by stopped PostgreSQL after the pause;
+that setup failure is not regression evidence. Required services were restarted
+before rerunning the affected restricted-role integration checks. The updated
+head must pass required CI before merge; GitHub enforces this gate. The rerun
+passed **67 integration tests** across Cards, Dictation marks in Transcript,
+gist feedback, export and cross-learner route isolation.

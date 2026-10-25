@@ -1,4 +1,4 @@
-# ADR 0058: Card source times and slot allocation
+# ADR 0059: Card source times and slot allocation
 
 - Status: Accepted
 - Date: 2026-10-23

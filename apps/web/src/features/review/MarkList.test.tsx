@@ -4,7 +4,16 @@ import { MarkList } from './MarkList';
 
 // Supplementary interaction coverage of the implemented list (#60, UI-4).
 test('list_buttons_offer_edit_remove_and_ignore_modified_or_repeated_shortcuts', () => {
-  const mark = { id: 'm1', word_from: 0, word_to: 0, at_ms: 0, note: null, saved: true };
+  const mark = {
+    id: 'm1',
+    word_from: 0,
+    word_to: 0,
+    at_ms: 0,
+    note: null,
+    source: 'manual' as const,
+    status: 'confirmed' as const,
+    saved: true,
+  };
   const onPlay = vi.fn();
   const onEdit = vi.fn();
   const onRemove = vi.fn();
@@ -14,6 +23,7 @@ test('list_buttons_offer_edit_remove_and_ignore_modified_or_repeated_shortcuts',
       phraseOf={() => ''}
       onPlay={onPlay}
       onEdit={onEdit}
+      onConfirm={vi.fn()}
       onRemove={onRemove}
     />,
   );
