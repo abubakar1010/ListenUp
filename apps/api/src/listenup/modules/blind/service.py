@@ -335,7 +335,7 @@ async def submit_gist(
     row = await repository.save(db, attempt.id, row.listen, gist_text=gist)
     submitted = await practice.finish_attempt(db, attempt.id, AttemptStatus.SUBMITTED)
     advanced = await practice.complete_step(db, session, Step.BLIND)
-    await grading.queue_gist(db, attempt.user_id, attempt.id)
+    await grading.queue_gist(db, attempt.user_id, attempt.id, now)
     return GistSubmitted(_view(submitted, row), advanced.open_step, advanced.version)
 
 
@@ -380,7 +380,11 @@ async def gist_for_grading(
 
 
 async def read_grade(
-    db: AsyncSession, references: Database, learner: uuid.UUID, attempt_id: uuid.UUID
+    db: AsyncSession,
+    references: Database,
+    learner: uuid.UUID,
+    attempt_id: uuid.UUID,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """FR-DI-3/D4: derive disclosure on the server from the current plan."""
     attempt, row = await _load(db, attempt_id)
@@ -392,9 +396,22 @@ async def read_grade(
     transcript = next(s for s in session.steps if s.step is Step.TRANSCRIPT)
     reveal = session.entry is practice.Entry.BLIND or transcript.status is not StepStatus.LOCKED
     result = await grading.read_gist_grade(
-        db, references, learner, attempt_id, reveal_details=reveal
+        db, references, learner, attempt_id, reveal_details=reveal, now=now
     )
     # FR-BL-5: the learner can compare their gist before grading finishes.
     if reveal:
         result["gist"] = row.gist_text
     return result
+
+
+async def retry_grade(
+    db: AsyncSession, learner: uuid.UUID, attempt_id: uuid.UUID, now: datetime
+) -> None:
+    attempt, _ = await _load(db, attempt_id)
+    if attempt.user_id != learner:
+        raise _not_found()
+    if attempt.status is not AttemptStatus.SUBMITTED:
+        raise ProblemError(409, "gist_not_submitted", "Submit your gist before retrying feedback.")
+    if await grading.retry_gist(db, learner, attempt_id, now):
+        # The original shared reference may also have exhausted its retry budget.
+        await grading.on_transcript_ready(db, learner, attempt.session_id)

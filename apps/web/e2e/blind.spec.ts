@@ -190,6 +190,9 @@ async function fakeApi(
       current = attempt({ status: 'voided', void_reason: reason, position_ms: 2_000 });
       return route.fulfill({ json: current });
     }
+    if (path === '/gists/a-1/grade') {
+      return route.fulfill({ json: { status: 'pending', wait_ms: 30_000 } });
+    }
     if (path === '/blind/attempts/a-1/gist') {
       const { text } = request.postDataJSON() as { text: string };
       if (text.split('. ').length < 3) {
@@ -377,3 +380,67 @@ test('a completed gist can leave and reload without voiding the listen', async (
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(posts.filter((post) => post.path.endsWith('/void'))).toHaveLength(0);
 });
+
+for (const state of ['unavailable', 'delayed']) {
+  test(`${state} feedback permits Continue, reload and a late result without resetting Transcript`, async ({
+    page,
+  }) => {
+    const { posts } = await fakeApi(page, { complete: true });
+    let ready = false;
+    const gistText = 'Cities plant trees on streets. Shade cools the air. Roots can break pipes.';
+    await page.route('**/api/v1/gists/a-1/grade', (route) =>
+      route.fulfill({
+        json: ready
+          ? {
+              status: 'ready',
+              gist: gistText,
+              overall: 80,
+              level: 'good',
+              captured_count: 1,
+              total_count: 2,
+              feedback: 'You caught the main idea. Read the detail.',
+            }
+          : { status: state, gist: gistText },
+      }),
+    );
+    await page.route('**/api/v1/sessions/s-1/transcript', (route) =>
+      route.fulfill({
+        json: {
+          session_id: 's-1',
+          passage: PASSAGE,
+          media_url: '/api/v1/media/test',
+          lines: [
+            {
+              index: 0,
+              start_ms: 0,
+              end_ms: 1000,
+              words: [{ index: 0, text: 'Cities', start_ms: 0, end_ms: 1000 }],
+            },
+          ],
+        },
+      }),
+    );
+    await page.route('**/api/v1/sessions/s-1/marks', (route) =>
+      route.fulfill({ json: { marks: [] } }),
+    );
+    await page.goto('/sessions/s-1');
+    await page.getByRole('textbox', { name: 'Your gist' }).fill(gistText);
+    await page.getByRole('button', { name: 'Submit gist' }).click();
+    await expect(page.getByText(`Feedback ${state}`)).toBeVisible();
+    await page.getByRole('button', { name: 'Continue to Transcript' }).click();
+    await expect(page.getByRole('button', { name: 'Jump to Cities' })).toBeVisible();
+    await page.reload();
+    const word = page.getByRole('button', { name: 'Jump to Cities' });
+    await expect(word).toBeVisible();
+    await expect(page.getByText(gistText, { exact: true })).toBeVisible();
+    await word.focus();
+    ready = true;
+    await expect(page.getByText('You caught the main idea. Read the detail.')).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(word).toBeFocused();
+    await expect(page.getByText('Step 2 of 4')).toBeVisible();
+    expect(posts.filter((p) => p.path.endsWith('/void'))).toHaveLength(0);
+    expect(posts.filter((p) => p.path.endsWith('/gist'))).toHaveLength(1);
+  });
+}

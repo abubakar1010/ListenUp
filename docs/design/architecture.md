@@ -182,7 +182,7 @@ If the learner believes the reference transcript is wrong at some word, they can
 2. On gist submission a `grading.grade_gist` job sends the key points, the passage text and the gist (as clearly delimited data) with the versioned `grade_gist` prompt.
 3. The model must return a fixed structure: per-dimension scores, which key points are covered, any wrong claims, and feedback text. The structure is validated; anything out of range is rejected and retried.
 4. **Our code computes the overall score** from the dimension scores and the rubric weights, so the weighting never depends on model arithmetic.
-5. On repeated failure, or when no grade is ready 30 seconds after submission, the grade is stored as `unavailable` with a retry action, and the learner continues.
+5. On repeated failure, or when no grade is ready at the configured deadline (30 seconds by default), feedback is stored as `unavailable` with a retry action, and the learner continues. Quota admission waits show `delayed` instead and postpone automatically without consuming failure retries. `POST /grades/{attempt_id}/retry` authorizes the saved submission and coalesces waiting/running jobs; a validated late success can replace either state without changing practice progress ([ADR 0061](../adr/0061-gist-grading-recovery.md)).
 
 ## 6. Shadow grading pipeline
 

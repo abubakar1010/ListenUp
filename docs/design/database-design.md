@@ -508,11 +508,19 @@ CREATE TABLE grading.key_points (
   UNIQUE (media_object_id, span, prompt_version)  -- shared by every learner on that passage
 );
 
+-- ADR 0061: worker-only quota wait metadata, no reference text or API-role grant.
+CREATE TABLE grading.key_point_delays (
+  media_object_id uuid NOT NULL REFERENCES content.media_objects ON DELETE CASCADE,
+  span int4range NOT NULL,
+  prompt_version text NOT NULL,
+  PRIMARY KEY (media_object_id, span, prompt_version)
+);
+
 CREATE TABLE grading.gist_grades (
   attempt_id       uuid PRIMARY KEY REFERENCES practice.attempts ON DELETE CASCADE,
   user_id          uuid NOT NULL,
   status           text NOT NULL DEFAULT 'pending'
-                   CHECK (status IN ('pending', 'ready', 'unavailable')),
+                   CHECK (status IN ('pending', 'ready', 'unavailable', 'delayed')),
   key_points_id    uuid REFERENCES grading.key_points ON DELETE SET NULL,
   dimension_scores jsonb,                  -- {main_idea, key_details, accuracy}: 0 to 100 each
   overall          int2 CHECK (overall BETWEEN 0 AND 100),  -- computed by our code
@@ -522,6 +530,7 @@ CREATE TABLE grading.gist_grades (
   feedback         text CHECK (char_length(feedback) <= 1500),
   rubric_version   text,
   provider_info    jsonb,
+  feedback_deadline timestamptz NOT NULL DEFAULT now(), -- current cycle; ADR 0061
   attempts_made    int2 NOT NULL DEFAULT 0,
   created_at       timestamptz NOT NULL DEFAULT now(),
   updated_at       timestamptz NOT NULL DEFAULT now(),

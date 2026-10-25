@@ -273,7 +273,16 @@ Read the section for the area you are changing before you change it. The rules e
   pending reads also poll. Submission keeps the result visible until Continue
   refreshes both the session and its Blind attempt, including a fresh cached
   completed listen. Render the saved gist independently of grading readiness.
-  #70 owns unavailable/delayed/retry behavior.
+  Recovery (#70, ADR 0061): `pending` becomes `unavailable` at the configured
+  30-second deadline or exhausted failures; a quota `delayed` state takes precedence.
+  Both remain eligible for a late ready result. `wait_ms` is server-relative.
+  `POST /grades/{attempt_id}/retry` returns 202 with `status: accepted`; it reuses
+  waiting/running work and leaves ready grades unchanged. New cycles update the
+  deadline only after unique queue admission. Deadline checks match the cycle's
+  stored deadline. Retry invalidates grade queries without invalidating practice
+  progress. Missing references and quota waits postpone work without using up
+  grading failures. The normal authentication, consent, CSRF, ownership and D4
+  rules apply to every read and retry.
 
 ## Shadow segments (ADR 0057)
 
