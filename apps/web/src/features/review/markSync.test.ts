@@ -1394,3 +1394,14 @@ test('undo_of_a_removed_dictation_mark_brings_its_tag_back_after_the_restore', a
   expect(transport.setTag).toHaveBeenCalledWith('d1', 'linking');
   expect(marks.get('d1')).toMatchObject({ source: 'dictation', tag: 'linking' });
 });
+
+test('a_tag_for_a_mark_removed_in_another_tab_drops_the_mark_quietly', async () => {
+  const { transport, marks } = fakeServer([saved('m1', 1)]);
+  const sync = make(transport, memoryStorage(), [saved('m1', 1)]);
+  marks.delete('m1'); // the other tab removed it
+  sync.setTag('m1', 'linking');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setTag).toHaveBeenCalledWith('m1', 'linking');
+  expect(sync.getSnapshot().marks).toEqual([]);
+  expect(sync.getSnapshot().status.kind).toBe('saved');
+});
