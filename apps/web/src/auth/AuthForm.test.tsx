@@ -1,4 +1,4 @@
-import { fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 
 import { App } from '../App';
 import {
@@ -13,7 +13,10 @@ import {
 beforeEach(() => {
   document.cookie = 'listenup_csrf=token-123';
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 async function fillAndSubmit(button: string) {
   fireEvent.change(await screen.findByLabelText('Email'), {
@@ -73,9 +76,50 @@ test('Continue with Google and the main action look the same on sign-in and regi
   );
 });
 
-test('a locked account is announced with the time it can try again', async () => {
-  const lockedUntil = '2026-10-03T10:45:00Z';
+test('one try before the pause, a calm warning names it with the reset link (UX-35)', async () => {
   mockApi({
+    '/me': SIGNED_OUT,
+    '/auth/login': () =>
+      problem(401, 'invalid_credentials', 'The email or password is wrong.', {
+        attempts_left: 1,
+        lock_minutes: 15,
+      }),
+  });
+  renderWithProviders(<App />, { route: '/sign-in' });
+
+  await fillAndSubmit('Sign in');
+
+  const warning = await screen.findByRole('alert');
+  expect(warning).toHaveTextContent('The email or password is wrong.');
+  expect(warning).toHaveTextContent(
+    'One try left. After one more wrong try, sign-in pauses for 15 minutes.',
+  );
+  expect(screen.getByRole('link', { name: 'Reset your password' })).toHaveAttribute(
+    'href',
+    '/forgot-password',
+  );
+});
+
+test('with more tries left, only the wrong-password message shows', async () => {
+  mockApi({
+    '/me': SIGNED_OUT,
+    '/auth/login': () =>
+      problem(401, 'invalid_credentials', 'The email or password is wrong.', {
+        attempts_left: 3,
+      }),
+  });
+  renderWithProviders(<App />, { route: '/sign-in' });
+
+  await fillAndSubmit('Sign in');
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('The email or password is wrong.');
+  expect(screen.queryByText(/One try left/)).not.toBeInTheDocument();
+});
+
+test('a paused sign-in gives the time, the minutes left and the reset link (UX-35)', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true, now: new Date('2026-10-03T10:30:30Z') });
+  const lockedUntil = '2026-10-03T10:45:00Z';
+  const fetchMock = mockApi({
     '/me': SIGNED_OUT,
     '/auth/login': () =>
       problem(429, 'account_locked', 'Too many failed sign-in attempts.', {
@@ -89,9 +133,30 @@ test('a locked account is announced with the time it can try again', async () =>
   const time = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' }).format(
     new Date(lockedUntil),
   );
-  expect(await screen.findByText(`You can try again at ${time}.`, { exact: false })).toHaveRole(
-    'alert',
-  );
+  const message = await screen.findByRole('alert');
+  expect(message).toHaveTextContent(`Sign-in is paused until ${time}.`);
+  // The countdown is outside the announced message, so it is not read every minute.
+  const left = screen.getByText('15 minutes left.');
+  expect(message).not.toContainElement(left);
+  expect(screen.getByRole('link', { name: 'Reset your password' })).toBeInTheDocument();
+
+  const signIn = screen.getByRole('button', { name: 'Sign in' });
+  expect(signIn).toHaveAttribute('aria-disabled', 'true');
+  expect(signIn).toHaveAccessibleDescription(new RegExp(`paused until ${time}`));
+  const logins = () => fetchMock.mock.calls.filter(([url]) => url === '/api/v1/auth/login');
+  fireEvent.click(signIn);
+  expect(logins()).toHaveLength(1);
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(60_000);
+  });
+  expect(screen.getByText('14 minutes left.')).toBeInTheDocument();
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(15 * 60_000);
+  });
+  expect(signIn).not.toHaveAttribute('aria-disabled');
+  vi.useRealTimers();
 });
 
 test('the server message explains a failed registration', async () => {
