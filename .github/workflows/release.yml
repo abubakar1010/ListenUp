@@ -1,0 +1,214 @@
+# Release: versioned images after CI passes on main, then a deploy over SSH (#112,
+# Architecture 11). Host-neutral: any Docker-capable VM prepared as in
+# docs/runbooks/deploy.md.
+#
+# Nothing deploys until the owner sets the repository variable LISTENUP_DEPLOY_ENABLED
+# to "true" and creates the `production` environment with its secrets (the deploy job
+# is skipped otherwise). Images are still built and pushed for every green main.
+#
+# Manual runs (Actions → Release → Run workflow):
+#   action=deploy,   tag empty     build the current main and deploy it
+#   action=deploy,   tag=r41       redeploy existing images (migrations run)
+#   action=rollback, tag empty     back to the host's previous release (no migrations)
+#   action=rollback, tag=r39       back to a named release (no migrations)
+name: Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: deploy or rollback
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+      tag:
+        description: Release tag (sha-<12 hex> or r<number>); empty builds main, or rolls back to the previous release
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# One release at a time; a newer push waits rather than cancelling a deploy halfway.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release tag
+    # Only a push to main whose CI succeeded, or a manual run on main.
+    if: >-
+      (github.event_name == 'workflow_run'
+        && github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.event == 'push')
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.tag.outputs.build }}
+      deploy-tag: ${{ steps.tag.outputs.deploy-tag }}
+      release-tag: ${{ steps.tag.outputs.release-tag }}
+      registry: ${{ steps.tag.outputs.registry }}
+      sha: ${{ steps.tag.outputs.sha }}
+      sha-tag: ${{ steps.tag.outputs.sha-tag }}
+    steps:
+      - id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          ACTION: ${{ inputs.action }}
+          INPUT_TAG: ${{ inputs.tag }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          sha="${RUN_SHA:-$GITHUB_SHA}"
+          short="sha-${sha:0:12}"
+          build=true
+          deploy_tag="$short"
+          if [[ "$EVENT" == workflow_dispatch && ( -n "$INPUT_TAG" || "$ACTION" == rollback ) ]]; then
+            build=false
+            deploy_tag="$INPUT_TAG"
+          fi
+          if [[ -n "$deploy_tag" && ! "$deploy_tag" =~ ^(sha-[0-9a-f]{12}|r[0-9]+)$ ]]; then
+            echo "::error::'$deploy_tag' is not a release tag (sha-<12 hex> or r<number>)"
+            exit 1
+          fi
+          {
+            echo "sha=$sha"
+            echo "sha-tag=$short"
+            echo "build=$build"
+            echo "deploy-tag=$deploy_tag"
+            echo "release-tag=r$RUN_NUMBER"
+            echo "registry=ghcr.io/${OWNER,,}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Release r$RUN_NUMBER of $sha; build=$build; deploy tag: ${deploy_tag:-previous}" >> "$GITHUB_STEP_SUMMARY"
+
+  images:
+    name: Image (${{ matrix.image }})
+    needs: release
+    if: needs.release.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - {image: api, file: infra/docker/backend.Dockerfile, target: api, cache: api}
+          - {image: worker, file: infra/docker/backend.Dockerfile, target: worker, cache: worker}
+          - {image: worker-media, file: infra/docker/backend.Dockerfile, target: worker-media, cache: worker-media}
+          - {image: backup, file: infra/docker/backend.Dockerfile, target: backup, cache: backup}
+          - {image: signature-update, file: infra/docker/backend.Dockerfile, target: signature-update, cache: media-runtime}
+          - {image: edge, file: infra/docker/web.Dockerfile, target: edge, cache: edge}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.sha }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Both tags name the same digest: sha-<12> traces the commit, r<n> reads well in
+      # a rollback. Neither is ever reused, and nothing is tagged latest.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          push: true
+          tags: |
+            ${{ needs.release.outputs.registry }}/listenup-${{ matrix.image }}:${{ needs.release.outputs.sha-tag }}
+            ${{ needs.release.outputs.registry }}/listenup-${{ matrix.image }}:${{ needs.release.outputs.release-tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.release.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.release.outputs.release-tag }}
+          cache-from: type=gha,scope=${{ matrix.cache }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.image }}
+
+  deploy:
+    name: Deploy to production
+    needs: [release, images]
+    # Off until the owner enables it; runs after images, or alone for a manual
+    # redeploy or rollback of existing images.
+    if: >-
+      always()
+      && vars.LISTENUP_DEPLOY_ENABLED == 'true'
+      && needs.release.result == 'success'
+      && (needs.images.result == 'success' || needs.images.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.LISTENUP_PUBLIC_URL }}
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    timeout-minutes: 30
+    env:
+      DEPLOY_DIR: ${{ vars.LISTENUP_DEPLOY_DIR || '/opt/listenup' }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ vars.LISTENUP_DEPLOY_SSH_PORT || '22' }}
+      PUBLIC_URL: ${{ vars.LISTENUP_PUBLIC_URL }}
+      TAG: ${{ needs.release.outputs.deploy-tag }}
+      ACTION: ${{ inputs.action || 'deploy' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.sha }}
+      - name: Set up SSH (pinned host key)
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host production
+            HostName $DEPLOY_HOST
+            Port $DEPLOY_PORT
+            User $DEPLOY_USER
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+          EOF
+      - name: Copy the compose file and scripts of this release
+        if: env.ACTION == 'deploy'
+        run: |
+          # shellcheck disable=SC2029 # expanded here on purpose: validated tag, configured path
+          ssh production "mkdir -p '$DEPLOY_DIR/bin'"
+          scp infra/compose/compose.prod.yml "production:$DEPLOY_DIR/compose.prod.yml"
+          scp infra/deploy/deploy.sh infra/deploy/rollback.sh "production:$DEPLOY_DIR/bin/"
+      - name: Deploy (migrations first, then the restart)
+        if: env.ACTION == 'deploy'
+        run: |
+          # shellcheck disable=SC2029 # expanded here on purpose: validated tag, configured path
+          ssh production "LISTENUP_DEPLOY_DIR='$DEPLOY_DIR' bash '$DEPLOY_DIR/bin/deploy.sh' '$TAG'"
+      - name: Roll back (images only)
+        if: env.ACTION == 'rollback'
+        run: |
+          # shellcheck disable=SC2029 # expanded here on purpose: validated tag, configured path
+          ssh production "LISTENUP_DEPLOY_DIR='$DEPLOY_DIR' bash '$DEPLOY_DIR/bin/rollback.sh' $TAG"
+      - name: Smoke test over HTTPS
+        run: |
+          set -euo pipefail
+          host="${PUBLIC_URL#https://}"; host="${host%%/*}"
+          curl -fsS --retry 6 --retry-delay 5 --retry-all-errors "$PUBLIC_URL/api/v1/health"
+          # Plain HTTP must answer with a permanent redirect to HTTPS (CI-A).
+          read -r code location < <(curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "http://$host/")
+          [[ "$code" == 308 && "$location" == "https://$host/" ]] || { echo "::error::http answered $code $location"; exit 1; }
+          headers="$(curl -fsSI "$PUBLIC_URL/")"
+          for header in strict-transport-security content-security-policy x-content-type-options x-frame-options; do
+            grep -qi "^$header:" <<< "$headers" || { echo "::error::missing $header"; exit 1; }
+          done
+          echo "Deployed ${TAG:-the previous release} to $PUBLIC_URL" >> "$GITHUB_STEP_SUMMARY"
