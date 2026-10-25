@@ -10,7 +10,8 @@ export function errorMessage(error: unknown): string {
     const time = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' }).format(
       new Date(lockedUntil),
     );
-    return `Too many failed sign-in attempts for this account. You can try again at ${time}.`;
+    // UX-35: a clock time the learner can act on; the minutes left are shown apart.
+    return `Sign-in is paused until ${time}.`;
   }
   return error.problem.detail;
 }
