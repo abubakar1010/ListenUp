@@ -20,6 +20,9 @@ interface WaveformProps {
   /** Null while the peaks load, or when they could not be loaded: the track is drawn bare. */
   peaks: Peaks | null;
   onChange: (range: Range) => void;
+  /** Optional mode bounds; passage-picker behavior remains the default. */
+  boundsFor?: (range: Range, handle: Handle, durationMs: number) => { min: number; max: number };
+  label?: string;
 }
 
 /** Bars drawn when the track's width is not known yet (and in tests). */
@@ -32,7 +35,14 @@ const PX_PER_BAR = 3;
  * a slider: drag it, or focus it and use the arrow keys (1 s), Shift + arrows or Page
  * Up/Down (5 s), Home and End. Pressing on the track moves the nearer handle there.
  */
-export function Waveform({ durationMs, range, peaks, onChange }: WaveformProps) {
+export function Waveform({
+  durationMs,
+  range,
+  peaks,
+  onChange,
+  boundsFor = handleBounds,
+  label = 'Passage',
+}: WaveformProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const startRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -73,10 +83,17 @@ export function Waveform({ durationMs, range, peaks, onChange }: WaveformProps) 
     return ratio * durationMs;
   }
 
+  function move(handle: Handle, ms: number) {
+    if (boundsFor === handleBounds) return moveHandle(range, handle, ms, durationMs);
+    const { min, max } = boundsFor(range, handle, durationMs);
+    const value = Math.min(max, Math.max(min, Math.round(ms)));
+    return handle === 'start' ? { ...range, startMs: value } : { ...range, endMs: value };
+  }
+
   function dragTo(handle: Handle, ms: number) {
     const widthPx = width || trackRef.current?.getBoundingClientRect().width || 0;
     const snapped = snapMs(ms, dragStepMs(durationMs, widthPx), durationMs);
-    onChange(moveHandle(range, handle, snapped, durationMs));
+    onChange(move(handle, snapped));
   }
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -101,14 +118,14 @@ export function Waveform({ durationMs, range, peaks, onChange }: WaveformProps) 
 
   function slider(handle: Handle) {
     const value = handle === 'start' ? range.startMs : range.endMs;
-    const bounds = handleBounds(range, handle, durationMs);
+    const bounds = boundsFor(range, handle, durationMs);
     return (
       <div
         ref={handle === 'start' ? startRef : endRef}
         data-handle={handle}
         role="slider"
         tabIndex={0}
-        aria-label={handle === 'start' ? 'Passage start' : 'Passage end'}
+        aria-label={`${label} ${handle}`}
         aria-valuemin={Math.floor(bounds.min / 1000)}
         aria-valuemax={Math.floor(bounds.max / 1000)}
         aria-valuenow={Math.floor(value / 1000)}
@@ -117,7 +134,7 @@ export function Waveform({ durationMs, range, peaks, onChange }: WaveformProps) 
           const target = keyTarget(value, event.key, event.shiftKey, bounds);
           if (target === null) return;
           event.preventDefault();
-          onChange(moveHandle(range, handle, target, durationMs));
+          onChange(move(handle, target));
         }}
         style={{ left: `${percent(value)}%` }}
         className="absolute top-1/2 z-10 h-11 w-4 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm border-2 border-surface-raised bg-accent before:absolute before:inset-y-0 before:-right-3 before:-left-3 before:content-['']"

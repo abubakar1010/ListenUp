@@ -1,4 +1,4 @@
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useSearchParams } from 'react-router';
 
 import { usePageTitle } from '../../app/usePageTitle';
 import { buttonClass } from '../../components/button';
@@ -145,6 +145,10 @@ function statusText(item: ContentDetail): string {
 }
 
 function Player({ item, url }: { item: ContentDetail; url: string }) {
+  const [params] = useSearchParams();
+  const at = Number(params.get('at_ms'));
+  const source =
+    Number.isFinite(at) && at > 0 && at <= (item.duration_ms ?? 0) ? `${url}#t=${at / 1000}` : url;
   const label = `Play ${item.title}`;
   if (item.has_video) {
     return (
@@ -152,11 +156,11 @@ function Player({ item, url }: { item: ContentDetail; url: string }) {
         controls
         preload="metadata"
         playsInline
-        src={url}
+        src={source}
         aria-label={label}
         className="w-full max-w-[640px] rounded-md bg-ink"
       />
     );
   }
-  return <audio controls preload="metadata" src={url} aria-label={label} className="w-full" />;
+  return <audio controls preload="metadata" src={source} aria-label={label} className="w-full" />;
 }

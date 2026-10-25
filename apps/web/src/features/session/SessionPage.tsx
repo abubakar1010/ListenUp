@@ -9,8 +9,10 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { BlindStep } from '../blind/BlindStep';
 import { CheckIcon, LockIcon } from '../../components/icons';
 import { DictationResultPanel } from '../dictation/DictationResultPanel';
+import { CardScreen } from '../cards/CardScreen';
 import { DictationScreen } from '../dictation/DictationScreen';
 import { TranscriptScreen } from '../review/TranscriptScreen';
+import { ShadowScreen } from '../shadow/ShadowScreen';
 import { useSession, useSkipStep, type Session } from './api';
 import { ChangeEntryPanel } from './ChangeEntryPanel';
 import { PracticeLayout } from './PracticeLayout';
@@ -60,6 +62,17 @@ function SessionView({ session }: { session: Session }) {
   if (open === 'transcript') {
     return <TranscriptScreen session={session} progress={<Progress session={session} />} />;
   }
+  if (open === 'card') {
+    return <CardScreen session={session} progress={<Progress session={session} />} />;
+  }
+  if (open === 'shadow')
+    return (
+      <ShadowScreen
+        session={session}
+        progress={<Progress session={session} />}
+        skip={<SkipControl session={session} step="shadow" />}
+      />
+    );
   const passage = `Passage ${formatClock(session.passage.start_ms)} to ${formatClock(session.passage.end_ms)}`;
   return (
     <PracticeLayout

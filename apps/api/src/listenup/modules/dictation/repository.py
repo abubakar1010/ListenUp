@@ -203,3 +203,24 @@ async def latest_submitted_attempt(
         )
     ).first()
     return row[0] if row else None
+
+
+async def rescore(
+    session: AsyncSession, attempt_id: uuid.UUID, diff: dict[str, object], accuracy: object
+) -> None:
+    await session.execute(
+        text("""
+        UPDATE practice.dictation_attempts SET diff=:diff, accuracy=:accuracy, scored_at=now()
+         WHERE attempt_id=:id AND scoring_status='scored'
+        """).bindparams(bindparam("diff", type_=JSONB)),
+        {"id": attempt_id, "diff": diff, "accuracy": accuracy},
+    )
+
+
+async def submitted_text(session: AsyncSession, attempt_id: uuid.UUID) -> str:
+    value = await session.scalar(
+        text("SELECT submitted_text FROM practice.dictation_attempts WHERE attempt_id=:id"),
+        {"id": attempt_id},
+    )
+    assert isinstance(value, str)
+    return value

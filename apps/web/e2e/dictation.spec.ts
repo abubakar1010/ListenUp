@@ -57,6 +57,120 @@ function wav(seconds: number): Buffer {
 
 const AUDIO = wav(35);
 
+test('reference correction by keyboard updates score and Edited marker at 360px', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await fakeApi(page, newServer());
+  let edited = false;
+  let finishSave!: () => void;
+  const saveResponse = new Promise<void>((resolve) => {
+    finishSave = resolve;
+  });
+  const result = () => ({
+    id: 'attempt-1',
+    session_id: 's-1',
+    status: 'submitted',
+    scoring_status: 'scored',
+    result: {
+      accuracy: edited ? 100 : 0,
+      counts: {
+        correct: edited ? 1 : 0,
+        spelling_slip: 0,
+        wrong: edited ? 0 : 1,
+        missing: 0,
+        extra: 0,
+      },
+      items: [
+        {
+          index: 0,
+          status: edited ? 'correct' : 'wrong',
+          word: edited ? 'cap' : 'cat',
+          typed: 'cap',
+        },
+      ],
+    },
+  });
+  await page.route('**/api/v1/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace('/api/v1', '');
+    if (path === '/sessions/s-1')
+      return route.fulfill({
+        json: {
+          ...SESSION,
+          open_step: 'transcript',
+          open_position: 2,
+          version: 1,
+          steps: SESSION.steps.map((step, i) => ({
+            ...step,
+            status: i === 0 ? 'done' : i === 1 ? 'open' : 'locked',
+          })),
+        },
+      });
+    if (path === '/sessions/s-1/dictation/attempt') return route.fulfill({ json: result() });
+    if (path === '/dictation/attempts/attempt-1/disputes') {
+      expect(request.postDataJSON()).toEqual({ word_index: 0, corrected_text: 'cap' });
+      expect(request.headers()['idempotency-key']).toBeTruthy();
+      expect(request.headers()['x-csrf-token']).toBeTruthy();
+      await saveResponse;
+      edited = true;
+      return route.fulfill({ json: result() });
+    }
+    if (path === '/sessions/s-1/transcript')
+      return route.fulfill({
+        json: {
+          session_id: 's-1',
+          passage: PASSAGE,
+          media_url: '/api/v1/media/media-1',
+          lines: [
+            {
+              index: 0,
+              start_ms: 1000,
+              end_ms: 1800,
+              words: [
+                { index: 0, text: edited ? 'cap' : 'cat', start_ms: 1000, end_ms: 1800, edited },
+              ],
+            },
+          ],
+        },
+      });
+    if (path === '/dictation/attempts/attempt-1/marks' || path === '/sessions/s-1/marks')
+      return route.fulfill({ json: { marks: [] } });
+    return route.fallback();
+  });
+  await page.goto('/sessions/s-1');
+  const opener = page.getByRole('button', { name: 'Correct reference word cat' });
+  await opener.focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  const input = dialog.getByRole('textbox', { name: 'Corrected text' });
+  await expect(input).toBeFocused();
+  await input.fill('cap');
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByRole('button', { name: 'Save correction' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  try {
+    await expect(dialog.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    await expect(dialog).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(dialog).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(dialog).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+  } finally {
+    finishSave();
+  }
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText('100%')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Jump to cap (edited)' })).toBeVisible();
+  await expect(page.getByText('Edited', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Correct reference word cap' })).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+});
+
 /** The server's draft, shared by every page of the test, as the real API would hold it. */
 interface Server {
   text: string;

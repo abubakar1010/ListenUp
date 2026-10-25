@@ -262,7 +262,7 @@ def test_the_deletion_review_counts_what_will_go(client: TestClient, migrated_ur
     assert response.json() == {
         "clips": 1,
         "practice_sessions": len(world.sessions),
-        "cards": 0,
+        "cards": 1,
         "recordings": 0,
     }
 

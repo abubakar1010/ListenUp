@@ -12,12 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.analytics import service as analytics
 from listenup.modules.blind import service as blind
+from listenup.modules.cards import service as cards
 from listenup.modules.content import service as content
 from listenup.modules.dictation import service as dictation
 from listenup.modules.grading import service as grading
 from listenup.modules.identity import service as identity
 from listenup.modules.practice import service as practice
 from listenup.modules.review import service as review
+from listenup.modules.shadow import service as shadow
 from listenup.modules.transcript import service as transcript
 from listenup.platform.export import Contributor, ExportPart, learner_rows
 
@@ -51,6 +53,8 @@ CONTRIBUTORS: tuple[Contributor, ...] = (
     grading.export_data,
     dictation.export_data,
     review.export_data,
+    cards.export_data,
+    shadow.export_data,
     transcript.export_data,
     analytics.export_data,
     _own_data,
