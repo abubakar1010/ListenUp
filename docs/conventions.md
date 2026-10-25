@@ -222,6 +222,13 @@ Read the section for the area you are changing before you change it. The rules e
   one second in the panel's single polite region (UX-22). Undo cancels only a
   deletion that was never sent; an attempted deletion may need recreation after
   a lost response. Refused deletions preserve the known saved mark and note.
+- Mark tags (#61, ADR 0062): the four tags live in `review/domain/marks.MARK_TAGS`
+  (the `practice.marks.tag` CHECK holds the same values) and `features/review/tags.ts`.
+  `PUT .../marks/{id}/tag` sends the whole tag (null clears it) and needs no `run_once`;
+  the service refuses any other value with 422 `mark_tag_invalid`. A create may carry
+  the tag. In `MarkSync` the tag joins the note's debounced `update` (note, then tag,
+  then confirmation). Set it with `TagSelect`, a native select, in the mark panel and
+  each list row; show the tag in words in the list and in the word's description.
 
 ## Media sandbox and scanning (ADR 0049)
 
