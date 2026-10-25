@@ -130,7 +130,13 @@ test('choosing_a_word_and_pressing_mark_shows_it_at_once_and_saves_it_after_the_
   expect(sent(calls, 'POST')).toEqual([]);
   await afterDebounce();
   const [post] = sent(calls, 'POST');
-  expect(post!.body).toEqual({ id: expect.any(String), word_from: 1, word_to: 1, note: null });
+  expect(post!.body).toEqual({
+    id: expect.any(String),
+    word_from: 1,
+    word_to: 1,
+    note: null,
+    tag: null,
+  });
   expect(within(panel()).getByText('Marks saved', { exact: false })).toBeInTheDocument();
   expect(localStorage.getItem(`listenup:marks:${SESSION.id}`)).toBeNull();
 });
@@ -846,5 +852,85 @@ test('undo_of_a_removed_dictation_mark_brings_it_back_from_dictation_to_confirm'
     note: 'linking',
   });
   expect(word('Hello')).toHaveAccessibleDescription('Marked from Dictation, to confirm');
+  expect(within(panel()).getByText('Marks saved', { exact: false })).toBeInTheDocument();
+});
+
+// -- tags (#61, FR-TR-4) -------------------------------------------------------------------
+
+function taggingRoutes(marks: Map<string, SavedMark>) {
+  return {
+    [`PUT ${MARKS}/m1/tag`]: (call: Call) => {
+      const changed = { ...marks.get('m1')!, ...(call.body as { tag: SavedMark['tag'] }) };
+      marks.set('m1', changed);
+      return jsonResponse(200, changed);
+    },
+  };
+}
+
+test('a_tag_set_from_the_mark_and_cleared_from_the_list_is_saved_and_described', async () => {
+  const mark = serverMark({ id: 'm1', word_from: 2, word_to: 2, at_ms: 140125 });
+  const marks = new Map([[mark.id, mark]]);
+  const { calls } = renderMarking(taggingRoutes(marks), [mark]);
+  await ready();
+  fireEvent.click(word('Again.'));
+  fireEvent.change(within(panel()).getByRole('combobox', { name: 'Tag (optional)' }), {
+    target: { value: 'weak_form' },
+  });
+  // Shown at once: in the list in words, on the word, and as the list control's state.
+  expect(within(row(/Again/)).getByText('Your mark · Weak form')).toBeInTheDocument();
+  expect(word('Again.')).toHaveAccessibleDescription('Marked Tag: Weak form');
+  const listSelect = within(row(/Again/)).getByRole('combobox', {
+    name: 'Tag for mark Again.',
+  });
+  expect(listSelect).toHaveValue('weak_form');
+  expect(sent(calls, 'PUT')).toEqual([]);
+  await afterDebounce();
+  expect(sent(calls, 'PUT')).toMatchObject([
+    { path: `${MARKS}/m1/tag`, body: { tag: 'weak_form' } },
+  ]);
+  fireEvent.change(listSelect, { target: { value: '' } });
+  expect(within(row(/Again/)).getByText('Your mark')).toBeInTheDocument();
+  expect(word('Again.')).toHaveAccessibleDescription('Marked');
+  await afterDebounce();
+  expect(sent(calls, 'PUT').map((call) => call.body)).toEqual([
+    { tag: 'weak_form' },
+    { tag: null },
+  ]);
+  expect(marks.get('m1')!.tag).toBeNull();
+  expect(within(panel()).getByText('Marks saved', { exact: false })).toBeInTheDocument();
+});
+
+test('a_tag_changed_offline_is_kept_through_a_reload_and_saved_once_back_online', async () => {
+  const mark = serverMark({ id: 'm1', word_from: 2, word_to: 2, at_ms: 140125 });
+  const marks = new Map([[mark.id, mark]]);
+  let failing = true;
+  // One server for both visits: it lists what it holds and is unreachable until told.
+  const routes = {
+    [`GET ${MARKS}`]: () => jsonResponse(200, { marks: [...marks.values()] }),
+    [`PUT ${MARKS}/m1/tag`]: (call: Call) => {
+      if (failing) throw new TypeError('Failed to fetch');
+      return taggingRoutes(marks)[`PUT ${MARKS}/m1/tag`](call);
+    },
+  };
+  const { rendered } = renderMarking(routes, [mark]);
+  await ready();
+  fireEvent.change(within(row(/Again/)).getByRole('combobox', { name: 'Tag for mark Again.' }), {
+    target: { value: 'linking' },
+  });
+  await afterDebounce();
+  expect(within(panel()).getByText('Offline. Saved on this device.')).toBeInTheDocument();
+  rendered.unmount();
+  const again = renderMarking(routes, [mark]);
+  await ready();
+  expect(within(row(/Again/)).getByText('Your mark · Linking')).toBeInTheDocument();
+  expect(marks.get('m1')!.tag).toBeNull();
+  failing = false;
+  // The offline poll tries again.
+  await act(() => vi.advanceTimersByTimeAsync(15_000));
+  expect(sent(again.calls, 'PUT').at(-1)).toMatchObject({
+    path: `${MARKS}/m1/tag`,
+    body: { tag: 'linking' },
+  });
+  expect(marks.get('m1')!.tag).toBe('linking');
   expect(within(panel()).getByText('Marks saved', { exact: false })).toBeInTheDocument();
 });
