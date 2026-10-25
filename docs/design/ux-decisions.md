@@ -396,11 +396,12 @@ Remaining gaps after publication:
   boards are done, as is the simulated mobile keyboard check. Focus trapping,
   Escape, the inert background, playback shortcuts, a real phone keyboard and a
   screen-reader pass need the built app.
-- **Implementation (main `fb13202`, see the recheck below).** These gaps
+- **Implementation (main `cfc7197`, see the recheck below).** These gaps
   remain:
   - no whole-clip lock UI or handling of the `blind_in_progress` refusal;
   - the 500 ms gist debounce, and no storage-failure feedback;
-  - no reservation figures, admission-checking state or recheck at reset;
+  - no admission-checking state or recheck at reset, and the reservation
+    refusal and reserved-minutes copy differ from UX-40;
   - a busy `ConfirmDialog` moves focus to the dialog container instead of
     keeping it on a focusable aria-disabled action; its buttons are still
     natively disabled, it makes nothing inert and it uses a 640 px breakpoint;
@@ -436,6 +437,27 @@ comparison.
 Later the same day, main `2281d73` (#208, ADR 0057) changed `AuthForm.tsx` for
 the sign-in lockout warning only. The restore dialog, its copy and the
 kept-deleted message are unchanged, so the A01/I02 row still stands.
+
+Then main `cfc7197` (#210, the UX review fixes #192 to #201) changed three
+rows:
+- **B01 intake** (`AddClipPage.tsx`, `refusals.ts`): a known limit now shows a
+  caution, not an error, before a file is chosen; Choose a file is a
+  `BusyButton`, aria-disabled and described by that caution, and activating it
+  focuses the caution instead of opening the picker. A line shows the reserved
+  minutes (“N minutes held for N clips in progress until they are ready”).
+  Still missing: the admission-checking state and the recheck at the reset. The
+  reservation refusal still says “Add this one when they are ready”, which
+  UX-40 corrects, and the reservation line's wording differs from UX-40's.
+- **Whole-clip player** (`ContentPage.tsx`): audio clips with a known duration
+  now use the shared practice player with its keys (UX-07); video and audio of
+  unknown duration keep the browser's player. `blind_in_progress` is still not
+  handled, so the UX-39 lock card must also remove those keys.
+- **Busy controls**: a new `BusyButton` keeps focus with aria-disabled on
+  Choose a file and Sign in, but `ConfirmDialog` does not use it yet, so its
+  busy-focus gap above is unchanged.
+
+The v2 token values in `index.css` are unchanged (#210 removed only the
+auth-page colour aliases), so the contrast figures still hold.
 
 ### New decisions
 
