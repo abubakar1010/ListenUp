@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import { api, ApiError, type Me } from '../api/client';
@@ -104,6 +104,11 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
+    if (paused) {
+      // Sign in stays focusable while paused and points to the time (UX-10).
+      errorRef.current?.focus();
+      return;
+    }
     setKeptDeleted(null);
     if (!requireConsent()) return;
     submit.mutate(false);
@@ -119,6 +124,24 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
 
   const failed = submit.isError && !scheduledDate(submit.error);
   const error = consentError ?? (failed && !restoreUntil ? errorMessage(submit.error) : null);
+  // The sign-in lockout (D17, UX-35, ADR 0057): one warning before the pause, then the
+  // time it ends with the minutes left, counted silently.
+  const problem = submit.error instanceof ApiError ? submit.error : null;
+  const lockedUntil =
+    problem?.code === 'account_locked' && typeof problem.problem.locked_until === 'string'
+      ? Date.parse(problem.problem.locked_until)
+      : null;
+  const now = useNow(lockedUntil !== null);
+  const paused = lockedUntil !== null && now < lockedUntil;
+  const minutesLeft = paused ? Math.ceil((lockedUntil - now) / 60_000) : 0;
+  const oneTryLeft = problem?.code === 'invalid_credentials' && problem.problem.attempts_left === 1;
+  const lockMinutes = problem?.problem.lock_minutes;
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const { reset } = submit;
+  // When the pause ends, so does its message: the form is as before the first try.
+  useEffect(() => {
+    if (lockedUntil !== null && !paused) reset();
+  }, [lockedUntil, paused, reset]);
 
   function keepDeleted() {
     // Nothing was signed in: declining only closes the question.
@@ -239,9 +262,35 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
           )}
         </div>
         {/* role="alert" makes screen readers announce the message, including the lockout time. */}
-        <p id={ids.error} role="alert" className="min-h-6 text-red-800">
+        <p
+          id={ids.error}
+          ref={errorRef}
+          tabIndex={-1}
+          role="alert"
+          className="min-h-6 text-red-800"
+        >
           {error}
+          {oneTryLeft && (
+            <span className="mt-1 block text-ink">
+              {' '}
+              One try left. After one more wrong try, sign-in pauses for{' '}
+              {typeof lockMinutes === 'number' ? `${lockMinutes} minutes` : 'a while'}.
+            </span>
+          )}
         </p>
+        {(paused || oneTryLeft) && (
+          <p className="text-body-s">
+            {paused && (
+              <span>
+                {minutesLeft} {minutesLeft === 1 ? 'minute' : 'minutes'} left.{' '}
+              </span>
+            )}
+            <Link to="/forgot-password" className="text-blue-700 underline">
+              Reset your password
+            </Link>{' '}
+            {paused ? 'to sign in now.' : 'if you are not sure of it.'}
+          </p>
+        )}
         {keptDeleted && (
           <p role="status">
             Your account stays deleted, and you are not signed in. Everything in it will be deleted
@@ -250,6 +299,8 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
         )}
         <button
           type="submit"
+          aria-disabled={paused || undefined}
+          aria-describedby={paused ? ids.error : undefined}
           disabled={submit.isPending}
           className="rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 focus:outline-2 focus:outline-offset-2 focus:outline-blue-700 disabled:opacity-60"
         >
@@ -286,4 +337,20 @@ export function AuthForm({ mode, footer }: { mode: Mode; footer: ReactNode }) {
       )}
     </main>
   );
+}
+
+/** The time now, every second while `active` (for a countdown), else once. */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const tick = () => setNow(Date.now());
+    const first = window.setTimeout(tick, 0);
+    const timer = window.setInterval(tick, 1000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
+  }, [active]);
+  return now;
 }
