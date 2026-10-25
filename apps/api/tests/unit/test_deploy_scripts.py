@@ -96,6 +96,16 @@ def test_a_deploy_pulls_checks_the_bucket_migrates_and_only_then_restarts(host: 
     ]
 
 
+def test_a_host_override_file_is_layered_on_every_call(host: Host) -> None:
+    (host.root / "compose.host.yml").write_text("services: {}\n")
+
+    assert host.run(DEPLOY, "r7").returncode == 0
+
+    override = f"--file {host.root}/compose.prod.yml --file {host.root}/compose.host.yml "
+    assert len(host.calls()) == 4
+    assert all(override in call for call in host.calls())
+
+
 def test_a_failed_migration_leaves_the_running_release_untouched(host: Host) -> None:
     host.set_state("current-tag", "r6")
 

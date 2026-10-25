@@ -43,9 +43,16 @@ for file in compose.prod.yml .env; do
   fi
 done
 
+# compose.host.yml, when present, holds this host's own adjustments (resource limits
+# for a bigger VM, or the local rehearsal's stand-in services); it is never in the repo.
+files=(--file "$dir/compose.prod.yml")
+if [[ -f "$dir/compose.host.yml" ]]; then
+  files+=(--file "$dir/compose.host.yml")
+fi
+
 compose() {
   LISTENUP_IMAGE_TAG="$1" docker compose --project-name listenup --env-file "$dir/.env" \
-    --file "$dir/compose.prod.yml" "${@:2}"
+    "${files[@]}" "${@:2}"
 }
 
 current="$(cat "$state/current-tag" 2>/dev/null || true)"
