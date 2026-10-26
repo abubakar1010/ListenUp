@@ -1,5 +1,9 @@
 import type { Page, Route } from '@playwright/test';
 
+import type { components } from '../../src/api/schema';
+
+type Schema = components['schemas'];
+
 /*
  * One fake API for the accessibility scan (#98). Each state lists only the answers
  * it needs; everything a signed-in page asks for anyway is answered here. The shapes
@@ -22,10 +26,15 @@ export const LEARNER = {
   display_name: null,
   email_verified: true,
   deletion_grace_days: 7,
-  consents_required: [] as string[],
-};
+  consents_required: [],
+} satisfies Schema['Me'];
 
-const VERSIONS = { terms: '2026-10-01', privacy: '2026-10-01', voice_recording: '2026-10-01' };
+/** The labels of the texts in `src/features/legal/texts.ts`, so the legal pages render. */
+const VERSIONS = {
+  terms: 'terms-2026-1',
+  privacy: 'privacy-2026-1',
+  voice_recording: 'voice-2026-1',
+} satisfies Schema['ConsentVersions'];
 const MB = 2 ** 20;
 
 export function problem(status: number, code: string, detail: string, extra = {}): Answer {
@@ -80,7 +89,7 @@ const SIGNED_IN: Answers = {
         withdrawn_at: null,
       })),
       current: VERSIONS,
-    },
+    } satisfies Schema['Consents'],
   },
   '/me/exports/latest': { json: { export: null } },
   '/library/contents': { json: { items: [], next_cursor: null } },
@@ -98,12 +107,17 @@ const SIGNED_IN: Answers = {
         can_add: true,
         resets_at: '2030-01-01T00:00:00Z',
       },
-    },
+    } satisfies Schema['StorageUse'],
   },
 };
 
+/**
+ * Answers the API for one page. Returns the requests a signed-in page made that no
+ * answer covers, so a scan can fail instead of scanning a "not found" screen.
+ */
 export async function fakeApi(page: Page, answers: Answers, signedIn: boolean) {
   const table: Answers = signedIn ? { ...SIGNED_IN, ...answers } : answers;
+  const unanswered: string[] = [];
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -119,6 +133,7 @@ export async function fakeApi(page: Page, answers: Answers, signedIn: boolean) {
     if (path.startsWith('/media/') && !path.endsWith('/peaks')) return media(route);
     const found = table[`${request.method()} ${path}`] ?? table[path];
     if (!found) {
+      if (signedIn) unanswered.push(`${request.method()} ${path}`);
       const refusal = signedIn
         ? problem(404, 'not_found', path)
         : problem(401, 'not_signed_in', 'Sign in to continue.');
@@ -134,4 +149,5 @@ export async function fakeApi(page: Page, answers: Answers, signedIn: boolean) {
       body: JSON.stringify(answer.json ?? null),
     });
   });
+  return unanswered;
 }

@@ -1,7 +1,11 @@
 import type { Locator, Page } from '@playwright/test';
 
+import type { components } from '../../src/api/schema';
 import { sessionFixture } from '../../src/features/session/fixtures';
+import { ISSUE } from './allowlist';
 import { LEARNER, problem, type Answers } from './fakeApi';
+
+type Schema = components['schemas'];
 
 /*
  * Every route and main state the accessibility scan visits (#98). A new screen or
@@ -22,24 +26,25 @@ export interface ScanState {
   only?: 'narrow';
   /** The open story that owns this screen; its violations are tracked there, not fixed here. */
   owner?: string;
+  /** The state is an error or warning, so an alert is expected on screen. */
+  alert?: true;
 }
 
-const ISSUE = 'https://github.com/abubakar1010/ListenUp/issues';
 const heading = (name: string | RegExp) => (page: Page) =>
   page.getByRole('heading', { level: 1, name });
 
-const CLIP = {
+const ITEM = {
   id: 'clip-1',
   title: 'Why cities plant street trees',
   source: 'upload',
   status: 'playable',
   duration_ms: 760_000,
   created_at: '2026-10-03T09:00:00Z',
-  last_session_status: null,
   stage: null,
   queue_position: null,
-};
-const LIBRARY = [
+} satisfies Schema['ContentItem'];
+const CLIP: Schema['LibraryItem'] = { ...ITEM, last_session_status: null };
+const LIBRARY: Schema['LibraryItem'][] = [
   CLIP,
   {
     ...CLIP,
@@ -53,7 +58,7 @@ const LIBRARY = [
   { ...CLIP, id: 'clip-3', title: 'Interview', status: 'failed', duration_ms: null },
 ];
 const DETAIL = {
-  ...CLIP,
+  ...ITEM,
   error_code: null,
   error_detail: null,
   has_video: false,
@@ -61,7 +66,7 @@ const DETAIL = {
   media_object_id: 'm-1',
   media_url: '/api/v1/media/m-1',
   peaks_url: '/api/v1/media/m-1/peaks',
-};
+} satisfies Schema['ContentDetail'];
 const PEAKS = {
   version: 1,
   per_second: 10,
@@ -81,19 +86,19 @@ const TRANSCRIPT = {
       end_ms: 2000,
       words: [
         { index: 0, text: 'Cities', start_ms: 0, end_ms: 800, edited: true },
-        { index: 1, text: 'plant', start_ms: 800, end_ms: 1400 },
-        { index: 2, text: 'trees.', start_ms: 1400, end_ms: 2000 },
+        { index: 1, text: 'plant', start_ms: 800, end_ms: 1400, edited: false },
+        { index: 2, text: 'trees.', start_ms: 1400, end_ms: 2000, edited: false },
       ],
     },
     {
       index: 1,
       start_ms: 10_000,
       end_ms: 12_000,
-      words: [{ index: 3, text: 'Again.', start_ms: 10_000, end_ms: 12_000 }],
+      words: [{ index: 3, text: 'Again.', start_ms: 10_000, end_ms: 12_000, edited: false }],
     },
   ],
-};
-const MARKS = [
+} satisfies Schema['TranscriptReview'];
+const MARKS: Schema['Mark'][] = [
   {
     id: 'm-1',
     session_id: 'session-1',
@@ -131,9 +136,9 @@ const SCORED = {
       { index: 2, status: 'correct', word: 'trees.', typed: 'trees.' },
     ],
   },
-};
+} satisfies Schema['DictationAttemptView'];
 
-function blindAttempt(overrides: Record<string, unknown> = {}) {
+function blindAttempt(overrides: Partial<Schema['BlindAttempt']> = {}): Schema['BlindAttempt'] {
   return {
     id: 'a-1',
     session_id: 'session-1',
@@ -151,6 +156,29 @@ function blindAttempt(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+/** The Blind step as the API reports it, with `attempt` its latest attempt. */
+function blindStep(attempt: Schema['BlindAttempt'] | null): Answers {
+  return {
+    '/sessions/session-1/blind': {
+      json: {
+        session_id: 'session-1',
+        passage_start_ms: PASSAGE.start_ms,
+        passage_end_ms: PASSAGE.end_ms,
+        step_status: attempt?.status === 'submitted' ? 'done' : 'open',
+        attempt,
+      } satisfies Schema['BlindStep'],
+    },
+  };
+}
+const SUBMITTED = blindAttempt({
+  id: 'gist-1',
+  status: 'submitted',
+  position_ms: PASSAGE.end_ms,
+  listen_complete: true,
+  finished_at: '2026-10-03T10:01:00Z',
+  gist_text: 'Cities plant trees to cool the streets.',
+});
 
 /** A session at `done` steps of its plan, with the reads its open step makes. */
 function session(
@@ -185,7 +213,7 @@ const GIST_GRADE = {
     { text: 'Trees cool streets', captured: true },
     { text: 'Trees clean the air', captured: false },
   ],
-};
+} satisfies Schema['GistFeedback'];
 
 const ADMIN_JOBS = {
   lanes: [
@@ -203,7 +231,7 @@ const ADMIN_JOBS = {
       failed_at: '2026-10-08T09:30:00Z',
     },
   ],
-};
+} satisfies Schema['JobsOverview'];
 const ADMIN_USAGE = {
   start_date: '2026-10-01',
   end_date: '2026-10-30',
@@ -233,7 +261,7 @@ const ADMIN_USAGE = {
       ],
     },
   ],
-};
+} satisfies Schema['UsageOverview'];
 
 const EXPORT_READY = {
   id: 'e1',
@@ -244,7 +272,7 @@ const EXPORT_READY = {
   archive_bytes: 3 * 2 ** 20,
   file_count: 1,
   download_url: '/api/v1/me/exports/e1/download',
-};
+} satisfies Schema['DataExport'];
 
 async function signIn(page: Page, password: string) {
   await page.getByLabel('Email').fill('learner@example.com');
@@ -257,6 +285,7 @@ export const STATES: ScanState[] = [
   { name: 'sign-in', path: '/sign-in', ready: heading('Sign in') },
   {
     name: 'sign-in refused',
+    alert: true,
     path: '/sign-in',
     answers: { '/auth/login': problem(401, 'invalid_credentials', 'Email or password is wrong.') },
     act: (page) => signIn(page, 'wrong horse'),
@@ -264,6 +293,7 @@ export const STATES: ScanState[] = [
   },
   {
     name: 'sign-in paused',
+    alert: true,
     path: '/sign-in',
     answers: {
       '/auth/login': () =>
@@ -277,6 +307,7 @@ export const STATES: ScanState[] = [
   { name: 'register', path: '/register', ready: heading('Create your account') },
   {
     name: 'register field errors',
+    alert: true,
     path: '/register',
     act: (page) => page.getByRole('button', { name: 'Create account' }).click(),
     ready: (page) => page.locator('[aria-invalid="true"]').first(),
@@ -294,19 +325,31 @@ export const STATES: ScanState[] = [
   },
   {
     name: 'reset password',
-    path: '/reset-password?token=abc',
-    ready: heading('Choose a new password'),
+    path: '/reset-password#token=abc',
+    ready: (page) => page.getByLabel('New password'),
+  },
+  {
+    name: 'reset link incomplete',
+    alert: true,
+    path: '/reset-password',
+    ready: (page) => page.getByRole('alert').filter({ hasText: 'incomplete' }),
   },
   {
     name: 'account deleted',
     path: '/account-deleted?until=2026-11-01T00%3A00%3A00Z',
     ready: heading('Your account is deleted'),
   },
-  { name: 'terms', path: '/terms', ready: heading('Terms of Service') },
-  { name: 'privacy', path: '/privacy', ready: heading('Privacy Policy') },
-  { name: 'voice consent', path: '/voice-consent', ready: heading('Voice recording consent') },
+  // The text itself, not only its title: the title also heads the "not available" error.
+  { name: 'terms', path: '/terms', ready: (page) => page.getByText('Version terms-2026-1') },
+  { name: 'privacy', path: '/privacy', ready: (page) => page.getByText('Version privacy-2026-1') },
+  {
+    name: 'voice consent',
+    path: '/voice-consent',
+    ready: (page) => page.getByText('Version voice-2026-1'),
+  },
   {
     name: 'google error',
+    alert: true,
     path: '/auth/google-error?reason=failed&intent=login',
     ready: heading(/Google/),
   },
@@ -367,13 +410,23 @@ export const STATES: ScanState[] = [
     signedIn: true,
     answers: {
       '/contents/clip-2': {
-        json: { ...LIBRARY[1], ...DETAIL, ...LIBRARY[1], media_url: null, peaks_url: null },
+        json: {
+          ...DETAIL,
+          id: 'clip-2',
+          title: 'Morning news',
+          status: 'pending',
+          duration_ms: null,
+          stage: 'converting',
+          media_url: null,
+          peaks_url: null,
+        } satisfies Schema['ContentDetail'],
       },
     },
     ready: (page) => page.getByRole('status').filter({ hasText: /./ }).first(),
   },
   {
     name: 'clip removed copy',
+    alert: true,
     path: '/contents/clip-4',
     signedIn: true,
     answers: {
@@ -386,8 +439,10 @@ export const STATES: ScanState[] = [
   },
   {
     name: 'clip not found',
+    alert: true,
     path: '/contents/missing',
     signedIn: true,
+    answers: { '/contents/missing': problem(404, 'not_found', 'Not found.') },
     ready: heading('We could not find this'),
   },
   {
@@ -456,15 +511,7 @@ export const STATES: ScanState[] = [
     path: '/sessions/session-1',
     signedIn: true,
     answers: session('blind', 0, {
-      '/sessions/session-1/blind': {
-        json: {
-          session_id: 'session-1',
-          passage_start_ms: 0,
-          passage_end_ms: 30_000,
-          step_status: 'open',
-          attempt: null,
-        },
-      },
+      ...blindStep(null),
     }),
     ready: (page) => page.getByRole('region', { name: 'Blind' }),
   },
@@ -473,32 +520,19 @@ export const STATES: ScanState[] = [
     path: '/sessions/session-1',
     signedIn: true,
     answers: session('blind', 0, {
-      '/sessions/session-1/blind': {
-        json: {
-          session_id: 'session-1',
-          passage_start_ms: 0,
-          passage_end_ms: 30_000,
-          step_status: 'open',
-          attempt: blindAttempt({ position_ms: 30_000, listen_complete: true }),
-        },
-      },
+      ...blindStep(blindAttempt({ position_ms: 30_000, listen_complete: true })),
     }),
     ready: (page) => page.getByRole('textbox').first(),
   },
   {
     name: 'blind attempt ended',
+    alert: true,
     path: '/sessions/session-1',
     signedIn: true,
     answers: session('blind', 0, {
-      '/sessions/session-1/blind': {
-        json: {
-          session_id: 'session-1',
-          passage_start_ms: 0,
-          passage_end_ms: 30_000,
-          step_status: 'open',
-          attempt: blindAttempt({ status: 'voided', void_reason: 'left', position_ms: 2_000 }),
-        },
-      },
+      ...blindStep(
+        blindAttempt({ status: 'voided', void_reason: 'left_page', position_ms: 2_000 }),
+      ),
     }),
     ready: (page) => page.getByRole('region', { name: 'Blind' }),
   },
@@ -508,15 +542,7 @@ export const STATES: ScanState[] = [
     signedIn: true,
     only: 'narrow',
     answers: session('blind', 0, {
-      '/sessions/session-1/blind': {
-        json: {
-          session_id: 'session-1',
-          passage_start_ms: 0,
-          passage_end_ms: 30_000,
-          step_status: 'open',
-          attempt: null,
-        },
-      },
+      ...blindStep(null),
     }),
     act: (page) => page.getByRole('button', { name: 'Plan', exact: true }).click(),
     ready: (page) => page.getByRole('dialog', { name: 'Your plan' }),
@@ -557,11 +583,10 @@ export const STATES: ScanState[] = [
     name: 'transcript with marks',
     path: '/sessions/session-1',
     signedIn: true,
-    answers: session('blind', 1, {
-      '/sessions/session-1/blind': {
-        json: { attempt: { id: 'gist-1', status: 'submitted' } },
-      },
-      '/gists/gist-1/grade': { json: GIST_GRADE },
+    // Dictation entry, so the page has no gist feedback (#70's panel).
+    answers: session('dictation', 1, {
+      '/sessions/session-1/dictation/attempt': { json: SCORED },
+      '/dictation/attempts/attempt-1/marks': { json: { marks: [] } },
     }),
     ready: (page) => page.getByRole('list', { name: 'Your marks' }),
   },
@@ -569,11 +594,10 @@ export const STATES: ScanState[] = [
     name: 'transcript mark editor',
     path: '/sessions/session-1',
     signedIn: true,
-    answers: session('blind', 1, {
-      '/sessions/session-1/blind': {
-        json: { attempt: { id: 'gist-1', status: 'submitted' } },
-      },
-      '/gists/gist-1/grade': { json: GIST_GRADE },
+    // Dictation entry, so the page has no gist feedback (#70's panel).
+    answers: session('dictation', 1, {
+      '/sessions/session-1/dictation/attempt': { json: SCORED },
+      '/dictation/attempts/attempt-1/marks': { json: { marks: [] } },
     }),
     act: (page) =>
       page
@@ -606,9 +630,7 @@ export const STATES: ScanState[] = [
     path: '/sessions/session-1',
     signedIn: true,
     answers: session('blind', 1, {
-      '/sessions/session-1/blind': {
-        json: { attempt: { id: 'gist-1', status: 'submitted' } },
-      },
+      ...blindStep(SUBMITTED),
       '/gists/gist-1/grade': { json: GIST_GRADE },
     }),
     ready: (page) => page.getByText(GIST_GRADE.feedback),
@@ -619,22 +641,14 @@ export const STATES: ScanState[] = [
     path: '/sessions/session-1',
     signedIn: true,
     answers: session('both', 0, {
-      '/sessions/session-1/blind': {
-        json: {
-          session_id: 'session-1',
-          passage_start_ms: 0,
-          passage_end_ms: 30_000,
-          step_status: 'open',
-          attempt: blindAttempt({ position_ms: 30_000, listen_complete: true }),
-        },
-      },
+      ...blindStep(blindAttempt({ position_ms: 30_000, listen_complete: true })),
       'POST /blind/attempts/a-1/gist': {
         status: 201,
         json: {
           attempt: blindAttempt({ status: 'submitted', listen_complete: true }),
           open_step: 'dictation',
           session_version: 1,
-        },
+        } satisfies Schema['GistSubmitted'],
       },
       '/gists/a-1/grade': { json: GIST_GRADE },
     }),
@@ -666,8 +680,23 @@ export const STATES: ScanState[] = [
           chosen_by: 'system',
           mark_count: 2,
           locked_at: null,
-        },
+        } satisfies Schema['Segment'],
       },
+      '/sessions/session-1/shadow/rounds': {
+        json: {
+          segment: {
+            session_id: 'session-1',
+            start_ms: 0,
+            end_ms: 30_000,
+            chosen_by: 'system',
+            mark_count: 2,
+            locked_at: null,
+          },
+          current: null,
+          rounds: [],
+        } satisfies Schema['Rounds'],
+      },
+      '/media/m-1/peaks': { json: PEAKS },
     }),
     ready: (page) => page.getByRole('heading', { name: 'Your Shadow segment' }),
   },
