@@ -1,4 +1,4 @@
-"""The edge's Caddyfile keeps its caching and streaming rules (#112, ADR 0065).
+"""The edge's Caddyfile keeps its caching and streaming rules (#112, ADR 0066).
 
 These read the file as text; the image build runs `caddy validate`, and the review
 fixes were checked against a running Caddy (docs/runbooks/deploy.md, rehearsal).

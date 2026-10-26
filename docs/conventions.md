@@ -133,7 +133,7 @@ Read the section for the area you are changing before you change it. The rules e
 - The AI gateway (#64) calls `record_ai_call` and `record_ai_quota`, and grading jobs call `record_grading`; the alert rules already read those metrics. A new alert goes in `infra/observability/alerts.yml` with a case in `alerts.test.yml` (it fires, and stays quiet just below the threshold), a `runbook` entry in `docs/runbooks/alerts.md`, and a row in ADR 0031.
 - Backups are `python -m listenup.ops.backup` (the `backup` image target). A backup is complete only with its `manifest.json`; the restore test is a monthly run recorded in the log at the end of `docs/runbooks/backups.md`. A migration that adds a schema or role must keep a restore into a database with the roles in place working (`tests/integration/test_backup.py`).
 
-## Deployment (ADR 0065)
+## Deployment (ADR 0066)
 
 - Production is `infra/compose/compose.prod.yml` at one immutable tag (`sha-<12 hex>` or `r<n>`), deployed by `infra/deploy/deploy.sh` and described in `docs/runbooks/deploy.md`. A new setting goes into the services that read it as `${NAME:?set in .env}` (or `${NAME:-default}`) and into `infra/deploy/env.example`; never a literal secret, and never into a service that does not use it. `tests/unit/test_compose_prod.py` checks roles, credentials, ports and the media sandbox.
 - Keep the previous release deployable: migrations stay expand-only within a release, and a change to `compose.prod.yml` must also run the previous release's images, because a rollback changes images only.
