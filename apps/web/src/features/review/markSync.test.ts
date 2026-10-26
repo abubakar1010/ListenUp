@@ -1,3 +1,5 @@
+import type { Mock } from 'vitest';
+
 import { ApiError } from '../../api/client';
 import { MarkSync, type MarkTransport, type SavedMark } from './markSync';
 
@@ -1236,6 +1238,49 @@ test('changing_a_tag_back_before_the_save_sends_nothing', async () => {
   expect(transport.setTag).not.toHaveBeenCalled();
   expect(transport.setNote).not.toHaveBeenCalled();
   expect(sync.getSnapshot().marks).toMatchObject([{ tag: 'linking', saved: true }]);
+});
+
+/** A transport call that waits until `release` is called, so a change can land meanwhile. */
+function held<V>(call: Mock<(id: string, value: V) => Promise<SavedMark>>) {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const real = call.getMockImplementation()!;
+  call.mockImplementationOnce(async (id, value) => {
+    await gate;
+    return real(id, value);
+  });
+  return () => release();
+}
+
+test('a_tag_changed_back_while_its_save_is_on_its_way_is_sent_again', async () => {
+  const { transport, marks } = fakeServer([saved('m1', 1)]);
+  const sync = make(transport, memoryStorage(), [saved('m1', 1)]);
+  const release = held(transport.setTag);
+  sync.setTag('m1', 'linking');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setTag).toHaveBeenCalledTimes(1);
+  sync.setTag('m1', null);
+  release();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setTag).toHaveBeenLastCalledWith('m1', null);
+  expect(marks.get('m1')!.tag).toBeNull();
+  expect(sync.getSnapshot().marks).toMatchObject([{ tag: null, saved: true }]);
+  expect(sync.getSnapshot().status.kind).toBe('saved');
+});
+
+test('a_tag_changed_back_while_the_note_is_on_its_way_is_not_left_on_the_server', async () => {
+  const { transport, marks } = fakeServer([saved('m1', 1)]);
+  const sync = make(transport, memoryStorage(), [saved('m1', 1)]);
+  const release = held(transport.setNote);
+  sync.setNote('m1', 'n');
+  sync.setTag('m1', 'weak_form');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setNote).toHaveBeenCalledTimes(1);
+  sync.setTag('m1', null);
+  release();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(marks.get('m1')).toMatchObject({ note: 'n', tag: null });
+  expect(sync.getSnapshot().marks).toMatchObject([{ note: 'n', tag: null, saved: true }]);
 });
 
 test('a_tag_set_on_an_unsent_mark_travels_with_its_create', async () => {

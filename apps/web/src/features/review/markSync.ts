@@ -509,6 +509,10 @@ export class MarkSync {
       entry.op = 'none';
     } else if (entry.op === 'create') {
       entry.op = 'update'; // created now; the newer note still has to go
+    } else if (entry.op === 'none' && differs(entry.mark, stored)) {
+      // Changed back while this request was on its way: the server now holds what was
+      // sent, so the learner's older value has to go again.
+      entry.op = 'update';
     }
   }
 
