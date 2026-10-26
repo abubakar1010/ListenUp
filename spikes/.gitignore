@@ -9,3 +9,7 @@ data/
 *.ogg
 LibriSpeech/
 *.tar.gz
+# Run output; the results documents in docs/spikes/ keep the curated JSON. B5's seed
+# manifest holds session tokens and must never be committed.
+results/
+manifest.json
