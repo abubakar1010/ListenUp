@@ -71,8 +71,10 @@ export function MarkList({
                     }
                   }}
                 >
-                  {/* The name holds the visible words, so speech input finds it (WCAG 2.5.3). */}
-                  <span className="sr-only">Play mark</span> {formatClock(mark.at_ms)} · {phrase}
+                  {/* The name holds the visible words, so speech input finds it (WCAG 2.5.3);
+                      the dot only separates them on screen. */}
+                  <span className="sr-only">Play mark</span> {formatClock(mark.at_ms)}{' '}
+                  <span aria-hidden="true">·</span> {phrase}
                 </button>
                 <p className="mt-2 text-body-s font-bold">{markOrigin(mark)}</p>
                 {mark.note && <p className="mt-2 [overflow-wrap:anywhere]">{mark.note}</p>}

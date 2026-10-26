@@ -28,8 +28,9 @@ test('list_buttons_offer_edit_remove_and_ignore_modified_or_repeated_shortcuts',
     />,
   );
   const list = screen.getByRole('list', { name: 'Your marks' });
-  // Each name starts with or contains the words on the button (WCAG 2.5.3, #98).
-  const play = within(list).getByRole('button', { name: 'Play mark 00:00 · (removed words)' });
+  // Each name starts with or contains the words on the button (WCAG 2.5.3, #98); the
+  // separator dot is visible only, so screen readers do not announce it.
+  const play = within(list).getByRole('button', { name: 'Play mark 00:00 (removed words)' });
   expect(play).toHaveTextContent(/^Play mark 00:00 · \(removed words\)$/);
   fireEvent.keyDown(play, { key: 'e', ctrlKey: true });
   fireEvent.keyDown(play, { key: 'Delete', altKey: true });

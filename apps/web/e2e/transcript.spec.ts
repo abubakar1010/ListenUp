@@ -544,7 +544,7 @@ test('dictation_marks_confirm_and_remove_with_reload_and_noncolour_cues_at_360px
   await expect(page.getByText('2 marks', { exact: true })).toBeVisible();
   await list.getByRole('button', { name: 'Confirm mark Hello.' }).focus();
   await page.keyboard.press('Enter');
-  await expect(list.getByRole('button', { name: 'Play mark 00:00 · Hello.' })).toBeFocused();
+  await expect(list.getByRole('button', { name: 'Play mark 00:00 Hello.' })).toBeFocused();
   await expect.poll(() => confirmations).toBe(1);
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem('listenup:marks:s-57')), { timeout: 1000 })
