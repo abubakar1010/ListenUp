@@ -137,6 +137,7 @@ Read the section for the area you are changing before you change it. The rules e
 
 - Production is `infra/compose/compose.prod.yml` at one immutable tag (`sha-<12 hex>` or `r<n>`), deployed by `infra/deploy/deploy.sh` and described in `docs/runbooks/deploy.md`. A new setting goes into the services that read it as `${NAME:?set in .env}` (or `${NAME:-default}`) and into `infra/deploy/env.example`; never a literal secret, and never into a service that does not use it. `tests/unit/test_compose_prod.py` checks roles, credentials, ports and the media sandbox.
 - Keep the previous release deployable: migrations stay expand-only within a release, and a change to `compose.prod.yml` must also run the previous release's images, because a rollback changes images only.
+  `rollback.sh` refuses a release older than the previous one without `--force`.
 - A new image target is added to the `images` matrix in `.github/workflows/release.yml` and to the compose file; only `edge` publishes ports, and the API is reached only through the `api-via-edge` alias.
 - The media worker reaches the managed database and storage only through `db-relay`; do not attach it to another network or give it another route.
 

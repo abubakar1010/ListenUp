@@ -62,7 +62,7 @@ Do these once per host, in order. Each step says what it proves.
 
 1. **VM.** Any Linux VM with at least 4 cores and 16 GB of memory for the speech models (Architecture 11; the media worker is capped at 2 cores and 18 GB including swap), 40 GB of disk, a public IPv4 address, and outbound HTTPS. Install Docker Engine 28 or later and the Compose plugin 2.24 or later (ADR 0049's isolated bridge needs both): `docker version`, `docker compose version`.
 2. **Firewall.** Inbound: 22 (SSH, restricted to the owner's addresses where the provider allows it), 80 and 443 TCP, and 443 UDP (HTTP/3). Nothing else; only the `edge` container publishes ports.
-3. **Deploy user.** Create `deploy`, add it to the `docker` group, put the release workflow's public key in `~deploy/.ssh/authorized_keys`, disable password login. Record the host key for GitHub: `ssh-keyscan -t ed25519 <host>` (compare its fingerprint with the provider's console).
+3. **Deploy user.** Create `deploy`, add it to the `docker` group, put the release workflow's public key in `~deploy/.ssh/authorized_keys`, disable password login. Record the host key for GitHub: `ssh-keyscan -t ed25519 <host>`, or `ssh-keyscan -p <port> -t ed25519 <host>` when SSH listens on another port (the line then starts `[<host>]:<port>`, which is what the deploy job looks up). Compare its fingerprint with the provider's console.
 4. **DNS.** An `A` (and `AAAA` if IPv6) record from the domain to the VM. Caddy needs it before the first deploy to get the certificate.
 5. **Managed PostgreSQL 16.** In a region close to the VM. The provider's administrator must be able to grant BYPASSRLS and CREATEROLE (check before choosing the provider); it need not be a superuser. Generate four random passwords of printable ASCII (for example `openssl rand -base64 32`). The script takes SCRAM verifiers, never the passwords, so nothing in the server's logs can reveal them. From a checkout of this repository on any machine that reaches the database:
 
@@ -76,10 +76,10 @@ Do these once per host, in order. Each step says what it proves.
    ```
 
    It refuses anything that is not a verifier, and stops if `PUBLIC` could still connect to the database. It prints the four roles: all `login`, only `listenup_worker` with `bypassrls`, none `superuser`. Turn on the provider's daily backups (or point-in-time recovery) and record the retention in `backups.md`; enable `pg_stat_statements` and the provider's alerts for connections near the limit and storage (Database Design 12.3). Every database URL uses `sslmode=verify-full` with `sslrootcert` (as in `env.example`): `require` would encrypt but accept any certificate, and the media pool reaches the database through the relay. If the provider's certificate chains to its own CA rather than a public one, mount that CA file into the database-using services in `compose.host.yml` and point `sslrootcert` at it.
-6. **Storage.** Two private buckets: media and backups, each with its own key that has rights on that bucket only (ADR 0032). Turn on server-side encryption if it is not the default. Give the media bucket a CORS rule for `https://<domain>`, methods `GET`, `PUT` and `HEAD`, header `*`, so signed uploads and playback work from the browser.
+6. **Storage.** Two private buckets: media and backups, each with its own key that has rights on that bucket only (ADR 0032). Turn on server-side encryption if it is not the default. Give the media bucket a CORS rule for `https://<domain>`, methods `GET`, `PUT` and `HEAD`, header `*`, so signed uploads and playback work from the browser. Turn off every way the provider can serve the buckets publicly (a public-access setting, a provider "dev" or public domain, a custom domain bound to the bucket, a CDN in front), and record in the release notes of the first deploy which settings were checked: `storage-check` only probes the S3 endpoints in `.env`, and on a provider without `GetBucketPolicyStatus` it reports the policy as `unsupported` rather than failing. Make each key able to write and delete `ops/public-access-probe.txt` in its bucket, which `storage-check` writes before every deploy.
 7. **SMTP.** An account with the provider, the sender domain verified (SPF and DKIM records).
 8. **Registry access.** A GitHub token with only `read:packages`, then on the host as `deploy`: `echo "$TOKEN" | docker login ghcr.io -u <github user> --password-stdin`.
-9. **Environment file.** `sudo install -d -o deploy -m 0750 /opt/listenup`, then create `/opt/listenup/.env` from `infra/deploy/env.example` with mode 0600. `LISTENUP_RELAY_DB_HOST` and `LISTENUP_RELAY_S3_HOST` must be the exact hostnames in the database URLs and the S3 endpoint (never IP addresses), with their ports. `LISTENUP_MEDIA_ORIGIN` is the scheme and host of `LISTENUP_S3_PUBLIC_ENDPOINT_URL`.
+9. **Environment file.** `sudo install -d -o deploy -m 0750 /opt/listenup`, then create `/opt/listenup/.env` from `infra/deploy/env.example` with mode 0600. `LISTENUP_RELAY_DB_HOST` and `LISTENUP_RELAY_S3_HOST` must be the exact hostnames in the database URLs and the S3 endpoint (never IP addresses), with their ports. `LISTENUP_MEDIA_ORIGIN` is the scheme and host of `LISTENUP_S3_PUBLIC_ENDPOINT_URL`. Compose substitutes `$` inside unquoted values, so single-quote any value that contains `$` (`LISTENUP_SMTP_PASSWORD='pa$$word'`); passwords made with `openssl rand -base64` contain none. If the host's own networks use 172.31.250.0/24 or 172.31.251.0/24, set the four optional network variables at the end of the relay section.
 10. **Check before the first deploy.** Copy `compose.prod.yml` to `/opt/listenup`, then `LISTENUP_IMAGE_TAG=r1 docker compose -p listenup --env-file .env -f compose.prod.yml --profile ops config --quiet` (every variable is set).
 11. **GitHub.** Create the environment `production` (Settings → Environments), optionally with a required reviewer. Add its secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` (the private key from step 3) and `DEPLOY_SSH_KNOWN_HOSTS` (the `ssh-keyscan` line), and the repository variables `LISTENUP_PUBLIC_URL` (`https://<domain>`), optionally `LISTENUP_DEPLOY_DIR` and `LISTENUP_DEPLOY_SSH_PORT`. Last, set `LISTENUP_DEPLOY_ENABLED` to `true`: from then on every green `main` deploys.
 12. **First deploy.** Actions → Release → Run workflow (`deploy`, empty tag). Then check the certificate (`curl -vI https://<domain>` shows a Let's Encrypt or ZeroSSL issuer) and the redirect (`curl -I http://<domain>` → 308).
@@ -137,6 +137,7 @@ The domain was `listenup.localhost`: Caddy issued its certificate from its inter
 | `rollback.sh` | Back to r1 in 19 s, with no migration and no bucket check. Health was probed every 0.25 s: 27 of 334 requests failed, over about 7 s. On r2's schema, r1 signed in the learner created on r2, and a new learner completed the whole flow. |
 | `deploy.sh r3` (migrations fail) | The r1 images, retagged, cannot apply to the newer schema (`Can't locate revision`). The deploy stopped at `migrate` with "running release r1 is untouched". The probe stayed 167/167 healthy, and no release was recorded. |
 | `deploy.sh r4` (API never healthy) | A first try stopped at the bucket check, because the broken API image also runs it. With the image failing only on uvicorn: "container listenup-api-1 is unhealthy". r2 was started again, the deploy exited 1, and the state stayed r2 (about 14 s unavailable). |
+| Review fixes (2026-10-26, no Docker daemon) | `bootstrap-roles.sql` on a scratch PostgreSQL 16.15 under a non-superuser admin: see the row above. A verifier from `listenup.ops.scram_verifier` signed in over SCRAM, and a wrong password was refused. `haproxy -c` (2.8) accepted the relay config with the DNS resolvers and kept starting when the provider names did not resolve; the earlier config failed to start ("could not resolve address"). The Caddyfile ran on Caddy 2.6.2 (plain HTTP, the API stubbed): a missing asset was a 404 without `Cache-Control`, an existing one stayed immutable for a year, app routes stayed `no-cache`, and the event stream reached the client uncompressed and at once. `caddy validate` passed. The image build still validates with the pinned Caddy 2.10.2. |
 
 ## Not verified until a host exists (#16)
 
@@ -144,17 +145,18 @@ These are checked at the live cutover, which keeps #112 open:
 
 - A real ACME certificate, its renewal, DNS, and HTTP/3 through the provider's firewall.
 - The managed PostgreSQL provider:
-  - granting BYPASSRLS and CREATEROLE;
+  - granting BYPASSRLS and CREATEROLE, and `bootstrap-roles.sql` under its administrator (rehearsed only on a scratch PostgreSQL 16 with a non-superuser admin);
+  - `sslmode=verify-full` with the image's CA bundle against its certificate (or its own CA mounted);
   - TLS connections through the relay;
   - its connection limit with the API, both pools and the backup service;
   - its own backups and alerts.
 - The storage provider:
-  - its answer to unsigned requests and to `GetBucketPolicyStatus`;
+  - its answer to unsigned requests and to `GetBucketPolicyStatus`, and every other route by which it can serve a bucket publicly;
   - CORS from the site's origin;
   - key scoping per bucket;
   - signed URLs from a real browser on the internet (the rehearsal browser could not resolve the stand-in storage name).
 - The SMTP provider with STARTTLS and authentication; SPF and DKIM.
-- GHCR pushes from Actions, the host's read-only pull, SSH with a pinned host key, the `production` environment gate, and the workflow's smoke test.
+- GHCR pushes from Actions, reuse of an existing build and the commit lookup of a named redeploy (`skopeo inspect`), the host's read-only pull, SSH with a pinned host key, the `production` environment gate, and the workflow's smoke test.
 - Time from merge to live on GitHub's runners and the VM.
 - Real speech models in `media-models`, and the media worker's memory and CPU on the host (#155 holds the performance checks).
 - Docker 28+ on cgroup v2 hosts (the rehearsal machine used cgroup v1).
