@@ -62,14 +62,18 @@ Do these once per host, in order. Each step says what it proves.
 2. **Firewall.** Inbound: 22 (SSH, restricted to the owner's addresses where the provider allows it), 80 and 443 TCP, and 443 UDP (HTTP/3). Nothing else; only the `edge` container publishes ports.
 3. **Deploy user.** Create `deploy`, add it to the `docker` group, put the release workflow's public key in `~deploy/.ssh/authorized_keys`, disable password login. Record the host key for GitHub: `ssh-keyscan -t ed25519 <host>` (compare its fingerprint with the provider's console).
 4. **DNS.** An `A` (and `AAAA` if IPv6) record from the domain to the VM. Caddy needs it before the first deploy to get the certificate.
-5. **Managed PostgreSQL 16.** In a region close to the VM. The provider's administrator must be able to grant BYPASSRLS and CREATEROLE (check before choosing the provider). Run, from any machine that reaches the database:
+5. **Managed PostgreSQL 16.** In a region close to the VM. The provider's administrator must be able to grant BYPASSRLS and CREATEROLE (check before choosing the provider); it need not be a superuser. Generate four random passwords of printable ASCII (for example `openssl rand -base64 32`). The script takes SCRAM verifiers, never the passwords, so nothing in the server's logs can reveal them. From a checkout of this repository on any machine that reaches the database:
 
    ```sh
-   psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -v owner_password="$OWNER_PW" -v api_password="$API_PW" \
-     -v worker_password="$WORKER_PW" -v readonly_password="$READONLY_PW" -f infra/deploy/bootstrap-roles.sql
+   cd apps/api
+   verifier() { printf '%s' "$1" | uv run python -m listenup.ops.scram_verifier; }
+   psql "$ADMIN_URL" -v ON_ERROR_STOP=1 \
+     -v owner_verifier="$(verifier "$OWNER_PW")" -v api_verifier="$(verifier "$API_PW")" \
+     -v worker_verifier="$(verifier "$WORKER_PW")" -v readonly_verifier="$(verifier "$READONLY_PW")" \
+     -f ../../infra/deploy/bootstrap-roles.sql
    ```
 
-   It prints the four roles: all `login`, only `listenup_worker` with `bypassrls`, none `superuser`. Turn on the provider's daily backups (or point-in-time recovery) and record the retention in `backups.md`; enable `pg_stat_statements` and the provider's alerts for connections near the limit and storage (Database Design 12.3). Require TLS (`sslmode=require` in every URL).
+   It refuses anything that is not a verifier, and stops if `PUBLIC` could still connect to the database. It prints the four roles: all `login`, only `listenup_worker` with `bypassrls`, none `superuser`. Turn on the provider's daily backups (or point-in-time recovery) and record the retention in `backups.md`; enable `pg_stat_statements` and the provider's alerts for connections near the limit and storage (Database Design 12.3). Require TLS (`sslmode=require` in every URL).
 6. **Storage.** Two private buckets: media and backups, each with its own key that has rights on that bucket only (ADR 0032). Turn on server-side encryption if it is not the default. Give the media bucket a CORS rule for `https://<domain>`, methods `GET`, `PUT` and `HEAD`, header `*`, so signed uploads and playback work from the browser.
 7. **SMTP.** An account with the provider, the sender domain verified (SPF and DKIM records).
 8. **Registry access.** A GitHub token with only `read:packages`, then on the host as `deploy`: `echo "$TOKEN" | docker login ghcr.io -u <github user> --password-stdin`.
@@ -85,7 +89,7 @@ Values never enter the repository, a commit message, an issue or a log. After ch
 
 | Secret (name in `.env` or GitHub) | Used by | Rotate |
 | --- | --- | --- |
-| `LISTENUP_MIGRATE_DATABASE_URL`, `LISTENUP_API_DATABASE_URL`, `LISTENUP_WORKER_DATABASE_URL`, `LISTENUP_TRANSCRIPT_READ_DATABASE_URL`, `LISTENUP_ADMIN_REPORT_DATABASE_URL` (passwords of `listenup_owner`, `_api`, `_worker`, `_readonly`) | migrate and backup; API; both worker pools and the API's transcript gate; admin reports | Re-run `bootstrap-roles.sql` with the new password for that role (others unchanged), update the URL(s) in `.env`, `up -d --wait`. Existing connections keep working until the containers restart. |
+| `LISTENUP_MIGRATE_DATABASE_URL`, `LISTENUP_API_DATABASE_URL`, `LISTENUP_WORKER_DATABASE_URL`, `LISTENUP_TRANSCRIPT_READ_DATABASE_URL`, `LISTENUP_ADMIN_REPORT_DATABASE_URL` (passwords of `listenup_owner`, `_api`, `_worker`, `_readonly`) | migrate and backup; API; both worker pools and the API's transcript gate; admin reports | Re-run `bootstrap-roles.sql` with the new password's verifier for that role and `keep` for the other three (for example `-v api_verifier="$(verifier "$NEW_API_PW")" -v owner_verifier=keep -v worker_verifier=keep -v readonly_verifier=keep`), update the URL(s) in `.env`, `up -d --wait`. Existing connections keep working until the containers restart. |
 | `LISTENUP_S3_ACCESS_KEY`, `LISTENUP_S3_SECRET_KEY` | API, both worker pools, storage check | Create a second key for the media bucket, put it in `.env`, `up -d --wait`, check an upload and playback, then delete the old key. |
 | `LISTENUP_BACKUP_S3_ACCESS_KEY`, `LISTENUP_BACKUP_S3_SECRET_KEY` | backup, storage check | As above for the backup bucket; then `exec backup python -m listenup.ops.backup list`. |
 | `LISTENUP_SMTP_USERNAME`, `LISTENUP_SMTP_PASSWORD` | default worker pool | New credential at the provider, `.env`, `up -d --wait`, request a password reset to a test address, revoke the old one. |
@@ -118,6 +122,7 @@ The domain was `listenup.localhost`: Caddy issued its certificate from its inter
 | Step | Result |
 | --- | --- |
 | `bootstrap-roles.sql`, run twice | Four login roles; only `listenup_worker` has BYPASSRLS; none is a superuser. The second run changed nothing and rotated the passwords. |
+| `bootstrap-roles.sql` as a non-superuser administrator (review fix, 2026-10-26; scratch PostgreSQL 16.15, admin with `CREATEROLE CREATEDB BYPASSRLS` only) | The first version stopped at `CREATE DATABASE` ("must be able to SET ROLE listenup_owner"), its `REVOKE CONNECT` only warned (`PUBLIC` kept `CONNECT` and `TEMPORARY`), and a failing `ALTER ROLE` put the plain password in the server log. The fixed script ran clean; `datacl` lists only the four roles; a role outside them was refused (`User does not have CONNECT privilege`); a plain password was refused before any statement carried it; rotating `listenup_api` with `keep` for the others left their passwords working; the server log held no password. |
 | `deploy.sh r1` (first try) | Stopped after the bucket check and migrations: Compose cannot put an inline config in a read-only container. No release was recorded. The relay no longer sets `read_only` (fixed in this story). |
 | `deploy.sh r1` | Live in 15 s. All images were pulled from the registry. Both buckets were private. `alembic upgrade head` ran as `listenup_owner` (not a superuser) with no extra grants. Every service was healthy. |
 | HTTPS checks | Health returned 200 over HTTP/2 with the certificate verified. `http://` answered 308 to `https://`. HSTS, CSP, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy` and COOP were present, with no `Server` header. `/assets/*` came back immutable for a year (zstd). App routes served `index.html` with `no-cache`, and a missing asset was a 404. Only `edge` published ports: 80, 443 and 443/udp. |
