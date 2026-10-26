@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { buttonClass } from '../../components/button';
 import { BusyButton } from '../../components/BusyButton';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { useContent } from '../content/useContent';
 import { useChangeRound, useRounds } from './api';
+import { ShadowReadiness } from './ShadowReadiness';
 import { ShadowRoundPlayer } from './ShadowRoundPlayer';
 
 export function ShadowRounds({
@@ -15,6 +16,7 @@ export function ShadowRounds({
   contentId: string;
   selectionPending?: boolean;
 }) {
+  const [ready, setReady] = useState(false);
   const state = useRounds(sessionId);
   const change = useChangeRound(sessionId);
   const content = useContent(contentId);
@@ -63,6 +65,7 @@ export function ShadowRounds({
         Three rounds at original speed, each with a short count-in. Read the transcript in round 1;
         shadow without it in rounds 2 and 3.
       </p>
+      <ShadowReadiness onReady={setReady} />
       <p>Tab to a control; press Enter or Space to activate it.</p>
       {number === 1 &&
       current?.transcript_shown &&
@@ -74,7 +77,7 @@ export function ShadowRounds({
       ) : number > 1 ? (
         <p>Transcript hidden for this round.</p>
       ) : null}
-      {current && !ended && content.data?.media_url && (
+      {ready && current && !ended && content.data?.media_url && (
         <ShadowRoundPlayer
           key={number}
           number={number}
@@ -91,9 +94,10 @@ export function ShadowRounds({
         <BusyButton
           type="button"
           className={buttonClass('primary', 'self-start')}
-          busy={change.isPending || state.isFetching || selectionPending}
+          busy={change.isPending || state.isFetching}
+          aria-disabled={selectionPending || !ready || undefined}
           onClick={() => {
-            if (selectionPending) return;
+            if (selectionPending || !ready) return;
             focusRound.current = true;
             change.mutate({ number: number + 1, action: 'start' });
           }}
@@ -108,7 +112,8 @@ export function ShadowRounds({
         <ErrorPanel
           error={change.error}
           onRetry={() => {
-            if (change.variables) change.mutate(change.variables);
+            if (change.variables && (ready || change.variables.action === 'playback-ended'))
+              change.mutate(change.variables);
           }}
         />
       )}

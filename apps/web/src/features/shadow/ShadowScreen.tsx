@@ -56,6 +56,7 @@ export function ShadowScreen({
       )}
       {selection && (
         <ShadowRounds
+          key={session.id}
           sessionId={session.id}
           contentId={session.content_id}
           selectionPending={selectionPending}

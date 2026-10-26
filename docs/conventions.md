@@ -372,3 +372,13 @@ Read the section for the area you are changing before you change it. The rules e
   unset, do not emit `record_shadow_round_completed` and do not complete the step.
   #78/#81/#87 add microphone/consent, recording/upload and completion respectively.
   No reference-profile readiness check gates playback (ADR 0050).
+
+## Shadow microphone and consent (ADR 0065)
+
+- Require current voice consent at the owned Shadow round-start boundary before
+  idempotency replay. Use the existing identity service and app settings.
+- Readiness is page-local: check transient sound, release capture on hide/leave,
+  and fail closed on missing legal text or consent-read failure. Do not persist a
+  microphone-ready boolean as proof of recording.
+- #81 must authorize each capture (including restart) through the start boundary;
+  its upload/finalization and recording lifecycle remain separate from playback.

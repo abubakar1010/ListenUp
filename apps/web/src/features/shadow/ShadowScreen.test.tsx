@@ -1,3 +1,10 @@
+import { useEffect } from 'react';
+vi.mock('./ShadowReadiness', () => ({
+  ShadowReadiness: ({ onReady }: { onReady: (ready: boolean) => void }) => {
+    useEffect(() => onReady(true), [onReady]);
+    return null;
+  },
+}));
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { jsonResponse, problem, renderWithProviders } from '../../test-utils';
 import { sessionFixture } from '../session/fixtures';

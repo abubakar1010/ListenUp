@@ -6007,6 +6007,9 @@
           "204": {
             "description": "Successful Response"
           },
+          "403": {
+            "description": "`voice_consent_required`"
+          },
           "404": {
             "description": "`session_not_found`"
           },
