@@ -4,7 +4,17 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, SmallInteger, Text, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    SmallInteger,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import (
     ARRAY,
     INT4RANGE,
@@ -100,3 +110,108 @@ class TranscriptCorrection(Base):
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
+
+
+class ReferenceProfile(Base):
+    """One limited profile per original transcript span and processing recipe (#76)."""
+
+    __tablename__ = "reference_profiles"
+    __table_args__ = (
+        CheckConstraint(
+            "status <> 'ready' OR COALESCE(jsonb_typeof(provenance->'alignment'->'provider') = "
+            "'string' AND length(provenance->'alignment'->>'provider') > 0 AND "
+            "jsonb_typeof(provenance->'alignment'->'model') = 'string' AND "
+            "length(provenance->'alignment'->>'model') > 0 AND "
+            "jsonb_typeof(provenance->'alignment'->'version') = 'string' AND "
+            "length(provenance->'alignment'->>'version') > 0 AND "
+            "jsonb_typeof(provenance->'acoustics'->'provider') = 'string' AND "
+            "length(provenance->'acoustics'->>'provider') > 0 AND "
+            "jsonb_typeof(provenance->'acoustics'->'model') = 'string' AND "
+            "length(provenance->'acoustics'->>'model') > 0 AND "
+            "jsonb_typeof(provenance->'acoustics'->'version') = 'string' AND "
+            "length(provenance->'acoustics'->>'version') > 0 AND "
+            "jsonb_typeof(provenance->'acoustics'->'praat_version') = 'string' AND "
+            "length(provenance->'acoustics'->>'praat_version') > 0 AND "
+            "jsonb_typeof(provenance->'acoustics'->'settings') = 'object', false) ",
+            name="reference_profiles_provenance_types",
+        ),
+        CheckConstraint("status IN ('pending','ready','failed')"),
+        CheckConstraint("length(fingerprint) = 64"),
+        CheckConstraint("frame_step_ms = 20"),
+        CheckConstraint(
+            "cardinality(word_indices) = cardinality(word_start_ms) AND "
+            "cardinality(word_indices) = cardinality(word_end_ms) AND "
+            "cardinality(word_indices) = cardinality(word_confidence)"
+        ),
+        CheckConstraint("array_position(word_indices, NULL) IS NULL AND 0 <= ALL(word_indices)"),
+        CheckConstraint("array_position(word_start_ms, NULL) IS NULL AND 0 <= ALL(word_start_ms)"),
+        CheckConstraint("array_position(word_end_ms, NULL) IS NULL AND 0 <= ALL(word_end_ms)"),
+        CheckConstraint(
+            "array_position(word_confidence, NULL) IS NULL AND 0 <= "
+            "ALL(word_confidence) AND 1000 >= ALL(word_confidence)"
+        ),
+        CheckConstraint("cardinality(pitch_cents) = cardinality(intensity_cdb)"),
+        CheckConstraint(
+            "status <> 'ready' OR (cardinality(pitch_cents) > 0 AND "
+            "COALESCE(jsonb_typeof(provenance) = 'object' AND provenance ?& "
+            "ARRAY['alignment','acoustics','format_version'] AND "
+            "provenance->>'format_version' = '1' AND "
+            "jsonb_typeof(provenance->'alignment') = 'object' AND "
+            "provenance->'alignment' ?& ARRAY['provider','model','version'] AND "
+            "jsonb_typeof(provenance->'acoustics') = 'object' AND "
+            "provenance->'acoustics' ?& "
+            "ARRAY['provider','model','version','praat_version','settings'] AND "
+            "length(provenance->'alignment'->>'provider') > 0 AND "
+            "length(provenance->'alignment'->>'model') > 0 AND "
+            "length(provenance->'alignment'->>'version') > 0 AND "
+            "length(provenance->'acoustics'->>'version') > 0, false))"
+        ),
+        {"schema": "content"},
+    )
+
+    passage_transcript_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("content.passage_transcripts.id", ondelete="CASCADE"), primary_key=True
+    )
+    fingerprint: Mapped[str] = mapped_column(Text, primary_key=True)
+    status: Mapped[str] = mapped_column(Text, server_default="pending")
+    word_indices: Mapped[list[int]] = mapped_column(ARRAY(Integer), server_default="{}")
+    word_start_ms: Mapped[list[int]] = mapped_column(ARRAY(Integer), server_default="{}")
+    word_end_ms: Mapped[list[int]] = mapped_column(ARRAY(Integer), server_default="{}")
+    word_confidence: Mapped[list[int]] = mapped_column(ARRAY(SmallInteger), server_default="{}")
+    pitch_cents: Mapped[list[int | None]] = mapped_column(ARRAY(SmallInteger), server_default="{}")
+    intensity_cdb: Mapped[list[int | None]] = mapped_column(
+        ARRAY(SmallInteger), server_default="{}"
+    )
+    frame_step_ms: Mapped[int] = mapped_column(SmallInteger, server_default="20")
+    provenance: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+
+
+class ProfileSubscription(Base):
+    """Durable per-session readiness; cache rows themselves never belong to a learner."""
+
+    __tablename__ = "profile_subscriptions"
+    __table_args__ = (
+        Index("profile_subscriptions_media_idx", "media_object_id"),
+        ForeignKeyConstraint(
+            ["session_id", "user_id"],
+            ["practice.sessions.id", "practice.sessions.user_id"],
+            ondelete="CASCADE",
+        ),
+        CheckConstraint("status IN ('pending','ready','failed')"),
+        CheckConstraint("length(fingerprint) = 64"),
+        CheckConstraint(
+            "NOT isempty(span) AND NOT lower_inf(span) AND NOT upper_inf(span) AND lower(span) >= 0"
+        ),
+        {"schema": "content"},
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column()
+    media_object_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("content.media_objects.id", ondelete="CASCADE")
+    )
+    span: Mapped[Range[int]] = mapped_column(INT4RANGE)
+    fingerprint: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, server_default="pending")

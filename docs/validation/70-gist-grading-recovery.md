@@ -5,7 +5,7 @@ recoverable stored unavailable feedback. Branch: `feat/70-gist-grading-recovery`
 Prerequisite #68 merged in #190 (`4e0ed9f`); #69 feedback is present from #203.
 Reconciled with main `5db1333`, including #210's UI and #189's UX documentation.
 No Cards, reference profiles, Shadow rounds or shared UI refactoring is included.
-ADR 0061 records the recovery contract and configuration.
+ADR 0062 records the recovery contract and configuration.
 
 ## Test-first evidence
 
@@ -201,3 +201,27 @@ coverage and final-head CI outcomes are reported in PR #220's remediation follow
 and checks. No threshold or exclusion was weakened. No live provider or
 deployment-latency claim is made. The owner still merges after required CI and
 independent review of the material fix.
+
+### Reconciliation with main after remediation
+
+The local full backend run on `0466881` completed: **2,104 passed**, one
+performance test deselected; separate uninstrumented performance **1 passed**.
+Backend coverage is **98%**, with **99% of 150 changed executable lines** against
+the earlier main `2764892`; only the documented defensive display fallback is
+uncovered. Both runtime inventories pass.
+
+CI run `40307022281` tested a newer main containing #219 and failed before tests:
+Alembic reported multiple heads because both migrations followed `72_cards`.
+The subsequent artifact-upload error followed from having no coverage run; it
+is not a test failure. Fetched main `076c6b6`, merged its changes unchanged and
+reparented this PR's unpublished migration to `76_reference_profiles`. Main also
+uses ADR 0061, so gist recovery is renumbered to ADR 0062 with its links updated.
+No reference-profile or shared UI refactoring was made.
+
+After reconciliation, **118 focused backend tests** pass, including migration
+upgrade/downgrade/back-up/drift and linear-history checks, recovery, grading,
+reference jobs, disclosure, gateway and registration. Ruff lint/format, strict
+mypy (199 source files), six import contracts and web types pass. The two new
+SSE browser preservation checks pass again. Generated API output is consistent.
+The new final-head CI is required; the pre-reconciliation full-suite results
+above are not claimed as evidence for all newly inherited main code.

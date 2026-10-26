@@ -182,7 +182,7 @@ If the learner believes the reference transcript is wrong at some word, they can
 2. On gist submission a `grading.grade_gist` job sends the key points, the passage text and the gist (as clearly delimited data) with the versioned `grade_gist` prompt.
 3. The model must return a fixed structure: per-dimension scores, which key points are covered, any wrong claims, and feedback text. The structure is validated; anything out of range is rejected and retried.
 4. **Our code computes the overall score** from the dimension scores and the rubric weights, so the weighting never depends on model arithmetic.
-5. On repeated failure, or when no grade is ready at the configured deadline (30 seconds by default), feedback is stored as `unavailable` with a retry action, and the learner continues. Quota admission waits show `delayed` instead and postpone automatically without consuming failure retries. `POST /grades/{attempt_id}/retry` authorizes the saved submission and coalesces waiting/running jobs; a validated late success can replace either state without changing practice progress ([ADR 0061](../adr/0061-gist-grading-recovery.md)).
+5. On repeated failure, or when no grade is ready at the configured deadline (30 seconds by default), feedback is stored as `unavailable` with a retry action, and the learner continues. Quota admission waits show `delayed` instead and postpone automatically without consuming failure retries. `POST /grades/{attempt_id}/retry` authorizes the saved submission and coalesces waiting/running jobs; a validated late success can replace either state without changing practice progress ([ADR 0062](../adr/0062-gist-grading-recovery.md)).
 
 ## 6. Shadow grading pipeline
 
@@ -280,7 +280,8 @@ The table below is a summary of the main tables, named by schema; the [ListenUp 
 | `content.duplicate_uploads` | content | removed content\_id, user\_id, existing\_content\_id ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)) |
 | `content.contents` | content | id, user\_id, media\_object\_id, title, keep\_video; the learner's reference to a media object, once per library |
 | `content.passage_transcripts` | transcript | id, media\_object\_id, span (ms range), origin (creator\_captions, generated), status, packed arrays words, start\_ms, end\_ms, confidence, sentence\_starts, provider\_info |
-| `content.reference_profiles` | transcript | passage\_transcript\_id, model\_version, phones, pitch\_cents, intensity\_db, stats; computed once per passage when it is transcribed, read by every Shadow round |
+| `content.reference_profiles` | transcript | passage\_transcript\_id + fingerprint; status, packed word indices/timings/confidence, pitch\_cents, intensity\_cdb, provenance; original spans computed once, composed per passage for optional grading (ADR 0061) |
+| `content.profile_subscriptions` | transcript | session\_id, user\_id, media\_object\_id, padded span, fingerprint, status; private passage readiness and id-only profile events (ADR 0061) |
 | `content.transcript_corrections` | transcript | user\_id, passage\_transcript\_id, word\_index, corrected\_text |
 | `practice.sessions` | practice | id, user\_id, content\_id, passage (ms range), entry (blind, dictation, both), current\_step, entry\_locked\_at, status, version |
 | `practice.session_steps` | practice | session\_id, step, position, status (locked, open, done, skipped), completed\_at |

@@ -1,4 +1,4 @@
-# ADR 0061: Recoverable gist feedback availability
+# ADR 0062: Recoverable gist feedback availability
 
 Status: Accepted (owner approved the #70 plan on 2026-10-25).
 

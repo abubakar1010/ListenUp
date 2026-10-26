@@ -3,7 +3,7 @@
 from alembic import op
 
 revision = "70_gist_recovery"
-down_revision = "72_cards"
+down_revision = "76_reference_profiles"
 branch_labels = None
 depends_on = None
 
