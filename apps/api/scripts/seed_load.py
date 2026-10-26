@@ -9,8 +9,12 @@ Each learner gets the fixture script's clip and sessions at every step, includin
 active Blind attempt (tests/integration/seed.py), a cached transcript, `--history`
 extra clips with their sessions, and a login session whose token goes in the
 manifest. The first `--blind-learners` learners also get `--blind-sessions` fresh
-sessions open at Blind for the heartbeat load. The manifest holds session tokens:
-never commit it.
+sessions open at Blind for the heartbeat load. The manifest holds session tokens and
+is written readable by its owner only: never commit it. After the run,
+
+    uv run python scripts/seed_load.py --delete-from /path/to/manifest.json
+
+deletes the seeded learners with their data and login sessions.
 """
 
 import argparse
@@ -22,7 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from listenup.platform.config import get_settings
-from tests.integration.load_seed import seed_load
+from tests.integration.load_seed import delete_learners, seed_load, write_manifest
 
 
 def main() -> None:
@@ -33,8 +37,15 @@ def main() -> None:
     parser.add_argument("--blind-sessions", type=int, default=8)
     parser.add_argument("--database-url", default=get_settings().database_url)
     parser.add_argument("--secure-cookies", action=argparse.BooleanOptionalAction, default=None)
-    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--out", type=Path)
+    parser.add_argument("--delete-from", type=Path, help="delete the learners in this manifest")
     args = parser.parse_args()
+    if args.delete_from:
+        ids = [row["user_id"] for row in json.loads(args.delete_from.read_text())["learners"]]
+        print(f"deleted {delete_learners(args.database_url, ids)} seeded learners")
+        return
+    if args.out is None:
+        parser.error("--out is required unless --delete-from is given")
     if args.blind_learners > args.learners:
         parser.error("--blind-learners cannot exceed --learners")
 
@@ -47,9 +58,7 @@ def main() -> None:
         blind_sessions=args.blind_sessions,
         secure_cookies=args.secure_cookies,
     )
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(manifest) + "\n")
-    args.out.chmod(0o600)
+    write_manifest(args.out, manifest)
     print(
         f"seeded {args.learners} learners ({args.blind_learners} with Blind sessions) "
         f"in {time.monotonic() - started:.0f} s; manifest {args.out}"

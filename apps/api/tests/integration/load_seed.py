@@ -5,13 +5,20 @@ learners who send heartbeats.
 
 Used by scripts/seed_load.py; it imports nothing from pytest. Writes as the database
 owner, like seed.py. The manifest it returns holds session tokens: keep it out of the
-repository and delete it after the run (the runner does).
+repository and delete it after the run (the runner does), and delete the learners with
+`delete_learners` once the run is over.
 """
 
 import asyncio
+import json
+import os
 import uuid
+from collections.abc import Sequence
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
+
+import psycopg
 
 from listenup.modules.identity import repository as identity
 from listenup.modules.identity.domain.tokens import new_token, token_hash
@@ -131,3 +138,21 @@ def seed_load(
         "passage": {"start_ms": PASSAGE.start_ms, "end_ms": PASSAGE.end_ms},
         "learners": rows,
     }
+
+
+def write_manifest(path: Path, manifest: dict[str, Any]) -> None:
+    """Write the manifest readable by its owner only, from the moment it exists."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)  # an older copy keeps its mode through O_CREAT
+    with os.fdopen(fd, "w") as file:
+        file.write(json.dumps(manifest) + "\n")
+
+
+def delete_learners(owner_url: str, user_ids: Sequence[str]) -> int:
+    """Remove seeded learners; their data and login sessions go with them (cascades)."""
+    with psycopg.connect(owner_url, autocommit=True) as conn:
+        deleted = conn.execute(
+            "DELETE FROM identity.users WHERE id = ANY(%s::uuid[])", [list(user_ids)]
+        )
+        return deleted.rowcount

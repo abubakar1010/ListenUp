@@ -4,8 +4,12 @@ Checked through the API as the restricted role, so what k6 sends works as it wou
 against the running stack.
 """
 
+import json
+import os
+import stat
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -14,16 +18,14 @@ from fastapi.testclient import TestClient
 from listenup.main import create_app
 from listenup.platform.config import Settings
 from tests.integration.conftest import conninfo_to_url
-from tests.integration.load_seed import seed_load
+from tests.integration.load_seed import delete_learners, seed_load, write_manifest
 
 
 @pytest.fixture(scope="module")
 def manifest(migrated_url: str) -> Iterator[dict]:
     world = seed_load(migrated_url, learners=2, history=1, blind_learners=1, blind_sessions=2)
     yield world
-    with psycopg.connect(migrated_url, autocommit=True) as conn:
-        for learner in world["learners"]:
-            conn.execute("DELETE FROM identity.users WHERE id = %s", [learner["user_id"]])
+    delete_learners(migrated_url, [learner["user_id"] for learner in world["learners"]])
 
 
 @pytest.fixture
@@ -141,3 +143,25 @@ def test_the_seeded_blind_attempt_is_active(manifest, migrated_url) -> None:
 
 def test_the_manifest_never_holds_a_password(manifest) -> None:
     assert "password" not in str(manifest).lower()
+
+
+def test_the_manifest_file_is_owner_only_even_over_an_older_copy(tmp_path: Path) -> None:
+    path = tmp_path / "manifest.json"
+    path.write_text("old")
+    path.chmod(0o644)
+    write_manifest(path, {"learners": [{"token": "t"}]})
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+    assert json.loads(path.read_text()) == {"learners": [{"token": "t"}]}
+
+
+def test_deleting_the_seeded_learners_removes_them_and_their_sign_in(migrated_url) -> None:
+    world = seed_load(migrated_url, learners=1, history=0, blind_learners=0, blind_sessions=0)
+    ids = [learner["user_id"] for learner in world["learners"]]
+    assert delete_learners(migrated_url, ids) == 1
+    with psycopg.connect(migrated_url) as conn:
+        users = conn.execute("SELECT count(*) FROM identity.users WHERE id = ANY(%s)", [ids])
+        assert users.fetchone() == (0,)
+        signed_in = conn.execute(
+            "SELECT count(*) FROM identity.auth_sessions WHERE user_id = ANY(%s)", [ids]
+        )
+        assert signed_in.fetchone() == (0,)
