@@ -58,6 +58,16 @@ The compose file in `/opt/listenup` stays the newer release's; compose changes f
 
 ## First-time host setup
 
+Host selection and Docker-only provisioning are tracked in #16. Check
+[ADR 0067](../adr/0067-stage-zero-host-eligibility-and-provisioning-gate.md) and the
+[stage-0 host checklist](stage-zero-host.md) before the steps below. No reachable
+host is verified yet. The current media container has an 18 GiB memory ceiling
+and no swap allowance (`memswap_limit` equals `mem_limit`); the 16 GB figure below
+is not sufficient for the full configured ceiling plus other services. The
+recommended planning budget is 24 GiB RAM and 80 GiB disk, pending measurement.
+Host provisioning alone must not enable production deployment; steps that add
+production credentials, run the application or enable Release belong to #112.
+
 Do these once per host, in order. Each step says what it proves.
 
 1. **VM.** Any Linux VM with at least 4 cores and 16 GB of memory for the speech models (Architecture 11; the media worker is capped at 2 cores and 18 GB including swap), 40 GB of disk, a public IPv4 address, and outbound HTTPS. Install Docker Engine 28 or later and the Compose plugin 2.24 or later (ADR 0049's isolated bridge needs both): `docker version`, `docker compose version`.
