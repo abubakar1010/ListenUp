@@ -1,0 +1,33 @@
+# B5 load test (#94): changes to the local stack for the measured run only.
+#
+#   docker compose -p listenup-b5 -f infra/compose/compose.yml -f spikes/load/compose.b5.yml \
+#     up -d --build --wait postgres storage storage-bucket migrate api worker
+#
+# The runner (`spike-b5`, spikes/README.md) starts exactly these services. The media
+# worker, ClamAV and the speech models stay off: B5 measures the API and the database,
+# and speech work is B1 to B4. A separate project name keeps the dev stack's volumes.
+services:
+  postgres:
+    # A port of its own, so a PostgreSQL already on the host (or the dev stack) is not
+    # in the way; the seeder connects here.
+    ports: !override ["55432:5432"]
+    # pg_stat_statements must be preloaded; the runner creates the extension as owner
+    # and resets it at the start of the measured window.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - track_io_timing=on
+
+  api:
+    # As deployed: one process, no file watcher.
+    command: uvicorn listenup.main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 5
+    environment:
+      LISTENUP_AI_CONFIG: src/listenup/ai/ai.fake.yaml
+
+  worker:
+    environment:
+      LISTENUP_AI_CONFIG: src/listenup/ai/ai.fake.yaml
