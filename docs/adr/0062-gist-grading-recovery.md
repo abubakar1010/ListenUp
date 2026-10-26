@@ -30,6 +30,10 @@ media deletion cascades it away and successful extraction clears it. A gist
 waiting for that reference reports delayed when its worker observes the marker.
 Other failures retain the existing bounded lane retry policy, then become
 `unavailable`; permanent input failures settle immediately.
+A non-quota gist failure also clears a previous quota `delayed` state and applies
+the original feedback deadline, including invalid output and worker timeouts.
+Before that deadline feedback returns to `pending`; at or after it feedback is
+`unavailable` with retry while automatic work retains its normal failure budget.
 Exhausted or permanent reference-preparation failure clears its quota marker,
 including timeout and stalled-worker settlement. A gist still missing that
 reference leaves `delayed` on its next run and applies its original deadline:
