@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 # Database triggers raise check_violation with one of these message prefixes
 # (Database Design 8.2); each becomes a 409 with the same code.
 DATABASE_RULE_CODES = {
+    "round_order": "Play the three Shadow rounds in order.",
     "step_locked": "This step is locked until the step before it is finished.",
     "entry_locked": "The entry choice cannot change once Transcript has started.",
     "segment_locked": "The Shadow segment cannot change once round 1 has started.",
