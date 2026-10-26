@@ -317,7 +317,7 @@ users/{user_id}/media/{media_object_id}/playback.mp4
 users/{user_id}/media/{media_object_id}/peaks.json
 users/{user_id}/exports/{export_id}.zip   retained 7 days after ready
 users/{user_id}/sessions/{session_id}/shadow/round-{n}.webm
-users/{user_id}/cards/{card_id}.m4a
+users/{user_id}/cards/{card_id}/snippet.m4a
 ```
 
 The bucket is never public. The browser only ever receives short-lived signed URLs issued after an ownership check. Production CORS allows `PUT` from the web origin with `Content-Type` for uploads ([ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md)) and `GET` for redirected peaks requests ([ADR 0026](../adr/0026-passage-picker-drawn-from-server-peaks.md)). Uploads use `users/{user_id}/uploads/{upload_id}.<ext>`, playback and peaks use `users/{user_id}/media/{media_object_id}/`, and exports use `users/{user_id}/exports/{export_id}.zip` ([ADR 0022](../adr/0022-upload-conversion-dedup-and-media-delivery.md), [ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)).
@@ -347,7 +347,7 @@ The API is JSON over HTTPS under `/api/v1`, described by the OpenAPI schema Fast
 | Blind | `POST /sessions/{id}/blind/attempts`, `GET /blind/attempts/{id}/media/{token}`, `POST /blind/attempts/{id}/heartbeat`, `POST /blind/attempts/{id}/void` (leave with `fetch(..., {keepalive: true})` and CSRF header), `POST /blind/attempts/{id}/gist` ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)) |
 | Dictation | `POST /sessions/{id}/dictation/attempts` (201 new or 200 with `resumed: true` for the live draft), `PUT /dictation/attempts/{id}/draft` (`draft_version`; stale differing text gets 409 `draft_conflict`, identical resend succeeds; [ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)), `POST /dictation/attempts/{id}/submit` (202; stores the text, completes the step, queues scoring; [ADR 0042](../adr/0042-dictation-submission-and-asynchronous-scoring.md)), `GET /dictation/attempts/{id}` and `GET /sessions/{id}/dictation/attempt` (state and, once scored, the diff and accuracy; `dictation.scored` event), `POST /dictation/attempts/{id}/disputes` |
 | Transcript step | `GET /sessions/{id}/transcript` (only from the Transcript step on), `GET`, `POST`, `PATCH`, `DELETE /sessions/{id}/marks` |
-| Cards | `POST /sessions/{id}/cards`, `GET /cards`, `DELETE /cards/{id}`, `POST /sessions/{id}/cards/complete` |
+| Cards | `POST /sessions/{id}/cards`, `GET /cards`, `DELETE /cards/{id}`, `POST /sessions/{id}/cards/complete`, `POST /cards/{id}/audio/retry` (owner/CSRF checked, new generation cycle; ADR 0063) |
 | Shadow | `PUT /sessions/{id}/shadow/segment`, `POST /sessions/{id}/shadow/rounds` (returns a signed upload URL), `POST /shadow/rounds/{id}/complete`, `GET /sessions/{id}/shadow/comparison` |
 | Grades | `GET /gists/{attempt_id}/grade`, `GET /shadow/rounds/{id}/grade`, `POST /grades/{id}/retry` |
 | Library | `GET /library/contents`, `GET /library/trends` |

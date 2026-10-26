@@ -5,6 +5,9 @@ Read the section for the area you are changing before you change it. The rules e
 ## Jobs (ADR 0015, 0029, 0036)
 
 - A `unique_key` holds while a job with that key waits or runs: `enqueue` returns None meanwhile. A job that also runs on a schedule passes `schedule="<cron>"` to `@job`. A job whose worker died is settled by `platform.recover_stalled_jobs` (back to the queue, or `on_give_up` after its last attempt), so a handler must be safe to run again after doing part of its work.
+- `on_give_up` also runs for first-attempt permanent refusals, including sandbox
+  exit 65. A resource that allows retry before the old queue row settles must use
+  a new cycle key and fence old callbacks against the current generation.
 
 ## Email (ADR 0017)
 
@@ -263,8 +266,18 @@ Read the section for the area you are changing before you change it. The rules e
   through source playback after it is ready. Card JSON exposes status only.
 - Deletion records a cleanup tombstone through a trigger, including cascades.
   Background cleanup removes the tombstone only after successful object deletion;
-  the minute sweep recovers missed/exhausted cleanup jobs. Generation rechecks and
-  locks the card before storage writes, preventing deletion races.
+  the minute sweep recovers missed/exhausted cleanup jobs. Before upload, generation
+  commits a `card_snippet_writes` registration under the account/card locks, then
+  rechecks both before writing. Cleanup skips registered writers, and the guard
+  registered through `identity.service.on_account_purge` postpones account purge
+  before its first sweep. The writer FK uses RESTRICT to preserve that barrier.
+  Never expire registrations by age or job status; reconcile killed/uncertain
+  writers using [the runbook](runbooks/card-snippet-writers.md).
+- A retry creates a fresh internal `audio_generation` UUID and unique enqueue key,
+  with the same per-card execution lock. Generation and terminal callbacks check
+  the UUID, so an old job cannot change a newer attempt. Exports omit this UUID
+  and writer identity/owner fields. Upload cancellation drains before releasing
+  the registration; an uncertain S3 response retains it.
 - Cards-local playback pauses on unmount; pending cards poll and readiness/failure
   events invalidate `['cards', sessionId]`. Keep shared-player behavior unchanged.
 

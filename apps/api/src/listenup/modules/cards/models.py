@@ -64,6 +64,7 @@ class Card(Base):
     written_form: Mapped[str] = mapped_column(Text)
     heard_form: Mapped[str] = mapped_column(Text)
     audio_status: Mapped[str] = mapped_column(Text, server_default="unavailable")
+    audio_generation: Mapped[uuid.UUID | None]
     snippet_key: Mapped[str | None] = mapped_column(Text)
     snippet_span: Mapped[Range[int] | None] = mapped_column(INT4RANGE)
     created_at: Mapped[datetime] = mapped_column(
@@ -76,6 +77,22 @@ class CardSnippetCleanup(Base):
     __table_args__ = ({"schema": "practice"},)
     card_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("identity.users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+
+
+class CardSnippetWrite(Base):
+    __tablename__ = "card_snippet_writes"
+    __table_args__ = (
+        Index("card_snippet_writes_card_idx", "card_id"),
+        Index("card_snippet_writes_user_idx", "user_id"),
+        {"schema": "practice"},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    card_id: Mapped[uuid.UUID]
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("identity.users.id", ondelete="RESTRICT"))
+    owner: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )

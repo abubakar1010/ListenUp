@@ -150,3 +150,58 @@ and pre-launch validation policy (#155). Existing cards have no backfill, and
 expired/missing playback cannot produce a new snippet until source media exists.
 Documentation/generated output, the scheduler inventory update and synchronization
 of an existing browser assertion have no artificial TDD requirement.
+
+## Independent review remediation, 2026-10-26
+
+The independent review of `3a0ade5` against `2764892` found three confirmed lifecycle
+defects: DB connection loss could let cleanup pass an upload, permanent refusals
+bypassed the terminal callback, and a retry could be swallowed by a retiring job.
+The owner requested posting the review and fixing all findings in this PR. The
+[posted review](https://github.com/abubakar1010/ListenUp/pull/212#pullrequestreview-5650356972)
+retains the original findings and review evidence.
+
+| Fix | Actual Red before production change | Green / assertion evidence |
+| --- | --- | --- |
+| Terminal callback | `uv run pytest tests/unit/test_media_sandbox.py -k permanent_refusal -q --tb=short`: **2 failed**, callback awaited zero times. `LISTENUP_REQUIRE_DB=1 uv run pytest tests/integration/test_card_audio.py -k 'expired_source_is or disabled_account or unusable_bytes' -q --tb=short`: **5 failed**, cards stayed pending. | Media sandbox/child and audio suites: **52 passed**. Failure tests now use `run_handler` and no manually invoked callback. A subsequent real sandboxed Procrastinate worker test asserts queue failure, persisted failed card and the committed `card.audio_updated` notification. |
+| Retiring job / stale callback | `LISTENUP_REQUIRE_DB=1 uv run pytest tests/integration/test_card_audio.py -k 'old_job_is_settling or old_failure_callback' -q --tb=short`: **2 failed**, no waiting job and the newer cycle became failed. | Audio/retry suites: **20 passed**. The retiring-job regression also drains the newly queued cycle and requires a playable redirect. A supplementary queue-error assertion verifies retry transaction rollback. |
+| Lost DB connection / purge | `LISTENUP_REQUIRE_DB=1 uv run pytest tests/integration/test_card_audio.py -k 'database_loss_during or purge_waits_for_snippet' -q --tb=short`: **2 failed**, cleanup had zero tombstones and purge did not wait. | A real PostgreSQL connection is terminated during a controlled upload. Cleanup must retain its tombstone, purge must postpone with the user intact, and both must finish after the writer settles. **28 passed** in the initial write/cancellation/audio/migration run. |
+| Cancellation / uncertain S3 outcome | `uv run pytest tests/unit/test_card_write_cancellation.py -q --tb=short`: **3 failed**, missing cancellation helper and uncertain-write interface. | Cancellation is drained despite repeated cancel requests, and the S3 boundary classifies a failed response as uncertain. These tests are included in the passing focused lifecycle run below. |
+
+Fixture mistakes are excluded from behavioral Red: the first purge fixture expected
+200 instead of 202 and then violated the deletion-date constraint. A DB rollback
+also masked an assertion raised inside the lost transaction; those observations
+were moved outside that transaction before recording the two valid race failures.
+A misplaced tail of an existing test was restored before the retry Green run.
+Uncertainty/age, RLS/export, downgrade refusal, retry rollback and actual-sandbox
+notification assertions are supplementary coverage of the fixes, not claimed as
+separate clean test-first cycles.
+
+Generation UUIDs fence old callbacks; a retry has a fresh queue key and the shared
+card execution lock. A separately committed writer registration survives lost
+locks and killed processes. Cleanup and a registered identity purge guard wait for
+it; an additional RESTRICT FK protects account deletion. Uploads drain cancellation,
+uncertain writes retain their registrations, and downgrade refuses a nonempty
+registry. See ADR 0063 and the [reconciliation runbook](../runbooks/card-snippet-writers.md).
+No registration is discarded by age or queue status. Export omits worker/token and
+generation details. The architecture storage path and retry endpoint inventory are
+also corrected. No shared-player or out-of-scope feature behavior was added.
+
+Completed local remediation checks before current-main reconciliation:
+
+- Audio/retry/Card API/schema/migration and cancellation/sandbox focus: **93 passed**.
+- Audio/account-deletion/export/jobs/storage and architecture suites: **109 passed**,
+  including the real sandbox failure and notification case.
+- Ruff check and format, strict mypy, and all **6 import contracts** pass.
+  A direct identity-to-Cards import initially broke a boundary contract; registration
+  through `identity.service.on_account_purge` removed that dependency.
+- Uninstrumented performance: **1 passed, 2,117 deselected**.
+- OpenAPI export and `pnpm api:generate` reproduce the committed contracts with no
+  semantic or generated-file delta.
+
+An initial full local coverage run was stopped when main advanced to `076c6b6`
+(#219, reference profiles). It is not a passing full-suite/coverage result. The
+combined migration chain and event/API contracts must be revalidated against that
+main; final CI and changed coverage remain required. The original four uncovered
+defensive lines and actual-host latency limits above are not waived. The fixes need
+fresh independent re-review; this remediation session is not its own independent
+review. No merge is authorized.

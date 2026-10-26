@@ -306,7 +306,11 @@ async def run_handler(name: str, deps: JobDeps, /, **args: Any) -> Any:
         if entry.on_give_up is not None:
             await entry.on_give_up(deps, **args)
         raise
-    except (PermanentError, Reschedule):
+    except PermanentError:
+        if entry.on_give_up is not None:
+            await entry.on_give_up(deps, **args)
+        raise
+    except Reschedule:
         raise
     except Exception:
         if entry.on_give_up is not None and deps.attempt >= entry.spec.max_attempts:

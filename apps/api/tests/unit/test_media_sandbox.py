@@ -75,6 +75,29 @@ async def test_media_process_failure_settles_job_on_first_attempt(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("isolated", [False, True])
+async def test_permanent_refusal_settles_job_on_first_attempt(monkeypatch, isolated):
+    from unittest.mock import AsyncMock
+
+    from listenup.platform import jobs
+
+    name = "test.permanent_refusal"
+    settle = AsyncMock()
+    handler = AsyncMock(side_effect=jobs.PermanentError("expired"))
+    jobs.job(jobs.Lane.INTAKE, name, on_give_up=settle)(handler)
+    monkeypatch.setattr(jobs._runtime, "isolate_media", isolated)
+    monkeypatch.setattr(media_sandbox, "run_job", handler)
+    deps = jobs.JobDeps(object(), 1, 1)
+    try:
+        with pytest.raises(jobs.PermanentError):
+            await jobs.run_handler(name, deps, card_id="owned")
+        settle.assert_awaited_once_with(deps, card_id="owned")
+    finally:
+        jobs._registry.pop(name)
+        jobs.app.tasks.pop(name)
+
+
+@pytest.mark.anyio
 async def test_child_transient_errors_still_use_job_retries() -> None:
     from listenup.platform.jobs import PermanentError
 

@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -34,6 +35,10 @@ PURGE_TIMEOUT = timedelta(minutes=30)
 PURGE_ATTEMPTS = 3
 # A purge that gave up is queued again by the first sweep this long after it failed.
 PURGE_RETRY_AFTER = timedelta(hours=1)
+
+# Modules register storage guards through identity.service, like transcript-ready
+# hooks. Identity must not import practice modes (Architecture 4.3).
+purge_guards: list[Callable[[AsyncSession, uuid.UUID], Awaitable[None]]] = []
 
 
 async def queue_password_reset(
@@ -209,6 +214,8 @@ async def purge_account(deps: JobDeps, request_id: str) -> dict[str, Any] | None
             return None
         if status == "pending_deletion":
             await repository.mark_account_deleting(session, learner)
+        for guard in purge_guards:
+            await guard(session, learner)
         if status is not None:
             await repository.delete_user_sessions(session, learner)
             # For the report: their files go with the prefix, their rows with the user.

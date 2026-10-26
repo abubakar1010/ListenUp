@@ -52,6 +52,7 @@ async def create(
             "card_phrase_too_long",
             "Choose a shorter marked phrase, lasting at most six seconds.",
         ) from error
+    generation = uuid7()
     try:
         card_id = await repository.insert(
             db,
@@ -66,6 +67,7 @@ async def create(
                 "heard_form": new.heard_form,
                 "snippet_start": start,
                 "snippet_end": end,
+                "generation": generation,
             },
         )
     except IntegrityError as error:
@@ -90,8 +92,10 @@ async def create(
         db,
         jobs.GENERATE,
         unique_key=f"card-snippet:{card_id}",
+        lock=f"card-snippet:{card_id}",
         card_id=str(card_id),
         user_id=str(learner),
+        generation_id=str(generation),
     )
     await analytics.record_card_created(db, learner, session_id, card_id)
     return await repository.get(db, card_id)
@@ -132,7 +136,11 @@ async def complete(db: AsyncSession, session_id: uuid.UUID) -> None:
 
 async def export_data(db: AsyncSession, learner: uuid.UUID) -> ExportPart:
     table = await learner_rows(
-        db, "practice.cards", learner, order_by="created_at", omit=("snippet_key",)
+        db,
+        "practice.cards",
+        learner,
+        order_by="created_at",
+        omit=("snippet_key", "audio_generation"),
     )
     files = []
     for row in table.rows:
@@ -146,6 +154,13 @@ async def export_data(db: AsyncSession, learner: uuid.UUID) -> ExportPart:
         tables=(
             table,
             await learner_rows(db, "practice.card_snippet_cleanup", learner, order_by="created_at"),
+            await learner_rows(
+                db,
+                "practice.card_snippet_writes",
+                learner,
+                omit=("id", "owner"),
+                order_by="created_at",
+            ),
         ),
         files=tuple(files),
     )
@@ -170,13 +185,20 @@ async def retry_audio(db: AsyncSession, learner: uuid.UUID, card_id: uuid.UUID) 
         raise ProblemError(404, "card_not_found", "There is no such card.")
     if row.audio_status != "failed":
         raise ProblemError(409, "card_audio_not_failed", "Only failed card audio can be retried.")
+    generation = uuid7()
     await db.execute(
-        text("UPDATE practice.cards SET audio_status='pending' WHERE id=:id"), {"id": card_id}
+        text(
+            "UPDATE practice.cards SET audio_status='pending', audio_generation=:generation "
+            "WHERE id=:id"
+        ),
+        {"id": card_id, "generation": generation},
     )
     await enqueue(
         db,
         jobs.GENERATE,
-        unique_key=f"card-snippet:{card_id}",
+        unique_key=f"card-snippet:{card_id}:{generation}",
+        lock=f"card-snippet:{card_id}",
         card_id=str(card_id),
         user_id=str(learner),
+        generation_id=str(generation),
     )

@@ -1,6 +1,7 @@
 """Cards SQL, always under learner RLS in the request transaction."""
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import text
@@ -9,11 +10,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.cards import schemas
 from listenup.modules.cards.domain.cursor import Cursor
+from listenup.platform.jobs import Reschedule
 
 _COLUMNS = (
     "c.id, c.session_id, c.slot, c.mark_id, c.written_form, c.heard_form, "
     "c.at_ms, c.created_at, c.audio_status, s.content_id"
 )
+
+
+async def require_no_audio_writes(db: AsyncSession, learner: uuid.UUID) -> None:
+    """Called under purge's exclusive account lock, before any storage sweep."""
+    if await db.scalar(
+        text("SELECT EXISTS (SELECT 1 FROM practice.card_snippet_writes WHERE user_id=:user)"),
+        {"user": learner},
+    ):
+        raise Reschedule(datetime.now(UTC) + timedelta(minutes=1))
 
 
 async def lock_session(db: AsyncSession, session_id: uuid.UUID) -> None:
@@ -28,9 +39,11 @@ async def insert(db: AsyncSession, values: dict[str, object]) -> uuid.UUID | Non
         await db.execute(
             text("""
         INSERT INTO practice.cards (id, session_id, user_id, slot, mark_id, media_object_id,
-                                   at_ms, written_form, heard_form, snippet_span, audio_status)
+                                   at_ms, written_form, heard_form, snippet_span, audio_status,
+                                   audio_generation)
         SELECT :id, :session_id, :user_id, slot, :mark_id, :media_object_id, :at_ms,
-               :written_form, :heard_form, int4range(:snippet_start,:snippet_end), 'pending'
+               :written_form, :heard_form, int4range(:snippet_start,:snippet_end), 'pending',
+               :generation
         FROM generate_series(1,2) AS candidate(slot)
         WHERE NOT EXISTS (SELECT 1 FROM practice.cards WHERE session_id=:session_id
                           AND cards.slot=candidate.slot)

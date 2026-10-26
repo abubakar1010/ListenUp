@@ -422,6 +422,7 @@ CREATE TABLE practice.cards (
   at_ms           int4 NOT NULL CHECK (at_ms >= 0), -- source-time snapshot (ADR 0060)
   audio_status    text NOT NULL DEFAULT 'unavailable'
                   CHECK (audio_status IN ('unavailable','pending','ready','failed')),
+  audio_generation uuid,                -- internal retry identity, omitted from export
   snippet_key     text,                 -- 3 to 6 s clip; survives media expiry
   snippet_span    int4range,
   created_at      timestamptz NOT NULL DEFAULT now(),
@@ -442,6 +443,20 @@ CREATE TABLE practice.card_snippet_cleanup (
   user_id    uuid NOT NULL REFERENCES identity.users(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- ADR 0063: committed before storage writes; not a child of the deletable card.
+-- RESTRICT preserves unresolved writers across account purge attempts. Settled
+-- writers remove their own registrations; killed/uncertain ones need explicit
+-- reconciliation, never time-based expiry. Learner RLS applies; API has SELECT only.
+CREATE TABLE practice.card_snippet_writes (
+  id         uuid PRIMARY KEY,
+  card_id    uuid NOT NULL,
+  user_id    uuid NOT NULL REFERENCES identity.users(id) ON DELETE RESTRICT,
+  owner      text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX card_snippet_writes_card_idx ON practice.card_snippet_writes(card_id);
+CREATE INDEX card_snippet_writes_user_idx ON practice.card_snippet_writes(user_id);
 
 CREATE TABLE practice.card_reviews (
   id          uuid PRIMARY KEY,

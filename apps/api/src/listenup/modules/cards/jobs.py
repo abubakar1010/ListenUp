@@ -6,9 +6,10 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from listenup.modules.cards import audio, repository
+from listenup.modules.cards import audio, repository, writes
 from listenup.modules.content import service as content
 from listenup.modules.identity import service as identity
+from listenup.platform.cancellation import finish_on_cancel
 from listenup.platform.config import get_settings
 from listenup.platform.errors import ProblemError
 from listenup.platform.events import EventType, publish
@@ -18,16 +19,21 @@ from listenup.platform.storage import get_storage
 GENERATE = "cards.generate_snippet"
 CLEANUP = "cards.cleanup_snippets"
 
+identity.on_account_purge(repository.require_no_audio_writes)
+
 
 def snippet_key(user_id: uuid.UUID, card_id: uuid.UUID) -> str:
     return f"users/{user_id}/cards/{card_id}/snippet.m4a"
 
 
-async def give_up(deps: JobDeps, *, card_id: str, user_id: str) -> None:
+async def give_up(
+    deps: JobDeps, *, card_id: str, user_id: str, generation_id: str | None = None
+) -> None:
     learner, card = uuid.UUID(user_id), uuid.UUID(card_id)
     async with deps.database.transaction(learner) as db:
         row = await repository.audio_row(db, card, learner, lock=True)
-        if row and row.audio_status == "pending":
+        generation = uuid.UUID(generation_id) if generation_id else None
+        if row and row.audio_status == "pending" and row.audio_generation == generation:
             await db.execute(
                 text("UPDATE practice.cards SET audio_status='failed' WHERE id=:id"), {"id": card}
             )
@@ -35,11 +41,14 @@ async def give_up(deps: JobDeps, *, card_id: str, user_id: str) -> None:
 
 
 @job(Lane.INTAKE, GENERATE, on_give_up=give_up)
-async def generate_snippet(deps: JobDeps, *, card_id: str, user_id: str) -> None:
+async def generate_snippet(
+    deps: JobDeps, *, card_id: str, user_id: str, generation_id: str | None = None
+) -> None:
     learner, card = uuid.UUID(user_id), uuid.UUID(card_id)
+    generation = uuid.UUID(generation_id) if generation_id else None
     async with deps.database.transaction(learner) as db:
         row = await repository.audio_row(db, card, learner)
-        if not row or row.audio_status != "pending":
+        if not row or row.audio_status != "pending" or row.audio_generation != generation:
             return
         if not await identity.account_is_active(db, learner):
             raise PermanentError("The account is no longer active.")
@@ -64,16 +73,16 @@ async def generate_snippet(deps: JobDeps, *, card_id: str, user_id: str) -> None
             await audio.cut(original, target, span.lower, span.upper)
         except ValueError as error:
             raise PermanentError(str(error)) from error
-        async with deps.database.transaction(learner) as db:
+        async with writes.registered_write(deps.database, learner, card, generation) as db:
             # Deletion waits for this lock until storage and readiness are settled.
             # If deletion won during encoding, never create an orphan object.
             row = await repository.audio_row(db, card, learner, lock=True)
-            if not row or row.audio_status != "pending":
+            if not row or row.audio_status != "pending" or row.audio_generation != generation:
                 return
             if not await identity.account_is_active(db, learner):
                 raise PermanentError("The account is no longer active.")
             key = snippet_key(learner, card)
-            await storage.put_file(key, target, "audio/mp4")
+            await finish_on_cancel(storage.put_file(key, target, "audio/mp4"))
             await db.execute(
                 text(
                     "UPDATE practice.cards SET snippet_key=:key, audio_status='ready' WHERE id=:id"
@@ -91,7 +100,9 @@ async def cleanup_snippets(deps: JobDeps, *, timestamp: int | None = None) -> No
         rows = (
             await db.execute(
                 text(
-                    "SELECT card_id,user_id FROM practice.card_snippet_cleanup "
+                    "SELECT card_id,user_id FROM practice.card_snippet_cleanup c "
+                    "WHERE NOT EXISTS (SELECT 1 FROM practice.card_snippet_writes w "
+                    "WHERE w.card_id=c.card_id) "
                     "ORDER BY created_at LIMIT 100 FOR UPDATE SKIP LOCKED"
                 )
             )

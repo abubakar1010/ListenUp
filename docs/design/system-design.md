@@ -174,6 +174,14 @@ Storage stays small by keeping one compact playback file per clip, sharing YouTu
 | Card snippet | AAC-LC, mono, 64 kbit/s, faststart MP4, 3 to 6 s | about 50 KB | Until the card is deleted, so cards survive media expiry; retryable background deletion (ADR 0063) |
 | Waveform peaks | JSON, computed at intake | about 2 KB per minute | With the clip; the browser never decodes audio to draw it |
 
+Card uploads commit a durable writer registration before storage access. Cleanup
+and account purge wait for registered writers, including after DB connection loss.
+Cancellation drains the upload; killed or unconfirmed writers require explicit
+reconciliation and never expire by age (ADR 0063). Retry cycles have distinct queue
+keys and generation identities under one card execution lock, so a retiring job
+cannot swallow or fail a newer retry. Permanent refusals settle the visible failed
+state through the worker callback, including sandbox refusals.
+
 ### 6.2 Shared YouTube media
 
 A `media_objects` table holds one row per distinct source, keyed by a fingerprint (`youtube:<video id>`; uploads use a SHA-256 hash scoped to the uploading learner). Each learner's content item points to a media object. A second learner adding the same YouTube video gets it instantly, with its cached passage transcripts, reference profiles and key points.
