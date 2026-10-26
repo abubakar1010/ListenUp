@@ -1,0 +1,134 @@
+{
+  "profile_bytes": 35776,
+  "provenance": {
+    "audio": {
+      "format": "pcm_s16le",
+      "channels": 1,
+      "sample_rate": 16000
+    },
+    "acoustics": {
+      "model": "praat-pitch-intensity",
+      "version": "0.4.7",
+      "provider": "parselmouth",
+      "settings": {
+        "frame_step_ms": 20,
+        "subtract_mean": true,
+        "pitch_floor_hz": 60,
+        "intensity_scale": 100,
+        "pitch_ceiling_hz": 500,
+        "pitch_reference_hz": 1
+      },
+      "praat_version": "6.1.38"
+    },
+    "alignment": {
+      "model": "WAV2VEC2_ASR_BASE_960H",
+      "version": "torchaudio 2.8.0+cpu; torch 2.8.0+cpu; window_seconds=30; int8=true",
+      "provider": "wav2vec2-ctc"
+    },
+    "format_version": 1,
+    "alignment_options": {
+      "int8": true,
+      "threads": 2,
+      "window_seconds": 30
+    }
+  },
+  "aligned_words": 479,
+  "input_words": 479,
+  "frames": 9250,
+  "source": {
+    "source": "https://www.openslr.org/resources/12/test-clean.tar.gz",
+    "licence": "LibriSpeech public domain",
+    "preparation": "Concatenated successive full utterances from one speaker/chapter, silence padded to 185s; selected passage 0-180s with trailing 5s padding. No repeated or cut utterances.",
+    "speech_seconds": 178.8850625,
+    "duration_seconds": 185,
+    "words": 479,
+    "audio_sha256": "dc00c92eebf72354dfa9177759551aefaef93d6a6ded188855c0971211aaf41f",
+    "utterances": [
+      {
+        "id": "6930-75918-0000",
+        "sha256": "9ce35224156f071ab58eb7feb8a5ceae600f6f9f353da2a6cbf797b6b1ac8a23"
+      },
+      {
+        "id": "6930-75918-0001",
+        "sha256": "3dfad7eb0793eddd5040d04f1f2f3046ceeee39e0ec461794856a350e1bd728e"
+      },
+      {
+        "id": "6930-75918-0002",
+        "sha256": "74ecfd628f49dca71995972c075fcc9904df804d49a4eb5b11fb712b3584f789"
+      },
+      {
+        "id": "6930-75918-0003",
+        "sha256": "0ec415739efc00adcbe70838f6c207ee4ae8b31639bad534138c3d26d890f58b"
+      },
+      {
+        "id": "6930-75918-0004",
+        "sha256": "e1c4755c2febfc6b77fde418821c57e2e980d84d4c79a73ff60c6e6dfc794eac"
+      },
+      {
+        "id": "6930-75918-0005",
+        "sha256": "ccc0da025ef4f4596a4e70fbde291527d140364166d19d9bb516a48407b3491e"
+      },
+      {
+        "id": "6930-75918-0006",
+        "sha256": "4bed112ebfdba58ec061abd3fe013f89946863e9c51e8a83b50a5eb7afb9ce65"
+      },
+      {
+        "id": "6930-75918-0007",
+        "sha256": "059969de8f6b780e1a4982805e977c3e73e40d3759c8fa8cb0cb8fabd9eb5b27"
+      },
+      {
+        "id": "6930-75918-0008",
+        "sha256": "ac916dcbcbb3240dcdbf3523b300345e33cdc3ebdfdd3538be49f208c134c4dd"
+      },
+      {
+        "id": "6930-75918-0009",
+        "sha256": "def314bf5fa2c02ce5101bda550ee003760e4f4c3aa6f96699c3110c66be2048"
+      },
+      {
+        "id": "6930-75918-0010",
+        "sha256": "fa67866b5efc5df7fe35e2f27ad8f9d1f344f7848ce30d8b131f77a372f96add"
+      },
+      {
+        "id": "6930-75918-0011",
+        "sha256": "20e49ab7c5b418f379e775f2966616d1bd60fa6ef5d1ffc6d99de5b075e75284"
+      },
+      {
+        "id": "6930-75918-0012",
+        "sha256": "c158fe562a03db715f581485e9d372003163a272113f38fe45336415997d0b5f"
+      },
+      {
+        "id": "6930-75918-0013",
+        "sha256": "83f99c357f446d1fddffc61c09f59eb8a41c82c5e4261db42c71396c537c409e"
+      },
+      {
+        "id": "6930-75918-0014",
+        "sha256": "a0c581aa99f18fb4f427d40c9096f750ce6d6ef5d4721347d2bf5a36d2b5302d"
+      },
+      {
+        "id": "6930-75918-0015",
+        "sha256": "93618408931cd8bcc83f064b61bf2413a0fbbed356f006ccfe80131d9966cf6d"
+      },
+      {
+        "id": "6930-75918-0016",
+        "sha256": "1309ce10b1ea54782b53f116697ec58eaf84525b396db3daca3e9e2f47c4edf8"
+      },
+      {
+        "id": "6930-75918-0017",
+        "sha256": "1564e19057a9a89225cac9423544baa6f3fc71dd9dc8ba11f8ee86d5464bb1a4"
+      },
+      {
+        "id": "6930-75918-0018",
+        "sha256": "3f06a2712cadb8d5bca9618a1560112d7e1e0c229e0dd7f0c4f736f4bcb661b3"
+      },
+      {
+        "id": "6930-75918-0019",
+        "sha256": "aaae97a4b13b4ccc8a59dcf5402bd5d63370116e21183c5b84fb4024eea7d755"
+      },
+      {
+        "id": "6930-75918-0020",
+        "sha256": "30c19b924b666897aca99c621b821b82c69084a04140776770e86109129869ac"
+      }
+    ]
+  },
+  "performance": "stage-0 unverified; not a latency acceptance run"
+}
