@@ -1323,7 +1323,7 @@
             "title": "Overall"
           },
           "status": {
-            "enum": ["pending", "ready"],
+            "enum": ["pending", "ready", "unavailable", "delayed"],
             "title": "Status",
             "type": "string"
           },
@@ -1337,6 +1337,17 @@
               }
             ],
             "title": "Total Count"
+          },
+          "wait_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wait Ms"
           }
         },
         "required": ["status"],
@@ -1394,6 +1405,18 @@
         },
         "required": ["attempt", "open_step", "session_version"],
         "title": "GistSubmitted",
+        "type": "object"
+      },
+      "GradeRetry": {
+        "properties": {
+          "status": {
+            "const": "accepted",
+            "default": "accepted",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "GradeRetry",
         "type": "object"
       },
       "GrantConsent": {
@@ -4374,6 +4397,54 @@
           }
         },
         "summary": "Get Gist Grade",
+        "tags": ["blind"]
+      }
+    },
+    "/api/v1/grades/{attempt_id}/retry": {
+      "post": {
+        "description": "Retry saved gist feedback; waiting/running/ready work is an idempotent no-op.",
+        "operationId": "retry_grade_api_v1_grades__attempt_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GradeRetry"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`attempt_not_found` or `grade_not_found`"
+          },
+          "409": {
+            "description": "`gist_not_submitted`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Grade",
         "tags": ["blind"]
       }
     },

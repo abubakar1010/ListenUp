@@ -1,4 +1,4 @@
-# ADR 0062: Shadow playback rounds before recording
+# ADR 0063: Shadow playback rounds before recording
 
 - Status: Accepted
 - Date: 2026-10-25

@@ -121,7 +121,7 @@ Each screen on the UI canvas has its own spec panel (states, focus order, keys, 
 | Mark word (Transcript) | On a focused word: Left/Right move, Shift+Arrow extends, M marks (or opens the mark's note), Esc clears; Enter or Space jumps to the word (ADR 0047) | n/a | n/a |
 | Mark list row | Enter seeks, E edits, Delete removes (Undo in toast) | n/a | n/a |
 
-Shadow uses its mode-specific policy ([ADR 0062](../adr/0062-shadow-playback-rounds.md)): Tab to native controls, Enter/Space to activate Play, Stop/restart and explicit advancement. The global transport shortcuts above do not apply; original-speed rounds offer no pause, seek or speed adjustment.
+Shadow uses its mode-specific policy ([ADR 0063](../adr/0063-shadow-playback-rounds.md)): Tab to native controls, Enter/Space to activate Play, Stop/restart and explicit advancement. The global transport shortcuts above do not apply; original-speed rounds offer no pause, seek or speed adjustment.
 
 Mac uses Ctrl+Option in place of Ctrl+Alt. Shortcuts act only on keydown, call preventDefault, and never fire while a dialog or sheet is open. Each practice screen shows the keys for its mode on the page (UX-43).
 

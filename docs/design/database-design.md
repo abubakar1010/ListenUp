@@ -539,7 +539,7 @@ CREATE POLICY own_rows ON practice.shadow_rounds
 - **Round 1 shows the transcript, rounds 2 and 3 do not.** This is a generated column, so it can never disagree with the round number.
 - **Shadow rounds hang off the segment,** so a round cannot exist before a valid segment does: 60 to 90 s, or the whole passage when the passage is 30 to 60 s.
 
-Shadow segment ownership, RLS/grants and immutable locking follow [ADR 0057](../adr/0057-shadow-segment-proposals.md). The API cannot independently delete a segment; parent deletion still cascades. Playback rounds follow [ADR 0062](../adr/0062-shadow-playback-rounds.md):
+Shadow segment ownership, RLS/grants and immutable locking follow [ADR 0057](../adr/0057-shadow-segment-proposals.md). The API cannot independently delete a segment; parent deletion still cascades. Playback rounds follow [ADR 0063](../adr/0063-shadow-playback-rounds.md):
 `shadow_round_order` locks the session then segment, requires sequential insertion
 following an ended playback, locks the segment on round 1, and refuses changing
 round identity or resetting ended playback. `playback_status` is independent of
@@ -573,11 +573,19 @@ CREATE TABLE grading.key_points (
   UNIQUE (media_object_id, span, prompt_version)  -- shared by every learner on that passage
 );
 
+-- ADR 0062: worker-only quota wait metadata, no reference text or API-role grant.
+CREATE TABLE grading.key_point_delays (
+  media_object_id uuid NOT NULL REFERENCES content.media_objects ON DELETE CASCADE,
+  span int4range NOT NULL,
+  prompt_version text NOT NULL,
+  PRIMARY KEY (media_object_id, span, prompt_version)
+);
+
 CREATE TABLE grading.gist_grades (
   attempt_id       uuid PRIMARY KEY REFERENCES practice.attempts ON DELETE CASCADE,
   user_id          uuid NOT NULL,
   status           text NOT NULL DEFAULT 'pending'
-                   CHECK (status IN ('pending', 'ready', 'unavailable')),
+                   CHECK (status IN ('pending', 'ready', 'unavailable', 'delayed')),
   key_points_id    uuid REFERENCES grading.key_points ON DELETE SET NULL,
   dimension_scores jsonb,                  -- {main_idea, key_details, accuracy}: 0 to 100 each
   overall          int2 CHECK (overall BETWEEN 0 AND 100),  -- computed by our code
@@ -587,6 +595,7 @@ CREATE TABLE grading.gist_grades (
   feedback         text CHECK (char_length(feedback) <= 1500),
   rubric_version   text,
   provider_info    jsonb,
+  feedback_deadline timestamptz NOT NULL DEFAULT now(), -- current cycle; ADR 0062
   attempts_made    int2 NOT NULL DEFAULT 0,
   created_at       timestamptz NOT NULL DEFAULT now(),
   updated_at       timestamptz NOT NULL DEFAULT now(),

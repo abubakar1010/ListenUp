@@ -5,7 +5,7 @@ from alembic import op
 from migrations.rls import enable_own_rows
 
 revision = "79_shadow_rounds"
-down_revision = "76_reference_profiles"
+down_revision = "70_gist_recovery"
 branch_labels = None
 depends_on = None
 

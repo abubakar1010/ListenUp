@@ -163,6 +163,9 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ("POST", "/api/v1/sessions/{session_id}/shadow/rounds/{number}/playback-ended"): Owned(
         "session_not_found", params=lambda w: {"session_id": w.a.sessions["shadow"], "number": 1}
     ),
+    ("POST", "/api/v1/grades/{attempt_id}/retry"): Owned(
+        "attempt_not_found", params=lambda w: {"attempt_id": w.a.blind_attempt_id}
+    ),
     ("GET", "/api/v1/sessions/{session_id}/shadow/segment"): Owned(
         "session_not_found", params=lambda w: {"session_id": w.a.sessions["shadow"]}
     ),

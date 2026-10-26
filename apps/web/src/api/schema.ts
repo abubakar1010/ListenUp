@@ -604,6 +604,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/grades/{attempt_id}/retry': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Retry Grade
+     * @description Retry saved gist feedback; waiting/running/ready work is an idempotent no-op.
+     */
+    post: operations['retry_grade_api_v1_grades__attempt_id__retry_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/health': {
     parameters: {
       query?: never;
@@ -2016,9 +2036,11 @@ export interface components {
        * Status
        * @enum {string}
        */
-      status: 'pending' | 'ready';
+      status: 'pending' | 'ready' | 'unavailable' | 'delayed';
       /** Total Count */
       total_count?: number | null;
+      /** Wait Ms */
+      wait_ms?: number | null;
     };
     /** GistIn */
     GistIn: {
@@ -2042,6 +2064,15 @@ export interface components {
       open_step: components['schemas']['Step'] | null;
       /** Session Version */
       session_version: number;
+    };
+    /** GradeRetry */
+    GradeRetry: {
+      /**
+       * Status
+       * @default accepted
+       * @constant
+       */
+      status: 'accepted';
     };
     /** GrantConsent */
     GrantConsent: {
@@ -3974,6 +4005,51 @@ export interface operations {
       };
       /** @description `attempt_not_found` */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  retry_grade_api_v1_grades__attempt_id__retry_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GradeRetry'];
+        };
+      };
+      /** @description `attempt_not_found` or `grade_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `gist_not_submitted` */
+      409: {
         headers: {
           [name: string]: unknown;
         };

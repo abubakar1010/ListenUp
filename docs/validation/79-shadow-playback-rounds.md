@@ -13,7 +13,7 @@
   recording/upload, grading, comparison or plan-completion implementation.
   `recorded_at` remains null and no recording-completed analytics event is emitted.
   Rounds do not inspect reference-profile readiness (ADR 0050).
-- [ADR 0062](../adr/0062-shadow-playback-rounds.md) records lifecycle, disclosure,
+- [ADR 0063](../adr/0063-shadow-playback-rounds.md) records lifecycle, disclosure,
   schema, recovery and future integration with #78/#81/#87. Transcript disclosure
   here governs Shadow responses, not the learner's existing Transcript review or
   export. Round 1 cannot be fetched as historical text after advancing.
@@ -232,3 +232,35 @@ Validation of the combined tree:
   remediation head. The previous-head run does not validate this migration graph;
   it is not promoted to final-head evidence. Fresh independent re-review remains
   required, and the PR remains unmerged.
+
+### Merge-time reconciliation after #220
+
+The owner requested merging after final-head CI `40308210685` passed all required
+checks on `2fb0301`. GitHub refused the first merge because main advanced to
+`7fea329` (PR #220 gist recovery) at merge time. No merge was performed by that
+failed request. Main's new migration and this PR's migration both followed
+`76_reference_profiles`: the one-head assertion failed with heads
+`70_gist_recovery` and `79_shadow_rounds` before the correction.
+
+Merged current main without changing its gist recovery, shared UI or profile
+runtime. The access-registry conflict retains both the gist retry ownership entry
+and all three Shadow entries. The unmerged Shadow migration now follows
+`70_gist_recovery`, and the one-head assertion passes. Shadow's ADR is 0063 with
+all its links updated, preserving main's gist ADR 0062 and profile ADR 0061.
+Generated OpenAPI/TypeScript reproduce the combined schemas after formatting.
+
+Completed local validation of this combined tree:
+
+- **97 backend integration tests passed, no skips**: migration upgrade/downgrade,
+  model drift, one linear head, Shadow rounds/segments, reference profiles,
+  cross-learner access and gist recovery API/jobs.
+- Backend Ruff lint/format, strict mypy and all six import contracts pass.
+- Full web coverage **628 passed / 60 files**, **96.30% lines / 88.77% branches**.
+  Web lint/format/types/build/size pass; gzip remains 125.6 kB.
+- The opt-in real-model profile test was not rerun; its previously disclosed
+  fixture limitation remains. No model-quality or stage-0 performance claim is
+  added. Previous-head CI is not promoted to this new merge-time head; fresh CI
+  is required before the authorized merge.
+- Fresh production-build Playwright: **5 passed** across Shadow and gist-recovery
+  suites, including 360px keyboard rounds, preserved Dictation draft and preserved
+  Transcript marks/notes after late grade events.
