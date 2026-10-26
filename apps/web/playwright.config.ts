@@ -18,8 +18,28 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: 'a11y.spec.ts',
       use: { ...devices['Desktop Chrome'], launchOptions: { executablePath } },
     },
+    // The axe scan of every route (#98): desktop, 360 px (UI-4) and the dark theme.
+    ...[
+      { name: 'a11y-desktop', viewport: { width: 1280, height: 800 } },
+      { name: 'a11y-360', viewport: { width: 360, height: 740 } },
+      {
+        name: 'a11y-dark',
+        viewport: { width: 1280, height: 800 },
+        colorScheme: 'dark' as const,
+      },
+    ].map(({ name, ...use }) => ({
+      name,
+      testMatch: 'a11y.spec.ts',
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: { executablePath },
+        reducedMotion: 'reduce' as const,
+        ...use,
+      },
+    })),
   ],
   webServer: {
     command: `pnpm build && pnpm preview --port ${port} --strictPort`,

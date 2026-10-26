@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "e2e": "playwright test",
+    "e2e:a11y": "playwright test --project=a11y-desktop --project=a11y-360 --project=a11y-dark",
     "api:generate": "openapi-typescript src/api/openapi.json -o src/api/schema.ts && prettier --write src/api/schema.ts src/api/openapi.json"
   },
   "dependencies": {
@@ -28,6 +29,7 @@
     "react-router": "^8.4.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
