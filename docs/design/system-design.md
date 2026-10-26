@@ -171,13 +171,13 @@ Storage stays small by keeping one compact playback file per clip, sharing YouTu
 | Analysis audio | 16 kHz mono PCM | about 1.9 MB per minute | **No**: decoded into worker scratch space when needed, deleted after the job |
 | Source download or upload | As received | varies | **No** for YouTube (deleted after conversion); uploads converted, then the original is deleted |
 | Shadow recording | Opus 24 kbit/s (WebM) or AAC (Safari), as recorded | about 0.2 MB per round | 90 days, scores kept |
-| Card snippet | AAC-LC, mono, 64 kbit/s, faststart MP4, 3 to 6 s | about 50 KB | Until the card is deleted, so cards survive media expiry; retryable background deletion (ADR 0063) |
+| Card snippet | AAC-LC, mono, 64 kbit/s, faststart MP4, 3 to 6 s | about 50 KB | Until the card is deleted, so cards survive media expiry; retryable background deletion (ADR 0064) |
 | Waveform peaks | JSON, computed at intake | about 2 KB per minute | With the clip; the browser never decodes audio to draw it |
 
 Card uploads commit a durable writer registration before storage access. Cleanup
 and account purge wait for registered writers, including after DB connection loss.
 Cancellation drains the upload; killed or unconfirmed writers require explicit
-reconciliation and never expire by age (ADR 0063). Retry cycles have distinct queue
+reconciliation and never expire by age (ADR 0064). Retry cycles have distinct queue
 keys and generation identities under one card execution lock, so a retiring job
 cannot swallow or fail a newer retry. The Cards job wrapper settles permanent
 refusals before sandbox exit 65, preserving the handler-owned failure contract.

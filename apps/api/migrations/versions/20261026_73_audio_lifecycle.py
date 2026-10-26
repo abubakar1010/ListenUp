@@ -1,4 +1,4 @@
-"""Generation identities and durable snippet write registrations (ADR 0063)."""
+"""Generation identities and durable snippet write registrations (ADR 0064)."""
 
 from alembic import op
 

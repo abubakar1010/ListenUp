@@ -3,7 +3,7 @@
 ## Scope and decisions
 
 FR-CA-2 and NFR-SEC-2; owner-approved plan, including refusing marked phrases
-longer than six seconds. ADR 0063 records timing, private delivery, retries,
+longer than six seconds. ADR 0064 records timing, private delivery, retries,
 cleanup and legacy-card behavior. YouTube intake remains disabled; no card review,
 shared-player, gist recovery, reference-profile or Shadow implementation changes.
 
@@ -14,7 +14,7 @@ changing Cards. It subsequently merged; main `cfc7197` was integrated before bro
 checks. Main `5db1333` was integrated before the final web checks; its only further
 change is `docs/design/ux-decisions.md`. No migration/generated-file conflict arose. A later open-PR check found ADR 0061
 reused by #215, #217 and #218, with #214 using 0062; this story was renamed
-to ADR 0063. #214/#218 also touch generated contracts, and #218 adds a migration.
+to ADR 0063 at that time. #214/#218 also touch generated contracts, and #218 adds a migration.
 Their unmerged implementation stays outside this PR; current main remains `5db1333`.
 Migration `73_card_audio` originally followed `72_cards`; the remediation below
 reconciles the chain after #219 merged. API contracts were
@@ -182,7 +182,7 @@ card execution lock. A separately committed writer registration survives lost
 locks and killed processes. Cleanup and a registered identity purge guard wait for
 it; an additional RESTRICT FK protects account deletion. Uploads drain cancellation,
 uncertain writes retain their registrations, and downgrade refuses a nonempty
-registry. See ADR 0063 and the [reconciliation runbook](../runbooks/card-snippet-writers.md).
+registry. See ADR 0064 and the [reconciliation runbook](../runbooks/card-snippet-writers.md).
 No registration is discarded by age or queue status. Export omits worker/token and
 generation details. The architecture storage path and retry endpoint inventory are
 also corrected. No shared-player or out-of-scope feature behavior was added.
@@ -258,3 +258,57 @@ row; it now updates only its own clip. The first reordered run's fixture constra
 failure (**1 failed, 102 passed**) is disclosed and is not a production-regression
 claim. The same reordered suite is now green, with its refusal/slot assertions
 unchanged. Shared-runner production code is restored exactly to current main.
+
+## Current-main migration re-review remediation, 2026-10-26
+
+Independent re-review of `4ff7f01` against current main `7fea329` found one
+integration blocker: merged #220 adds `70_gist_recovery` after
+`76_reference_profiles`, creating two heads alongside the Cards migrations.
+The three earlier lifecycle findings were verified resolved. The owner requested
+posting the review, fixing its finding and merging only if validation is sound.
+
+After integrating `7fea329`, actual Red:
+`LISTENUP_REQUIRE_DB=1 uv run --frozen pytest
+tests/integration/test_migrations.py::test_history_is_linear -q --tb=short`:
+**1 failed**, with heads `70_gist_recovery` and `73_audio_lifecycle`.
+The existing regression detects the defect without weakening or duplicating it.
+While validating, main advanced to `5375940` (merged #218). The same regression
+failed again with heads `79_shadow_rounds` and `73_audio_lifecycle`. Cards now
+follows `79_shadow_rounds`, preserving one chain:
+`76_reference_profiles → 70_gist_recovery → 79_shadow_rounds → 73_card_audio
+→ 73_audio_lifecycle`.
+The architecture conflict retains both the Cards retry endpoint and main's Shadow
+endpoints. Main now owns ADR 0063, so this PR's Cards ADR is renumbered to 0064
+and its references are synchronized. Shadow implementation remains unchanged.
+No gist implementation behavior is authored by this correction; current main's
+implementation and combined API contracts are retained.
+
+Fresh databases and deployments from current main must run the complete chain.
+Pre-merge disposable databases already migrated with the earlier Cards parent
+must be rebuilt rather than stamped past an unapplied gist migration. Retain
+ADR 0064's worker-stop, writer-reconciliation and queued-argument rollback rules.
+Actual-host latency remains deferred until staging — unverified under #155.
+
+Final combined-tree Green against main `5375940`:
+
+- `LISTENUP_REQUIRE_DB=1 LISTENUP_REQUIRE_S3=1 uv run --frozen pytest
+  tests/integration/test_migrations.py tests/integration/test_card_audio.py
+  tests/integration/test_card_retry_contract.py tests/integration/test_gist_recovery.py
+  tests/integration/test_gist_recovery_jobs.py tests/integration/test_shadow_rounds.py
+  -q --tb=short`: **68 passed**, including linear history, upgrade/downgrade/upgrade,
+  full downgrade, drift and unresolved-writer downgrade refusal.
+- Cards/gist/Shadow/event/live-events UI focus: **71 passed**; web types, lint and
+  formatting pass. Cards/Shadow Chromium at 360 px with `--workers=1 --retries=0`:
+  **5 passed**.
+- Backend Ruff check/format, strict mypy and all **6 import contracts** pass.
+  Combined OpenAPI export and `pnpm api:generate` reproduce the merged contracts
+  without additional generated-file changes. A formatting check run before API
+  regeneration completed was rerun successfully after formatting the export.
+- Earlier checks against `7fea329` are not substituted for final-tree results.
+  The existing migration test supplied both actual Reds; no assertion, coverage
+  threshold or exclusion was weakened. Documentation/ADR renumbering has no
+  artificial test-first requirement.
+
+Latest-head CI remains required; its exact run and results are recorded in the PR.
+The owner will arrange the fresh re-review. Merge remains pending that review
+and green required CI; the remediation session is not its own independent review.

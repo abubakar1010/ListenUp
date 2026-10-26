@@ -4,7 +4,15 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import CheckConstraint, ForeignKeyConstraint, SmallInteger, Text
+from sqlalchemy import (
+    CheckConstraint,
+    Computed,
+    ForeignKeyConstraint,
+    SmallInteger,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import INT4RANGE, TIMESTAMP, Range
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,6 +35,7 @@ class ShadowSegment(Base):
             name="shadow_segments_session_user_fk",
             ondelete="CASCADE",
         ),
+        UniqueConstraint("session_id", "user_id", name="shadow_segments_session_user_uq"),
         {"schema": "practice"},
     )
     session_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
@@ -35,3 +44,29 @@ class ShadowSegment(Base):
     chosen_by: Mapped[Literal["system", "learner"]] = mapped_column(Text)
     mark_count: Mapped[int] = mapped_column(SmallInteger)
     locked_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+
+
+class ShadowRound(Base):
+    __tablename__ = "shadow_rounds"
+    __table_args__ = (
+        CheckConstraint("round BETWEEN 1 AND 3"),
+        CheckConstraint("playback_status IN ('ready','ended')"),
+        UniqueConstraint("session_id", "round"),
+        ForeignKeyConstraint(
+            ["session_id", "user_id"],
+            ["practice.shadow_segments.session_id", "practice.shadow_segments.user_id"],
+            name="shadow_rounds_segment_user_fk",
+            ondelete="CASCADE",
+        ),
+        {"schema": "practice"},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    session_id: Mapped[uuid.UUID]
+    user_id: Mapped[uuid.UUID]
+    round: Mapped[int] = mapped_column(SmallInteger)
+    transcript_shown: Mapped[bool] = mapped_column(Computed("round = 1", persisted=True))
+    playback_status: Mapped[Literal["ready", "ended"]] = mapped_column(Text, server_default="ready")
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+    recorded_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))

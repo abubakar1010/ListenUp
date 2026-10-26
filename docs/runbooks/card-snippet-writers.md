@@ -1,6 +1,6 @@
 # Reconcile an unresolved card snippet writer
 
-ADR 0063 uses `practice.card_snippet_writes` to preserve deletion responsibility
+ADR 0064 uses `practice.card_snippet_writes` to preserve deletion responsibility
 when a media worker loses its DB connection, is killed, or cannot confirm an S3
 upload. Card cleanup skips these writers. Account purge postpones before its first
 storage sweep; the user FK also refuses deletion while a registration exists.

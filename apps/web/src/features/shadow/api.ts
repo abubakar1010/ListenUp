@@ -17,3 +17,47 @@ export function useSaveSegment(id: string) {
     onSuccess: (value) => client.setQueryData(key(id), value),
   });
 }
+
+export type Rounds = components['schemas']['Rounds'];
+export const roundsKey = (id: string) => [...SESSIONS_KEY, id, 'shadow', 'rounds'];
+export function useRounds(id: string) {
+  return useQuery({
+    queryKey: roundsKey(id),
+    queryFn: () => api<Rounds>(`/sessions/${encodeURIComponent(id)}/shadow/rounds`),
+    staleTime: 0,
+    gcTime: 0,
+  });
+}
+export function useChangeRound(id: string) {
+  const client = useQueryClient();
+  const discardTranscript = async () => {
+    await client.cancelQueries({ queryKey: roundsKey(id) });
+    client.setQueryData<Rounds>(roundsKey(id), (value) =>
+      value ? { ...value, text: undefined } : value,
+    );
+  };
+  return useMutation({
+    mutationFn: async ({
+      number,
+      action,
+    }: {
+      number: number;
+      action: 'start' | 'playback-ended';
+    }) => {
+      await api(`/sessions/${encodeURIComponent(id)}/shadow/rounds/${number}/${action}`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': `shadow-${id}-${number}-${action}` },
+      });
+    },
+    onMutate: discardTranscript,
+    onSettled: async () => {
+      // A focus refetch may have restored round-1 data while the write was pending.
+      // Cancel it before clearing, so a late response cannot restore that text.
+      await discardTranscript();
+      await Promise.all([
+        client.invalidateQueries({ queryKey: roundsKey(id) }),
+        client.invalidateQueries({ queryKey: key(id) }),
+      ]);
+    },
+  });
+}

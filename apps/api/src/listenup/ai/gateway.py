@@ -196,6 +196,7 @@ class AIGateway:
             providers = tuple(by_name[name] for name in self._config.tasks[task])
         if not providers:
             raise AIUnavailable(role, "no provider configured")
+        quota_denied = False
         for fallback_depth, entry in enumerate(providers):
             if not eligible(entry, context, role):
                 await self._accounting.skip(entry, role, task, prompt, "ineligible")
@@ -236,6 +237,7 @@ class AIGateway:
                     queue_delay_ms=int(context.queue_delay_seconds * 1000),
                 )
                 if ticket is None:
+                    quota_denied = True
                     break
                 started = time.monotonic()
                 outcome: Outcome = "error"
@@ -314,7 +316,10 @@ class AIGateway:
                     await self._sleep(entry.retry_backoff_seconds * 2**attempt)
                     continue
                 break
-        raise AIUnavailable(role, "no eligible provider produced a valid result") from None
+        reason = (
+            "quota_exhausted" if quota_denied else "no eligible provider produced a valid result"
+        )
+        raise AIUnavailable(role, reason) from None
 
     async def transcribe(
         self, audio: Path, language: str = "en", *, context: CallContext | None = None

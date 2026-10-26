@@ -268,7 +268,7 @@ Read the section for the area you are changing before you change it. The rules e
   through DB to the default pool; never add a collector route to media-data.
 
 
-## Cards (ADRs 0060, 0063)
+## Cards (ADRs 0060, 0064)
 
 - Cards read marks only through `review.service.list_marks`. Creation and completion
   lock the session row before calling `practice.service.require_step(..., Step.CARD)`;
@@ -277,7 +277,7 @@ Read the section for the area you are changing before you change it. The rules e
 - Keep `at_ms` from the selected mark as a source-time snapshot. A deleted mark sets
   `mark_id` to NULL while the saved forms and time remain. Source links use
   `/contents/{id}?at_ms={absolute_ms}`.
-- Snippets (#73, ADR 0063) snapshot authorized word timings on creation. Refuse
+- Snippets (#73, ADR 0064) snapshot authorized word timings on creation. Refuse
   phrases longer than six seconds before inserting a card. Generation uses the
   intake lane and deterministic learner/card storage keys; never resolve audio
   through source playback after it is ready. Card JSON exposes status only.
@@ -313,7 +313,20 @@ Read the section for the area you are changing before you change it. The rules e
   pending reads also poll. Submission keeps the result visible until Continue
   refreshes both the session and its Blind attempt, including a fresh cached
   completed listen. Render the saved gist independently of grading readiness.
-  #70 owns unavailable/delayed/retry behavior.
+  Recovery (#70, ADR 0062): `pending` becomes `unavailable` at the configured
+  30-second deadline or exhausted failures; a quota `delayed` state takes precedence.
+  Both remain eligible for a late ready result. `wait_ms` is server-relative.
+  `POST /grades/{attempt_id}/retry` returns 202 with `status: accepted`; it reuses
+  waiting/running work and leaves ready grades unchanged. New cycles update the
+  deadline only after unique queue admission. Deadline checks match the cycle's
+  stored deadline. Retry invalidates grade queries without invalidating practice
+  progress. Missing references and quota waits postpone work without using up
+  grading failures. The normal authentication, consent, CSRF, ownership and D4
+  rules apply to every read and retry.
+  Exhausted reference work clears worker-only quota metadata. When a missing
+  reference is no longer quota-delayed, its waiting gist leaves `delayed` and
+  applies the original deadline, restoring retry after expiry. Do not reset that
+  deadline or overwrite a ready grade while settling dependency failures.
 
 ## Shadow segments (ADR 0057)
 
@@ -321,6 +334,29 @@ Read the section for the area you are changing before you change it. The rules e
   through `review.service.list_marks`; mode endpoints require `Step.SHADOW`.
   Saved segments use absolute, half-open media milliseconds. The shared session
   waveform accepts optional `boundsFor` and `label`, preserving passage defaults.
-- `locked_at` is the database boundary for the future round 1 transaction (#78).
+- `locked_at` is the database boundary set atomically by round 1 insertion (#79).
   Once set, the segment is immutable, including its lock. Do not clear it to adjust
   a selection. The parent session/account cascade is still allowed.
+
+## Shadow playback rounds (ADR 0063)
+
+- `shadow.service.change_round` serializes numbered starts and playback-ended writes
+  through `practice.service.lock_session`, then `require_step(Step.SHADOW)`. The
+  database also enforces sequential rounds 1–3 and locks the segment on insertion
+  of round 1. Round identity and an ended playback cannot be reset.
+- Round start/end submissions use `run_once` but store only bodyless 204 results.
+  `GET /sessions/{id}/shadow/rounds` includes segment text only while the current
+  round is 1; round 2/3 omit it entirely, including history. Reference words come
+  only through `transcript.service`, never through its repository. All responses
+  use private/no-store; cancel pending reads and clear transcript before client
+  mutations and again at settlement, before invalidating queries. Hide cached
+  transcript after failed reads until a successful authoritative refresh.
+- Shadow controls enforce 1x in preview and rounds. Numbered playbacks have a
+  three-second count-in and explicit advancement. Stop, hidden pages and reload
+  restart the same unended round; native buttons support Enter/Space. Keep round
+  status inside Shadow; use the shared busy button to preserve focus. Shadow uses
+  native Tab/Enter/Space controls rather than the general UX-07 transport keys.
+- `playback_status = ended` is not recorded/uploaded success: leave `recorded_at`
+  unset, do not emit `record_shadow_round_completed` and do not complete the step.
+  #78/#81/#87 add microphone/consent, recording/upload and completion respectively.
+  No reference-profile readiness check gates playback (ADR 0050).
