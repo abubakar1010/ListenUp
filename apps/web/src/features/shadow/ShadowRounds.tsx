@@ -63,10 +63,12 @@ export function ShadowRounds({
         Three rounds at original speed, each with a short count-in. Read the transcript in round 1;
         shadow without it in rounds 2 and 3.
       </p>
+      <p>Tab to a control; press Enter or Space to activate it.</p>
       {number === 1 &&
       current?.transcript_shown &&
       !change.isPending &&
       !state.isFetching &&
+      !state.isError &&
       state.data.text !== undefined ? (
         <p aria-label="Segment transcript">{state.data.text}</p>
       ) : number > 1 ? (

@@ -44,14 +44,19 @@ clipped to the selected segment using absolute word-start times. Round 2/3 state
 responses omit `text` entirely and never read the reference transcript. Round
 start/end POSTs return bodyless 204 responses, including idempotent replays, so
 stored responses cannot later reveal round-1 text. Reads are private/no-store.
-The client drops its round transcript before mutations and on unmount and hides
-it during authoritative refreshes. This governs Shadow responses; the existing
-learner-owned Transcript review and export remain available under their existing
-policies. It cannot revoke text already shown in round 1.
+The client cancels outstanding round reads and drops its round transcript both
+before mutations and again when they settle, before refreshing authoritative
+state. It also drops the cache on unmount and hides transcript text during
+refreshes and after failed reads; only a successful read can reveal it again.
+This governs Shadow responses; the existing learner-owned Transcript review and
+export remain available under their existing policies. It cannot revoke text already shown in round 1.
 
 ## Consequences
 
-Shadow owns its fixed-speed controls, round status and responsive layout. Shared
+Shadow owns its fixed-speed controls, round status and responsive layout. Its
+keyboard policy is Tab to native buttons and Enter/Space to activate them; the
+general UX-07 transport shortcuts do not apply to Shadow. Round controls offer
+Stop/restart instead of pause, seek or speed changes. Shared
 progress, Cards, gist recovery and reference profiling remain outside #79.
 Until grading ships, the round UI shows “Feedback unavailable”. Starting a round
 does not inspect reference-profile readiness or invoke speech models.

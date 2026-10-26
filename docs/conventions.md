@@ -295,11 +295,14 @@ Read the section for the area you are changing before you change it. The rules e
   `GET /sessions/{id}/shadow/rounds` includes segment text only while the current
   round is 1; round 2/3 omit it entirely, including history. Reference words come
   only through `transcript.service`, never through its repository. All responses
-  use private/no-store; transcript is cleared before client mutations.
+  use private/no-store; cancel pending reads and clear transcript before client
+  mutations and again at settlement, before invalidating queries. Hide cached
+  transcript after failed reads until a successful authoritative refresh.
 - Shadow controls enforce 1x in preview and rounds. Numbered playbacks have a
   three-second count-in and explicit advancement. Stop, hidden pages and reload
   restart the same unended round; native buttons support Enter/Space. Keep round
-  status inside Shadow; use the shared busy button to preserve focus.
+  status inside Shadow; use the shared busy button to preserve focus. Shadow uses
+  native Tab/Enter/Space controls rather than the general UX-07 transport keys.
 - `playback_status = ended` is not recorded/uploaded success: leave `recorded_at`
   unset, do not emit `record_shadow_round_completed` and do not complete the step.
   #78/#81/#87 add microphone/consent, recording/upload and completion respectively.

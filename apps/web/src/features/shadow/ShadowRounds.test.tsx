@@ -1,4 +1,8 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
+import { focusManager, QueryClientProvider } from '@tanstack/react-query';
+import { createQueryClient } from '../../app/queryClient';
+import { roundsKey } from './api';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { jsonResponse, renderWithProviders } from '../../test-utils';
 import { mockRoutes } from '../session/testApi';
 import { ShadowRounds } from './ShadowRounds';
@@ -138,4 +142,131 @@ it('reports a bounded playback end to the API and updates numbered round status'
   ]);
   view.unmount();
   vi.restoreAllMocks();
+});
+
+it.each(['before settlement', 'after settlement'])(
+  'keeps transcript hidden when a focus refetch resolves %s and advancement refresh fails',
+  async (ordering) => {
+    const client = createQueryClient();
+    client.setDefaultOptions({ queries: { retry: false } });
+    let resolveStart!: (response: Response) => void;
+    const start = new Promise<Response>((resolve) => {
+      resolveStart = resolve;
+    });
+    let resolveRead!: (response: Response) => void;
+    const read = new Promise<Response>((resolve) => {
+      resolveRead = resolve;
+    });
+    const segment = {
+      session_id: 's',
+      start_ms: 0,
+      end_ms: 60000,
+      chosen_by: 'system',
+      mark_count: 0,
+      locked_at: 'now',
+    };
+    const current = {
+      round: 1,
+      transcript_shown: true,
+      playback_status: 'ended',
+      recorded_at: null,
+    };
+    const firstRound = { segment, current, rounds: [current], text: 'Secret round-one words.' };
+    let reads = 0;
+    const { calls } = mockRoutes({
+      'GET /sessions/s/shadow/rounds': () => {
+        reads++;
+        if (reads === 1) return jsonResponse(200, firstRound);
+        if (reads === 2) return read;
+        return jsonResponse(503, { code: 'unavailable', detail: 'Round refresh failed.' });
+      },
+      'POST /sessions/s/shadow/rounds/2/start': () => start,
+      'GET /sessions/s/shadow/segment': jsonResponse(200, segment),
+      'GET /contents/c': jsonResponse(200, { media_url: '/audio' }),
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <ShadowRounds sessionId="s" contentId="c" />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    try {
+      await screen.findByText(firstRound.text);
+      fireEvent.click(screen.getByRole('button', { name: 'Start round 2' }));
+      await waitFor(() => expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1));
+      act(() => {
+        focusManager.setFocused(false);
+        focusManager.setFocused(true);
+      });
+      await waitFor(() => expect(reads).toBe(2));
+      if (ordering === 'before settlement') {
+        await act(async () => {
+          resolveRead(jsonResponse(200, firstRound));
+        });
+        await waitFor(() =>
+          expect(client.getQueryData(roundsKey('s'))).toMatchObject({ text: firstRound.text }),
+        );
+        expect(screen.queryByText(firstRound.text)).not.toBeInTheDocument();
+      }
+      await act(async () => {
+        resolveStart(new Response(null, { status: 204 }));
+      });
+      await screen.findByText('Round refresh failed.');
+      if (ordering === 'after settlement') {
+        await act(async () => {
+          resolveRead(jsonResponse(200, firstRound));
+        });
+      }
+      await waitFor(() => expect(client.isMutating()).toBe(0));
+      expect(screen.queryByText(firstRound.text)).not.toBeInTheDocument();
+      expect(client.getQueryData(roundsKey('s'))).not.toHaveProperty('text', firstRound.text);
+    } finally {
+      view.unmount();
+      client.clear();
+      focusManager.setFocused(undefined);
+    }
+  },
+);
+
+it('hides cached transcript after a failed refresh and restores it only after a successful retry', async () => {
+  let reads = 0;
+  const current = { round: 1, transcript_shown: true, playback_status: 'ended', recorded_at: null };
+  mockRoutes({
+    'GET /sessions/s/shadow/rounds': () => {
+      reads++;
+      return reads === 2
+        ? jsonResponse(503, { code: 'unavailable', detail: 'Round refresh failed.' })
+        : jsonResponse(200, {
+            segment: {
+              session_id: 's',
+              start_ms: 0,
+              end_ms: 60000,
+              chosen_by: 'system',
+              mark_count: 0,
+              locked_at: 'now',
+            },
+            current,
+            rounds: [current],
+            text: 'Round-one transcript.',
+          });
+    },
+    'GET /contents/c': jsonResponse(200, { media_url: '/audio' }),
+  });
+  const view = renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
+  try {
+    await screen.findByText('Round-one transcript.');
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await screen.findByText('Round refresh failed.');
+    expect(screen.queryByText('Round-one transcript.')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await screen.findByText('Round-one transcript.');
+    expect(reads).toBe(3);
+  } finally {
+    view.unmount();
+    focusManager.setFocused(undefined);
+  }
 });

@@ -135,3 +135,63 @@ excluded stories. Grading/model-quality/launch gates remain unchanged.
 
 Required CI and fresh-session independent review remain merge gates. This session
 opens one PR and does not merge it.
+
+## PR #218 review remediation (2026-10-26)
+
+Review of `03ab474` against current main `2764892` found one P2 client disclosure
+race: a focus refetch could restore round-1 text during a delayed round-2 start,
+then a failed settlement refresh left that text visible after advancement.
+The review was posted as review `5650355563`; the owner requested remediation in
+this PR. This section records new evidence and does not infer historical TDD.
+
+- Red, before changing production code: from `apps/web`,
+  `node node_modules/vitest/vitest.mjs run src/features/shadow/ShadowRounds.test.tsx -t 'focus refetch|failed refresh'`
+  produced **2 failed, 1 passed, 3 deselected**. The failures found the literal
+  round-1 transcript still in the rendered DOM after the failed authoritative
+  refresh. The late-response example already passed and is characterization.
+- The parameterized `keeps transcript hidden when a focus refetch resolves %s
+  and advancement refresh fails` controls POST/GET promises independently,
+  triggers React Query focus handling, and asserts both the rendered result and
+  absence of the transcript in cache after settlement. It covers a refetch that
+  completes during the mutation and one that resolves after settlement.
+- `hides cached transcript after a failed refresh and restores it only after a
+  successful retry` covers the failed-read visibility gate and recovery without
+  weakening round-1 disclosure on a successful read.
+- Green: `node node_modules/vitest/vitest.mjs run src/features/shadow/ShadowRounds.test.tsx`
+  passed **6 tests** after cancelling outstanding reads and clearing text again
+  at settlement, plus hiding transcript-bearing cached data after failed reads.
+  The original code fails the new DOM assertions; a display-only fix would
+  still fail the cache assertion for the refetch completed during mutation.
+- ADR 0061, conventions and UX-07 now explicitly describe Shadow's native
+  Tab/Enter/Space policy and failed-refresh behavior. The round panel includes
+  its native keyboard hint. This clarifies the existing mode-specific policy;
+  shared transport shortcuts and other practice modes are unchanged.
+- Setup failures are not Red evidence: an initial test harness omitted a Router
+  needed by ErrorPanel; the corrected harness then exposed the DOM regression.
+  Two commands used the wrong working-directory path. The local pnpm launcher
+  attempted dependency setup and refused noninteractive module replacement;
+  checks therefore use the installed tool binaries directly. Coverage inventory
+  checks invoked before report generation finished found no report and supply
+  no coverage result.
+- Final source: full web coverage **624 passed / 60 files**; **96.28% lines,
+  88.70% branches**. Command: `node node_modules/vitest/vitest.mjs run --coverage`.
+  A prior full run also passed 624; the final run followed the keyboard-copy edit.
+- Final lint, formatting and types passed using the installed `eslint`,
+  `prettier --check .` and `tsc -b` entry points. `vite build` and
+  `node scripts/check-bundle-size.mjs` passed: **125.6 kB gzip / 200 kB**.
+- Full Playwright: **55 passed** with system Chromium and an independently
+  started production preview. After the final build, a fresh
+  `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium node node_modules/@playwright/test/cli.js test e2e/shadow.spec.ts`
+  passed **3 tests**, including keyboard/numbered rounds at 360px.
+- Final coverage inventory passed. From `apps/web`,
+  `../api/.venv/bin/diff-cover coverage/cobertura-coverage.xml --compare-branch origin/main --fail-under 90`
+  passed **163/165 changed executable lines (98%)**. Remaining uncovered lines
+  are `ShadowRounds.tsx` initial-read retry (37) and content-read retry (117).
+  The mutation helper's absent-cache branch remains uncovered; both relevant
+  cached-text paths are asserted. No thresholds, exclusions, timeouts or existing
+  assertions were weakened. Player lifecycle branch gaps from the original review
+  remain disclosed; this fix changes no player lifecycle behavior.
+- No backend, schema or generated-client changes were needed. The review's local
+  PostgreSQL limitation still applies; prior-head integration evidence does not
+  substitute for CI on the remediation head. Required CI and fresh independent
+  review of material changes remain merge gates. The owner merges.
