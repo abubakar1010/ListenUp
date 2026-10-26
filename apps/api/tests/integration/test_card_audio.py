@@ -62,7 +62,12 @@ def test_audio_ownership_precedes_readiness(client, card_session, make_client):
 def test_long_phrase_refused_without_consuming_slot(client, card_session, migrated_url):
     # Extend the marked second word's ending beyond six seconds.
     with psycopg.connect(migrated_url) as db:
-        db.execute("UPDATE content.passage_transcripts SET end_ms=ARRAY[500,11500,18000,31000]")
+        db.execute(
+            "UPDATE content.passage_transcripts SET end_ms=ARRAY[500,11500,18000,31000] "
+            "WHERE media_object_id=(SELECT c.media_object_id FROM content.contents c "
+            "JOIN practice.sessions s ON s.content_id=c.id WHERE s.id=%s)",
+            [card_session[0]],
+        )
     response = cards.create(client, card_session)
     assert response.status_code == 422, response.text
     assert response.json()["code"] == "card_phrase_too_long"
@@ -683,7 +688,9 @@ def test_uncertain_writer_survives_expiry_and_blocks_cleanup_purge_and_downgrade
         asyncio.run(inspect())
         with psycopg.connect(migrated_url) as db:
             db.execute(
-                "UPDATE practice.card_snippet_writes SET created_at=now()-interval '100 days'"
+                "UPDATE practice.card_snippet_writes SET created_at=now()-interval '100 days' "
+                "WHERE user_id=%s",
+                [user],
             )
         assert client.delete(f"/api/v1/cards/{saved['id']}").status_code == 204
         asyncio.run(cleanup())

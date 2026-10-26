@@ -179,8 +179,8 @@ and account purge wait for registered writers, including after DB connection los
 Cancellation drains the upload; killed or unconfirmed writers require explicit
 reconciliation and never expire by age (ADR 0063). Retry cycles have distinct queue
 keys and generation identities under one card execution lock, so a retiring job
-cannot swallow or fail a newer retry. Permanent refusals settle the visible failed
-state through the worker callback, including sandbox refusals.
+cannot swallow or fail a newer retry. The Cards job wrapper settles permanent
+refusals before sandbox exit 65, preserving the handler-owned failure contract.
 
 ### 6.2 Shared YouTube media
 

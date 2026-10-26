@@ -44,6 +44,18 @@ async def give_up(
 async def generate_snippet(
     deps: JobDeps, *, card_id: str, user_id: str, generation_id: str | None = None
 ) -> None:
+    try:
+        await _generate_snippet(deps, card_id=card_id, user_id=user_id, generation_id=generation_id)
+    except PermanentError:
+        # Like transcription, settle in the handler before the sandbox returns
+        # exit 65. The shared runner leaves permanent refusals to each handler.
+        await give_up(deps, card_id=card_id, user_id=user_id, generation_id=generation_id)
+        raise
+
+
+async def _generate_snippet(
+    deps: JobDeps, *, card_id: str, user_id: str, generation_id: str | None = None
+) -> None:
     learner, card = uuid.UUID(user_id), uuid.UUID(card_id)
     generation = uuid.UUID(generation_id) if generation_id else None
     async with deps.database.transaction(learner) as db:

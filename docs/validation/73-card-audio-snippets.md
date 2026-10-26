@@ -232,3 +232,29 @@ the original ffmpeg cancellation kill/wait, unexpected source error and missing
 span defenses, plus the redundant active-account defense under an already held
 active-account lock. No threshold or exclusion changed. Final CI still supplies
 the complete suite and coverage gate.
+
+CI run 669 on `fa72949` found a regression in the first terminal-failure fix:
+**2 failed, 2,157 passed, 1 skipped, 1 performance deselected**. The existing
+`test_provider_failures_never_publish_ready[missing_audio/invalid_times]` assertions
+received two `transcript.failed` notifications instead of one. Local reproduction:
+`LISTENUP_REQUIRE_DB=1 uv run pytest tests/integration/test_passage_transcription.py
+-k provider_failures_never_publish_ready -q --tb=short`: **2 failed, 1 passed**.
+This is not dismissed as unrelated: changing shared `run_handler` caused it.
+
+The shared runner change was reverted. Cards now follows the established
+transcription pattern: its own registered job wrapper settles permanent errors
+before raising them (including before sandbox exit 65). Shared transcription and
+reference-profile implementations are unchanged. The two wrapper unit cases now
+assert Cards settles exactly once in direct and isolated dispatch; all five
+persisted Cards failure cases and the actual sandbox notification test remain.
+The transcription assertion is unchanged. Final focused/CI results for this
+correction are recorded in the PR; previous coverage numbers describe the earlier
+tree and do not substitute for the corrected head's required coverage gate.
+
+The corrected combined transcription/Card/worker suite passes **103 tests** with
+PostgreSQL/S3 required and coverage enabled. Running transcription first also
+exposed an existing Cards long-phrase fixture that updated every transcript cache
+row; it now updates only its own clip. The first reordered run's fixture constraint
+failure (**1 failed, 102 passed**) is disclosed and is not a production-regression
+claim. The same reordered suite is now green, with its refusal/slot assertions
+unchanged. Shared-runner production code is restored exactly to current main.

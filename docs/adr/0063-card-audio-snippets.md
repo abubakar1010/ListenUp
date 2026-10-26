@@ -27,8 +27,10 @@ refusing card creation for a phrase longer than six seconds.
   `snippet_key` and `snippet_span`; enforce finite 3–6 second spans and require
   both values for ready audio.
 - Retry transient failures using the intake lane's five-attempt backoff. Final
-  failure, including permanent sandbox refusals, invokes the worker's terminal
-  callback and publishes the failed state. An ownership-checked, CSRF-protected retry
+  failure invokes the terminal callback and publishes the failed state. The Cards
+  job wrapper settles its own permanent errors before sandbox exit 65, preserving
+  the shared runner's existing handler-owned permanent-failure contract.
+  An ownership-checked, CSRF-protected retry
   endpoint allows another attempt; missing/expired source media is permanent.
 - Each retry stores a new internal generation UUID and queues its own unique key
   under the card's execution lock. Old deliveries and failure callbacks compare

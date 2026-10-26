@@ -5,9 +5,11 @@ Read the section for the area you are changing before you change it. The rules e
 ## Jobs (ADR 0015, 0029, 0036)
 
 - A `unique_key` holds while a job with that key waits or runs: `enqueue` returns None meanwhile. A job that also runs on a schedule passes `schedule="<cron>"` to `@job`. A job whose worker died is settled by `platform.recover_stalled_jobs` (back to the queue, or `on_give_up` after its last attempt), so a handler must be safe to run again after doing part of its work.
-- `on_give_up` also runs for first-attempt permanent refusals, including sandbox
-  exit 65. A resource that allows retry before the old queue row settles must use
-  a new cycle key and fence old callbacks against the current generation.
+- Handlers settle their own permanent refusals before raising `PermanentError`
+  (including before sandbox exit 65); `on_give_up` also covers exhausted transient
+  failures and supervisor resource failures. A resource that allows retry before
+  the old queue row settles uses a new cycle key and fences old callbacks against
+  the current generation.
 
 ## Email (ADR 0017)
 
