@@ -30,6 +30,12 @@ media deletion cascades it away and successful extraction clears it. A gist
 waiting for that reference reports delayed when its worker observes the marker.
 Other failures retain the existing bounded lane retry policy, then become
 `unavailable`; permanent input failures settle immediately.
+Exhausted or permanent reference-preparation failure clears its quota marker,
+including timeout and stalled-worker settlement. A gist still missing that
+reference leaves `delayed` on its next run and applies its original deadline:
+`pending` before the boundary, `unavailable` at or after it. The learner can then
+retry reference preparation while the waiting grading job is reused. Clearing a
+delay never changes a ready grade or extends the feedback deadline.
 
 `POST /grades/{attempt_id}/retry` uses the existing grade primary key. It requires
 an owned, submitted Blind attempt, normal consent and CSRF checks. A grade row

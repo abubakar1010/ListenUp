@@ -27,7 +27,15 @@ from listenup.platform.telemetry import record_grading
 GRADE_GIST_JOB = service.GRADE_GIST
 
 
-@job(Lane.AI, service.EXTRACT_KEY_POINTS)
+async def _reference_give_up(deps: JobDeps, media_id: str, start_ms: int, end_ms: int) -> None:
+    version = prompt_files.load_task(EXTRACT_KEY_POINTS, root=prompt_files.PROMPTS_DIR).version
+    async with deps.database.transaction() as db:
+        await repository.set_reference_delay(
+            db, uuid.UUID(media_id), (start_ms, end_ms), version, False
+        )
+
+
+@job(Lane.AI, service.EXTRACT_KEY_POINTS, on_give_up=_reference_give_up)
 async def extract_key_points(deps: JobDeps, media_id: str, start_ms: int, end_ms: int) -> None:
     try:
         await _extract_key_points(deps, media_id, start_ms, end_ms)
@@ -46,6 +54,9 @@ async def extract_key_points(deps: JobDeps, media_id: str, start_ms: int, end_ms
         raise Reschedule(
             server_now() + timedelta(seconds=get_settings().gist_quota_retry_seconds)
         ) from None
+    except PermanentError:
+        await _reference_give_up(deps, media_id, start_ms, end_ms)
+        raise
 
 
 async def _extract_key_points(deps: JobDeps, media_id: str, start_ms: int, end_ms: int) -> None:
@@ -115,6 +126,14 @@ async def grade_gist(deps: JobDeps, attempt_id: str, user_id: str) -> None:
         ) from None
     except PermanentError:
         await _gist_give_up(deps, attempt_id, user_id)
+        raise
+    except Reschedule:
+        # Missing references without a quota marker are ordinary waiting/failure.
+        # Commit outside the source-read transaction, which Reschedule rolls back.
+        learner, attempt = uuid.UUID(user_id), uuid.UUID(attempt_id)
+        async with deps.database.transaction(learner) as db:
+            await repository.clear_feedback_delay(db, learner, attempt)
+            await repository.expire_feedback(db, learner, attempt, server_now())
         raise
 
 

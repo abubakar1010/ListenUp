@@ -13,7 +13,7 @@ from listenup.ai.ports import Role
 from listenup.ai.providers import fake
 from listenup.modules.grading import jobs
 from listenup.platform import jobs as platform_jobs
-from listenup.platform.jobs import JobDeps, Reschedule, run_handler
+from listenup.platform.jobs import JobDeps, PermanentError, Reschedule, run_handler
 from tests.integration.test_gist_grading_jobs import REPLAYS, stored
 from tests.integration.test_gist_grading_jobs import ai as ai
 from tests.integration.test_gist_grading_jobs import clip as clip
@@ -93,6 +93,107 @@ async def test_quota_wait_reschedules_and_recovers(
     assert stored(migrated_url, attempt)[0] == "ready"
 
 
+@pytest.mark.parametrize("failure", ["provider", "invalid", "timeout", "permanent"])
+async def test_reference_quota_then_exhaustion_can_retry_and_recover(
+    submit, database, migrated_url, learner, ai, clip, monkeypatch, failure
+):
+    from listenup.modules.blind import service as blind
+
+    case = json.loads((REPLAYS / "clean.json").read_text())
+    attempt = await submit(case["gist"])
+    with psycopg.connect(migrated_url) as conn:
+        conn.execute("DELETE FROM grading.key_points")
+        conn.execute(
+            "UPDATE grading.gist_grades SET feedback_deadline=%s WHERE attempt_id=%s",
+            [datetime.now(UTC) - timedelta(seconds=1), attempt],
+        )
+        progress = conn.execute(
+            "SELECT * FROM practice.session_steps ORDER BY session_id,position"
+        ).fetchall()
+    original = jobs.text_tasks.run_task
+
+    async def quota(*args, **kwargs):
+        raise AIUnavailable(Role.TEXT_AI, "quota_exhausted")
+
+    monkeypatch.setattr(jobs.text_tasks, "run_task", quota)
+    with pytest.raises(Reschedule):
+        await jobs.extract_key_points(JobDeps(database, None, 1), str(clip[0]), 0, 120000)
+    with pytest.raises(Reschedule):
+        await jobs.grade_gist(JobDeps(database, None, 1), str(attempt), str(learner))
+    assert stored(migrated_url, attempt)[0] == "delayed"
+
+    async def fail(*args, **kwargs):
+        if failure == "timeout":
+            await asyncio.Event().wait()
+        if failure == "invalid":
+            raise ValueError("invalid reference output")
+        if failure == "permanent":
+            raise PermanentError("invalid reference input")
+        raise AIUnavailable(Role.TEXT_AI, "provider down")
+
+    monkeypatch.setattr(jobs.text_tasks, "run_task", fail)
+    entry = platform_jobs._registry[jobs.service.EXTRACT_KEY_POINTS]
+    if failure == "timeout":
+        monkeypatch.setitem(
+            platform_jobs._registry,
+            entry.name,
+            replace(entry, spec=replace(entry.spec, timeout=timedelta(milliseconds=100))),
+        )
+    error_type = {
+        "provider": AIUnavailable,
+        "invalid": ValueError,
+        "timeout": TimeoutError,
+        "permanent": PermanentError,
+    }[failure]
+    with pytest.raises(error_type):
+        await run_handler(
+            entry.name,
+            JobDeps(database, None, 4),
+            media_id=str(clip[0]),
+            start_ms=0,
+            end_ms=120000,
+        )
+    with psycopg.connect(migrated_url) as conn:
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM grading.key_point_delays WHERE media_object_id=%s", [clip[0]]
+            ).fetchone()[0]
+            == 0
+        )
+        conn.execute(
+            "UPDATE procrastinate.procrastinate_jobs SET status='failed' "
+            "WHERE task_name=%s AND args->>'media_id'=%s",
+            [entry.name, str(clip[0])],
+        )
+    with pytest.raises(Reschedule):
+        await jobs.grade_gist(JobDeps(database, None, 4), str(attempt), str(learner))
+    assert stored(migrated_url, attempt)[0] == "unavailable"
+    async with database.transaction(learner) as db:
+        await blind.retry_grade(db, learner, attempt, datetime.now(UTC))
+    with psycopg.connect(migrated_url) as conn:
+        for key in [f"gist-grade:{attempt}", f"key-points:{clip[0]}:0:120000"]:
+            assert (
+                conn.execute(
+                    "SELECT count(*) FROM procrastinate.procrastinate_jobs "
+                    "WHERE queueing_lock=%s AND status IN ('todo','doing')",
+                    [key],
+                ).fetchone()[0]
+                == 1
+            )
+    monkeypatch.setattr(jobs.text_tasks, "run_task", original)
+    await jobs.extract_key_points(JobDeps(database, None, 1), str(clip[0]), 0, 120000)
+    fake.register_text_response("grade_gist", case["response"])
+    await jobs.grade_gist(JobDeps(database, None, 1), str(attempt), str(learner))
+    assert stored(migrated_url, attempt)[:3] == ("ready", 98, "excellent")
+    with psycopg.connect(migrated_url) as conn:
+        assert (
+            conn.execute(
+                "SELECT * FROM practice.session_steps ORDER BY session_id,position"
+            ).fetchall()
+            == progress
+        )
+
+
 async def test_deadline_job_is_guarded_by_cycle_and_delayed_state(
     submit, database, migrated_url, learner, ai, monkeypatch
 ):
@@ -138,6 +239,33 @@ async def test_missing_key_points_wait_without_exhausting_grading(
     with pytest.raises(Reschedule):
         await jobs.grade_gist(JobDeps(database, None, 4), str(attempt), str(learner))
     assert stored(migrated_url, attempt)[0] == "pending"
+
+
+@pytest.mark.parametrize("remaining_ms", [-1, 0, 1])
+async def test_cleared_reference_quota_uses_original_deadline(
+    submit, database, migrated_url, learner, ai, monkeypatch, remaining_ms
+):
+    attempt = await submit(json.loads((REPLAYS / "clean.json").read_text())["gist"])
+    now = datetime.now(UTC)
+    monkeypatch.setattr(jobs, "server_now", lambda: now)
+    deadline = now + timedelta(milliseconds=remaining_ms)
+    with psycopg.connect(migrated_url) as conn:
+        conn.execute("DELETE FROM grading.key_points")
+        conn.execute(
+            "UPDATE grading.gist_grades SET status='delayed', feedback_deadline=%s "
+            "WHERE attempt_id=%s",
+            [deadline, attempt],
+        )
+    with pytest.raises(Reschedule):
+        await jobs.grade_gist(JobDeps(database, None, 4), str(attempt), str(learner))
+    assert stored(migrated_url, attempt)[0] == ("pending" if remaining_ms > 0 else "unavailable")
+    with psycopg.connect(migrated_url) as conn:
+        assert (
+            conn.execute(
+                "SELECT feedback_deadline FROM grading.gist_grades WHERE attempt_id=%s", [attempt]
+            ).fetchone()[0]
+            == deadline
+        )
 
 
 async def test_key_point_quota_wait_preserves_reference_work(

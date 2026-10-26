@@ -143,3 +143,61 @@ full-suite evidence is the linked CI run, not partial local progress. The final
 recovery-specific run passed **17 tests**, followed by the two characterization
 cases above. Full CI reruns for the final test/documentation commit and PR.
 Fresh-session independent review remains required before the owner merges.
+
+## PR #220 independent review remediation
+
+Review of `bafce90` against main `2764892` found a quota-to-reference-exhaustion
+gap: a delayed grade could remain delayed forever after reference preparation
+stopped, hiding retry. Review also identified missing browser assertions for
+nonempty Transcript marks and an active Dictation draft during `grade.ready`.
+
+Before changing production code, ran:
+
+```sh
+LISTENUP_REQUIRE_DB=1 uv run --frozen --project apps/api pytest apps/api/tests/integration/test_gist_recovery_jobs.py -k reference_quota_then_exhaustion -q --tb=short
+```
+
+Actual Red: **4 failed**. Provider failure left the grade delayed; invalid output,
+timeout and permanent failure left the quota marker present. After adding reference
+failure settlement and conditional delay clearing, the same command: **4 passed**.
+Each case also retries preparation, asserts one active job per grading/reference
+key, receives a ready grade and verifies unchanged practice progress. Additional
+characterization checks the original deadline at -1, 0 and +1 ms remaining.
+
+`e2e/gist-recovery.spec.ts` adds two characterization cases: a real SSE
+`grade.ready` keeps the active Dictation text/focus/step and the Transcript
+mark/highlight/note/focus/step. It asserts no session refetch, attempt restart or
+unexpected writes. Both passed. An isolated mutation broadening `grade.ready`
+invalidation to all session queries made **both fail** on extra session reads;
+the production mapping was restored. These tests characterize existing UI
+behavior, not a new production UI implementation. The first browser run used the
+wrong Dictation field label and failed setup; correcting it is not product Red.
+
+The review itself ran 107 focused backend tests, 11 migration/access tests, 10
+component tests and two recovery browser tests successfully. Its first backend
+attempt had 75 setup errors because PostgreSQL was stopped; starting the local
+service and rerunning resolved them. Two extra read-only checks verified retry
+consent denial without queue effects and API denial/worker grants on quota
+metadata. Review checked final-head CI run 40231985444: 2,097 backend, 611 component,
+56 browser tests; changed-line coverage 99% backend and 100% web. This supersedes
+the earlier implementation-run evidence for the reviewed head.
+
+Completed remediation checks before push:
+
+- Focused neighboring backend run: **111 passed**, then all seven new recovery
+  and deadline cases with the final assertions: **7 passed**.
+- Full web component coverage: **611 passed / 58 files**, 96.15% line coverage;
+  runtime coverage inventory and **100% of 16 changed web lines** pass.
+- Full browser suite with repository timeouts and no retries: **58 passed**.
+- Ruff lint/format, strict mypy (194 source files), all six import contracts,
+  web lint/format/types, production build and size (125.6 KB / 200 KB) pass.
+- API schema/client regeneration produces no changes. No schema or migration
+  changes are needed for this fix.
+
+The full required-PostgreSQL/S3 local backend coverage run was still in progress
+when this remediation was committed, and is not counted as passed here. Its
+completed result, separate uninstrumented performance result, backend changed-line
+coverage and final-head CI outcomes are reported in PR #220's remediation follow-up
+and checks. No threshold or exclusion was weakened. No live provider or
+deployment-latency claim is made. The owner still merges after required CI and
+independent review of the material fix.

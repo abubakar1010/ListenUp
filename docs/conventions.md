@@ -287,6 +287,10 @@ Read the section for the area you are changing before you change it. The rules e
   progress. Missing references and quota waits postpone work without using up
   grading failures. The normal authentication, consent, CSRF, ownership and D4
   rules apply to every read and retry.
+  Exhausted reference work clears worker-only quota metadata. When a missing
+  reference is no longer quota-delayed, its waiting gist leaves `delayed` and
+  applies the original deadline, restoring retry after expiry. Do not reset that
+  deadline or overwrite a ready grade while settling dependency failures.
 
 ## Shadow segments (ADR 0057)
 

@@ -135,6 +135,18 @@ async def reference_delayed(
     )
 
 
+async def clear_feedback_delay(db: AsyncSession, learner: uuid.UUID, attempt: uuid.UUID) -> None:
+    await db.execute(
+        update(GistGrade)
+        .where(
+            GistGrade.attempt_id == attempt,
+            GistGrade.user_id == learner,
+            GistGrade.status == "delayed",
+        )
+        .values(status="pending", updated_at=func.now())
+    )
+
+
 async def set_reference_delay(
     db: AsyncSession, media: uuid.UUID, span: tuple[int, int], version: str, delayed: bool
 ) -> None:
