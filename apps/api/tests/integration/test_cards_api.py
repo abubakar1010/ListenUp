@@ -3,7 +3,6 @@
 import asyncio
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 
 import psycopg
 import pytest
@@ -199,13 +198,13 @@ def test_mark_from_another_session_cannot_be_used(client, card_session, clip, ap
 def test_an_unrelated_foreign_key_failure_is_not_a_missing_mark(client, card_session, monkeypatch):
     from listenup.modules.cards import service
 
-    get_content = service.content.get_content
+    insert = service.repository.insert
 
-    async def missing_media(*args):
-        return replace(await get_content(*args), media_object_id=uuid.uuid4())
+    async def missing_media(db, values):
+        return await insert(db, {**values, "media_object_id": uuid.uuid4()})
 
     with monkeypatch.context() as patch:
-        patch.setattr(service.content, "get_content", missing_media)
+        patch.setattr(service.repository, "insert", missing_media)
         response = create(client, card_session)
     assert response.status_code == 500
     assert response.json()["code"] == "internal_error"
@@ -213,7 +212,7 @@ def test_an_unrelated_foreign_key_failure_is_not_a_missing_mark(client, card_ses
     assert create(client, card_session).status_code == 201
 
 
-@pytest.mark.parametrize("action", ["create", "delete", "complete"])
+@pytest.mark.parametrize("action", ["create", "delete", "complete", "audio_retry"])
 def test_card_mutations_require_csrf(client, card_session, action):
     card = create(client, card_session).json()
     path = f"/api/v1/sessions/{card_session[0]}/cards"
@@ -222,6 +221,10 @@ def test_card_mutations_require_csrf(client, card_session, action):
             path,
             json={"mark_id": card_session[1], "written_form": "a", "heard_form": "b"},
             headers={"X-CSRF-Token": "wrong"},
+        )
+    elif action == "audio_retry":
+        response = client.post(
+            f"/api/v1/cards/{card['id']}/audio/retry", headers={"X-CSRF-Token": "wrong"}
         )
     elif action == "delete":
         response = client.delete(f"/api/v1/cards/{card['id']}", headers={"X-CSRF-Token": "wrong"})
