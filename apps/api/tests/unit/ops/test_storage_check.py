@@ -205,6 +205,35 @@ def test_a_probe_that_cannot_be_written_is_an_error() -> None:
     assert writer.calls == []
 
 
+@pytest.mark.parametrize(
+    "failure", [client_error("AccessDenied"), EndpointConnectionError(endpoint_url="https://s3")]
+)
+def test_a_probe_that_cannot_be_removed_is_an_error_not_a_crash(failure: Exception) -> None:
+    class Sticky(FakeWriter):
+        def delete_object(self, *, Bucket: str, Key: str) -> object:
+            raise failure
+
+    report = check_bucket(target(Sticky()), answering())
+
+    assert report.public == []
+    assert report.errors == [
+        f"could not remove the probe object {PROBE_KEY}: "
+        + ("AccessDenied" if isinstance(failure, ClientError) else "EndpointConnectionError")
+    ]
+    assert exit_code([report]) == 2
+
+
+def test_a_probe_that_cannot_be_removed_still_reports_a_public_bucket() -> None:
+    class Sticky(FakeWriter):
+        def delete_object(self, *, Bucket: str, Key: str) -> object:
+            raise client_error("AccessDenied")
+
+    report = check_bucket(target(Sticky()), answering(get_status=200))
+
+    assert report.public == ["https://s3.example: anonymous read of the probe answered 200"]
+    assert exit_code([report]) == 1
+
+
 def report(public: list[str] | None = None, errors: list[str] | None = None) -> BucketReport:
     return BucketReport("media", "b", public or [], errors or [], "no bucket policy")
 

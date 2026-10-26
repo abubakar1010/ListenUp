@@ -114,8 +114,20 @@ def check_bucket(target: BucketTarget, http: httpx.Client) -> BucketReport:
             _anonymous(http, endpoint, "read of the probe", f"{base}/{PROBE_KEY}", report)
         _policy(target, report)
     finally:
-        target.client.delete_object(Bucket=target.bucket, Key=PROBE_KEY)
+        _remove_probe(target, report)
     return report
+
+
+def _remove_probe(target: BucketTarget, report: BucketReport) -> None:
+    # A probe left behind is harmless text, but the check must still finish and say so.
+    try:
+        target.client.delete_object(Bucket=target.bucket, Key=PROBE_KEY)
+    except ClientError as error:
+        report.errors.append(f"could not remove the probe object {PROBE_KEY}: {_code(error)}")
+    except BotoCoreError as error:
+        report.errors.append(
+            f"could not remove the probe object {PROBE_KEY}: {type(error).__name__}"
+        )
 
 
 def exit_code(reports: Sequence[BucketReport]) -> int:
