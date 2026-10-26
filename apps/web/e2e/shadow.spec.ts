@@ -38,6 +38,8 @@ for (const duration of [45_000, 150_000]) {
           },
         });
       if (path === `/sessions/${session.id}`) return route.fulfill({ json: session });
+      if (path === `/sessions/${session.id}/shadow/rounds`)
+        return route.fulfill({ json: { segment, current: null, rounds: [] } });
       if (path === `/sessions/${session.id}/shadow/segment`) {
         if (request.method() === 'PUT') {
           writes.push(request.postDataJSON());
@@ -118,6 +120,136 @@ for (const duration of [45_000, 150_000]) {
     ).toBeLessThanOrEqual(0);
   });
 }
+
+test('three Shadow rounds use keyboard controls at 360 px and original speed', async ({ page }) => {
+  const session = sessionFixture({ done: 3, passage: { start_ms: 10000, end_ms: 55000 } });
+  const segment = {
+    session_id: session.id,
+    start_ms: 10000,
+    end_ms: 55000,
+    chosen_by: 'system',
+    mark_count: 0,
+    locked_at: null as string | null,
+  };
+  const rounds: {
+    round: number;
+    transcript_shown: boolean;
+    playback_status: string;
+    recorded_at: null;
+  }[] = [];
+  const root = `/sessions/${session.id}/shadow/rounds`;
+  await page.route('**/api/v1/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace('/api/v1', '');
+    if (path === '/health')
+      return route.fulfill({
+        json: { status: 'ok' },
+        headers: { 'Set-Cookie': 'listenup_csrf=e2e; Path=/; SameSite=Lax' },
+      });
+    if (path === '/me')
+      return route.fulfill({
+        json: {
+          id: '1',
+          email: 'learner@example.com',
+          display_name: null,
+          email_verified: true,
+          deletion_grace_days: 7,
+          consents_required: [],
+        },
+      });
+    if (path === `/sessions/${session.id}`) return route.fulfill({ json: session });
+    if (path === `/sessions/${session.id}/shadow/segment`) return route.fulfill({ json: segment });
+    if (path === root)
+      return route.fulfill({
+        json: {
+          segment,
+          rounds,
+          current: rounds.at(-1) ?? null,
+          ...(rounds.at(-1)?.round === 1
+            ? { text: 'Only the first round reveals these words.' }
+            : {}),
+        },
+      });
+    if (path.startsWith(root + '/') && request.method() === 'POST') {
+      const number = Number(path.split('/').at(-2));
+      if (path.endsWith('/start')) {
+        rounds.push({
+          round: number,
+          transcript_shown: number === 1,
+          playback_status: 'ready',
+          recorded_at: null,
+        });
+        segment.locked_at = '2026-10-25T10:00:00Z';
+      } else rounds[number - 1].playback_status = 'ended';
+      return route.fulfill({ status: 204 });
+    }
+    if (path === '/contents/clip-1')
+      return route.fulfill({
+        json: { id: 'clip-1', media_url: '/api/v1/media/m-1', peaks_url: null },
+      });
+    if (path === '/media/m-1') {
+      const audio = wav();
+      const requested = /bytes=(\d+)-(\d*)/.exec(request.headers()['range'] ?? '');
+      const from = requested ? Number(requested[1]) : 0;
+      const to = requested?.[2] ? Number(requested[2]) : audio.length - 1;
+      return route.fulfill({
+        status: requested ? 206 : 200,
+        headers: {
+          'Content-Type': 'audio/wav',
+          'Accept-Ranges': 'bytes',
+          ...(requested ? { 'Content-Range': `bytes ${from}-${to}/${audio.length}` } : {}),
+        },
+        body: audio.subarray(from, to + 1),
+      });
+    }
+    return route.fulfill({ status: 404, json: { code: 'not_found' } });
+  });
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto(`/sessions/${session.id}`);
+  for (const number of [1, 2, 3]) {
+    const start = page.getByRole('button', { name: `Start round ${number}`, exact: true });
+    await start.focus();
+    await start.press('Enter');
+    await expect(page.getByRole('heading', { name: `Round ${number} of 3` })).toBeFocused();
+    const transcript = page.getByText('Only the first round reveals these words.');
+    if (number === 1) await expect(transcript).toBeVisible();
+    else await expect(transcript).toHaveCount(0);
+    await expect(page.locator('audio')).toHaveCount(1);
+    const play = page.getByRole('button', { name: `Play round ${number}`, exact: true });
+    await expect(play).toBeEnabled();
+    await page.keyboard.press('Tab');
+    await expect(play).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(
+      page.getByRole('status').filter({ hasText: `Round ${number} starts in 3` }),
+    ).toBeVisible();
+    await expect
+      .poll(() => page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.paused))
+      .toBe(true);
+    await expect(
+      page.getByRole('status').filter({ hasText: 'playing at original speed' }),
+    ).toBeVisible();
+    await page.locator('audio').evaluate((audio: HTMLAudioElement) => {
+      audio.playbackRate = 1.5;
+    });
+    await expect
+      .poll(() => page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.playbackRate))
+      .toBe(1);
+    await page.locator('audio').evaluate((audio: HTMLAudioElement) => {
+      audio.currentTime = 55.1;
+      audio.dispatchEvent(new Event('timeupdate'));
+    });
+    await expect(page.getByText('Playback ended. Feedback unavailable.')).toBeVisible();
+    expect(rounds[number - 1].recorded_at).toBeNull();
+  }
+  await expect(page.getByRole('button', { name: 'Start round 4' })).toHaveCount(0);
+  await expect(page.getByText(/No recording has been saved/)).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBe(0);
+});
 
 function wav(): Buffer {
   const samples = 200 * 8000;
