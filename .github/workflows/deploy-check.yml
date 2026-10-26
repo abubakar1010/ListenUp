@@ -1,0 +1,61 @@
+# Checks the deployment files before they reach main (#112): the release workflow
+# only runs after merge, so a broken edge image, Compose file or deploy script must
+# fail here first. The compose and script behaviour tests run in CI's backend job
+# (tests/unit/test_compose_prod.py, tests/unit/test_deploy_scripts.py).
+name: Deploy check
+
+on:
+  push:
+    paths:
+      - infra/**
+      - apps/web/**
+      - docs/legal/**
+      - .github/workflows/release.yml
+      - .github/workflows/deploy-check.yml
+  pull_request:
+    paths:
+      - infra/**
+      - apps/web/**
+      - docs/legal/**
+      - .github/workflows/release.yml
+      - .github/workflows/deploy-check.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-files:
+    name: Deploy files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Production Compose file resolves with every documented variable
+        run: |
+          LISTENUP_IMAGE_TAG=r1 docker compose --project-name listenup \
+            --env-file infra/deploy/env.example -f infra/compose/compose.prod.yml \
+            --profile ops config --quiet
+      - name: Deploy scripts pass shellcheck
+        run: shellcheck infra/deploy/deploy.sh infra/deploy/rollback.sh
+      - name: Workflows pass actionlint
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 \
+            -no-color .github/workflows/release.yml .github/workflows/deploy-check.yml
+
+  edge-image:
+    name: Edge image (Caddy and web build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # The image build runs `caddy validate` on the Caddyfile.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/web.Dockerfile
+          push: false
+          cache-from: type=gha,scope=edge
+          cache-to: type=gha,mode=max,scope=edge

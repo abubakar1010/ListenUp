@@ -7,7 +7,7 @@ Data is backed up daily and can be restored (NFR-REL-4). At stage 0 the targets 
 | Layer | What | Kept | Status |
 | --- | --- | --- | --- |
 | Nightly dump | `pg_dump --format=custom` of the whole database, taken by the `backup` service at 02:30 | 14 days in object storage under `backups/postgres/<stamp>/` | Built (#97) |
-| Managed backups | The managed PostgreSQL provider's own daily backups or point-in-time recovery | The provider's free-tier retention | **To do with the deployment (#112)**: no managed database exists yet |
+| Managed backups | The managed PostgreSQL provider's own daily backups or point-in-time recovery | The provider's free-tier retention | **To do at the live cutover (#112)**: turn them on and record the retention here (`deploy.md`, first-time setup step 5); the provider is chosen in #16 |
 | Media | Not backed up: media can be re-derived or re-uploaded (Architecture 11) | | Out of scope |
 
 Each backup is two objects: `listenup.dump` and `manifest.json`. The manifest holds the dump's SHA-256 and size, the Alembic revision, the server version, the database-level settings (`search_path`, `timezone`) and the row count of every table, read in the same snapshot as the dump. A backup without a manifest is unfinished and never restored or listed.
@@ -57,7 +57,9 @@ Jobs that were queued after the dump are lost with the rest of that day's data; 
 
 ## Rebuilding the stage 0 server
 
-If the VM itself is lost (System Design 11.1, detected by the external uptime monitor), the managed database and the bucket survive it. Rebuild on any host: install Docker, copy the Compose files and the environment (secrets from the host's secret store, never the repository), pull the release's images and start them with `docker compose up -d`; migrations run as the one-off `migrate` container first. No restore is needed unless the database was lost too. The exact steps, and the managed backup settings, belong to the deployment story (#112), which is not done yet.
+If the VM itself is lost (System Design 11.1, detected by the external uptime monitor), the managed database and the bucket survive it. Rebuild on any host with `deploy.md` ("Rebuilding the server elsewhere"): install Docker, restore the `.env` from the secret store (never the repository), and deploy the release in `releases.log`; migrations run as the one-off `migrate` container first. No restore is needed unless the database was lost too.
+
+In production the `backup` service always runs (`compose.prod.yml`), as `listenup_owner`, which `bootstrap-roles.sql` gives the CREATEDB right the restore test needs, with its own key on its own bucket. The #112 rehearsal ran it against stand-in services: a dump with the backup key, a restore test that passed, and the API's key refused on the backup bucket (`deploy.md`, rehearsal record).
 
 ## Restore test log
 
@@ -65,5 +67,6 @@ If the VM itself is lost (System Design 11.1, detected by the external uptime mo
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-10-04 | `20261004T040253Z` (112 KB dump, taken in 0.14 s) | First test, during #97: a throwaway database `wt_s_backup_drill` on the local PostgreSQL 16.14 server, migrated to `0011` and filled with `scripts/seed_dev.py`; dumps in a local directory (`--local-dir`), as no object storage was running. The throwaway database was dropped afterwards. | 19 | 46 | 0.28 s (0.8 s for the whole command) | Passed: every row count and the Alembic revision matched; scratch database dropped; well within the 4 h RTO | #97 implementation |
 | 2026-10-05 | `20261005T095713Z` (116 KB dump, taken in 0.19 s) | Re-run on the branch after merging `main`: a throwaway database migrated to `0012` and filled with `scripts/seed_dev.py`; dumps in a local directory (`--local-dir`), as no object storage ran in this environment. Dropped afterwards. | 20 | 47 | 0.30 s (0.8 s for the whole command) | Passed: every row count and the Alembic revision matched; scratch database dropped; exit code 0, within the 4 h RTO | #97 implementation |
+| 2026-10-25 | `20261025T190041Z` (193 KB dump) | #112 deploy rehearsal: the `backup` container of release r1 against a stand-in PostgreSQL 16 server (`listenup_owner`, not a superuser) and a stand-in S3 bucket with the backup service's own key; not production | 38 | 58 | 0.53 s | Passed: every row count and the Alembic revision matched; scratch database dropped | #112 rehearsal |
 
-The first production restore test is due once the stage 0 deployment (#112) runs the `backup` service against the managed database and the bucket.
+The first production restore test is due at the live cutover of #112, against the managed database and bucket.
