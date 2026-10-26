@@ -1,4 +1,4 @@
-# ADR 0061: B5 load-test method, with the stage-0 result outstanding
+# ADR 0062: B5 load-test method, with the stage-0 result outstanding
 
 - Status: Proposed; the stage-0 pass/fail below is deferred until staging — unverified
 - Date: 2026-10-25

@@ -1,7 +1,7 @@
 # Spike #94 (B5): API and Blind heartbeat load test
 
 - Issue: [#94](https://github.com/abubakar1010/ListenUp/issues/94). Requirements: NFR-PERF-3. Sources: System Design 1.1, 2.3, 9.2, 12.1 (B5); Database Design 11.1; [ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md).
-- Decision: [ADR 0061](../adr/0061-b5-load-test-method.md) (Proposed). Launch gate: [#155](https://github.com/abubakar1010/ListenUp/issues/155) ([ADR 0039](../adr/0039-performance-validation-before-launch.md)).
+- Decision: [ADR 0062](../adr/0062-b5-load-test-method.md) (Proposed). Launch gate: [#155](https://github.com/abubakar1010/ListenUp/issues/155) ([ADR 0039](../adr/0039-performance-validation-before-launch.md)).
 - Raw results: [`data/b5/`](data/b5/): `results.json`, `results.md` and `requests.csv.gz` (every request) for each run, produced by `spike-b5` (`spikes/`, see its README).
 
 > **Local evidence only — not stage-0.** The stage-0 server (#16) does not exist. Every number here comes from the Docker Compose stack on the cloud container below, with the load generator on the same machine. **Whether B5 passes on stage 0 is deferred until staging and is unverified.** These results cannot close #94 or satisfy #155.
@@ -19,7 +19,7 @@
 
 ## Method
 
-The method is ADR 0061's; in short:
+The method is ADR 0062's; in short:
 
 - **Stack.** `infra/compose/compose.yml` plus [`spikes/load/compose.b5.yml`](../../spikes/load/compose.b5.yml), with:
   - PostgreSQL with `pg_stat_statements` preloaded and `track_io_timing`;
@@ -148,12 +148,12 @@ Short smoke runs (25 learners, 30 s) were used only to develop the harness.
 
 - One 4-core cloud container ran the stack and the load generator together. Stage-0 hardware, network and its reverse proxy are absent.
 - The fake AI configuration and no media worker: speech and AI work compete for CPU on stage 0 (System Design 5.2), and B5 does not measure them.
-- Seeded clips have no audio, so media redirects and signed-URL downloads are not in the mix. Uploads, sign-ins and the event stream are not in it either (ADR 0061).
+- Seeded clips have no audio, so media redirects and signed-URL downloads are not in the mix. Uploads, sign-ins and the event stream are not in it either (ADR 0062).
 - One run per configuration, 600 s each. No repeat-run variance is reported.
 
 ## Rerunning on stage 0
 
-Follow ADR 0061's stage-0 section and `spikes/README.md` (B5):
+Follow ADR 0062's stage-0 section and `spikes/README.md` (B5):
 - Run `spike-b5 --stage0` against the deployed release candidate.
 - Use the load generator on another machine where possible.
 - Record the deployment's own CPU.
