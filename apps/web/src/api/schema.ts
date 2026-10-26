@@ -368,6 +368,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/cards/{card_id}/audio': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Card Audio */
+    get: operations['card_audio_api_v1_cards__card_id__audio_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/cards/{card_id}/audio/retry': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Retry Audio */
+    post: operations['retry_audio_api_v1_cards__card_id__audio_retry_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/contents': {
     parameters: {
       query?: never;
@@ -598,6 +632,26 @@ export interface paths {
     get: operations['get_gist_grade_api_v1_gists__attempt_id__grade_get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/grades/{attempt_id}/retry': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Retry Grade
+     * @description Retry saved gist feedback; waiting/running/ready work is an idempotent no-op.
+     */
+    post: operations['retry_grade_api_v1_grades__attempt_id__retry_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1102,6 +1156,57 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sessions/{session_id}/shadow/rounds': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read Rounds */
+    get: operations['read_rounds_api_v1_sessions__session_id__shadow_rounds_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/shadow/rounds/{number}/playback-ended': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** End Playback */
+    post: operations['end_playback_api_v1_sessions__session_id__shadow_rounds__number__playback_ended_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sessions/{session_id}/shadow/rounds/{number}/start': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Start Round */
+    post: operations['start_round_api_v1_sessions__session_id__shadow_rounds__number__start_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sessions/{session_id}/shadow/segment': {
     parameters: {
       query?: never;
@@ -1340,6 +1445,11 @@ export interface components {
     Card: {
       /** At Ms */
       at_ms: number;
+      /**
+       * Audio Status
+       * @enum {string}
+       */
+      audio_status: 'pending' | 'ready' | 'failed' | 'unavailable';
       /**
        * Content Id
        * Format: uuid
@@ -1965,9 +2075,11 @@ export interface components {
        * Status
        * @enum {string}
        */
-      status: 'pending' | 'ready';
+      status: 'pending' | 'ready' | 'unavailable' | 'delayed';
       /** Total Count */
       total_count?: number | null;
+      /** Wait Ms */
+      wait_ms?: number | null;
     };
     /** GistIn */
     GistIn: {
@@ -1991,6 +2103,15 @@ export interface components {
       open_step: components['schemas']['Step'] | null;
       /** Session Version */
       session_version: number;
+    };
+    /** GradeRetry */
+    GradeRetry: {
+      /**
+       * Status
+       * @default accepted
+       * @constant
+       */
+      status: 'accepted';
     };
     /** GrantConsent */
     GrantConsent: {
@@ -2384,6 +2505,29 @@ export interface components {
        * @description The id of the new job
        */
       job_id: number;
+    };
+    /** Round */
+    Round: {
+      /**
+       * Playback Status
+       * @enum {string}
+       */
+      playback_status: 'ready' | 'ended';
+      /** Recorded At */
+      recorded_at: string | null;
+      /** Round */
+      round: number;
+      /** Transcript Shown */
+      transcript_shown: boolean;
+    };
+    /** Rounds */
+    Rounds: {
+      current: components['schemas']['Round'] | null;
+      /** Rounds */
+      rounds: components['schemas']['Round'][];
+      segment: components['schemas']['Segment'];
+      /** Text */
+      text?: string | null;
     };
     /** SaveDraft */
     SaveDraft: {
@@ -3412,6 +3556,92 @@ export interface operations {
       };
     };
   };
+  card_audio_api_v1_cards__card_id__audio_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        card_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `card_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `card_audio_not_ready` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  retry_audio_api_v1_cards__card_id__audio_retry_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        card_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `card_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `card_audio_not_failed` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   list_contents_api_v1_contents_get: {
     parameters: {
       query?: {
@@ -3858,7 +4088,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description A Server-Sent Events stream of the learner's events: job.progress, content.ready, transcript.ready, transcript.failed, grade.ready, dictation.scored, attempt.voided, export.ready, account.disabled (the stream then ends) and resync. */
+      /** @description A Server-Sent Events stream of the learner's events: job.progress, content.ready, transcript.ready, transcript.failed, profile.ready, profile.failed, grade.ready, dictation.scored, attempt.voided, export.ready, account.disabled (the stream then ends) and resync. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -3900,6 +4130,51 @@ export interface operations {
       };
       /** @description `attempt_not_found` */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  retry_grade_api_v1_grades__attempt_id__retry_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GradeRetry'];
+        };
+      };
+      /** @description `attempt_not_found` or `grade_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `gist_not_submitted` */
+      409: {
         headers: {
           [name: string]: unknown;
         };
@@ -5039,6 +5314,145 @@ export interface operations {
         content?: never;
       };
       /** @description `step_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  read_rounds_api_v1_sessions__session_id__shadow_rounds_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Rounds'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked`, `session_closed`, `round_order` or `round_limit` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  end_playback_api_v1_sessions__session_id__shadow_rounds__number__playback_ended_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        session_id: string;
+        number: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked`, `session_closed`, `round_order` or `round_limit` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  start_round_api_v1_sessions__session_id__shadow_rounds__number__start_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        session_id: string;
+        number: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked`, `session_closed`, `round_order` or `round_limit` */
       409: {
         headers: {
           [name: string]: unknown;

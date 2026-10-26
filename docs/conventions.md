@@ -5,6 +5,11 @@ Read the section for the area you are changing before you change it. The rules e
 ## Jobs (ADR 0015, 0029, 0036)
 
 - A `unique_key` holds while a job with that key waits or runs: `enqueue` returns None meanwhile. A job that also runs on a schedule passes `schedule="<cron>"` to `@job`. A job whose worker died is settled by `platform.recover_stalled_jobs` (back to the queue, or `on_give_up` after its last attempt), so a handler must be safe to run again after doing part of its work.
+- Handlers settle their own permanent refusals before raising `PermanentError`
+  (including before sandbox exit 65); `on_give_up` also covers exhausted transient
+  failures and supervisor resource failures. A resource that allows retry before
+  the old queue row settles uses a new cycle key and fences old callbacks against
+  the current generation.
 
 ## Email (ADR 0017)
 
@@ -66,8 +71,12 @@ Read the section for the area you are changing before you change it. The rules e
   and provider/model/version provenance, with returned trimming field names in
   `provider_info.trimmed_fields`. Shared references use original transcript
   words through `transcript.service.key_points_reference`, never learner overlays.
-  That boundary is worker-only; do not expose it through an API-role read or a
-  Blind response. Cache rows belong to media and cascade only with media deletion.
+  That reference boundary and raw cache rows remain worker-only; never grant the
+  API role direct cache access or return raw reference objects. The owned gist-grade
+  response is a projection governed by D4 (see Gist feedback below): key-point text
+  and captured/missed labels are disclosed immediately for Blind-only, and only
+  after Transcript opens when Dictation follows. Cache rows belong to media and
+  cascade only with media deletion.
 
 ## Transcripts (ADR 0038)
 
@@ -83,6 +92,17 @@ Read the section for the area you are changing before you change it. The rules e
   Preserve saved marks and notes/status; only score candidates change. Future initial
   scoring uses the learner overlay. Transcript's existing edited marker shows it;
   `dictation.scored` refreshes both result and Transcript queries across tabs.
+
+- Limited original profiles (#76, ADR 0061) belong to `transcript`: queue from the
+  committed transcript-ready hook on intake, deduplicate by transcript cache id and
+  processing fingerprint, and never apply learner corrections. Alignment stays on
+  the ADR 0034 gateway/model/settings; Parselmouth supplies pitch and intensity only.
+  Preserve actual model/runtime/settings provenance and explicit unknown frames.
+- Serialize subscription and finish transactions with the same media lock; never
+  hold a transaction through inference. Profile events carry authorized session ids
+  only and commit with complete results. Ready cache reuse queues no processing job.
+  `reference_profile` checks ownership/reached Shadow before worker-cache access;
+  pending/failed profiles must not gate playback, recording or plan completion.
 
 ## Data export (ADR 0030)
 
@@ -255,7 +275,7 @@ Read the section for the area you are changing before you change it. The rules e
   through DB to the default pool; never add a collector route to media-data.
 
 
-## Cards (ADR 0060)
+## Cards (ADRs 0060, 0064)
 
 - Cards read marks only through `review.service.list_marks`. Creation and completion
   lock the session row before calling `practice.service.require_step(..., Step.CARD)`;
@@ -263,7 +283,27 @@ Read the section for the area you are changing before you change it. The rules e
   independently by the database. Deletion frees a slot (D14).
 - Keep `at_ms` from the selected mark as a source-time snapshot. A deleted mark sets
   `mark_id` to NULL while the saved forms and time remain. Source links use
-  `/contents/{id}?at_ms={absolute_ms}`. Snippets remain #73.
+  `/contents/{id}?at_ms={absolute_ms}`.
+- Snippets (#73, ADR 0064) snapshot authorized word timings on creation. Refuse
+  phrases longer than six seconds before inserting a card. Generation uses the
+  intake lane and deterministic learner/card storage keys; never resolve audio
+  through source playback after it is ready. Card JSON exposes status only.
+- Deletion records a cleanup tombstone through a trigger, including cascades.
+  Background cleanup removes the tombstone only after successful object deletion;
+  the minute sweep recovers missed/exhausted cleanup jobs. Before upload, generation
+  commits a `card_snippet_writes` registration under the account/card locks, then
+  rechecks both before writing. Cleanup skips registered writers, and the guard
+  registered through `identity.service.on_account_purge` postpones account purge
+  before its first sweep. The writer FK uses RESTRICT to preserve that barrier.
+  Never expire registrations by age or job status; reconcile killed/uncertain
+  writers using [the runbook](runbooks/card-snippet-writers.md).
+- A retry creates a fresh internal `audio_generation` UUID and unique enqueue key,
+  with the same per-card execution lock. Generation and terminal callbacks check
+  the UUID, so an old job cannot change a newer attempt. Exports omit this UUID
+  and writer identity/owner fields. Upload cancellation drains before releasing
+  the registration; an uncertain S3 response retains it.
+- Cards-local playback pauses on unmount; pending cards poll and readiness/failure
+  events invalidate `['cards', sessionId]`. Keep shared-player behavior unchanged.
 
 ## Gist feedback (ADR 0054, #69)
 
@@ -280,7 +320,23 @@ Read the section for the area you are changing before you change it. The rules e
   pending reads also poll. Submission keeps the result visible until Continue
   refreshes both the session and its Blind attempt, including a fresh cached
   completed listen. Render the saved gist independently of grading readiness.
-  #70 owns unavailable/delayed/retry behavior.
+  Recovery (#70, ADR 0062): `pending` becomes `unavailable` at the configured
+  30-second deadline or exhausted failures; a quota `delayed` state takes precedence.
+  Both remain eligible for a late ready result. `wait_ms` is server-relative.
+  `POST /grades/{attempt_id}/retry` returns 202 with `status: accepted`; it reuses
+  waiting/running work and leaves ready grades unchanged. New cycles update the
+  deadline only after unique queue admission. Deadline checks match the cycle's
+  stored deadline. Retry invalidates grade queries without invalidating practice
+  progress. Missing references and quota waits postpone work without using up
+  grading failures. The normal authentication, consent, CSRF, ownership and D4
+  rules apply to every read and retry.
+  Exhausted reference work clears worker-only quota metadata. When a missing
+  reference is no longer quota-delayed, its waiting gist leaves `delayed` and
+  applies the original deadline, restoring retry after expiry. Do not reset that
+  deadline or overwrite a ready grade while settling dependency failures.
+  A non-quota gist failure (including invalid output and timeout cancellation)
+  likewise clears stale `delayed` state and applies the original deadline in a
+  separate transaction, then re-raises for the lane's normal bounded retries.
 
 ## Shadow segments (ADR 0057)
 
@@ -288,6 +344,29 @@ Read the section for the area you are changing before you change it. The rules e
   through `review.service.list_marks`; mode endpoints require `Step.SHADOW`.
   Saved segments use absolute, half-open media milliseconds. The shared session
   waveform accepts optional `boundsFor` and `label`, preserving passage defaults.
-- `locked_at` is the database boundary for the future round 1 transaction (#78).
+- `locked_at` is the database boundary set atomically by round 1 insertion (#79).
   Once set, the segment is immutable, including its lock. Do not clear it to adjust
   a selection. The parent session/account cascade is still allowed.
+
+## Shadow playback rounds (ADR 0063)
+
+- `shadow.service.change_round` serializes numbered starts and playback-ended writes
+  through `practice.service.lock_session`, then `require_step(Step.SHADOW)`. The
+  database also enforces sequential rounds 1–3 and locks the segment on insertion
+  of round 1. Round identity and an ended playback cannot be reset.
+- Round start/end submissions use `run_once` but store only bodyless 204 results.
+  `GET /sessions/{id}/shadow/rounds` includes segment text only while the current
+  round is 1; round 2/3 omit it entirely, including history. Reference words come
+  only through `transcript.service`, never through its repository. All responses
+  use private/no-store; cancel pending reads and clear transcript before client
+  mutations and again at settlement, before invalidating queries. Hide cached
+  transcript after failed reads until a successful authoritative refresh.
+- Shadow controls enforce 1x in preview and rounds. Numbered playbacks have a
+  three-second count-in and explicit advancement. Stop, hidden pages and reload
+  restart the same unended round; native buttons support Enter/Space. Keep round
+  status inside Shadow; use the shared busy button to preserve focus. Shadow uses
+  native Tab/Enter/Space controls rather than the general UX-07 transport keys.
+- `playback_status = ended` is not recorded/uploaded success: leave `recorded_at`
+  unset, do not emit `record_shadow_round_completed` and do not complete the step.
+  #78/#81/#87 add microphone/consent, recording/upload and completion respectively.
+  No reference-profile readiness check gates playback (ADR 0050).

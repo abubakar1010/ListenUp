@@ -8,6 +8,7 @@ import { useSkipStep, type Session } from '../session/api';
 import { PracticeLayout } from '../session/PracticeLayout';
 import { STEP_RULES } from '../session/plan';
 import { formatClock } from '../session/time';
+import { CardAudio } from './CardAudio';
 import {
   useCards,
   useCreateCard,
@@ -177,6 +178,7 @@ export function CardScreen({ session, progress }: { session: Session; progress: 
             <p>
               <strong>{card.written_form}</strong> → {card.heard_form}
             </p>
+            <CardAudio card={card} />
             <Link to={card.source_url} className="min-h-11 py-2 font-bold text-accent">
               Source at {formatClock(card.at_ms)}
             </Link>

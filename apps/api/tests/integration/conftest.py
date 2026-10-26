@@ -168,3 +168,18 @@ def api_role_url(migrated_url: str) -> str:
     params = psycopg.conninfo.conninfo_to_dict(migrated_url)
     params.update(user="listenup_api_test", password="listenup-test")
     return conninfo_to_url(psycopg.conninfo.make_conninfo(**params))  # type: ignore[arg-type]
+
+
+@pytest.fixture(autouse=True)
+def profile_deployment_boundary(monkeypatch):
+    """Existing orchestration tests queue profiles without installing speech weights.
+
+    Only deployment metadata is fake here; real processing tests explicitly replace
+    this boundary with the production-configured gateway and report that separately.
+    """
+    from listenup.ai.config import FAKE_CONFIG, load_config
+    from listenup.ai.gateway import AIGateway
+    from listenup.modules.transcript import profile_service
+
+    gateway = AIGateway(load_config(FAKE_CONFIG))
+    monkeypatch.setattr(profile_service, "get_gateway", lambda: gateway)

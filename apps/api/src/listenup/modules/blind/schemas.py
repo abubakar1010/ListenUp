@@ -97,7 +97,8 @@ class GistKeyPoint(BaseModel):
 
 
 class GistFeedback(BaseModel):
-    status: Literal["pending", "ready"]
+    status: Literal["pending", "ready", "unavailable", "delayed"]
+    wait_ms: int | None = None
     overall: int | None = None
     level: Literal["needs_work", "fair", "good", "excellent"] | None = None
     dimension_scores: dict[str, int] | None = None
@@ -106,3 +107,7 @@ class GistFeedback(BaseModel):
     gist: str | None = None
     feedback: str | None = None
     key_points: list[GistKeyPoint] | None = None
+
+
+class GradeRetry(BaseModel):
+    status: Literal["accepted"] = "accepted"

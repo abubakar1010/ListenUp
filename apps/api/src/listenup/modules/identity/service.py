@@ -7,6 +7,7 @@ a signed-in learner and get their id, with row-level security already scoped to 
 import hashlib
 import ipaddress
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from typing import Annotated
 
@@ -609,6 +610,12 @@ async def hold_active_account(session: AsyncSession, learner: uuid.UUID) -> bool
     as a finished data export (ADR 0029, ADR 0030).
     """
     return await repository.hold_active_account(session, learner)
+
+
+def on_account_purge(guard: Callable[[AsyncSession, uuid.UUID], Awaitable[None]]) -> None:
+    """Register a worker storage guard, called under the exclusive account lock."""
+    if guard not in jobs.purge_guards:
+        jobs.purge_guards.append(guard)
 
 
 AccountsDep = Annotated[Accounts, Depends(get_accounts)]
