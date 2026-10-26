@@ -6,18 +6,18 @@
 # Caddy obtains and renews the certificate itself (Let's Encrypt, ZeroSSL as fallback)
 # and redirects every http:// request to https:// (CI-A, NFR-SEC-1). Names under
 # .localhost get a certificate from Caddy's internal CA, which the local rehearsal uses.
+# Only Caddy's own address reaches the API. No proxy in front is trusted, so Caddy
+# replaces any client-sent X-Forwarded-For with the real peer address. If a CDN ever
+# fronts this server, list its ranges as trusted proxies in a `servers` global option.
 {
 	email {$LISTENUP_ACME_EMAIL}
-	servers {
-		# Only Caddy's own address reaches the API; a client-sent X-Forwarded-For is
-		# replaced, never trusted (no trusted_proxies). Add a CDN's ranges here if one
-		# ever fronts this server.
-		client_ip_headers X-Forwarded-For
-	}
 }
 
 {$LISTENUP_DOMAIN} {
-	encode zstd gzip
+	# The event stream (GET /api/v1/events) stays uncompressed, so no compression buffer
+	# can hold an event back, whatever this Caddy version's defaults are.
+	@compressible not path /api/v1/events
+	encode @compressible zstd gzip
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -44,10 +44,12 @@
 	}
 
 	# Content-hashed build output never changes under one name: cache it for a year,
-	# in browsers and in any CDN placed in front. A missing asset is a 404, never the app.
+	# in browsers and in any CDN placed in front. A missing asset is a 404, never the
+	# app, and is not marked immutable, so no cache keeps it.
 	handle /assets/* {
 		root * /srv
-		header Cache-Control "public, max-age=31536000, immutable"
+		@exists file
+		header @exists Cache-Control "public, max-age=31536000, immutable"
 		file_server
 	}
 
