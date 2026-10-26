@@ -285,6 +285,18 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         "card_not_found",
         params=lambda w: {"card_id": w.a.card_id},
     ),
+    ("GET", "/api/v1/cards/{card_id}/audio"): Owned(
+        "card_not_found",
+        params=lambda w: {"card_id": w.a.card_id},
+        owner_status=409,
+        owner_code="card_audio_not_ready",
+    ),
+    ("POST", "/api/v1/cards/{card_id}/audio/retry"): Owned(
+        "card_not_found",
+        params=lambda w: {"card_id": w.a.card_id},
+        owner_status=409,
+        owner_code="card_audio_not_failed",
+    ),
     # -- marks (#58) -------------------------------------------------------------------
     ("GET", "/api/v1/sessions/{session_id}/marks"): Owned(
         "session_not_found", params=lambda w: {"session_id": w.a.sessions["transcript"]}
