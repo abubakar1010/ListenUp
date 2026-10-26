@@ -155,7 +155,9 @@ jobs:
         run: |
           if out="$(docker buildx imagetools inspect "$IMAGE" 2>&1)"; then
             echo "found=true" >> "$GITHUB_OUTPUT"
-          elif grep -qi "not found" <<< "$out"; then
+          # A package that was never pushed can also answer "denied" on GHCR; a real
+          # permission problem then fails at the push instead.
+          elif grep -qiE "not found|manifest unknown|name unknown|denied" <<< "$out"; then
             echo "found=false" >> "$GITHUB_OUTPUT"
           else
             echo "::error::could not tell whether $IMAGE exists: $out"
