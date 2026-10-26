@@ -1167,7 +1167,7 @@ export interface paths {
     /**
      * Change Mark Tag
      * @description Set, change or clear (null) the mark's tag (FR-TR-4). The whole tag is sent, so a
-     *     resend answers with the same mark and needs no Idempotency-Key (ADR 0065).
+     *     resend answers with the same mark and needs no Idempotency-Key (ADR 0066).
      */
     put: operations['change_mark_tag_api_v1_sessions__session_id__marks__mark_id__tag_put'];
     post?: never;

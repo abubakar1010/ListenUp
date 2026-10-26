@@ -5894,7 +5894,7 @@
     },
     "/api/v1/sessions/{session_id}/marks/{mark_id}/tag": {
       "put": {
-        "description": "Set, change or clear (null) the mark's tag (FR-TR-4). The whole tag is sent, so a\nresend answers with the same mark and needs no Idempotency-Key (ADR 0065).",
+        "description": "Set, change or clear (null) the mark's tag (FR-TR-4). The whole tag is sent, so a\nresend answers with the same mark and needs no Idempotency-Key (ADR 0066).",
         "operationId": "change_mark_tag_api_v1_sessions__session_id__marks__mark_id__tag_put",
         "parameters": [
           {

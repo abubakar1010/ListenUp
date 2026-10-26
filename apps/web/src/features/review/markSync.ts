@@ -37,7 +37,7 @@ import {
  *
  * A tag (#61, FR-TR-4) is part of the same `update` as the note: it waits for the debounce,
  * so moving through the tag choices sends only the last one, and travels with an unsent
- * create. A refused tag puts back the server's tag (ADR 0065).
+ * create. A refused tag puts back the server's tag (ADR 0066).
  */
 
 export type SavedMark = components['schemas']['Mark'];
