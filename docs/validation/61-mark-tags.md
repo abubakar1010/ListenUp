@@ -64,4 +64,26 @@ above shows the browser test detects a broken panel.
   `test_transcript_audio.py`, `test_backup_store.py`); `LISTENUP_REQUIRE_S3=1` was not
   set for the final run. This story does not
   touch storage. CI runs them with both required-service flags.
-- Independent fresh-session review: still to do, per `docs/workflow.md`.
+## Fresh-session review
+
+The review found three things, all fixed on this branch:
+
+- **A tag changed back while its save was on its way was lost** (`markSync.ts`). The
+  `setTag` shortcut compared against the server copy from before the request, so the
+  PUT stored the old choice and nothing was left to send. Red:
+  `pnpm vitest run src/features/review/markSync.test.ts -t changed_back_while`:
+  `a_tag_changed_back_while_its_save_is_on_its_way_is_sent_again` **failed** (last PUT
+  was `linking`, not `null`). Fix: `settled()` queues an update again when the learner's
+  copy still differs from what was stored. Green: **83 passed**; reverting the fix makes
+  that test fail again. `a_tag_changed_back_while_the_note_is_on_its_way_is_not_left_on_the_server`
+  passed before the fix: the changed note keeps the entry queued, so that path was never
+  broken. It stays as a guard.
+- **ADR number taken again:** main added ADR 0065 (B5 load test, #217), so this one is
+  now [ADR 0066](../adr/0066-mark-tags.md); references and the generated client follow.
+- **Architecture API table:** the Transcript row now also lists the confirm route
+  (`PUT .../marks/{mark_id}/status`, ADR 0058).
+
+After merging main (`da4fff1`) and these fixes: `pnpm lint`, `format:check`, `typecheck`
+clean; `pnpm test:coverage` **60 files, 664 passed**; `build` ok; `size` 125.6 kB;
+`pnpm e2e` **59 passed**. The backend results are in the PR. The S3 tests were still not
+run locally (no Docker daemon); CI runs them.
