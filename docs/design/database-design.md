@@ -266,15 +266,71 @@ CREATE TABLE content.passage_transcripts (
 );
 
 CREATE TABLE content.reference_profiles (
-  passage_transcript_id uuid PRIMARY KEY
-                        REFERENCES content.passage_transcripts ON DELETE CASCADE,
-  model_version  text NOT NULL,
-  phones         jsonb NOT NULL,   -- per word: [[phone, start_ms, end_ms], ...]
-  pitch_cents    int2[] NOT NULL,  -- one value per 20 ms frame, 0 for unvoiced
-  intensity_db   int2[] NOT NULL,  -- one value per 20 ms frame
-  stats          jsonb NOT NULL,   -- speech rate, pause positions, stressed syllables
-  created_at     timestamptz NOT NULL DEFAULT now()
+ passage_transcript_id uuid REFERENCES content.passage_transcripts ON DELETE CASCADE,
+ fingerprint text NOT NULL,
+ status text NOT NULL DEFAULT 'pending',
+ word_indices int4[] NOT NULL DEFAULT '{}',
+ word_start_ms int4[] NOT NULL DEFAULT '{}',
+ word_end_ms int4[] NOT NULL DEFAULT '{}',
+ word_confidence int2[] NOT NULL DEFAULT '{}',
+ pitch_cents int2[] NOT NULL DEFAULT '{}',
+ intensity_cdb int2[] NOT NULL DEFAULT '{}',
+ frame_step_ms int2 NOT NULL DEFAULT 20,
+ provenance jsonb NOT NULL DEFAULT '{}',
+ created_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY (passage_transcript_id, fingerprint),
+ CHECK (status IN ('pending','ready','failed')),
+ CHECK (length(fingerprint) = 64),
+ CHECK (frame_step_ms = 20),
+ CHECK (cardinality(word_indices) = cardinality(word_start_ms) AND cardinality(word_indices) =
+cardinality(word_end_ms) AND cardinality(word_indices) = cardinality(word_confidence)),
+ CHECK (array_position(word_indices, NULL) IS NULL AND 0 <= ALL(word_indices)),
+ CHECK (array_position(word_start_ms, NULL) IS NULL AND 0 <= ALL(word_start_ms)),
+ CHECK (array_position(word_end_ms, NULL) IS NULL AND 0 <= ALL(word_end_ms)),
+ CHECK (array_position(word_confidence, NULL) IS NULL AND 0 <= ALL(word_confidence) AND 1000 >=
+ALL(word_confidence)),
+ CHECK (cardinality(pitch_cents) = cardinality(intensity_cdb)),
+ CHECK (status <> 'ready' OR (cardinality(pitch_cents) > 0 AND COALESCE(jsonb_typeof(provenance)
+= 'object' AND provenance ?& ARRAY['alignment','acoustics','format_version'] AND
+provenance->>'format_version' = '1' AND jsonb_typeof(provenance->'alignment') = 'object' AND
+provenance->'alignment' ?& ARRAY['provider','model','version'] AND
+jsonb_typeof(provenance->'acoustics') = 'object' AND provenance->'acoustics' ?&
+ARRAY['provider','model','version','praat_version','settings'] AND
+length(provenance->'alignment'->>'provider') > 0 AND length(provenance->'alignment'->>'model') >
+0 AND length(provenance->'alignment'->>'version') > 0 AND
+length(provenance->'acoustics'->>'version') > 0, false))));
+
+ALTER TABLE content.reference_profiles ADD CONSTRAINT reference_profiles_provenance_types CHECK
+(status <> 'ready' OR COALESCE(jsonb_typeof(provenance->'alignment'->'provider') = 'string' AND
+length(provenance->'alignment'->>'provider') > 0 AND
+jsonb_typeof(provenance->'alignment'->'model') = 'string' AND
+length(provenance->'alignment'->>'model') > 0 AND
+jsonb_typeof(provenance->'alignment'->'version') = 'string' AND
+length(provenance->'alignment'->>'version') > 0 AND
+jsonb_typeof(provenance->'acoustics'->'provider') = 'string' AND
+length(provenance->'acoustics'->>'provider') > 0 AND
+jsonb_typeof(provenance->'acoustics'->'model') = 'string' AND
+length(provenance->'acoustics'->>'model') > 0 AND
+jsonb_typeof(provenance->'acoustics'->'version') = 'string' AND
+length(provenance->'acoustics'->>'version') > 0 AND
+jsonb_typeof(provenance->'acoustics'->'praat_version') = 'string' AND
+length(provenance->'acoustics'->>'praat_version') > 0 AND
+jsonb_typeof(provenance->'acoustics'->'settings') = 'object', false));
+REVOKE ALL ON content.reference_profiles FROM listenup_api, listenup_readonly;
+GRANT SELECT, INSERT, UPDATE, DELETE ON content.reference_profiles TO listenup_worker;
+CREATE TABLE content.profile_subscriptions (
+ session_id uuid PRIMARY KEY,
+ user_id uuid NOT NULL,
+ media_object_id uuid NOT NULL REFERENCES content.media_objects ON DELETE CASCADE,
+ span int4range NOT NULL CHECK (NOT isempty(span) AND NOT lower_inf(span) AND NOT
+upper_inf(span) AND lower(span) >= 0),
+ fingerprint text NOT NULL CHECK (length(fingerprint) = 64),
+ status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','ready','failed')),
+ FOREIGN KEY (session_id,user_id) REFERENCES practice.sessions(id,user_id) ON DELETE CASCADE
 );
+GRANT SELECT ON content.profile_subscriptions TO listenup_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON content.profile_subscriptions TO listenup_worker;
+CREATE INDEX profile_subscriptions_media_idx ON content.profile_subscriptions(media_object_id);
 
 CREATE TABLE content.transcript_corrections (
   user_id               uuid NOT NULL REFERENCES identity.users ON DELETE CASCADE,
@@ -286,6 +342,7 @@ CREATE TABLE content.transcript_corrections (
 );
 ```
 
+- **Limited profiles (#76, ADR 0061).** Each original cached transcript span has a profile per processing fingerprint (trusted model/runtime versions, alignment options, acoustic settings and format). Passages compose these rows; learner corrections never affect them. Word arrays contain absolute media timings and cache-local indices; pitch uses integer cents relative to 1 Hz, intensity integer centidecibels, and SQL NULL means unvoiced/unobservable. Frames are centred 10 ms into each 20 ms interval. Profile rows are worker-only. `profile_subscriptions` uses the `own_rows` policy, a same-learner session FK, API SELECT only, export inclusion and cascading deletion. Profile results and id-only `profile.ready`/`profile.failed` session notifications commit atomically. Readiness requires every contributing span; it never gates rounds. See [ADR 0061](../adr/0061-limited-reference-profiles.md).
 - **Why corrections are per learner.** Transcripts of a YouTube video are shared, so one learner's dispute (FR-TX-4) must not change what another learner is scored against. Corrections are an overlay applied when that learner's Dictation is scored. An admin can promote a correction to the shared transcript when several learners agree.
 - Transcript review applies the learner's overlay after its step/ownership gate, preserving original sentence boundaries, word indices and audio times, and labels corrected words as edited. Empty replacements retain an accessible removed-word audio target. Migration `57_transcript_corrections` creates the designed correction table with `own_rows` RLS; `56_dictation_disputes` adds API correction writes, preserving the cache's worker-only access. Its content-delete trigger removes the deleted content owner's corrections for that media even when another learner retains the shared cache. Corrections join the learner's export and cascade when the account or referenced cache row is deleted ([ADR 0059](../adr/0059-dictation-reference-disputes.md)).
 - **Reading a passage.** A session's passage may be covered by more than one cached span. The transcript service selects ready rows whose `span && passage` (one GiST index lookup), verifies complete coverage, and concatenates words starting inside the passage in time order. Word times are absolute media milliseconds, with final ends bounded by the passage. Failed spans do not provide coverage and do not prevent retry. Cache spans must be finite ([ADR 0038](../adr/0038-passage-transcription-cache.md)).
@@ -482,7 +539,7 @@ CREATE POLICY own_rows ON practice.shadow_rounds
 - **Round 1 shows the transcript, rounds 2 and 3 do not.** This is a generated column, so it can never disagree with the round number.
 - **Shadow rounds hang off the segment,** so a round cannot exist before a valid segment does: 60 to 90 s, or the whole passage when the passage is 30 to 60 s.
 
-Shadow segment ownership, RLS/grants and immutable locking follow [ADR 0057](../adr/0057-shadow-segment-proposals.md). The API cannot independently delete a segment; parent deletion still cascades. Playback rounds follow [ADR 0061](../adr/0061-shadow-playback-rounds.md):
+Shadow segment ownership, RLS/grants and immutable locking follow [ADR 0057](../adr/0057-shadow-segment-proposals.md). The API cannot independently delete a segment; parent deletion still cascades. Playback rounds follow [ADR 0062](../adr/0062-shadow-playback-rounds.md):
 `shadow_round_order` locks the session then segment, requires sequential insertion
 following an ended playback, locks the segment on round 1, and refuses changing
 round identity or resetting ended playback. `playback_status` is independent of

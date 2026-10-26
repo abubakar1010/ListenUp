@@ -66,8 +66,12 @@ Read the section for the area you are changing before you change it. The rules e
   and provider/model/version provenance, with returned trimming field names in
   `provider_info.trimmed_fields`. Shared references use original transcript
   words through `transcript.service.key_points_reference`, never learner overlays.
-  That boundary is worker-only; do not expose it through an API-role read or a
-  Blind response. Cache rows belong to media and cascade only with media deletion.
+  That reference boundary and raw cache rows remain worker-only; never grant the
+  API role direct cache access or return raw reference objects. The owned gist-grade
+  response is a projection governed by D4 (see Gist feedback below): key-point text
+  and captured/missed labels are disclosed immediately for Blind-only, and only
+  after Transcript opens when Dictation follows. Cache rows belong to media and
+  cascade only with media deletion.
 
 ## Transcripts (ADR 0038)
 
@@ -83,6 +87,17 @@ Read the section for the area you are changing before you change it. The rules e
   Preserve saved marks and notes/status; only score candidates change. Future initial
   scoring uses the learner overlay. Transcript's existing edited marker shows it;
   `dictation.scored` refreshes both result and Transcript queries across tabs.
+
+- Limited original profiles (#76, ADR 0061) belong to `transcript`: queue from the
+  committed transcript-ready hook on intake, deduplicate by transcript cache id and
+  processing fingerprint, and never apply learner corrections. Alignment stays on
+  the ADR 0034 gateway/model/settings; Parselmouth supplies pitch and intensity only.
+  Preserve actual model/runtime/settings provenance and explicit unknown frames.
+- Serialize subscription and finish transactions with the same media lock; never
+  hold a transaction through inference. Profile events carry authorized session ids
+  only and commit with complete results. Ready cache reuse queues no processing job.
+  `reference_profile` checks ownership/reached Shadow before worker-cache access;
+  pending/failed profiles must not gate playback, recording or plan completion.
 
 ## Data export (ADR 0030)
 
@@ -285,7 +300,7 @@ Read the section for the area you are changing before you change it. The rules e
   Once set, the segment is immutable, including its lock. Do not clear it to adjust
   a selection. The parent session/account cascade is still allowed.
 
-## Shadow playback rounds (ADR 0061)
+## Shadow playback rounds (ADR 0062)
 
 - `shadow.service.change_round` serializes numbered starts and playback-ended writes
   through `practice.service.lock_session`, then `require_step(Step.SHADOW)`. The

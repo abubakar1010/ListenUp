@@ -13,7 +13,7 @@
   recording/upload, grading, comparison or plan-completion implementation.
   `recorded_at` remains null and no recording-completed analytics event is emitted.
   Rounds do not inspect reference-profile readiness (ADR 0050).
-- [ADR 0061](../adr/0061-shadow-playback-rounds.md) records lifecycle, disclosure,
+- [ADR 0062](../adr/0062-shadow-playback-rounds.md) records lifecycle, disclosure,
   schema, recovery and future integration with #78/#81/#87. Transcript disclosure
   here governs Shadow responses, not the learner's existing Transcript review or
   export. Round 1 cannot be fetched as historical text after advancing.
@@ -162,7 +162,7 @@ this PR. This section records new evidence and does not infer historical TDD.
   at settlement, plus hiding transcript-bearing cached data after failed reads.
   The original code fails the new DOM assertions; a display-only fix would
   still fail the cache assertion for the refetch completed during mutation.
-- ADR 0061, conventions and UX-07 now explicitly describe Shadow's native
+- Shadow ADR (now 0062), conventions and UX-07 now explicitly describe Shadow's native
   Tab/Enter/Space policy and failed-refresh behavior. The round panel includes
   its native keyboard hint. This clarifies the existing mode-specific policy;
   shared transport shortcuts and other practice modes are unchanged.
@@ -195,3 +195,40 @@ this PR. This section records new evidence and does not infer historical TDD.
   PostgreSQL limitation still applies; prior-head integration evidence does not
   substitute for CI on the remediation head. Required CI and fresh independent
   review of material changes remain merge gates. The owner merges.
+
+### Current-main integration after #76 merged
+
+Main advanced during remediation from `2764892` to `076c6b6` (PR #219,
+reference profiles). This supersedes the earlier statement that no migration
+integration was needed. Merge inspection found no textual conflicts, but both
+new migrations followed `72_cards`; an explicit one-head assertion failed and
+`alembic heads` listed `76_reference_profiles` and `79_shadow_rounds`.
+
+The unmerged Shadow migration now follows `76_reference_profiles`; the identical
+one-head assertion passes and Alembic lists only `79_shadow_rounds`. Main's
+reference-profile migration, runtime, events, dependency changes and generated
+profile event descriptions are preserved. The Shadow ADR is renumbered to 0062
+with its links updated; main's accepted reference-profile ADR keeps 0061.
+This is migration-graph integration; no Shadow round behavior or reference-profile
+policy changes. OpenAPI export and TypeScript generation reproduce the combined
+committed schemas without additional differences after formatting.
+
+Validation of the combined tree:
+
+- PostgreSQL 16 and SeaweedFS were started locally. With PostgreSQL required,
+  `tests/integration/test_migrations.py`, `test_shadow_rounds.py`,
+  `test_shadow_segment.py`, `test_reference_profiles.py`,
+  `test_reference_profiles_real.py` and `test_access_cross_learner.py` finished
+  **71 passed, 1 skipped**. Migration tests cover upgrade, downgrade/upgrade,
+  model drift, full downgrade and one linear head. The sole skip is the opt-in
+  real-model profile test: its prepared LibriSpeech fixture is unavailable.
+  No ordinary Shadow/ownership/migration integration test skipped.
+- Backend Ruff lint/format, strict mypy (199 source files) and all six import
+  contracts pass. These checks include the preserved main profile implementation.
+- Full web coverage now reports **625 passed / 60 files**, **96.28% lines /
+  88.71% branches**. Lint/format/types/build/size pass; gzip remains 125.6 kB.
+  A fresh production-build Shadow Playwright run passes all **3 cases**.
+- Full backend/service CI and browser CI must be evaluated again on the merged
+  remediation head. The previous-head run does not validate this migration graph;
+  it is not promoted to final-head evidence. Fresh independent re-review remains
+  required, and the PR remains unmerged.

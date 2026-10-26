@@ -54,3 +54,9 @@ test('account.disabled refetches the learner, unless this tab is deleting the ac
   void deleting.execute(undefined);
   expect(queryKeysForEvent(event('account.disabled'), client)).toEqual([]);
 });
+
+test('profile events refresh session grading readiness without changing playback policy', () => {
+  const client = new QueryClient();
+  expect(queryKeysForEvent(event('profile.ready'), client)).toEqual([['sessions']]);
+  expect(queryKeysForEvent(event('profile.failed'), client)).toEqual([['sessions']]);
+});

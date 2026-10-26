@@ -20,6 +20,7 @@ from listenup.ai.ports import (
     AIResult,
     Alignment,
     Preloadable,
+    Provenance,
     Role,
     SpeechAssessment,
     TextGeneration,
@@ -108,6 +109,18 @@ class AIGateway:
         if not providers:
             raise AIUnavailable(role, "no provider configured")
         return providers[0]
+
+    def deployment_provenance(self, role: Role) -> Provenance:
+        """Trusted configured identity before inference, for versioned cache lookups.
+
+        Unregistered versions cannot form a reusable cache identity (NFR-AI-5).
+        This does not instantiate an adapter or bypass inference eligibility.
+        """
+        entry = self.entry(role)
+        resolver = self._registry.versions.get(entry.provider)
+        if resolver is None:
+            raise AIUnavailable(role, "deployment version unavailable")
+        return Provenance(provider=entry.provider, model=entry.model, version=resolver(entry))
 
     def _adapter(self, role: Role) -> tuple[ProviderEntry, Any]:
         entry = self.entry(role)

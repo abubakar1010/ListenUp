@@ -30,7 +30,10 @@ ai-evals = "listenup.ai.evals.cli:main"
 # worker and CI do without them. torch and torchaudio (wav2vec2 alignment) are installed
 # in the worker-media image from the PyTorch CPU index instead, because the PyPI wheels
 # bundle CUDA libraries the CPU server never uses.
-speech = ["faster-whisper>=1.1"]
+speech = [
+    "faster-whisper>=1.1",
+    "praat-parselmouth==0.4.7",
+]
 
 [dependency-groups]
 dev = [
@@ -45,6 +48,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "diff-cover>=10.6.0",
     "types-authlib>=1.8.0.20260911",
+    "praat-parselmouth==0.4.7",
 ]
 
 [build-system]
@@ -101,7 +105,7 @@ packages = ["listenup"]
 # Speech libraries live in the `speech` extra and the worker-media image only; their
 # adapters import them lazily (ADR 0028).
 [[tool.mypy.overrides]]
-module = ["faster_whisper", "faster_whisper.*", "numpy", "numpy.*", "torch", "torch.*", "torchaudio", "torchaudio.*"]
+module = ["faster_whisper", "faster_whisper.*", "numpy", "numpy.*", "torch", "torch.*", "torchaudio", "torchaudio.*", "parselmouth"]
 ignore_missing_imports = true
 
 # Module boundaries from Architecture section 4.3, checked by `uv run lint-imports`.
