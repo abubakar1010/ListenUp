@@ -120,6 +120,9 @@ class Settings(BaseSettings):
     # listenup/ai/ai.yaml when unset. listenup/ai/ai.fake.yaml needs no models.
     ai_config: str | None = None
 
+    gist_feedback_timeout_seconds: int = Field(default=30, ge=1, le=3600)
+    gist_quota_retry_seconds: int = Field(default=60, ge=1, le=86400)
+
     # First retry waits about this long; later ones four times longer each time.
     job_retry_base_seconds: float = 10.0
 
