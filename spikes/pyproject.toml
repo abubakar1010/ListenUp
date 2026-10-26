@@ -15,6 +15,8 @@ transcribe = ["faster-whisper>=1.1"]
 speech = ["torch>=2.4,<2.9", "torchaudio>=2.4,<2.9", "praat-parselmouth>=0.4", "soundfile>=0.12"]
 # B1, B2: building test passages from LibriSpeech (FLAC) and VoxPopuli (parquet)
 datasets = ["soundfile>=0.12", "pyarrow>=15"]
+# B5: pg_stat_statements and the Blind attempt outcomes, through --database-url
+load = ["psycopg[binary]>=3.2"]
 
 [project.scripts]
 spike-youtube = "listenup_spikes.youtube_intake:main"
@@ -27,6 +29,7 @@ spike-compare = "listenup_spikes.compare:main"
 spike-labelkit = "listenup_spikes.labelkit:main"
 spike-perf2 = "listenup_spikes.perf2:main"
 spike-summary = "listenup_spikes.summary:main"
+spike-b5 = "listenup_spikes.b5_load:main"
 
 [dependency-groups]
 dev = ["pytest>=8.3", "ruff>=0.6"]
