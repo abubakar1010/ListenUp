@@ -201,7 +201,12 @@ async def correct_word(
 
 
 async def export_data(db: AsyncSession, learner: uuid.UUID) -> ExportPart:
-    return ExportPart(tables=(await learner_rows(db, "content.transcript_corrections", learner),))
+    return ExportPart(
+        tables=(
+            await learner_rows(db, "content.transcript_corrections", learner),
+            await learner_rows(db, "content.profile_subscriptions", learner),
+        )
+    )
 
 
 async def key_points_reference(
@@ -225,3 +230,78 @@ async def key_points_reference(
         for i, word in enumerate(row.words)
         if span[0] <= row.start_ms[i] < span[1]
     )
+
+
+@dataclass(frozen=True)
+class ReferenceProfile:
+    """Original evidence for an authorized Shadow consumer; no learner scores."""
+
+    passage_transcript_id: uuid.UUID
+    span: tuple[int, int]
+    word_indices: list[int]
+    word_start_ms: list[int]
+    word_end_ms: list[int]
+    word_confidence: list[int]
+    pitch_cents: list[int | None]
+    intensity_cdb: list[int | None]
+    frame_step_ms: int
+    provenance: dict[str, object]
+
+
+@dataclass(frozen=True)
+class ProfileReadiness:
+    status: str
+    stage: str
+    profiles: tuple[ReferenceProfile, ...] = ()
+
+
+async def reference_profile(
+    db: AsyncSession, worker_database: Database, learner: uuid.UUID, session_id: uuid.UUID
+) -> ProfileReadiness:
+    """Ownership and the reached Shadow gate precede every privileged cache read.
+
+    This optional grading input is never called by playback or step transitions.
+    Consumers use pending/failed for grading availability only (ADR 0050).
+    """
+    from listenup.modules.transcript import profile_repository
+    from listenup.modules.transcript.models import ProfileSubscription
+
+    session = await practice.get_session(db, session_id)
+    if session.user_id != learner:
+        raise ProblemError(404, "session_not_found", "There is no such session.")
+    await practice.require_reached(db, session_id, practice.Step.SHADOW)
+    await content.get_content(db, learner, session.content_id)
+    async with worker_database.transaction() as worker:
+        sub = await worker.get(ProfileSubscription, session_id)
+        if sub is None:
+            return ProfileReadiness("pending", "playable")
+        assert sub.span.lower is not None and sub.span.upper is not None
+        span = sub.span.lower, sub.span.upper
+        rows = await repository.overlapping(worker, sub.media_object_id, span)
+        if missing_spans(span, [row.bounds for row in rows]):
+            return ProfileReadiness("pending", "playable")
+        profiles = [await profile_repository.find(worker, row.id, sub.fingerprint) for row in rows]
+        if any(profile is not None and profile.status == "failed" for profile in profiles):
+            return ProfileReadiness("failed", "transcribed")
+        if any(profile is None or profile.status != "ready" for profile in profiles):
+            return ProfileReadiness("pending", "transcribed")
+        return ProfileReadiness(
+            "ready",
+            "profiled",
+            tuple(
+                ReferenceProfile(
+                    row.id,
+                    row.bounds,
+                    profile.word_indices,
+                    profile.word_start_ms,
+                    profile.word_end_ms,
+                    profile.word_confidence,
+                    profile.pitch_cents,
+                    profile.intensity_cdb,
+                    profile.frame_step_ms,
+                    profile.provenance,
+                )
+                for row, profile in zip(rows, profiles, strict=True)
+                if profile is not None
+            ),
+        )

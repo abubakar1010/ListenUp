@@ -280,7 +280,8 @@ The table below is a summary of the main tables, named by schema; the [ListenUp 
 | `content.duplicate_uploads` | content | removed content\_id, user\_id, existing\_content\_id ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)) |
 | `content.contents` | content | id, user\_id, media\_object\_id, title, keep\_video; the learner's reference to a media object, once per library |
 | `content.passage_transcripts` | transcript | id, media\_object\_id, span (ms range), origin (creator\_captions, generated), status, packed arrays words, start\_ms, end\_ms, confidence, sentence\_starts, provider\_info |
-| `content.reference_profiles` | transcript | passage\_transcript\_id, model\_version, phones, pitch\_cents, intensity\_db, stats; computed once per passage when it is transcribed, read by every Shadow round |
+| `content.reference_profiles` | transcript | passage\_transcript\_id + fingerprint; status, packed word indices/timings/confidence, pitch\_cents, intensity\_cdb, provenance; original spans computed once, composed per passage for optional grading (ADR 0061) |
+| `content.profile_subscriptions` | transcript | session\_id, user\_id, media\_object\_id, padded span, fingerprint, status; private passage readiness and id-only profile events (ADR 0061) |
 | `content.transcript_corrections` | transcript | user\_id, passage\_transcript\_id, word\_index, corrected\_text |
 | `practice.sessions` | practice | id, user\_id, content\_id, passage (ms range), entry (blind, dictation, both), current\_step, entry\_locked\_at, status, version |
 | `practice.session_steps` | practice | session\_id, step, position, status (locked, open, done, skipped), completed\_at |

@@ -3858,7 +3858,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description A Server-Sent Events stream of the learner's events: job.progress, content.ready, transcript.ready, transcript.failed, grade.ready, dictation.scored, attempt.voided, export.ready, account.disabled (the stream then ends) and resync. */
+      /** @description A Server-Sent Events stream of the learner's events: job.progress, content.ready, transcript.ready, transcript.failed, profile.ready, profile.failed, grade.ready, dictation.scored, attempt.voided, export.ready, account.disabled (the stream then ends) and resync. */
       200: {
         headers: {
           [name: string]: unknown;

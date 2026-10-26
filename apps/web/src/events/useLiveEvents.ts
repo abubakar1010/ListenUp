@@ -7,6 +7,8 @@ export const LIVE_EVENT_TYPES = [
   'content.ready',
   'transcript.ready',
   'transcript.failed',
+  'profile.ready',
+  'profile.failed',
   'grade.ready',
   'dictation.scored',
   'attempt.voided',

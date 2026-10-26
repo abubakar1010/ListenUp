@@ -143,3 +143,7 @@ async def _transcribe(deps: JobDeps, identifier: uuid.UUID, learner: uuid.UUID) 
         # fails raises, the job retries, and the committed announcement stays published.
         async with deps.database.transaction(learner) as db:
             await transcript.announce_ready(db, learner, identifier)
+
+
+# Register the independent profile continuation wherever transcription is registered.
+from listenup.modules.transcript import profile_jobs as _profile_jobs  # noqa: E402, F401
