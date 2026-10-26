@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 
 /** Event types the server streams on GET /api/v1/events (System Design 9.1, ADR 0016). */
 export const LIVE_EVENT_TYPES = [
+  'card.audio_updated',
   'job.progress',
   'content.ready',
   'transcript.ready',

@@ -11,6 +11,8 @@ export const cardsKey = (id: string) => ['cards', id] as const;
 export function useCards(id: string) {
   return useQuery({
     queryKey: cardsKey(id),
+    refetchInterval: (query) =>
+      query.state.data?.cards.some((card) => card.audio_status === 'pending') ? 1000 : false,
     queryFn: () =>
       api<components['schemas']['CardList']>(`/cards?session_id=${encodeURIComponent(id)}`),
   });
@@ -82,6 +84,16 @@ export function useFinishCards(id: string) {
     },
     onError: () => {
       void client.invalidateQueries({ queryKey: sessionKey(id) });
+    },
+  });
+}
+
+export function useRetryCardAudio(sessionId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<void>(`/cards/${id}/audio/retry`, { method: 'POST' }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: cardsKey(sessionId) });
     },
   });
 }

@@ -5,6 +5,11 @@ Read the section for the area you are changing before you change it. The rules e
 ## Jobs (ADR 0015, 0029, 0036)
 
 - A `unique_key` holds while a job with that key waits or runs: `enqueue` returns None meanwhile. A job that also runs on a schedule passes `schedule="<cron>"` to `@job`. A job whose worker died is settled by `platform.recover_stalled_jobs` (back to the queue, or `on_give_up` after its last attempt), so a handler must be safe to run again after doing part of its work.
+- Handlers settle their own permanent refusals before raising `PermanentError`
+  (including before sandbox exit 65); `on_give_up` also covers exhausted transient
+  failures and supervisor resource failures. A resource that allows retry before
+  the old queue row settles uses a new cycle key and fences old callbacks against
+  the current generation.
 
 ## Email (ADR 0017)
 
@@ -263,7 +268,7 @@ Read the section for the area you are changing before you change it. The rules e
   through DB to the default pool; never add a collector route to media-data.
 
 
-## Cards (ADR 0060)
+## Cards (ADRs 0060, 0064)
 
 - Cards read marks only through `review.service.list_marks`. Creation and completion
   lock the session row before calling `practice.service.require_step(..., Step.CARD)`;
@@ -271,7 +276,27 @@ Read the section for the area you are changing before you change it. The rules e
   independently by the database. Deletion frees a slot (D14).
 - Keep `at_ms` from the selected mark as a source-time snapshot. A deleted mark sets
   `mark_id` to NULL while the saved forms and time remain. Source links use
-  `/contents/{id}?at_ms={absolute_ms}`. Snippets remain #73.
+  `/contents/{id}?at_ms={absolute_ms}`.
+- Snippets (#73, ADR 0064) snapshot authorized word timings on creation. Refuse
+  phrases longer than six seconds before inserting a card. Generation uses the
+  intake lane and deterministic learner/card storage keys; never resolve audio
+  through source playback after it is ready. Card JSON exposes status only.
+- Deletion records a cleanup tombstone through a trigger, including cascades.
+  Background cleanup removes the tombstone only after successful object deletion;
+  the minute sweep recovers missed/exhausted cleanup jobs. Before upload, generation
+  commits a `card_snippet_writes` registration under the account/card locks, then
+  rechecks both before writing. Cleanup skips registered writers, and the guard
+  registered through `identity.service.on_account_purge` postpones account purge
+  before its first sweep. The writer FK uses RESTRICT to preserve that barrier.
+  Never expire registrations by age or job status; reconcile killed/uncertain
+  writers using [the runbook](runbooks/card-snippet-writers.md).
+- A retry creates a fresh internal `audio_generation` UUID and unique enqueue key,
+  with the same per-card execution lock. Generation and terminal callbacks check
+  the UUID, so an old job cannot change a newer attempt. Exports omit this UUID
+  and writer identity/owner fields. Upload cancellation drains before releasing
+  the registration; an uncertain S3 response retains it.
+- Cards-local playback pauses on unmount; pending cards poll and readiness/failure
+  events invalidate `['cards', sessionId]`. Keep shared-player behavior unchanged.
 
 ## Gist feedback (ADR 0054, #69)
 
