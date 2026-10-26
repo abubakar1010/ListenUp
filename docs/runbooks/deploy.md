@@ -41,12 +41,14 @@ LISTENUP_DEPLOY_DIR=/opt/listenup /opt/listenup/bin/deploy.sh r41
 
 Use this when a release misbehaves after it went live (errors, a broken page, a failing job type). Rolling back changes only the images; it never migrates backwards.
 
-1. Actions → Release → Run workflow → `action=rollback`, tag empty (the host's previous release) or a named tag (`r39`). Or on the host:
+1. Actions → Release → Run workflow → `action=rollback`, tag empty (the host's previous release). Or on the host:
 
    ```sh
-   LISTENUP_DEPLOY_DIR=/opt/listenup /opt/listenup/bin/rollback.sh        # previous release
-   LISTENUP_DEPLOY_DIR=/opt/listenup /opt/listenup/bin/rollback.sh r39    # a named one
+   LISTENUP_DEPLOY_DIR=/opt/listenup /opt/listenup/bin/rollback.sh                # previous release
+   LISTENUP_DEPLOY_DIR=/opt/listenup /opt/listenup/bin/rollback.sh --force r39    # an older one
    ```
+
+   Only the previous release is sure to run on the current schema: a contract step (a drop) may ship one release after its code stopped using what it drops (Database Design 12.2). A named tag other than the previous release is refused unless forced (`force` in the workflow). Force it only after reading the migrations of every release since that tag and finding no drop of anything it reads.
 
 2. Check: `curl -fsS https://<domain>/api/v1/health`, `docker compose -p listenup ps` (all healthy), `cat /opt/listenup/state/current-tag`.
 3. Afterwards `previous-tag` names the release rolled away from, so a second `rollback.sh` returns to it once it is fixed. Fix forward with a new commit; do not redeploy the bad tag.

@@ -209,14 +209,50 @@ def test_rollback_redeploys_the_previous_image_without_migrations(host: Host) ->
     assert lines[-1].endswith(" rollback r6 previous=r7")
 
 
-def test_rollback_to_a_named_release(host: Host) -> None:
+def test_rollback_to_the_previous_release_by_name(host: Host) -> None:
     host.set_state("current-tag", "r7")
     host.set_state("previous-tag", "r6")
 
-    assert host.run(ROLLBACK, "r4").returncode == 0
+    assert host.run(ROLLBACK, "r6").returncode == 0
+
+    assert host.state("current-tag") == "r6"
+
+
+def test_rollback_past_the_previous_release_is_refused_without_force(host: Host) -> None:
+    # Only the previous release is sure to run on the current schema: a contract
+    # migration may ship one release after its code stopped using a column
+    # (Database Design 12.2), so an older release may read what is gone.
+    host.set_state("current-tag", "r7")
+    host.set_state("previous-tag", "r6")
+
+    result = host.run(ROLLBACK, "r4")
+
+    assert result.returncode == 2
+    assert "--force" in result.stderr
+    assert host.calls() == []
+    assert host.state("current-tag") == "r7"
+
+
+def test_rollback_past_the_previous_release_with_force(host: Host) -> None:
+    host.set_state("current-tag", "r7")
+    host.set_state("previous-tag", "r6")
+
+    assert host.run(ROLLBACK, "--force", "r4").returncode == 0
 
     assert host.state("current-tag") == "r4"
     assert host.calls()[-1] == compose(host, "r4", "up --detach --wait --remove-orphans")
+
+
+def test_a_rollback_that_never_gets_healthy_restores_the_running_release(host: Host) -> None:
+    host.set_state("current-tag", "r7")
+    host.set_state("previous-tag", "r6")
+
+    result = host.run(ROLLBACK, FAKE_DOCKER_FAIL=" up ", FAKE_DOCKER_FAIL_TAG="r6")
+
+    assert result.returncode != 0
+    assert host.calls()[-1] == compose(host, "r7", "up --detach --wait --remove-orphans")
+    assert host.state("current-tag") == "r7"
+    assert host.state("previous-tag") == "r6"
 
 
 def test_rollback_without_a_previous_release_is_refused(host: Host) -> None:
