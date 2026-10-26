@@ -154,6 +154,18 @@ def _new_upload(world: World) -> dict[str, object]:
 
 
 REGISTRY: dict[tuple[str, str], Entry] = {
+    ("GET", "/api/v1/sessions/{session_id}/shadow/rounds"): Owned(
+        "session_not_found", params=lambda w: {"session_id": w.a.sessions["shadow"]}
+    ),
+    ("POST", "/api/v1/sessions/{session_id}/shadow/rounds/{number}/start"): Owned(
+        "session_not_found", params=lambda w: {"session_id": w.a.sessions["shadow"], "number": 1}
+    ),
+    ("POST", "/api/v1/sessions/{session_id}/shadow/rounds/{number}/playback-ended"): Owned(
+        "session_not_found", params=lambda w: {"session_id": w.a.sessions["shadow"], "number": 1}
+    ),
+    ("POST", "/api/v1/grades/{attempt_id}/retry"): Owned(
+        "attempt_not_found", params=lambda w: {"attempt_id": w.a.blind_attempt_id}
+    ),
     ("GET", "/api/v1/sessions/{session_id}/shadow/segment"): Owned(
         "session_not_found", params=lambda w: {"session_id": w.a.sessions["shadow"]}
     ),
@@ -272,6 +284,18 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ("DELETE", "/api/v1/cards/{card_id}"): Owned(
         "card_not_found",
         params=lambda w: {"card_id": w.a.card_id},
+    ),
+    ("GET", "/api/v1/cards/{card_id}/audio"): Owned(
+        "card_not_found",
+        params=lambda w: {"card_id": w.a.card_id},
+        owner_status=409,
+        owner_code="card_audio_not_ready",
+    ),
+    ("POST", "/api/v1/cards/{card_id}/audio/retry"): Owned(
+        "card_not_found",
+        params=lambda w: {"card_id": w.a.card_id},
+        owner_status=409,
+        owner_code="card_audio_not_failed",
     ),
     # -- marks (#58) -------------------------------------------------------------------
     ("GET", "/api/v1/sessions/{session_id}/marks"): Owned(

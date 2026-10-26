@@ -148,6 +148,8 @@ describe('useLiveEvents', () => {
         'job.progress',
         'transcript.ready',
         'transcript.failed',
+        'profile.ready',
+        'profile.failed',
         'grade.ready',
         'attempt.voided',
       ]) {
@@ -160,6 +162,8 @@ describe('useLiveEvents', () => {
       ['resource', 'job.progress'],
       ['resource', 'transcript.ready'],
       ['resource', 'transcript.failed'],
+      ['resource', 'profile.ready'],
+      ['resource', 'profile.failed'],
       ['resource', 'grade.ready'],
       ['resource', 'attempt.voided'],
     ]);

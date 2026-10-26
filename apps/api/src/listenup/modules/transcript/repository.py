@@ -120,7 +120,9 @@ async def mark_failed(db: AsyncSession, media_id: uuid.UUID, spans: list[Span]) 
 
 
 @asynccontextmanager
-async def media_lock(database: Database, media_id: uuid.UUID) -> AsyncIterator[None]:
+async def media_lock(
+    database: Database, media_id: uuid.UUID, *, namespace: str = "transcript"
+) -> AsyncIterator[None]:
     """Session lock across short transactions, never an idle transaction during AI.
 
     Queue resource locks serialize normal jobs. This lock also covers direct retries
@@ -128,7 +130,7 @@ async def media_lock(database: Database, media_id: uuid.UUID) -> AsyncIterator[N
     connection can never retain a session-level lock.
     """
     async with database.engine.connect() as connection:
-        key = {"key": f"transcript:{media_id}"}
+        key = {"key": f"{namespace}:{media_id}"}
         acquired = False
         try:
             acquired = bool(

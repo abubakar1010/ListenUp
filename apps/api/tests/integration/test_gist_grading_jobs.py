@@ -15,7 +15,7 @@ from listenup.ai.prompt_files import PROMPTS_DIR
 from listenup.ai.providers import fake
 from listenup.modules.blind import service as blind
 from listenup.modules.grading import jobs
-from listenup.platform.jobs import JobDeps
+from listenup.platform.jobs import JobDeps, Reschedule
 from tests.integration.test_key_point_jobs import ai as _wire_ai
 from tests.integration.test_key_point_jobs import clip as clip
 from tests.integration.test_key_point_jobs import database as database
@@ -205,7 +205,7 @@ async def test_missing_reference_retries_without_inference(
     attempt = await submit(json.loads((REPLAYS / "clean.json").read_text())["gist"])
     with psycopg.connect(migrated_url) as conn:
         conn.execute("DELETE FROM grading.key_points")
-    with pytest.raises(RuntimeError, match="not ready"):
+    with pytest.raises(Reschedule):
         await jobs.grade_gist(JobDeps(database, None, 1), str(attempt), str(learner))
     assert stored(migrated_url, attempt)[0] == "pending"
     assert ai == []
@@ -449,7 +449,7 @@ async def test_missing_or_empty_passage_never_calls_ai(
         with pytest.raises(PermanentError):
             await jobs.grade_gist(JobDeps(database, None, 1), str(attempt), str(learner))
     assert ai == []
-    assert stored(migrated_url, attempt)[0] == "pending"
+    assert stored(migrated_url, attempt)[0] == ("pending" if reference is None else "unavailable")
 
 
 @pytest.mark.anyio

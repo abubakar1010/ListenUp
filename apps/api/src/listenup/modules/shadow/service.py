@@ -1,4 +1,4 @@
-"""Shadow entry and segment selection (FR-SH-1, D8); no recording or rounds."""
+"""Shadow segment selection and playback rounds; recording is #81."""
 
 import uuid
 
@@ -9,6 +9,8 @@ from listenup.modules.review import service as review
 from listenup.modules.shadow import repository, schemas
 from listenup.modules.shadow.domain.segment import propose, validate
 from listenup.modules.shadow.models import ShadowSegment
+from listenup.modules.transcript import service as transcript
+from listenup.platform.database import Database
 from listenup.platform.errors import ProblemError
 from listenup.platform.export import ExportPart, learner_rows
 
@@ -67,5 +69,60 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
     return ExportPart(
         tables=(
             await learner_rows(session, "practice.shadow_segments", learner, order_by="session_id"),
+            await learner_rows(session, "practice.shadow_rounds", learner, order_by="created_at"),
         )
     )
+
+
+async def round_state(
+    db: AsyncSession, session_id: uuid.UUID, worker_database: Database, learner: uuid.UUID
+) -> schemas.Rounds:
+    selection = await segment(db, session_id)
+    rows = await repository.rounds(db, session_id)
+    summaries = [
+        schemas.Round(
+            round=r.round,
+            transcript_shown=r.transcript_shown,
+            playback_status=r.playback_status,
+            recorded_at=r.recorded_at,
+        )
+        for r in rows
+    ]
+    state = schemas.Rounds(
+        segment=selection, current=summaries[-1] if summaries else None, rounds=summaries
+    )
+    if state.current is not None and state.current.round == 1:
+        words = await transcript.read_passage(db, worker_database, learner, session_id)
+        state.text = " ".join(
+            word
+            for word, at in zip(words.words, words.start_ms, strict=True)
+            if selection.start_ms <= at < selection.end_ms
+        )
+    return state
+
+
+async def change_round(
+    db: AsyncSession, session_id: uuid.UUID, number: int, *, ended: bool = False
+) -> None:
+    await practice.lock_session(db, session_id)
+    session = await practice.require_step(db, session_id, practice.Step.SHADOW)
+    if number > 3:
+        raise ProblemError(409, "round_limit", "Shadow has only three rounds.")
+    await segment(db, session_id)
+    rows = await repository.rounds(db, session_id)
+    current = rows[-1] if rows else None
+    if ended:
+        if current is None or current.round != number:
+            raise ProblemError(409, "round_order", "End the current round only.")
+        current.playback_status = "ended"
+        await db.flush()
+        return
+    if current is not None and current.round == number:
+        return
+    if (
+        number < 1
+        or number != (current.round + 1 if current else 1)
+        or (current is not None and current.playback_status != "ended")
+    ):
+        raise ProblemError(409, "round_order", "Play the three rounds in order.")
+    await repository.insert_round(db, session_id, session.user_id, number)

@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from listenup.modules.shadow.models import ShadowSegment
+from listenup.modules.shadow.models import ShadowRound, ShadowSegment
+from listenup.platform.ids import uuid7
 
 
 async def get(db: AsyncSession, session_id: uuid.UUID) -> ShadowSegment | None:
@@ -34,3 +35,20 @@ async def save(
     row.chosen_by = chosen_by
     await db.flush()
     return row
+
+
+async def rounds(db: AsyncSession, session_id: uuid.UUID) -> list[ShadowRound]:
+    return list(
+        await db.scalars(
+            select(ShadowRound)
+            .where(ShadowRound.session_id == session_id)
+            .order_by(ShadowRound.round)
+        )
+    )
+
+
+async def insert_round(
+    db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID, number: int
+) -> None:
+    db.add(ShadowRound(id=uuid7(), session_id=session_id, user_id=user_id, round=number))
+    await db.flush()

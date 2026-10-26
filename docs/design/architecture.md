@@ -182,7 +182,7 @@ If the learner believes the reference transcript is wrong at some word, they can
 2. On gist submission a `grading.grade_gist` job sends the key points, the passage text and the gist (as clearly delimited data) with the versioned `grade_gist` prompt.
 3. The model must return a fixed structure: per-dimension scores, which key points are covered, any wrong claims, and feedback text. The structure is validated; anything out of range is rejected and retried.
 4. **Our code computes the overall score** from the dimension scores and the rubric weights, so the weighting never depends on model arithmetic.
-5. On repeated failure, or when no grade is ready 30 seconds after submission, the grade is stored as `unavailable` with a retry action, and the learner continues.
+5. On repeated failure, or when no grade is ready at the configured deadline (30 seconds by default), feedback is stored as `unavailable` with a retry action, and the learner continues. Quota admission waits show `delayed` instead and postpone automatically without consuming failure retries. `POST /grades/{attempt_id}/retry` authorizes the saved submission and coalesces waiting/running jobs; a validated late success can replace either state without changing practice progress ([ADR 0062](../adr/0062-gist-grading-recovery.md)).
 
 ## 6. Shadow grading pipeline
 
@@ -280,7 +280,8 @@ The table below is a summary of the main tables, named by schema; the [ListenUp 
 | `content.duplicate_uploads` | content | removed content\_id, user\_id, existing\_content\_id ([ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)) |
 | `content.contents` | content | id, user\_id, media\_object\_id, title, keep\_video; the learner's reference to a media object, once per library |
 | `content.passage_transcripts` | transcript | id, media\_object\_id, span (ms range), origin (creator\_captions, generated), status, packed arrays words, start\_ms, end\_ms, confidence, sentence\_starts, provider\_info |
-| `content.reference_profiles` | transcript | passage\_transcript\_id, model\_version, phones, pitch\_cents, intensity\_db, stats; computed once per passage when it is transcribed, read by every Shadow round |
+| `content.reference_profiles` | transcript | passage\_transcript\_id + fingerprint; status, packed word indices/timings/confidence, pitch\_cents, intensity\_cdb, provenance; original spans computed once, composed per passage for optional grading (ADR 0061) |
+| `content.profile_subscriptions` | transcript | session\_id, user\_id, media\_object\_id, padded span, fingerprint, status; private passage readiness and id-only profile events (ADR 0061) |
 | `content.transcript_corrections` | transcript | user\_id, passage\_transcript\_id, word\_index, corrected\_text |
 | `practice.sessions` | practice | id, user\_id, content\_id, passage (ms range), entry (blind, dictation, both), current\_step, entry\_locked\_at, status, version |
 | `practice.session_steps` | practice | session\_id, step, position, status (locked, open, done, skipped), completed\_at |
@@ -290,7 +291,7 @@ The table below is a summary of the main tables, named by schema; the [ListenUp 
 | `practice.marks` | review | id, session\_id, word\_from, word\_to, at\_ms, tag, note, source (dictation, manual), status |
 | `practice.cards` | cards | id, user\_id, session\_id, slot (1, 2), mark\_id, media\_object\_id, written\_form, heard\_form, snippet\_key |
 | `practice.shadow_segments` | shadow | session\_id, span (60 to 90 s, or the whole 30 to 60 s passage), chosen\_by, locked\_at |
-| `practice.shadow_rounds` | shadow | id, session\_id, round (1 to 3), transcript\_shown, status, recording\_key |
+| `practice.shadow_rounds` | shadow | id, session\_id, user\_id, round (1 to 3), transcript\_shown, playback\_status, created\_at, recorded\_at; recording/upload metadata follows in #81 ([ADR 0063](../adr/0063-shadow-playback-rounds.md)) |
 | `grading.key_points` | grading | id, media\_object\_id, span, prompt\_version, points (JSONB) |
 | `grading.gist_grades` | grading | attempt\_id, status, dimension\_scores, overall, level, covered\_points, wrong\_claims, feedback, provider\_info |
 | `grading.round_grades` | grading | round\_id, status (pending, scored, ready, unavailable), measures (JSONB), word\_labels (JSONB), feedback, feedback\_mode (ai, template), speech\_info, text\_info |
@@ -317,7 +318,7 @@ users/{user_id}/media/{media_object_id}/playback.mp4
 users/{user_id}/media/{media_object_id}/peaks.json
 users/{user_id}/exports/{export_id}.zip   retained 7 days after ready
 users/{user_id}/sessions/{session_id}/shadow/round-{n}.webm
-users/{user_id}/cards/{card_id}.m4a
+users/{user_id}/cards/{card_id}/snippet.m4a
 ```
 
 The bucket is never public. The browser only ever receives short-lived signed URLs issued after an ownership check. Production CORS allows `PUT` from the web origin with `Content-Type` for uploads ([ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md)) and `GET` for redirected peaks requests ([ADR 0026](../adr/0026-passage-picker-drawn-from-server-peaks.md)). Uploads use `users/{user_id}/uploads/{upload_id}.<ext>`, playback and peaks use `users/{user_id}/media/{media_object_id}/`, and exports use `users/{user_id}/exports/{export_id}.zip` ([ADR 0022](../adr/0022-upload-conversion-dedup-and-media-delivery.md), [ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)).
@@ -342,13 +343,13 @@ The API is JSON over HTTPS under `/api/v1`, described by the OpenAPI schema Fast
 | Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `POST /auth/password-reset`, `POST /auth/password-reset/confirm` ([ADR 0017](../adr/0017-password-reset-tokens-minted-by-the-email-job.md)), `GET /auth/oidc/google/start`, `GET /auth/oidc/google/callback` |
 | Account | `GET /me`, `DELETE /me` (deletes everything); `POST /me/exports` (202, idempotent), `GET /me/exports/latest`, `GET /me/exports/{id}/download` (owner-only 307 to a signed storage URL; [ADR 0030](../adr/0030-data-export-archive-built-in-the-background.md)) |
 | Intake | `POST /uploads` (signed upload URL), `DELETE /uploads/{id}` (cancel; [ADR 0020](../adr/0020-uploads-confirmed-against-a-pending-upload-table.md)), `GET /uploads/usage` (storage and daily allowance; [ADR 0027](../adr/0027-intake-admission-progress-and-refusals.md)), `POST /contents` (YouTube URL or upload id), `GET /contents`, `GET /contents/{id}`, `DELETE /contents/{id}` |
-| Media | `GET /media/{media_object_id}` for playback, GET /cards/{id}/audio for a card snippet, GET /shadow/rounds/{id}/recording for the learner's own recording. Each checks ownership, then redirects to a short-lived signed URL |
+| Media | `GET /media/{media_object_id}` for playback, GET /cards/{id}/audio for a card snippet (private 307, signed for at most 120 s; ADR 0064), GET /shadow/rounds/{id}/recording for the learner's own recording. Each checks ownership, then redirects to a short-lived signed URL |
 | Sessions | `POST /sessions` (content, passage, entry; playable clips only), `GET /sessions/{id}`, `PATCH /sessions/{id}/entry` (refused once Transcript starts), `POST /sessions/{id}/steps/{step}/skip`; entry and skip writes carry `version` in the body and stale writes return 409 `session_changed` ([ADR 0023](../adr/0023-session-endpoints-readiness-and-versions.md)) |
 | Blind | `POST /sessions/{id}/blind/attempts`, `GET /blind/attempts/{id}/media/{token}`, `POST /blind/attempts/{id}/heartbeat`, `POST /blind/attempts/{id}/void` (leave with `fetch(..., {keepalive: true})` and CSRF header), `POST /blind/attempts/{id}/gist` ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md)) |
 | Dictation | `POST /sessions/{id}/dictation/attempts` (201 new or 200 with `resumed: true` for the live draft), `PUT /dictation/attempts/{id}/draft` (`draft_version`; stale differing text gets 409 `draft_conflict`, identical resend succeeds; [ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)), `POST /dictation/attempts/{id}/submit` (202; stores the text, completes the step, queues scoring; [ADR 0042](../adr/0042-dictation-submission-and-asynchronous-scoring.md)), `GET /dictation/attempts/{id}` and `GET /sessions/{id}/dictation/attempt` (state and, once scored, the diff and accuracy; `dictation.scored` event), `POST /dictation/attempts/{id}/disputes` |
 | Transcript step | `GET /sessions/{id}/transcript` (only from the Transcript step on), `GET`, `POST`, `PATCH`, `DELETE /sessions/{id}/marks` |
-| Cards | `POST /sessions/{id}/cards`, `GET /cards`, `DELETE /cards/{id}`, `POST /sessions/{id}/cards/complete` |
-| Shadow | `PUT /sessions/{id}/shadow/segment`, `POST /sessions/{id}/shadow/rounds` (returns a signed upload URL), `POST /shadow/rounds/{id}/complete`, `GET /sessions/{id}/shadow/comparison` |
+| Cards | `POST /sessions/{id}/cards`, `GET /cards`, `DELETE /cards/{id}`, `POST /sessions/{id}/cards/complete`, `POST /cards/{id}/audio/retry` (owner/CSRF checked, new generation cycle; ADR 0064) |
+| Shadow | `GET/PUT /sessions/{id}/shadow/segment`, `GET /sessions/{id}/shadow/rounds`, `POST /sessions/{id}/shadow/rounds/{number}/start`, `POST /sessions/{id}/shadow/rounds/{number}/playback-ended` ([ADR 0063](../adr/0063-shadow-playback-rounds.md)); recording upload/complete and comparison follow in their stories |
 | Grades | `GET /gists/{attempt_id}/grade`, `GET /shadow/rounds/{id}/grade`, `POST /grades/{id}/retry` |
 | Library | `GET /library/contents`, `GET /library/trends` |
 | Admin | `GET /admin/usage`, `GET /admin/jobs`, `POST /admin/takedowns` |

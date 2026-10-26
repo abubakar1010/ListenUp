@@ -129,3 +129,61 @@ it('draws passage peaks from a longer media file', async () => {
   renderWithProviders(<ShadowScreen session={session} progress={null} />);
   expect(await screen.findByTestId('waveform-bars')).toBeInTheDocument();
 });
+
+it('preview offers original speed only and repairs rate changes', async () => {
+  setup();
+  await screen.findByRole('slider', { name: 'Seek' });
+  expect(screen.queryByRole('combobox', { name: /speed/i })).not.toBeInTheDocument();
+  const audio = document.querySelector('audio')!;
+  audio.playbackRate = 1.5;
+  fireEvent.rateChange(audio);
+  expect(audio.playbackRate).toBe(1);
+});
+
+it('requires saving edited segment handles before starting a round', async () => {
+  mockRoutes({
+    [`GET ${path}`]: jsonResponse(200, segment),
+    [`PUT ${path}`]: (call) => jsonResponse(200, { ...segment, ...(call.body as object) }),
+    [`GET /sessions/${session.id}/shadow/rounds`]: jsonResponse(200, {
+      segment,
+      current: null,
+      rounds: [],
+    }),
+    'GET /contents/clip-1': jsonResponse(200, { media_url: '/audio', peaks_url: null }),
+  });
+  renderWithProviders(<ShadowScreen session={session} progress={null} />);
+  const handle = await screen.findByRole('slider', { name: 'Segment start' });
+  const start = await screen.findByRole('button', { name: 'Start round 1' });
+  expect(start).toBeEnabled();
+  fireEvent.keyDown(handle, { key: 'End' });
+  expect(start).toHaveAttribute('aria-disabled', 'true');
+  fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+  await screen.findByText('Segment saved.');
+  expect(start).toBeEnabled();
+});
+
+it('uses the authoritative round segment while segment refresh is delayed', async () => {
+  let number = 0;
+  mockRoutes({
+    [`GET ${path}`]: () => (number ? new Promise<Response>(() => {}) : jsonResponse(200, segment)),
+    [`GET /sessions/${session.id}/shadow/rounds`]: () =>
+      jsonResponse(200, {
+        segment: { ...segment, locked_at: number ? '2026-10-25T10:00:00Z' : null },
+        current: number
+          ? { round: 1, transcript_shown: true, playback_status: 'ready', recorded_at: null }
+          : null,
+        rounds: [],
+        ...(number ? { text: 'Round one text.' } : {}),
+      }),
+    [`POST /sessions/${session.id}/shadow/rounds/1/start`]: () => {
+      number = 1;
+      return new Response(null, { status: 204 });
+    },
+    'GET /contents/clip-1': jsonResponse(200, { media_url: '/audio', peaks_url: null }),
+  });
+  renderWithProviders(<ShadowScreen session={session} progress={null} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Start round 1' }));
+  await screen.findByRole('heading', { name: 'Round 1 of 3' });
+  expect(document.querySelectorAll('audio')).toHaveLength(1);
+  expect(screen.getByText('Segment locked. Round 1 has started.')).toBeInTheDocument();
+});
