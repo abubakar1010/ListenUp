@@ -286,13 +286,42 @@ jobs:
           cache-dependency-path: apps/web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm e2e
+      - run: pnpm e2e --project=chromium
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: playwright-report
           path: apps/web/playwright-report
           retention-days: 7
+
+  a11y:
+    # axe on every route and main state at 1280 px, 360 px and in the dark theme;
+    # serious and critical WCAG 2.1 A/AA violations fail (#98, NFR-USE-2, UI-4).
+    name: Accessibility (axe, Playwright)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm e2e:a11y
+      # The report holds each state's full axe results, including moderate and minor ones.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a11y-report
+          path: apps/web/playwright-report
+          retention-days: 14
 
   api-contract:
     name: API client matches the API

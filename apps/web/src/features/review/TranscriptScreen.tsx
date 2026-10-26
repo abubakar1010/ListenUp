@@ -285,7 +285,7 @@ function TranscriptWork({
                       ref={(element) => {
                         marking.wordRefs.current[word.index] = element;
                       }}
-                      aria-label={`Jump to ${word.text || 'removed word'}${word.edited ? ' (edited)' : ''}`}
+                      aria-label={`Jump to ${word.text || 'removed word'}${word.edited ? ', edited' : ''}`}
                       aria-describedby={marking.describedBy(word.index)}
                       className={`min-h-11 max-w-full rounded-sm px-1 text-left underline decoration-dotted underline-offset-4 [overflow-wrap:anywhere] hover:bg-surface-raised ${marking.markClass(word.index)} ${marking.isSelected(word.index) ? 'outline-2 outline-mark-strong' : ''}`}
                       onClick={(event) => {
@@ -295,7 +295,13 @@ function TranscriptWork({
                       onKeyDown={(event) => marking.onWordKey(word.index, event)}
                     >
                       {word.text || '(removed word)'}
-                      {word.edited && <span className="ml-1 text-body-s font-bold">Edited</span>}
+                      {/* A real space: without it the visible text reads "wordEdited" (WCAG 2.5.3). */}
+                      {word.edited && (
+                        <>
+                          {' '}
+                          <span className="text-body-s font-bold">Edited</span>
+                        </>
+                      )}
                     </button>{' '}
                   </span>
                 ))}

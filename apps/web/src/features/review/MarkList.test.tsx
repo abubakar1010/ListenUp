@@ -31,7 +31,10 @@ test('list_buttons_offer_edit_remove_and_ignore_modified_or_repeated_shortcuts',
     />,
   );
   const list = screen.getByRole('list', { name: 'Your marks' });
-  const play = within(list).getByRole('button', { name: 'Play mark (removed words) at 00:00' });
+  // Each name starts with or contains the words on the button (WCAG 2.5.3, #98); the
+  // separator dot is visible only, so screen readers do not announce it.
+  const play = within(list).getByRole('button', { name: 'Play mark 00:00 (removed words)' });
+  expect(play).toHaveTextContent(/^Play mark 00:00 · \(removed words\)$/);
   fireEvent.keyDown(play, { key: 'e', ctrlKey: true });
   fireEvent.keyDown(play, { key: 'Delete', altKey: true });
   fireEvent.keyDown(play, { key: 'e', metaKey: true });
@@ -39,7 +42,7 @@ test('list_buttons_offer_edit_remove_and_ignore_modified_or_repeated_shortcuts',
   fireEvent.keyDown(play, { key: 'ArrowRight' });
   expect(onEdit).not.toHaveBeenCalled();
   expect(onRemove).not.toHaveBeenCalled();
-  fireEvent.click(within(list).getByRole('button', { name: 'Edit mark (removed words)' }));
+  fireEvent.click(within(list).getByRole('button', { name: 'Edit note for mark (removed words)' }));
   expect(onEdit).toHaveBeenCalledWith(mark);
   fireEvent.click(within(list).getByRole('button', { name: 'Remove mark (removed words)' }));
   expect(onRemove).toHaveBeenCalledWith(mark);

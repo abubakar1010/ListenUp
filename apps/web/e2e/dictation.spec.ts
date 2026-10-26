@@ -165,7 +165,7 @@ test('reference correction by keyboard updates score and Edited marker at 360px'
   }
   await expect(dialog).toHaveCount(0);
   await expect(page.getByText('100%')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Jump to cap (edited)' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Jump to cap, edited' })).toBeVisible();
   await expect(page.getByText('Edited', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Correct reference word cap' })).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
