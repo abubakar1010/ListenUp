@@ -12,6 +12,11 @@
 # Networks:
 #   edge        Caddy and the API only. Caddy has a fixed address, the one address the
 #               API trusts for X-Forwarded-For (rate limits and sign-in lockout key on it).
+#
+# The fixed subnets and addresses default to 172.31.250.0/24 and 172.31.251.0/24; a
+# host whose own networks use that range (AWS's default VPC is 172.31.0.0/16) moves
+# them with LISTENUP_EDGE_SUBNET, LISTENUP_EDGE_IP, LISTENUP_MEDIA_SUBNET and
+# LISTENUP_RELAY_IP in its .env.
 #   default     egress for everything that calls managed services or the internet.
 #   media-data  the media worker's isolated, internal network (ADR 0049). It has no route
 #               out; db-relay forwards exactly the database and storage ports to the
@@ -64,7 +69,7 @@ services:
     networks:
       default: {}
       edge:
-        ipv4_address: 172.31.250.10
+        ipv4_address: ${LISTENUP_EDGE_IP:-172.31.250.10}
     depends_on:
       api:
         condition: service_healthy
@@ -98,11 +103,11 @@ services:
       - "5"
       - --proxy-headers
       - --forwarded-allow-ips
-      - 172.31.250.10
+      - ${LISTENUP_EDGE_IP:-172.31.250.10}
     networks:
       default: {}
       # Caddy proxies to this alias, which exists on the edge network only, so its
-      # requests always come from 172.31.250.10 (the one trusted address).
+      # requests always come from LISTENUP_EDGE_IP (the one trusted address).
       edge:
         aliases: [api-via-edge]
     healthcheck:
@@ -173,11 +178,12 @@ services:
       driver: json-file
       options: {max-size: 20m, max-file: "5"}
     networks: [media-data]
-    # The managed services' real names resolve to the relay here only, so TLS still
-    # verifies the provider's certificate end to end.
+    # The managed services' real names resolve to the relay here only, so the clients
+    # still check the provider's certificate against its real name end to end (the
+    # database URLs use sslmode=verify-full; S3 is HTTPS).
     extra_hosts:
-      - ${LISTENUP_RELAY_DB_HOST:?set in .env}:172.31.251.10
-      - ${LISTENUP_RELAY_S3_HOST:?set in .env}:172.31.251.10
+      - ${LISTENUP_RELAY_DB_HOST:?set in .env}:${LISTENUP_RELAY_IP:-172.31.251.10}
+      - ${LISTENUP_RELAY_S3_HOST:?set in .env}:${LISTENUP_RELAY_IP:-172.31.251.10}
     environment:
       LISTENUP_ENVIRONMENT: ${LISTENUP_ENVIRONMENT:-production}
       LISTENUP_DATABASE_URL: ${LISTENUP_WORKER_DATABASE_URL:?set in .env}
@@ -227,7 +233,7 @@ services:
     networks:
       default: {}
       media-data:
-        ipv4_address: 172.31.251.10
+        ipv4_address: ${LISTENUP_RELAY_IP:-172.31.251.10}
 
   # Nightly pg_dump to its own bucket, kept 14 days (ADR 0032); always on in production.
   backup:
@@ -297,12 +303,21 @@ configs:
     content: |
       global
         log stdout format raw local0 notice
+      # Docker's DNS, asked again every 10 s: a managed database's failover or a storage
+      # endpoint's new address reaches the media pool without restarting the relay. The
+      # last good address is kept while DNS fails, and a name that does not resolve at
+      # start leaves that backend down instead of stopping the relay.
+      resolvers docker
+        nameserver dns 127.0.0.11:53
+        hold valid 10s
+        accepted_payload_size 8192
       defaults
         mode tcp
         log global
         timeout connect 5s
         timeout client 1h
         timeout server 1h
+        default-server init-addr last,libc,none resolvers docker resolve-prefer ipv4
       frontend database
         bind :${LISTENUP_RELAY_DB_PORT:-5432}
         default_backend database
@@ -317,7 +332,7 @@ configs:
 networks:
   edge:
     ipam:
-      config: [{subnet: 172.31.250.0/24}]
+      config: [{subnet: "${LISTENUP_EDGE_SUBNET:-172.31.250.0/24}"}]
   # Docker Engine >= 28: isolated internal bridge has no host-facing gateway.
   media-data:
     internal: true
@@ -325,7 +340,7 @@ networks:
     driver_opts:
       com.docker.network.bridge.gateway_mode_ipv4: isolated
     ipam:
-      config: [{subnet: 172.31.251.0/24}]
+      config: [{subnet: "${LISTENUP_MEDIA_SUBNET:-172.31.251.0/24}"}]
 
 volumes:
   caddy-data:

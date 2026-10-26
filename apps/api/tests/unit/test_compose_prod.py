@@ -199,6 +199,42 @@ def test_the_relay_forwards_exactly_two_upstreams_without_inspecting_them() -> N
     assert "user" not in relay  # the image's non-root haproxy user
 
 
+def test_the_relay_resolves_its_upstreams_again_when_their_addresses_change() -> None:
+    # A managed database's failover, or a storage endpoint's rotation, changes the
+    # address behind the name; resolving once at start would strand the media pool.
+    config = PROD["configs"]["db-relay"]["content"]
+    assert re.search(r"^resolvers docker$", config, re.MULTILINE)
+    assert "nameserver dns 127.0.0.11:53" in config
+    assert re.search(r"^\s*default-server init-addr last,libc,none resolvers docker", config, re.M)
+    for line in re.findall(r"^\s*server \S+ .+$", config, re.MULTILINE):
+        assert "resolvers" not in line or "resolvers docker" in line
+
+
+def test_the_fixed_network_addresses_can_be_moved_off_a_clashing_host_range() -> None:
+    edge_subnet = "${LISTENUP_EDGE_SUBNET:-172.31.250.0/24}"
+    media_subnet = "${LISTENUP_MEDIA_SUBNET:-172.31.251.0/24}"
+    edge_ip = "${LISTENUP_EDGE_IP:-172.31.250.10}"
+    relay_ip = "${LISTENUP_RELAY_IP:-172.31.251.10}"
+    assert PROD["networks"]["edge"]["ipam"]["config"] == [{"subnet": edge_subnet}]
+    assert PROD["networks"]["media-data"]["ipam"]["config"] == [{"subnet": media_subnet}]
+    assert SERVICES["edge"]["networks"]["edge"]["ipv4_address"] == edge_ip
+    assert SERVICES["db-relay"]["networks"]["media-data"]["ipv4_address"] == relay_ip
+    example = (REPO / "infra/deploy/env.example").read_text()
+    for name in ("EDGE_SUBNET", "EDGE_IP", "MEDIA_SUBNET", "RELAY_IP"):
+        assert f"# LISTENUP_{name}=" in example, name
+
+
+def test_every_database_url_verifies_the_server_certificate() -> None:
+    # sslmode=require encrypts but trusts any certificate; with the relay in the path
+    # only verify-full proves which server answers.
+    example = (REPO / "infra/deploy/env.example").read_text()
+    urls = re.findall(r"^LISTENUP_\w+_DATABASE_URL=(.+)$", example, re.MULTILINE)
+    assert len(urls) == 5
+    for url in urls:
+        assert "sslmode=verify-full" in url, url
+        assert "sslrootcert=" in url, url
+
+
 def test_the_backup_service_always_runs_in_production() -> None:
     assert "profiles" not in SERVICES["backup"]
     assert env("backup")["LISTENUP_BACKUP_BUCKET"] == "${LISTENUP_BACKUP_BUCKET:?set in .env}"
