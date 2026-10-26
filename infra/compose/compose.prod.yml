@@ -217,7 +217,7 @@ services:
       - clamav-signatures:/signatures:ro
 
   # Plain TCP pass-through from the isolated media network to the managed database and
-  # storage, and nowhere else (ADR 0061). It reads nothing: TLS is end to end.
+  # storage, and nowhere else (ADR 0065). It reads nothing: TLS is end to end.
   db-relay:
     <<: *hardened
     image: haproxy:3.2.4-alpine

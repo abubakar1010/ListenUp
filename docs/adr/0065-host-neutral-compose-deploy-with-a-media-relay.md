@@ -1,4 +1,4 @@
-# ADR 0061: Host-neutral Compose deploys, an HTTPS edge image and a media relay
+# ADR 0065: Host-neutral Compose deploys, an HTTPS edge image and a media relay
 
 - Status: Accepted
 - Date: 2026-10-25

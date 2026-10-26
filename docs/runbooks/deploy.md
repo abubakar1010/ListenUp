@@ -1,6 +1,6 @@
 # Deploy and rollback runbook
 
-Production is one Docker-capable VM running `compose.prod.yml` behind Caddy, with managed PostgreSQL 16, S3-compatible storage and an SMTP provider (Architecture 11). Design and reasons: [ADR 0061](../adr/0061-host-neutral-compose-deploy-with-a-media-relay.md). Nothing here names a provider: the host is chosen in #16. Times are UTC.
+Production is one Docker-capable VM running `compose.prod.yml` behind Caddy, with managed PostgreSQL 16, S3-compatible storage and an SMTP provider (Architecture 11). Design and reasons: [ADR 0065](../adr/0065-host-neutral-compose-deploy-with-a-media-relay.md). Nothing here names a provider: the host is chosen in #16. Times are UTC.
 
 | What | Where |
 | --- | --- |
