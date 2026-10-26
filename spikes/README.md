@@ -70,7 +70,7 @@ spike-passages voxpopuli data/raw/vp_acc_test_0.parquet data/raw/vp_acc_test_1.p
 
 ## B5 load test (#94)
 
-`spike-b5` needs Docker (with Compose), `uv`, and the backend dependencies (`cd apps/api && uv sync`). It:
+`spike-b5` needs Docker (with Compose), `uv`, the `load` extra (`uv sync --extra load`), and the backend dependencies (`cd apps/api && uv sync`). It:
 
 1. starts PostgreSQL, storage, the migrations, the API and the default worker as the
    Compose project `listenup-b5` (`infra/compose/compose.yml` plus
@@ -85,21 +85,28 @@ spike-passages voxpopuli data/raw/vp_acc_test_0.parquet data/raw/vp_acc_test_1.p
    requests per second of mixed reads and writes at a constant arrival rate, plus the
    Blind learners' heartbeats every 5 s, for `--warmup` (60 s) and then `--duration`
    (600 s) measured;
-4. samples `docker stats` and dumps pg_stat_statements, reset at the end of warm-up.
+4. starts k6 at a wall-clock time it picks (`--start-lead`, default 20 s, after the
+   image is pulled), samples `docker stats`, resets pg_stat_statements at the end of
+   warm-up and dumps it at the end, and counts the Blind attempts by outcome;
+5. deletes the seeded learners (unless `--keep-data`) and the seed manifest.
 
 It writes `results.json`, `results.md` and `requests.csv.gz` (every request: phase,
-kind, route, status, duration, k6 error code), then deletes the seed manifest, which
-holds session tokens. p95 is nearest-rank over every measured request, failed ones
-included; CPU is each container's share of all host cores, and the server is the API,
-database and worker together. Sign-in is seeded, not posted: the per-IP sign-in limit
-would refuse N learners from one load generator; CSRF uses the real double-submit
-check with one fixed token per learner. The exit code is 1 when a target is missed.
+kind, route, status, duration, k6 error code). The seed manifest holds session tokens:
+it lives only in a private temporary folder outside `--out` and is removed however the
+run ends. p95 is nearest-rank over every measured request, failed ones included, with a
+second p95 over the answered requests; CPU is each container's share of all host cores,
+and the server is the API, database and worker together. Sign-in is seeded, not posted:
+the per-IP sign-in limit would refuse N learners from one load generator; CSRF uses the
+real double-submit check with one fixed token per learner. The exit code is 1 when a
+target is missed, more than 1% of reads or writes fail, or less than 95% of the planned
+load is delivered (ADR 0065).
 
-A run without `--stage0` is labelled local and is never stage-0 evidence. On the stage-0
-server, run against the deployed release candidate (#112) with `--skip-up`,
-`--base-url`, `--health-url` and `--database-url` pointing at it, and the load
-generator on another machine where possible; record the deployment's own CPU if
-`docker stats` cannot see it. Clean up with
+A run without `--stage0` is labelled local and is never stage-0 evidence. `--stage0`
+needs `--skip-up` and the deployment's `--base-url`. On the stage-0 server, run against
+the deployed release candidate (#112) with `--health-url` and `--database-url` (the
+database owner: seeding, statements and attempt outcomes) pointing at it too, and the
+load generator on another machine where possible (`--k6-network` picks k6's Docker
+network). Record the deployment's own CPU if `docker stats` cannot see it. Clean up with
 `docker compose -p listenup-b5 -f infra/compose/compose.yml -f spikes/load/compose.b5.yml down -v`.
 
 `spike-summary b1|b2 <results folder>` prints the tables used in `docs/spikes/`.

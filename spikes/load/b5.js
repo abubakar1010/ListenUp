@@ -17,6 +17,9 @@ const WARMUP_S = Number(__ENV.WARMUP_S || 60);
 const DURATION_S = Number(__ENV.DURATION_S || 600);
 const TOTAL_S = WARMUP_S + DURATION_S;
 const HEARTBEAT_S = 5;
+// The wall-clock start the runner chose: setup() waits for it, so the runner's statement
+// reset and CPU window line up with the warm-up and measured window below.
+const START_AT_MS = Number(__ENV.START_AT_MS || 0);
 const CSRF = "b5-load-test";
 
 const manifest = JSON.parse(open(__ENV.MANIFEST));
@@ -75,6 +78,7 @@ const REQUESTS_PER_FLOW = FLOWS.reduce((sum, f) => sum + f.weight * f.requests, 
 
 export const options = {
   discardResponseBodies: false,
+  setupTimeout: "120s",
   scenarios: {
     mixed: {
       executor: "constant-arrival-rate",
@@ -100,7 +104,14 @@ export function setup() {
   if (learners.length < BLIND_LEARNERS) {
     throw new Error(`the manifest has ${learners.length} learners, fewer than ${BLIND_LEARNERS}`);
   }
-  return { startedAt: Date.now() };
+  if (!START_AT_MS) return { startedAt: Date.now() };
+  const wait = START_AT_MS - Date.now();
+  if (wait < 0) {
+    // Starting late would shift the window the runner measures CPU and statements in.
+    throw new Error(`k6 started ${-wait} ms after the agreed start; raise --start-lead`);
+  }
+  sleep(wait / 1000);
+  return { startedAt: START_AT_MS };
 }
 
 let startedAt = 0;

@@ -1,6 +1,8 @@
 """Pure parts of the B5 load-test runner (#94): percentiles, grouping, CPU, statements."""
 
 import json
+import os
+import stat
 
 import pytest
 
@@ -8,11 +10,15 @@ from listenup_spikes.b5_load import (
     LOCAL_LABEL,
     Request,
     achieved_rates,
+    measured_window,
+    parse_args,
     parse_k6_points,
     parse_stats_line,
     percentile,
+    private_manifest,
     rank_statements,
     render_markdown,
+    summarise_attempts,
     summarise_cpu,
     summarise_requests,
     verdict,
@@ -175,6 +181,8 @@ def test_a_group_without_requests_has_no_percentile() -> None:
         "p95_ms": None,
         "p99_ms": None,
         "max_ms": None,
+        "p50_answered_ms": None,
+        "p95_answered_ms": None,
         "errors": 0,
         "error_rate": 0.0,
         "by_status": {},
@@ -268,16 +276,28 @@ def test_rank_statements_ignores_the_extension_and_the_runners_own_queries() -> 
 # Verdict: System Design 1.1 and 12.1 targets; a local run is never stage-0 evidence.
 
 
-def summary_with(read_p95: float | None, write_p95: float | None) -> dict[str, dict]:
-    return {"read": {"p95_ms": read_p95}, "write": {"p95_ms": write_p95}}
+def summary_with(
+    read_p95: float | None, write_p95: float | None, write_errors: float = 0.0
+) -> dict[str, dict]:
+    return {
+        "read": {"p95_ms": read_p95, "error_rate": 0.0},
+        "write": {"p95_ms": write_p95, "error_rate": write_errors},
+    }
 
 
 def cpu_with(server: float | None) -> dict[str, dict]:
     return {"server": {"mean_pct": server}}
 
 
+PLANNED = {"mixed_rps": 15.0, "heartbeat_rps": 4.0}
+
+
+def judge(summary, cpu, achieved=PLANNED, *, stage0=False):
+    return verdict(summary, cpu, achieved, PLANNED, stage0=stage0)
+
+
 def test_verdict_passes_within_every_target_but_says_it_is_local() -> None:
-    result = verdict(summary_with(199.9, 299.9), cpu_with(29.9), stage0=False)
+    result = judge(summary_with(199.9, 299.9), cpu_with(29.9))
     assert result["meets_targets"] is True
     assert result["label"] == LOCAL_LABEL
     assert result["stage0_evidence"] is False
@@ -294,13 +314,13 @@ def test_verdict_passes_within_every_target_but_says_it_is_local() -> None:
     ],
 )
 def test_verdict_fails_at_or_over_a_target_or_without_a_measurement(read, write, cpu, failed):
-    result = verdict(summary_with(read, write), cpu_with(cpu), stage0=False)
+    result = judge(summary_with(read, write), cpu_with(cpu))
     assert result["meets_targets"] is False
     assert result["checks"][failed] is False
 
 
 def test_a_stage0_run_is_labelled_as_such() -> None:
-    result = verdict(summary_with(10, 10), cpu_with(1), stage0=True)
+    result = judge(summary_with(10, 10), cpu_with(1), stage0=True)
     assert result["stage0_evidence"] is True
     assert result["label"] != LOCAL_LABEL
 
@@ -316,7 +336,8 @@ def test_render_markdown_leads_with_the_host_label_and_lists_slow_statements() -
         "blind_stops": {"too_fast": 1},
         "cpu": summarise_cpu([("api", 8.0)], cores=4, roles={"api": "api"}),
         "statements": rank_statements([statement("SELECT b", 2, 60.0)], top=5, slow_mean_ms=10.0),
-        "verdict": verdict(summary_with(10, 20), cpu_with(2), stage0=False),
+        "blind_attempts": summarise_attempts([("voided", "missed_heartbeat", 2)]),
+        "verdict": judge(summary_with(10, 20), cpu_with(2)),
     }
     text = render_markdown(report)
     first = text.splitlines()[0]
@@ -325,6 +346,7 @@ def test_render_markdown_leads_with_the_host_label_and_lists_slow_statements() -
     assert "| read | 1 |" in text
     assert "SELECT b" in text
     assert "too_fast" in text
+    assert "missed_heartbeat x2" in text
 
 
 # The report says what load was actually delivered, so a short-changed run is visible.
@@ -342,3 +364,122 @@ def test_achieved_rates_without_a_window_are_unknown() -> None:
         "mixed_rps": None,
         "heartbeat_rps": None,
     }
+
+
+# A run whose requests fail, or that sends less than planned, is not a pass however fast
+# its responses were (#155: failures stay in the outcome).
+
+
+def test_verdict_fails_when_requests_fail_even_if_they_were_fast() -> None:
+    # The default local run: 4.96% of writes (all heartbeats) got no response.
+    result = judge(summary_with(22.4, 31.1, write_errors=0.0496), cpu_with(6.6))
+    assert result["checks"]["errors"] is False
+    assert result["meets_targets"] is False
+
+
+def test_an_error_rate_exactly_at_the_limit_misses() -> None:
+    assert judge(summary_with(10, 10, write_errors=0.01), cpu_with(1))["checks"]["errors"] is False
+    assert judge(summary_with(10, 10, write_errors=0.0099), cpu_with(1))["checks"]["errors"]
+
+
+@pytest.mark.parametrize(
+    ("achieved", "delivered"),
+    [
+        ({"mixed_rps": 15.0, "heartbeat_rps": 1.8}, False),  # the discarded run: 45% of beats
+        ({"mixed_rps": 14.2, "heartbeat_rps": 4.0}, False),
+        ({"mixed_rps": 14.25, "heartbeat_rps": 3.8}, True),  # exactly 95% of the plan
+        ({"mixed_rps": None, "heartbeat_rps": 4.0}, False),
+    ],
+)
+def test_verdict_fails_when_less_than_95_percent_of_the_plan_was_sent(achieved, delivered) -> None:
+    result = judge(summary_with(10, 10), cpu_with(1), achieved)
+    assert result["checks"]["delivered"] is delivered
+    assert result["meets_targets"] is delivered
+
+
+# Fast failures can pull a percentile down, so each group also has p95 over the requests
+# that got a response.
+
+
+def test_each_group_also_has_a_p95_of_the_answered_requests() -> None:
+    requests = [req("heartbeat", 1.0, status=0)] * 10 + [req("heartbeat", 50.0)] * 10
+    summary = summarise_requests(requests)
+    assert summary["heartbeat"]["p95_ms"] == 50.0
+    assert summary["heartbeat"]["p50_ms"] == 1.0
+    assert summary["heartbeat"]["p95_answered_ms"] == 50.0
+    assert summary["heartbeat"]["p50_answered_ms"] == 50.0
+
+
+def test_a_group_with_no_answered_request_has_no_answered_p95() -> None:
+    summary = summarise_requests([req("read", 2.0, status=0)])
+    assert summary["read"]["p95_answered_ms"] is None
+
+
+# CPU: a sampling round that misses a server container would understate the server.
+
+
+def test_a_cpu_round_missing_a_server_container_is_left_out_of_the_server_figure() -> None:
+    roles = {"api": "api", "db": "db", "worker": "worker", "k6": "load"}
+    samples = [
+        ("api", 40.0),
+        ("worker", 4.0),  # no db sample in this round
+        ("api", 80.0),
+        ("db", 40.0),
+        ("worker", 4.0),
+        ("k6", 8.0),
+    ]
+    cpu = summarise_cpu(samples, cores=4, roles=roles)
+    assert cpu["server"]["samples"] == 1
+    assert cpu["server"]["mean_pct"] == 31.0  # (80 + 40 + 4) / 4 cores
+    assert cpu["server"]["incomplete_rounds"] == 1
+    assert cpu["api"]["samples"] == 2  # per-role figures keep every sample
+
+
+# The measured window, the statement reset and the CPU window all follow one start time
+# that k6 waits for, rather than a guess at when k6's clock started.
+
+
+def test_the_measured_window_follows_the_agreed_start_and_the_warmup() -> None:
+    assert measured_window(start_at=1000.0, warmup_s=60, duration_s=600) == (1060.0, 1660.0)
+
+
+# Blind attempts at the end of the run, by outcome: a listen whose `ended` beat got no
+# answer stays unfinished, and the expiry worker voids it where k6 cannot see.
+
+
+def test_summarise_attempts_counts_outcomes_and_void_reasons() -> None:
+    rows = [("listened", None, 90), ("voided", "missed_heartbeat", 3), ("unfinished", None, 7)]
+    assert summarise_attempts(rows) == {
+        "listened": 90,
+        "unfinished": 7,
+        "voided": {"missed_heartbeat": 3},
+    }
+
+
+# The seed manifest holds session tokens: private while it exists, gone afterwards.
+
+
+def test_the_private_manifest_is_owner_only_and_removed_even_after_a_failure() -> None:
+    with pytest.raises(RuntimeError), private_manifest() as path:
+        path.write_text("tokens")
+        folder = path.parent
+        assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
+        raise RuntimeError("k6 failed")
+    assert not folder.exists()
+
+
+# --stage0 is a claim about where the run happened: refuse it with the local stack.
+
+
+def test_stage0_is_refused_against_the_local_compose_stack() -> None:
+    with pytest.raises(SystemExit):
+        parse_args(["--out", "x", "--stage0"])
+    with pytest.raises(SystemExit):
+        parse_args(["--out", "x", "--stage0", "--base-url", "https://stage0.example"])
+
+
+def test_stage0_is_accepted_against_a_deployment_that_is_already_running() -> None:
+    args = parse_args(
+        ["--out", "x", "--stage0", "--skip-up", "--base-url", "https://stage0.example"]
+    )
+    assert args.stage0 is True
