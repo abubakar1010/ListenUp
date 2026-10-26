@@ -29,6 +29,48 @@ Replacing the containers interrupts service for a few seconds (about 7 s in the 
 
 Migrations are expand-only (Database Design 12.2), so the release that was running keeps working on the migrated schema. A contract step (dropping a column or table) ships at least one release after the code stopped using it, so the previous release always stays deployable.
 
+## HTTP connection reuse (#216)
+
+Blind still sends one heartbeat every **5 s** (ADR 0024). Every normal API launch
+(the image CMD, development Compose, production Compose and B5 Compose) sets
+Uvicorn `--timeout-keep-alive 30`. The production Caddy proxy sets
+`transport http { keepalive 15s }`. Keep both settings together in a release;
+a host override must preserve **5 s < proxy idle lifetime < API idle lifetime**.
+
+| Setting | Meaning | Value |
+| --- | --- | --- |
+| Uvicorn `--timeout-keep-alive` | Close an idle HTTP connection when no new request data arrives | 30 s |
+| Caddy HTTP transport `keepalive` | How long an unused upstream HTTP connection remains in the reuse pool | 15 s |
+| Uvicorn `--timeout-graceful-shutdown` | Shutdown grace for running requests; unrelated to idle reuse | 5 s, unchanged |
+
+The proxy reuses healthy connections for normal 5 s beats and retires an idle
+connection before the API's 30 s close. A later request opens a fresh connection.
+The 15 s pool lifetime has 10 s margin above a beat; the API adds another 15 s
+before its own idle close. These values reduce the identified timeout race; they
+cannot guarantee that a network or server never drops a connection.
+
+Semantics checked against the [Uvicorn settings documentation](https://github.com/encode/uvicorn/blob/0.54.0/docs/settings.md#timeouts)
+and [Caddy reverse_proxy documentation](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#the-http-transport).
+Caddy explicitly warns that HTTP/1.1 requests can fail if its keepalive duration
+exceeds the upstream server's timeout. Its [2.10.2 transport implementation](https://github.com/caddyserver/caddy/blob/v2.10.2/modules/caddyhttp/reverseproxy/httptransport.go)
+assigns this value to Go's `http.Transport.IdleConnTimeout`. Thus the ordering in
+#216's scope text (API at or below proxy) is reversed for these actual settings:
+**Caddy must expire idle pooled connections first**.
+
+`keepalive_interval` controls TCP liveness probes, not HTTP pool lifetime.
+`read_timeout`, `write_timeout` and `response_header_timeout` limit active upstream
+operations; they are not idle connection settings and are left at their defaults,
+so this fix adds no deadline to the event stream. Browser-to-Caddy connections are
+a separate hop; no new client timeout or heartbeat POST retry is introduced.
+Blind silence, integrity, recovery and attempt-state rules remain unchanged.
+
+Local verification and B5 comparison are recorded in
+[the #216 evidence](../spikes/216-connection-timeouts.md). They do not prove stage-0
+performance. The real rerun under [#94](https://github.com/abubakar1010/ListenUp/issues/94)
+and [#155](https://github.com/abubakar1010/ListenUp/issues/155) remains
+**deferred until staging — unverified**. Keep #216 open until its deployed
+configuration and stage-0 acceptance criteria have actually been verified.
+
 ## Deploy by hand
 
 From Actions → Release → Run workflow, on `main`: `action=deploy` with an empty tag builds and deploys `main`; with a tag (`r41`), it redeploys those images (migrations run) with the compose file and scripts of the commit they were built from, read from the images' `org.opencontainers.image.revision` label. Or on the host, as the deploy user:

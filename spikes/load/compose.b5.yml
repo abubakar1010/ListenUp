@@ -23,8 +23,8 @@ services:
       - track_io_timing=on
 
   api:
-    # As deployed: one process, no file watcher.
-    command: uvicorn listenup.main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 5
+    # Normal API idle lifetime matches deployment (#216); one process, no file watcher.
+    command: uvicorn listenup.main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 5 --timeout-keep-alive 30
     environment:
       LISTENUP_AI_CONFIG: src/listenup/ai/ai.fake.yaml
 
