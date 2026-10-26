@@ -218,3 +218,17 @@ regenerated contracts pass. Final CI/coverage results are recorded in the PR
 follow-up. The interrupted old-tree full run is not used as passing evidence;
 its partial output included a setup error and was not allowed to establish final
 suite or coverage claims.
+
+Coverage follow-up: the post-integration focused backend command (audio/retry/Card
+API/migrations/account-deletion/export/jobs, cancellation and sandbox tests) passed
+**164 tests**. Its report resolves every runtime source through the coverage
+inventory and initially covered **248/258 changed executable lines (96%)** against
+`076c6b6`. Inspection identified the second active-account check and the helper's
+self-cancelled-operation branch. Two supplementary tests now exercise those
+boundaries: **2 passed**; they are characterization/coverage additions, not new
+test-first production changes. The combined focused report covers **253/258 changed
+lines (98%)**; it is not a whole-application coverage baseline. Remaining lines are
+the original ffmpeg cancellation kill/wait, unexpected source error and missing
+span defenses, plus the redundant active-account defense under an already held
+active-account lock. No threshold or exclusion changed. Final CI still supplies
+the complete suite and coverage gate.

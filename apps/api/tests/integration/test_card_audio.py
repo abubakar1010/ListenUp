@@ -751,3 +751,43 @@ def test_sandboxed_worker_persists_terminal_failure_and_event(
             "SELECT status::text FROM procrastinate.procrastinate_jobs "
             "WHERE task_name='cards.generate_snippet'"
         ).fetchone() == ("failed",)
+
+
+def test_account_disabled_between_registration_and_upload_never_writes(
+    client, generated, migrated_url, monkeypatch
+):
+    from listenup.modules.identity import service as identity
+    from listenup.platform.jobs import PermanentError
+
+    _saved, storage, _, run = generated
+    user = client.get("/api/v1/me").json()["id"]
+    original = identity.hold_active_account
+    calls = 0
+
+    def status(value):
+        with psycopg.connect(migrated_url) as db:
+            db.execute(
+                "UPDATE identity.users SET status=%s, deletion_scheduled_at="
+                "CASE WHEN %s='pending_deletion' THEN now()+interval '7 days' "
+                "ELSE NULL END WHERE id=%s",
+                [value, value, user],
+            )
+
+    async def hold(db, learner):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            status("pending_deletion")
+        return await original(db, learner)
+
+    monkeypatch.setattr(identity, "hold_active_account", hold)
+    try:
+        with pytest.raises(PermanentError):
+            asyncio.run(run())
+    finally:
+        status("active")
+    assert calls == 2
+    assert client.get("/api/v1/cards").json()["cards"][0]["audio_status"] == "failed"
+    assert not any("/cards/" in key for key in storage.data)
+    with psycopg.connect(migrated_url) as db:
+        assert db.execute("SELECT count(*) FROM practice.card_snippet_writes").fetchone() == (0,)

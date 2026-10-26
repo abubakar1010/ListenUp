@@ -43,3 +43,16 @@ async def test_upload_error_keeps_storage_uncertainty(tmp_path, monkeypatch):
     monkeypatch.setattr(storage._client, "upload_file", lost_response)
     with pytest.raises(StorageWriteUncertain):
         await storage.put_file("users/test/cards/test/snippet.m4a", tmp_path / "input", "audio/mp4")
+
+
+@pytest.mark.anyio
+async def test_self_cancelled_operation_preserves_uncertain_write_cause():
+    from listenup.platform.cancellation import finish_on_cancel
+    from listenup.platform.storage import StorageWriteUncertain
+
+    async def cancelled_upload():
+        raise asyncio.CancelledError from StorageWriteUncertain("unconfirmed")
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await finish_on_cancel(cancelled_upload())
+    assert isinstance(raised.value.__cause__, StorageWriteUncertain)
