@@ -203,10 +203,27 @@ async def get_gist_grade(
     response: Response,
     learner: CurrentLearner,
     db: DbSession,
+    now: Now,
 ) -> schemas.GistFeedback:
     """D4: details are absent until Transcript opens when Dictation follows."""
     response.headers["Cache-Control"] = "private, no-store"
     result = await service.read_grade(
-        db, request.app.state.transcript_database, learner, attempt_id
+        db, request.app.state.transcript_database, learner, attempt_id, now
     )
     return schemas.GistFeedback.model_validate(result)
+
+
+@router.post(
+    "/grades/{attempt_id}/retry",
+    status_code=202,
+    responses={
+        404: {"description": "`attempt_not_found` or `grade_not_found`"},
+        409: {"description": "`gist_not_submitted`"},
+    },
+)
+async def retry_grade(
+    attempt_id: uuid.UUID, learner: CurrentLearner, db: DbSession, now: Now
+) -> schemas.GradeRetry:
+    """Retry saved gist feedback; waiting/running/ready work is an idempotent no-op."""
+    await service.retry_grade(db, learner, attempt_id, now)
+    return schemas.GradeRetry()

@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,6 +23,7 @@ class Card(BaseModel):
     heard_form: str
     at_ms: int
     content_id: uuid.UUID
+    audio_status: Literal["pending", "ready", "failed", "unavailable"]
     source_url: str
     created_at: datetime
 

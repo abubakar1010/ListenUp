@@ -1,8 +1,8 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { useContent } from '../content/useContent';
-import { PassagePlayerControls } from '../media/PassagePlayerControls';
+import { ShadowRounds } from './ShadowRounds';
 import { usePassagePlayer } from '../media/usePassagePlayer';
 import type { Session } from '../session/api';
 import type { Handle, Range } from '../session/passage';
@@ -10,7 +10,7 @@ import { PracticeLayout } from '../session/PracticeLayout';
 import { formatClock } from '../session/time';
 import { usePeaks } from '../session/usePeaks';
 import { Waveform } from '../session/Waveform';
-import { useSaveSegment, useSegment, type Segment } from './api';
+import { useRounds, useSaveSegment, useSegment, type Segment } from './api';
 
 /** Shadow uses the shared keyboard/pointer waveform with its own mode bounds. */
 function bounds(range: Range, handle: Handle, duration: number) {
@@ -29,6 +29,9 @@ export function ShadowScreen({
   skip?: ReactNode;
 }) {
   const segment = useSegment(session.id);
+  const rounds = useRounds(session.id);
+  const selection = rounds.data?.current ? rounds.data.segment : segment.data;
+  const [selectionPending, setSelectionPending] = useState(false);
   return (
     <PracticeLayout
       heading={`Shadow: ${session.content_title}`}
@@ -36,32 +39,56 @@ export function ShadowScreen({
       progress={progress}
       back={{ to: '/library', label: 'Library' }}
       player={null}
-      rule="Choose 60 to 90 seconds around your marks, or use the whole passage when it is under 60 seconds."
+      rule="Three rounds at original speed. Transcript in round 1 only; short count-in before each playback."
       workLabel="Shadow segment"
     >
-      {segment.data ? (
-        <SegmentEditor key={session.id} session={session} initial={segment.data} />
+      {selection ? (
+        <SegmentEditor
+          key={`${session.id}:${selection.locked_at}`}
+          session={session}
+          initial={selection}
+          onPending={setSelectionPending}
+        />
       ) : segment.isError ? (
         <ErrorPanel error={segment.error} onRetry={() => void segment.refetch()} />
       ) : (
         <p role="status">Preparing your segment…</p>
+      )}
+      {selection && (
+        <ShadowRounds
+          sessionId={session.id}
+          contentId={session.content_id}
+          selectionPending={selectionPending}
+        />
       )}
       {skip}
     </PracticeLayout>
   );
 }
 
-function SegmentEditor({ session, initial }: { session: Session; initial: Segment }) {
+function SegmentEditor({
+  session,
+  initial,
+  onPending,
+}: {
+  session: Session;
+  initial: Segment;
+  onPending: (value: boolean) => void;
+}) {
   const offset = session.passage.start_ms;
   const duration = session.passage.end_ms - offset;
   const [range, setRange] = useState<Range>({
     startMs: initial.start_ms - offset,
     endMs: initial.end_ms - offset,
   });
+  const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const save = useSaveSegment(session.id);
   const clip = useContent(session.content_id);
   const peaks = usePeaks(clip.data?.peaks_url ?? null);
+  useEffect(() => {
+    onPending(dirty || save.isPending);
+  }, [dirty, save.isPending, onPending]);
   const locked = initial.locked_at !== null || save.data?.locked_at != null;
   const fixed = duration <= 60_000;
   // Peaks cover the media; this waveform displays only the selected passage.
@@ -107,6 +134,7 @@ function SegmentEditor({ session, initial }: { session: Session; initial: Segmen
               if (save.isPending) return;
               setRange(next);
               setSaved(false);
+              setDirty(true);
               save.reset();
             }}
           />
@@ -117,7 +145,12 @@ function SegmentEditor({ session, initial }: { session: Session; initial: Segmen
             onClick={() =>
               save.mutate(
                 { start_ms: offset + range.startMs, end_ms: offset + range.endMs },
-                { onSuccess: () => setSaved(true) },
+                {
+                  onSuccess: () => {
+                    setSaved(true);
+                    setDirty(false);
+                  },
+                },
               )
             }
           >
@@ -128,7 +161,7 @@ function SegmentEditor({ session, initial }: { session: Session; initial: Segmen
       {saved && <p role="status">Segment saved.</p>}
       {save.isError && <ErrorPanel error={save.error} />}
       {clip.isError && <ErrorPanel error={clip.error} onRetry={() => void clip.refetch()} />}
-      {clip.data?.media_url && (
+      {!locked && clip.data?.media_url && (
         <SegmentPreview
           key={`${range.startMs}:${range.endMs}`}
           startMs={offset + range.startMs}
@@ -144,21 +177,58 @@ function SegmentEditor({ session, initial }: { session: Session; initial: Segmen
 function SegmentPreview({ startMs, endMs, src }: { startMs: number; endMs: number; src: string }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const player = usePassagePlayer(audioRef, startMs, endMs);
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const rate = () => {
+      if (audio.defaultPlaybackRate !== 1) audio.defaultPlaybackRate = 1;
+      if (audio.playbackRate !== 1) audio.playbackRate = 1;
+    };
+    rate();
+    audio.addEventListener('ratechange', rate);
+    return () => {
+      audio.removeEventListener('ratechange', rate);
+      audio.pause();
+    };
+  }, []);
   return (
-    <PassagePlayerControls
-      audioRef={audioRef}
-      player={{
-        ...player,
-        replay: () => {
-          player.seek(0);
-          player.replay();
-        },
-      }}
-      src={src}
-      playerId="shadow"
-      replayLabel="Replay selected segment"
-      description="Preview your selected segment"
-      errorSuffix="Your segment is kept."
-    />
+    <div className="flex min-w-0 flex-col gap-3">
+      <audio ref={audioRef} src={src} preload="auto" />
+      <p>Preview your selected segment · Original speed · 1×</p>
+      <div className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          className={buttonClass('secondary')}
+          disabled={player.status !== 'ready'}
+          onClick={player.toggle}
+        >
+          {player.playing ? 'Pause' : 'Play'}
+        </button>
+        <button
+          type="button"
+          className={buttonClass('secondary')}
+          disabled={player.status !== 'ready'}
+          onClick={() => {
+            player.seek(0);
+            player.replay();
+          }}
+        >
+          Replay selected segment
+        </button>
+      </div>
+      <label className="flex flex-col gap-2">
+        Seek
+        <input
+          type="range"
+          className="h-11 w-full cursor-pointer accent-[var(--color-accent)] md:h-6"
+          disabled={player.status !== 'ready'}
+          min={0}
+          max={player.durationMs}
+          value={player.positionMs}
+          onChange={(e) => player.seek(Number(e.target.value))}
+        />
+      </label>
+      {player.status === 'error' && <p role="alert">Audio unavailable. Your segment is kept.</p>}
+    </div>
   );
 }

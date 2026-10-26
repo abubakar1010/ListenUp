@@ -155,7 +155,7 @@ async def change_mark_tag(
     db: DbSession,
 ) -> schemas.Mark:
     """Set, change or clear (null) the mark's tag (FR-TR-4). The whole tag is sent, so a
-    resend answers with the same mark and needs no Idempotency-Key (ADR 0062).
+    resend answers with the same mark and needs no Idempotency-Key (ADR 0065).
     """
     response.headers.update(_NO_STORE)
     return await service.change_tag(db, session_id, mark_id, body.tag)

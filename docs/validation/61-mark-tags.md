@@ -4,7 +4,7 @@ Scope: FR-TR-4 (PRD TR-4), UI-4. Implementation is on `feat/61-mark-tags`, made 
 `main` at `5db1333`. Dependency #60 was merged (PR #188) before work started. The owner
 approved the plan and chose the recommended options (own `PUT .../tag` route, native
 select, 2 s debounce, `mark_tag_invalid`); they are recorded in
-[ADR 0062](../adr/0062-mark-tags.md). No migration: `practice.marks.tag` and its CHECK
+[ADR 0065](../adr/0065-mark-tags.md). No migration: `practice.marks.tag` and its CHECK
 of the four values have existed since migration `58_marks`, and `alembic check` reports
 no drift.
 

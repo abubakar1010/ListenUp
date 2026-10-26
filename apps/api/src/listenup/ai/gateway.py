@@ -20,6 +20,7 @@ from listenup.ai.ports import (
     AIResult,
     Alignment,
     Preloadable,
+    Provenance,
     Role,
     SpeechAssessment,
     TextGeneration,
@@ -109,6 +110,18 @@ class AIGateway:
             raise AIUnavailable(role, "no provider configured")
         return providers[0]
 
+    def deployment_provenance(self, role: Role) -> Provenance:
+        """Trusted configured identity before inference, for versioned cache lookups.
+
+        Unregistered versions cannot form a reusable cache identity (NFR-AI-5).
+        This does not instantiate an adapter or bypass inference eligibility.
+        """
+        entry = self.entry(role)
+        resolver = self._registry.versions.get(entry.provider)
+        if resolver is None:
+            raise AIUnavailable(role, "deployment version unavailable")
+        return Provenance(provider=entry.provider, model=entry.model, version=resolver(entry))
+
     def _adapter(self, role: Role) -> tuple[ProviderEntry, Any]:
         entry = self.entry(role)
         key = (role, entry.model_dump_json())
@@ -183,6 +196,7 @@ class AIGateway:
             providers = tuple(by_name[name] for name in self._config.tasks[task])
         if not providers:
             raise AIUnavailable(role, "no provider configured")
+        quota_denied = False
         for fallback_depth, entry in enumerate(providers):
             if not eligible(entry, context, role):
                 await self._accounting.skip(entry, role, task, prompt, "ineligible")
@@ -223,6 +237,7 @@ class AIGateway:
                     queue_delay_ms=int(context.queue_delay_seconds * 1000),
                 )
                 if ticket is None:
+                    quota_denied = True
                     break
                 started = time.monotonic()
                 outcome: Outcome = "error"
@@ -301,7 +316,10 @@ class AIGateway:
                     await self._sleep(entry.retry_backoff_seconds * 2**attempt)
                     continue
                 break
-        raise AIUnavailable(role, "no eligible provider produced a valid result") from None
+        reason = (
+            "quota_exhausted" if quota_denied else "no eligible provider produced a valid result"
+        )
+        raise AIUnavailable(role, reason) from None
 
     async def transcribe(
         self, audio: Path, language: str = "en", *, context: CallContext | None = None

@@ -1,4 +1,4 @@
-# ADR 0062: A mark's tag is a whole value set by its own route and synced like a note
+# ADR 0065: A mark's tag is a whole value set by its own route and synced like a note
 
 - Status: Proposed in the #61 pull request (2026-10-25). The owner chose the recommended
   options in the plan review (2026-10-25); the ADR is accepted on merge

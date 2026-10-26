@@ -1,4 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { buttonClass } from '../../components/button';
+import { ErrorPanel } from '../../components/ErrorPanel';
 import { api } from '../../api/client';
 import type { components } from '../../api/schema';
 import { GIST_GRADE_KEY, useBlindStep } from './api';
@@ -19,23 +22,76 @@ export function GistFeedback({
   attemptId: string;
   context: 'blind' | 'transcript';
 }) {
+  const queryClient = useQueryClient();
+  const retrying = useRef(false);
+  const [expiredRead, setExpiredRead] = useState<number | null>(null);
   const query = useQuery({
     queryKey: [...GIST_GRADE_KEY, attemptId, context],
     queryFn: () => api<Grade>(`/gists/${encodeURIComponent(attemptId)}/grade`),
     refetchInterval: (state) => (state.state.data?.status === 'ready' ? false : 5000),
   });
+  const retry = useMutation({
+    mutationFn: () =>
+      api<void>(`/grades/${encodeURIComponent(attemptId)}/retry`, { method: 'POST' }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: [...GIST_GRADE_KEY, attemptId] });
+    },
+    onSettled: () => {
+      retrying.current = false;
+    },
+  });
   const grade = query.data;
+  // Server-relative time avoids browser clock skew. Polls may fail after this read;
+  // the local deadline still ends the busy state and leaves Continue available.
+  useEffect(() => {
+    if (grade?.status !== 'pending' || grade.wait_ms == null) return;
+    const timer = window.setTimeout(() => setExpiredRead(query.dataUpdatedAt), grade.wait_ms);
+    return () => window.clearTimeout(timer);
+  }, [grade?.status, grade?.wait_ms, query.dataUpdatedAt]);
+  const unavailable =
+    grade?.status === 'unavailable' ||
+    (grade?.status === 'pending' && expiredRead === query.dataUpdatedAt) ||
+    query.isError;
+  const delayed = grade?.status === 'delayed';
   const ready = grade?.status === 'ready';
   return (
     <section
       aria-label="Gist feedback"
-      aria-busy={!ready}
+      aria-busy={!ready && !unavailable && !delayed}
       className="flex min-w-0 flex-col gap-3 rounded-md border border-line bg-surface-raised p-4 [overflow-wrap:anywhere]"
     >
       <h2 className="font-display text-heading">Your gist feedback</h2>
       <p aria-live={context === 'blind' ? 'polite' : 'off'}>
-        {ready ? 'Your gist feedback is ready.' : 'Preparing your gist feedback…'}
+        {ready
+          ? 'Your gist feedback is ready.'
+          : delayed
+            ? 'Feedback delayed'
+            : unavailable
+              ? 'Feedback unavailable'
+              : 'Preparing your gist feedback…'}
       </p>
+      {(unavailable || delayed) && (
+        <p>
+          Your gist and progress are saved. You can continue. This page updates when feedback is
+          ready.
+        </p>
+      )}
+      {unavailable && (
+        <button
+          type="button"
+          className={buttonClass('secondary')}
+          aria-busy={retry.isPending}
+          aria-disabled={retry.isPending}
+          onClick={() => {
+            if (retrying.current) return;
+            retrying.current = true;
+            retry.mutate();
+          }}
+        >
+          {retry.isPending ? 'Retrying…' : 'Retry feedback'}
+        </button>
+      )}
+      {retry.isError && <ErrorPanel error={retry.error} />}
       {grade?.gist && (
         <div>
           <h3 className="font-bold">Your gist</h3>

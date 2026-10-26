@@ -5,6 +5,10 @@ One story, one PR; the owner merges after passing CI and fresh-session review.
 No changes to grading jobs/prompts, cards, Shadow, mark list or mark editing.
 No schema migration or provider call is needed.
 
+The checks and outstanding gates below are recorded chronologically. The
+[final-head CI and independent review](#final-head-ci-and-independent-review)
+section supersedes earlier statements that final-head CI or re-review was pending.
+
 ## Acceptance evidence
 
 | Criterion | Named tests |
@@ -45,7 +49,7 @@ The API allowlist would fail if the reveal gate were removed or inverted; its
 post-Transcript assertions would fail if details remained withheld. Both reads
 run as the restricted API role; shared references stay inaccessible to that role.
 
-## Final checks
+## Original implementation checks
 
 - Frontend full coverage: 51 files, 517 tests passed; overall lines 95.74%,
   branches 88.42%. Coverage inventory resolves every runtime file.
@@ -174,3 +178,55 @@ existing lint, component and browser suites validate compatibility. No artificia
 application test was added for generated lockfile resolutions. Backend code is
 unchanged by this dependency update; final-head CI must run its full required
 checks again. Independent re-review and owner merge remain separate gates.
+
+## Final-head CI and independent review
+
+Verified on 2026-10-25: [CI run 40098672524](https://github.com/abubakar1010/ListenUp/actions/runs/40098672524)
+completed successfully on the final PR head
+`eee2e8d88ac2e4f46cf525bfcc0a75c4ff3905fe`, against the recorded `main` base
+`9c35da98cf1942a5ecb2fb4fd3240332e4030dc0`. This run includes the final sync
+with main; the earlier green implementation run is not substituted for it.
+
+- Backend: the single full coverage command from `docs/testing.md`, with
+  `LISTENUP_REQUIRE_DB=1 LISTENUP_REQUIRE_S3=1`, passed **2,007 tests** with
+  **1 performance test deselected**. The focused feedback file contributed all
+  **7 passing tests**. The separate uninstrumented performance check passed
+  **1 test**; the spike harness passed **62 tests**.
+- Web: **52 files / 528 tests passed**; overall line coverage **95.73%** and
+  branch coverage **88.56%**. The mocked-API browser suite passed **45 tests**,
+  including both 360 px Transcript gist paths.
+- Changed executable lines: backend **49/50 (98%)**, web **22/22 (100%)**.
+  Both runtime coverage inventories passed. The backend gap remains the
+  missing-reference pending return in `grading.service` (line 87 at this head).
+  The earlier component branch review recorded the defensive rubric-label
+  fallback as uncovered; line coverage does not establish branch completeness.
+- Backend lint, format, types and import contracts; web lint, format, types,
+  build and size; API schema/client consistency; dependency audits; Docker image
+  builds; and the real-scanner/media-sandbox job all passed. Synthetic AI smoke
+  was path-skipped; no prompts, jobs or provider code changed.
+
+The independent review in this task inspected the exact-head source, assertions
+and CI logs. It found no confirmed functional or security defects, and identified
+the missing final-head evidence in this record. The reference convention now
+distinguishes raw worker-only cache access from the owned, D4-filtered feedback
+projection required by FR-BL-10 and UX-02. GitHub reports PR #203 merged on
+2026-10-24; this later review does not establish that independent re-review
+occurred before that merge.
+
+Evidence limits remain explicit: the historical Red/Green commands above are
+the recorded chronology, not independently recovered execution logs. The review
+did not rerun application tests because its available checkout was later than
+the PR head. Mocked browser tests do not establish live-stack grading latency.
+**p95 10 s remains deferred until staging — unverified under #155**; no
+functional or security requirement is waived by that deferral.
+
+This follow-up changes documentation only. Under `docs/testing.md`, artificial
+Red/Green application tests are not applicable. Validation consists of checking
+the recorded SHA, CI job results and counts, reviewing the wording against D4,
+and checking Markdown formatting and the diff. The final-head CI above belongs
+to PR #203, not to this documentation follow-up.
+
+Follow-up checks: `git diff --check` passes; evidence references, counts and the
+staging deferral were checked against the final-head CI logs. Prettier reports
+formatting differences in both documents, also reproduced on their unchanged
+`main` versions; a whole-file reformat is outside this focused correction.

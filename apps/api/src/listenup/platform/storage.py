@@ -54,6 +54,10 @@ class Downloaded:
     sha256: str  # hex digest of the bytes, computed while they streamed
 
 
+class StorageWriteUncertain(OSError):
+    """A failed response cannot prove that the server has stopped writing."""
+
+
 class Storage(Protocol):
     def signed_upload(
         self, key: str, content_type: str, content_length: int | None = None
@@ -166,11 +170,18 @@ class S3Storage:
     async def put_file(self, key: str, path: Path, content_type: str) -> None:
         """Upload a local file; large files go up in parts without being read into memory."""
         check_key(key)
-        await anyio.to_thread.run_sync(
-            lambda: self._client.upload_file(
-                str(path), self.bucket, key, ExtraArgs={"ContentType": content_type}
-            )
-        )
+
+        def upload() -> None:
+            try:
+                self._client.upload_file(
+                    str(path), self.bucket, key, ExtraArgs={"ContentType": content_type}
+                )
+            except Exception as error:
+                raise StorageWriteUncertain(
+                    "Storage write outcome requires reconciliation."
+                ) from error
+
+        await anyio.to_thread.run_sync(upload)
 
     async def download(self, key: str, destination: Path) -> Downloaded | None:
         """Stream one object into a local file, hashing it on the way.

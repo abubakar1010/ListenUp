@@ -17,6 +17,7 @@ const mark = {
   created_at: '2026-10-23T00:00:00Z',
 };
 const card = {
+  audio_status: 'ready' as string,
   id: 'card-1',
   session_id: session.id,
   slot: 1,
@@ -30,8 +31,9 @@ const card = {
 };
 const path = `/sessions/${session.id}/cards`;
 const listPath = `/cards?session_id=${session.id}`;
+beforeEach(() => vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {}));
 afterEach(() => vi.restoreAllMocks());
-function setup(cards = [] as (typeof card)[]) {
+function setup(cards = [] as (typeof card)[], extraRoutes: Parameters<typeof mockRoutes>[0] = {}) {
   const saved = [...cards];
   const routes = mockRoutes({
     [`GET /sessions/${session.id}/marks`]: jsonResponse(200, { marks: [mark] }),
@@ -61,6 +63,7 @@ function setup(cards = [] as (typeof card)[]) {
       200,
       sessionFixture({ done: 3, skipped: ['card'] }),
     ),
+    ...extraRoutes,
   });
   const rendered = renderWithProviders(<CardScreen session={session} progress={<p>Progress</p>} />);
   return { ...rendered, ...routes };
@@ -340,4 +343,127 @@ test('delete and finish refusals remain visible and deletion can be cancelled', 
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Finish Card' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Try the current step.');
+});
+
+test('plays saved card audio and reports playback failure accessibly', async () => {
+  const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  setup([{ ...card, audio_status: 'ready' }]);
+  const button = await screen.findByRole('button', { name: 'Play audio: could have' });
+  fireEvent.click(button);
+  await waitFor(() => expect(play).toHaveBeenCalled());
+  const audio = document.querySelector('audio')!;
+  expect(audio).toHaveAttribute('src', '/api/v1/cards/card-1/audio');
+  fireEvent.error(audio);
+  expect(await screen.findByRole('alert')).toHaveTextContent(/audio could not play/i);
+});
+
+test('pending audio has a focusable reason and never starts playback', async () => {
+  const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  setup([{ ...card, audio_status: 'pending' }]);
+  const button = await screen.findByRole('button', { name: 'Play audio: could have' });
+  expect(button).toHaveAttribute('aria-disabled', 'true');
+  expect(button).toHaveAccessibleDescription(/preparing/i);
+  fireEvent.click(button);
+  expect(play).not.toHaveBeenCalled();
+});
+
+test('failed audio offers a retry and reports a refused retry', async () => {
+  setup([{ ...card, audio_status: 'failed' }]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry audio: could have' }));
+  expect(await screen.findByRole('alert')).toBeInTheDocument();
+});
+
+test('removing the card screen stops its playing audio', async () => {
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  const { unmount } = setup([{ ...card, audio_status: 'ready' }]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Play audio: could have' }));
+  unmount();
+  expect(pause).toHaveBeenCalled();
+});
+
+test('a lost retry response reloads the authoritative pending state', async () => {
+  let status = 'failed';
+  setup([{ ...card, audio_status: status }], {
+    [`GET ${listPath}`]: () =>
+      jsonResponse(200, {
+        cards: [{ ...card, audio_status: status }],
+        remaining: 1,
+        next_cursor: null,
+      }),
+    'POST /cards/card-1/audio/retry': () => {
+      status = 'pending';
+      return problem(503, 'unavailable', 'Response lost');
+    },
+  });
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry audio: could have' }));
+  expect(await screen.findByText('Preparing audio…')).toBeVisible();
+});
+
+test('pending audio polls and announces when it becomes playable without an event', async () => {
+  let reads = 0;
+  setup([{ ...card, audio_status: 'pending' }], {
+    [`GET ${listPath}`]: () =>
+      jsonResponse(200, {
+        cards: [{ ...card, audio_status: ++reads > 1 ? 'ready' : 'pending' }],
+        remaining: 1,
+        next_cursor: null,
+      }),
+  });
+  expect(await screen.findByText('Preparing audio…')).toBeVisible();
+  expect(await screen.findByText('Audio ready: could have', {}, { timeout: 5000 })).toHaveAttribute(
+    'role',
+    'status',
+  );
+  expect(screen.getByRole('button', { name: 'Play audio: could have' })).toHaveAttribute(
+    'aria-disabled',
+    'false',
+  );
+});
+
+test('playing audio can be paused and its ended state returns to Play', async () => {
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  setup([card]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Play audio: could have' }));
+  const element = document.querySelector('audio')!;
+  fireEvent.playing(element);
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Pause audio: could have' })).toHaveAttribute(
+      'aria-busy',
+      'false',
+    ),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Pause audio: could have' }));
+  expect(pause).toHaveBeenCalled();
+  fireEvent.pause(element);
+  expect(screen.getByRole('button', { name: 'Play audio: could have' })).toBeVisible();
+  fireEvent.playing(element);
+  fireEvent.ended(element);
+  expect(screen.getByRole('button', { name: 'Play audio: could have' })).toBeVisible();
+});
+
+test('a refused play promise is announced and loading blocks duplicate presses', async () => {
+  let reject!: (error: Error) => void;
+  const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(
+    () =>
+      new Promise<void>((_resolve, no) => {
+        reject = no;
+      }),
+  );
+  setup([card]);
+  const button = await screen.findByRole('button', { name: 'Play audio: could have' });
+  fireEvent.click(button);
+  expect(button).toHaveAttribute('aria-busy', 'true');
+  fireEvent.click(button);
+  expect(play).toHaveBeenCalledTimes(1);
+  reject(new Error('Playback refused'));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Audio could not play');
+  expect(button).toHaveAttribute('aria-busy', 'false');
+});
+
+test('older cards explain unavailable audio without offering a retry', async () => {
+  setup([{ ...card, audio_status: 'unavailable' }]);
+  expect(await screen.findByText('Audio is unavailable for this older card.')).toBeVisible();
+  expect(screen.queryByRole('button', { name: /Retry audio/ })).not.toBeInTheDocument();
 });

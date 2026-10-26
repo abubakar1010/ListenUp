@@ -617,3 +617,24 @@ async def transcription_source(
     ):
         raise ProblemError(409, "content_not_ready", "Playback is not ready for transcription.")
     return TranscriptionSource(item.media_object_id, item.duration_ms, files.playback_key)
+
+
+async def profile_source_for_worker(
+    db: AsyncSession, media_id: uuid.UUID
+) -> TranscriptionSource | None:
+    """Queued shared profiling input while an active learner still owns the media.
+
+    Worker-only; never expose keys to a request or revive media after deletion.
+    """
+    row = (
+        await db.execute(
+            text("""
+        SELECT m.duration_ms, m.playback_key FROM content.media_objects m
+        WHERE m.id=:id AND m.status='playable' AND m.playback_key IS NOT NULL
+        AND EXISTS (SELECT 1 FROM content.contents c JOIN identity.users u ON u.id=c.user_id
+                    WHERE c.media_object_id=m.id AND u.status='active')
+    """),
+            {"id": media_id},
+        )
+    ).first()
+    return TranscriptionSource(media_id, row[0], row[1]) if row is not None else None
