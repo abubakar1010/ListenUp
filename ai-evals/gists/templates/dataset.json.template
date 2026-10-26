@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "id": "teacher-gists-v1",
+  "kind": "teacher",
+  "suite": "gist",
+  "source": "Consented learner collection; grade_gist/v2; see ai-evals/gists/README.md and provenance sidecar.",
+  "cases": [
+    {
+      "id": "REPLACE_CASE_ID",
+      "smoke": false,
+      "tags": [
+        "REPLACE_CONDITION"
+      ],
+      "input": {
+        "transcript": "REPLACE_FROM_FROZEN_PASSAGE",
+        "gist": "REPLACE_WITH_CONSENTED_LEARNER_RESPONSE",
+        "key_points": [
+          {
+            "id": "kp1",
+            "kind": "main",
+            "text": "The speaker explains how painters use colour and divisions of light."
+          },
+          {
+            "id": "kp2",
+            "kind": "supporting",
+            "text": "Titian, Holbein, Turner and Tintoret are repeatedly discussed."
+          },
+          {
+            "id": "kp3",
+            "kind": "supporting",
+            "text": "Colourists arrange divisions of light to achieve beauty."
+          },
+          {
+            "id": "kp4",
+            "kind": "supporting",
+            "text": "Distinct hues are placed side by side."
+          },
+          {
+            "id": "kp5",
+            "kind": "supporting",
+            "text": "Watery pigment can form hard edges."
+          }
+        ]
+      },
+      "expected": {
+        "scores": {
+          "main_idea": null,
+          "key_details": null,
+          "accuracy": null
+        },
+        "overall": null,
+        "level": null
+      }
+    }
+  ]
+}

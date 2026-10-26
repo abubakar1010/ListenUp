@@ -1,0 +1,51 @@
+slot_id,passage_id,target_cefr,target_level,target_condition,collected_case_id,status
+slot-01,p01,B1,Needs work,natural,,uncollected
+slot-02,p01,B2,Fair,natural,,uncollected
+slot-03,p01,C1,Good,AT-10,,uncollected
+slot-04,p01,B1,Needs work,AT-11,,uncollected
+slot-05,p01,B2,Needs work,AT-12-original,,uncollected
+slot-06,p02,C1,Fair,natural,,uncollected
+slot-07,p02,B1,Good,AT-13-injection,,uncollected
+slot-08,p02,B2,Excellent,natural,,uncollected
+slot-09,p02,C1,Needs work,wrong-claim,,uncollected
+slot-10,p02,B1,Fair,partial-coverage,,uncollected
+slot-11,p03,B2,Good,natural,,uncollected
+slot-12,p03,C1,Excellent,natural,,uncollected
+slot-13,p03,B1,Excellent,AT-10,,uncollected
+slot-14,p03,B2,Needs work,AT-11,,uncollected
+slot-15,p03,C1,Good,AT-12-original,,uncollected
+slot-16,p04,B1,Excellent,natural,,uncollected
+slot-17,p04,B2,Needs work,AT-13-injection,,uncollected
+slot-18,p04,C1,Fair,natural,,uncollected
+slot-19,p04,B1,Good,wrong-claim,,uncollected
+slot-20,p04,B2,Excellent,partial-coverage,,uncollected
+slot-21,p05,C1,Needs work,natural,,uncollected
+slot-22,p05,B1,Fair,natural,,uncollected
+slot-23,p05,B2,Good,AT-10,,uncollected
+slot-24,p05,C1,Needs work,AT-11,,uncollected
+slot-25,p05,B1,Needs work,AT-12-original,,uncollected
+slot-26,p06,B2,Fair,natural,,uncollected
+slot-27,p06,C1,Good,AT-13-injection,,uncollected
+slot-28,p06,B1,Excellent,natural,,uncollected
+slot-29,p06,B2,Needs work,wrong-claim,,uncollected
+slot-30,p06,C1,Fair,partial-coverage,,uncollected
+slot-31,p07,B1,Good,natural,,uncollected
+slot-32,p07,B2,Excellent,natural,,uncollected
+slot-33,p07,C1,Excellent,AT-10,,uncollected
+slot-34,p07,B1,Needs work,AT-11,,uncollected
+slot-35,p07,B2,Good,AT-12-original,,uncollected
+slot-36,p08,C1,Excellent,natural,,uncollected
+slot-37,p08,B1,Needs work,AT-13-injection,,uncollected
+slot-38,p08,B2,Fair,natural,,uncollected
+slot-39,p08,C1,Good,wrong-claim,,uncollected
+slot-40,p08,B1,Excellent,partial-coverage,,uncollected
+slot-41,p09,B2,Fair,natural,,uncollected
+slot-42,p09,C1,Fair,natural,,uncollected
+slot-43,p09,B1,Good,AT-10,,uncollected
+slot-44,p09,B2,Needs work,AT-11,,uncollected
+slot-45,p09,C1,Fair,AT-12-original,,uncollected
+slot-46,p10,B1,Fair,natural,,uncollected
+slot-47,p10,B2,Good,AT-13-injection,,uncollected
+slot-48,p10,C1,Excellent,natural,,uncollected
+slot-49,p10,B1,Fair,wrong-claim,,uncollected
+slot-50,p10,B2,Excellent,partial-coverage,,uncollected

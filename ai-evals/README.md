@@ -170,3 +170,10 @@ exact `apps/api/src/listenup/ai/ai.yaml` enable `ai-evals-smoke`. Existing CI jo
 keep their normal triggers. The smoke job runs both synthetic subsets against
 fake AI, fails any unsuccessful gate, and uploads JSON/Markdown with `always()`.
 Its PostgreSQL service is for gateway quota/accounting, not networked AI.
+
+## Gist collection (#106)
+
+The [collection kit](gists/README.md) contains licensed passage candidates, consent
+wording, a v2 teacher guide, import templates and a coverage/validation checklist.
+It currently contains **no learner responses or teacher grades** and is not a
+golden set. See its [status report](gists/status.md) before using any data.
