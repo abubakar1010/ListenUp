@@ -1,5 +1,6 @@
 """Prefetch passage key points on the AI lane (#67, FR-BL-6, NFR-AI-4/5)."""
 
+import asyncio
 import uuid
 from datetime import timedelta
 from typing import Any
@@ -110,12 +111,22 @@ async def _gist_give_up(deps: JobDeps, attempt_id: str, user_id: str) -> None:
     record_grading("gist", False)
 
 
+async def _resume_gist_deadline(deps: JobDeps, attempt_id: str, user_id: str) -> None:
+    # Inference/source-read transactions may have rolled back. Availability must
+    # still follow the original deadline when this is no longer a quota wait.
+    learner, attempt = uuid.UUID(user_id), uuid.UUID(attempt_id)
+    async with deps.database.transaction(learner) as db:
+        await repository.clear_feedback_delay(db, learner, attempt)
+        await repository.expire_feedback(db, learner, attempt, server_now())
+
+
 @job(Lane.AI, GRADE_GIST_JOB, on_give_up=_gist_give_up)
 async def grade_gist(deps: JobDeps, attempt_id: str, user_id: str) -> None:
     try:
         await _grade_gist(deps, attempt_id, user_id)
     except AIUnavailable as error:
         if error.reason != "quota_exhausted":
+            await _resume_gist_deadline(deps, attempt_id, user_id)
             raise
         async with deps.database.transaction(uuid.UUID(user_id)) as db:
             await repository.feedback_state(
@@ -127,13 +138,10 @@ async def grade_gist(deps: JobDeps, attempt_id: str, user_id: str) -> None:
     except PermanentError:
         await _gist_give_up(deps, attempt_id, user_id)
         raise
-    except Reschedule:
-        # Missing references without a quota marker are ordinary waiting/failure.
-        # Commit outside the source-read transaction, which Reschedule rolls back.
-        learner, attempt = uuid.UUID(user_id), uuid.UUID(attempt_id)
-        async with deps.database.transaction(learner) as db:
-            await repository.clear_feedback_delay(db, learner, attempt)
-            await repository.expire_feedback(db, learner, attempt, server_now())
+    except (Exception, asyncio.CancelledError):
+        # Includes missing references, invalid output and worker timeout
+        # cancellation; re-raise so the lane retains its normal retry policy.
+        await _resume_gist_deadline(deps, attempt_id, user_id)
         raise
 
 

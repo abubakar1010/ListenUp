@@ -327,6 +327,9 @@ Read the section for the area you are changing before you change it. The rules e
   reference is no longer quota-delayed, its waiting gist leaves `delayed` and
   applies the original deadline, restoring retry after expiry. Do not reset that
   deadline or overwrite a ready grade while settling dependency failures.
+  A non-quota gist failure (including invalid output and timeout cancellation)
+  likewise clears stale `delayed` state and applies the original deadline in a
+  separate transaction, then re-raises for the lane's normal bounded retries.
 
 ## Shadow segments (ADR 0057)
 

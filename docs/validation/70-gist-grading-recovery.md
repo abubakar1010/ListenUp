@@ -225,3 +225,41 @@ mypy (199 source files), six import contracts and web types pass. The two new
 SSE browser preservation checks pass again. Generated API output is consistent.
 The new final-head CI is required; the pre-reconciliation full-suite results
 above are not claimed as evidence for all newly inherited main code.
+
+## Post-merge quota-to-gist-failure review fix
+
+Independent review of #220 at `8670150` found that a direct gist quota wait,
+followed by a non-quota provider error, retained `delayed` even past the original
+feedback deadline. The review is posted at
+[review 5652526820](https://github.com/abubakar1010/ListenUp/pull/220#pullrequestreview-5652526820).
+The owner explicitly requested posting the review, fixing the finding and merging.
+Because #220 was already merged, remediation uses a follow-up PR from current
+main `5375940`, on `fix/70-gist-quota-failure-deadline`.
+
+Before production changes, ran:
+
+```sh
+LISTENUP_REQUIRE_DB=1 uv run --frozen --project apps/api pytest apps/api/tests/integration/test_gist_recovery_jobs.py -k gist_quota_then_failure -q --tb=short
+```
+
+Actual Red: **9 failed**, all retaining `delayed`. The new
+`test_gist_quota_then_failure_uses_original_deadline` covers provider errors,
+invalid output and worker timeouts with -1, 0 and +1 ms remaining. After the fix,
+the same command: **9 passed**. Assertions verify the original deadline boundary,
+retry reuse of one active grading job without extending the deadline, successful
+later grading, and unchanged saved gist and practice progress.
+
+Non-quota failures clear stale delay and apply the original deadline in a separate
+transaction before re-raising. Timeout cancellation is included; the job framework
+still observes the timeout and keeps its existing bounded retry policy. Quota
+waits continue to raise `Reschedule` without consuming failure retries. Ready
+grades remain protected by the existing conditional updates. No schema, API,
+provider, prompt, scoring or web production changes are needed.
+
+Focused neighboring recovery, grading, reference, feedback, job-framework,
+gateway and registration checks: **145 passed**. Ruff format/check, strict mypy
+(199 source files) and all six import contracts pass. The full required-service
+backend coverage suite is running; its completed results, separate performance,
+changed-line coverage and final-head CI are recorded in the follow-up PR rather
+than treating an in-progress run as passed. Documentation clarifies the existing
+deadline contract; these documentation changes do not require artificial Red.

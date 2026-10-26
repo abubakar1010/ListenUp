@@ -93,6 +93,97 @@ async def test_quota_wait_reschedules_and_recovers(
     assert stored(migrated_url, attempt)[0] == "ready"
 
 
+@pytest.mark.parametrize("failure", ["provider", "invalid", "timeout"])
+@pytest.mark.parametrize("remaining_ms", [-1, 0, 1])
+async def test_gist_quota_then_failure_uses_original_deadline(
+    submit, database, migrated_url, learner, ai, monkeypatch, failure, remaining_ms
+):
+    from listenup.modules.blind import service as blind
+
+    case = json.loads((REPLAYS / "clean.json").read_text())
+    attempt = await submit(case["gist"])
+    now = datetime.now(UTC)
+    deadline = now + timedelta(milliseconds=remaining_ms)
+    monkeypatch.setattr(jobs, "server_now", lambda: now)
+    with psycopg.connect(migrated_url) as conn:
+        conn.execute(
+            "UPDATE grading.gist_grades SET feedback_deadline=%s WHERE attempt_id=%s",
+            [deadline, attempt],
+        )
+        progress = conn.execute(
+            "SELECT * FROM practice.session_steps ORDER BY session_id,position"
+        ).fetchall()
+    original = jobs.text_tasks.run_task
+
+    async def quota(*args, **kwargs):
+        raise AIUnavailable(Role.TEXT_AI, "quota_exhausted")
+
+    monkeypatch.setattr(jobs.text_tasks, "run_task", quota)
+    with pytest.raises(Reschedule):
+        await jobs.grade_gist(JobDeps(database, None, 1), str(attempt), str(learner))
+    assert stored(migrated_url, attempt)[0] == "delayed"
+
+    async def fail(*args, **kwargs):
+        if failure == "timeout":
+            await asyncio.Event().wait()
+        if failure == "invalid":
+            raise ValueError("invalid gist output")
+        raise AIUnavailable(Role.TEXT_AI, "provider down")
+
+    monkeypatch.setattr(jobs.text_tasks, "run_task", fail)
+    entry = platform_jobs._registry[jobs.GRADE_GIST_JOB]
+    if failure == "timeout":
+        monkeypatch.setitem(
+            platform_jobs._registry,
+            entry.name,
+            replace(entry, spec=replace(entry.spec, timeout=timedelta(milliseconds=100))),
+        )
+    error = {"provider": AIUnavailable, "invalid": ValueError, "timeout": TimeoutError}[failure]
+    # A non-final failure must restore the UI deadline, not exhaust automatic work.
+    with pytest.raises(error):
+        await run_handler(
+            entry.name,
+            JobDeps(database, None, 2),
+            attempt_id=str(attempt),
+            user_id=str(learner),
+        )
+    assert stored(migrated_url, attempt)[0] == ("pending" if remaining_ms > 0 else "unavailable")
+    async with database.transaction(learner) as db:
+        await blind.retry_grade(db, learner, attempt, now)
+    with psycopg.connect(migrated_url) as conn:
+        assert (
+            conn.execute(
+                "SELECT feedback_deadline FROM grading.gist_grades WHERE attempt_id=%s", [attempt]
+            ).fetchone()[0]
+            == deadline
+        )
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM procrastinate.procrastinate_jobs "
+                "WHERE queueing_lock=%s AND status IN ('todo','doing')",
+                [f"gist-grade:{attempt}"],
+            ).fetchone()[0]
+            == 1
+        )
+    monkeypatch.setattr(jobs.text_tasks, "run_task", original)
+    fake.register_text_response("grade_gist", case["response"])
+    await jobs.grade_gist(JobDeps(database, None, 3), str(attempt), str(learner))
+    assert stored(migrated_url, attempt)[:3] == ("ready", 98, "excellent")
+    with psycopg.connect(migrated_url) as conn:
+        assert (
+            conn.execute(
+                "SELECT * FROM practice.session_steps ORDER BY session_id,position"
+            ).fetchall()
+            == progress
+        )
+        assert (
+            conn.execute(
+                "SELECT gist_text FROM practice.blind_attempts WHERE attempt_id=%s", [attempt]
+            ).fetchone()[0]
+            == case["gist"]
+        )
+
+
 @pytest.mark.parametrize("failure", ["provider", "invalid", "timeout", "permanent"])
 async def test_reference_quota_then_exhaustion_can_retry_and_recover(
     submit, database, migrated_url, learner, ai, clip, monkeypatch, failure
