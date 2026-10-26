@@ -5,7 +5,7 @@ from alembic import op
 from migrations.rls import enable_own_rows
 
 revision = "73_card_audio"
-down_revision = "72_cards"
+down_revision = "76_reference_profiles"
 branch_labels = None
 depends_on = None
 

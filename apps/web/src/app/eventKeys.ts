@@ -37,6 +37,9 @@ export function queryKeysForEvent(event: LiveEvent, queryClient: QueryClient): r
     case 'transcript.ready':
     case 'transcript.failed':
       return [transcriptKey(event.resourceId)];
+    case 'profile.ready':
+    case 'profile.failed':
+      return [['sessions']];
     case 'grade.ready':
       return [GIST_GRADE_KEY];
     case 'dictation.scored':

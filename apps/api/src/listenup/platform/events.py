@@ -58,6 +58,8 @@ class EventType(StrEnum):
     CONTENT_READY = "content.ready"
     TRANSCRIPT_READY = "transcript.ready"
     TRANSCRIPT_FAILED = "transcript.failed"
+    PROFILE_READY = "profile.ready"
+    PROFILE_FAILED = "profile.failed"
     GRADE_READY = "grade.ready"
     # A submitted Dictation was scored; the resource is the attempt (#54, ADR 0042).
     DICTATION_SCORED = "dictation.scored"
@@ -460,6 +462,7 @@ def events_router(learner: Callable[..., Any]) -> APIRouter:
                 "description": (
                     "A Server-Sent Events stream of the learner's events: "
                     "job.progress, content.ready, transcript.ready, transcript.failed, "
+                    "profile.ready, profile.failed, "
                     "grade.ready, dictation.scored, attempt.voided, export.ready, "
                     "account.disabled (the stream then ends) and resync."
                 ),

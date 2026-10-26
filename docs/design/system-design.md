@@ -236,7 +236,7 @@ PostgreSQL alone handles data, queue, rate counters and change notifications thr
 ### 8.1 Compact storage
 
 - **Packed transcript words.** Instead of one row per word, a passage transcript stores parallel arrays: `words text[]`, `start_ms int4[]`, `end_ms int4[]`, `confidence int2[]` (0 to 1000) and `sentence_starts int4[]`. A 3-minute passage (about 450 words) takes roughly 6 KB after PostgreSQL's built-in compression, against roughly 60 KB as rows with indexes (est.). Marks refer to word positions in these arrays.
-- **Passage cache keyed by range.** `passage_transcripts` and `reference_profiles` are keyed by (media object, `int4range` of milliseconds) with a GiST index, so "is any cached range overlapping this passage?" is one indexed query.
+- **Passage cache keyed by range.** `passage_transcripts` are keyed by media object and `int4range` milliseconds with a GiST index. `reference_profiles` reference those cached spans by transcript id and processing fingerprint; a passage composes its contributing rows without new inference for ready shared spans (ADR 0061).
 - **Heartbeats update in place.** A Blind heartbeat updates one row (`last_position_ms`, `last_heartbeat_at`). The table uses a fill factor of 70 so these become in-page (HOT) updates with no index churn. Only voids are logged.
 - **Grades as JSONB.** Measures, word labels and comparisons are read whole and never queried field by field, so one JSONB column per result avoids dozens of narrow tables.
 

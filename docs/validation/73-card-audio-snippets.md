@@ -16,7 +16,8 @@ change is `docs/design/ux-decisions.md`. No migration/generated-file conflict ar
 reused by #215, #217 and #218, with #214 using 0062; this story was renamed
 to ADR 0063. #214/#218 also touch generated contracts, and #218 adds a migration.
 Their unmerged implementation stays outside this PR; current main remains `5db1333`.
-Migration `73_card_audio` follows the current `72_cards` head. API contracts were
+Migration `73_card_audio` originally followed `72_cards`; the remediation below
+reconciles the chain after #219 merged. API contracts were
 regenerated after reconciliation.
 
 ## Acceptance criteria and boundaries
@@ -205,3 +206,15 @@ main; final CI and changed coverage remain required. The original four uncovered
 defensive lines and actual-host latency limits above are not waived. The fixes need
 fresh independent re-review; this remediation session is not its own independent
 review. No merge is authorized.
+
+Current-main reconciliation integrates `076c6b65d8bdd76d4581b19311cac8098cba2db4`
+(#219) without changing its profile implementation. `73_card_audio` now follows
+`76_reference_profiles`, then `73_audio_lifecycle`; the Cards and profile event-key
+tests are both preserved. Combined OpenAPI/TypeScript contracts were regenerated.
+Post-reconciliation Ruff check/format, strict mypy, all six import contracts and
+the focused Cards/event/live-events UI checks (**37 passed**) pass. The affected
+backend suites (**171 passed**, PostgreSQL/S3 required), web types/format and
+regenerated contracts pass. Final CI/coverage results are recorded in the PR
+follow-up. The interrupted old-tree full run is not used as passing evidence;
+its partial output included a setup error and was not allowed to establish final
+suite or coverage claims.
