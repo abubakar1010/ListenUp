@@ -13,7 +13,7 @@
 
 | Question (#94) | Local answer (preliminary) |
 | --- | --- |
-| With 15 req/s of mixed traffic plus 20 Blind learners sending heartbeats, do reads and writes stay within p95 200 ms and 300 ms at under 30% CPU? | **Locally, yes, with wide margin.** Read p95 22 ms; write p95 31 ms (47 ms in the error-free diagnostic run); server CPU (API + DB + worker) 6.6% of the host on average, 10.5% at p95. **On stage 0: unverified.** |
+| With 15 req/s of mixed traffic plus 20 Blind learners sending heartbeats, do reads and writes stay within p95 200 ms and 300 ms at under 30% CPU? | **Locally, the latency and CPU targets are met with wide margin.** Read p95 22 ms; write p95 31 ms (47 ms in the error-free diagnostic run); server CPU (API + DB + worker) 6.6% of the host on average, 10.5% at p95. The default configuration fails the proposed error check because of heartbeat failures (#216); the diagnostic run passes every check. **On stage 0: unverified.** |
 | Slow queries (pg_stat_statements) | **None.** No statement averaged 10 ms or more; the highest mean was 2.3 ms (job-queue functions). See [statements](#slow-queries). |
 | Other findings | About 10% of heartbeats failed without a response, because the API's 5 s keep-alive equals the 5 s heartbeat interval: follow-up [#216](https://github.com/abubakar1010/ListenUp/issues/216). |
 
@@ -35,7 +35,7 @@ The method is ADR 0065's; in short:
   - 10 more clips with 6 sessions each, so 1,650 clips and 9,900 sessions in total;
   - a login session.
 
-  The first 20 learners also have 8 fresh sessions open at Blind. Seeding took about 12 minutes and is outside the measurement.
+  The first 20 learners also have 8 fresh sessions open at Blind. Seeding took about 12 minutes and is outside the measurement. The manifest of session tokens is written owner-only into a private temporary folder outside the results, and removed however the run ends. The harness now deletes the seeded learners after a run unless `--keep-data` is given; this change came after the two runs below.
 - **Sign-in and CSRF.** The login sessions are written through the identity repository: `POST /auth/login` is limited per IP, which would refuse 150 sign-ins from one generator. Every request sends the session cookie and the CSRF double-submit pair (the same value as cookie and `X-CSRF-Token`), so the real middleware checks it.
 - **Mixed traffic.** k6 `constant-arrival-rate` at 15 req/s, round-robin over the learners, so a learner's previous flow has always finished:
 
@@ -57,12 +57,13 @@ The method is ADR 0065's; in short:
   4. moves to its next fresh session.
 
   A beat without a response does not end the listen: the next beat follows, as the player's clock does. The 20 learners start in step, so the starts and beats arrive in bursts. That makes the test harsher than real traffic.
-- **Window.** 60 s warm-up, then 600 s measured. pg_stat_statements is reset at the end of warm-up.
+- **Window.** 60 s warm-up, then 600 s measured. pg_stat_statements is reset at the end of warm-up. Since these runs, the runner picks a wall-clock start that k6 waits for, so the reset and the CPU window follow k6's own clock. In the two runs below, the runner estimated k6's start as one second after the container started.
 - **Measures.**
-  - p95 is nearest rank over every measured request, failures and timeouts included.
+  - p95 is nearest rank over every measured request, failures and timeouts included. A second p95 over the answered requests shows how far fast failures pull it down.
   - An error is no response, or any status of 400 or more.
   - Heartbeats count as writes for the 300 ms target, and are also shown alone.
-  - CPU comes from `docker stats` once a second, as a share of all 4 host cores. The **server** figure (API + DB + worker) is checked against the 30% target; the load generator is shown separately.
+  - CPU comes from the `docker stats` stream, about two samples a second (1,200 per container in 600 s), as a share of all 4 host cores. The **server** figure (API + DB + worker) is checked against the 30% target; the load generator is shown separately.
+  - **Run validity (proposed, for the owner to confirm; added after these runs).** Reads and writes each fail under 1% of the time, and at least 95% of the planned mixed and heartbeat rates is delivered. Otherwise, fast failures or a short-changed load would pass the latency targets.
 
 ## Results
 
@@ -88,7 +89,7 @@ Two runs at the same load. The **default** run uses the compose command as commi
 | heartbeat | default | 2,520 | 14.6 | 30.5 | 68.0 | 218.7 | 249 (9.88%) |
 | heartbeat | diagnostic | 2,512 | 22.7 | 53.4 | 108.8 | 202.2 | 0 |
 
-**The default run's write and heartbeat percentiles are flattered by their failures.** The 249 failed heartbeats took under 3 ms each and are counted, as the method requires. That pulls the percentiles down. The diagnostic run, with no failures, is the better estimate of heartbeat latency at this load: p95 53 ms, still well under 300 ms.
+**The failures hardly move the default run's percentiles.** The 249 failed heartbeats took under 8 ms each (235 of them under 3 ms) and are counted, as the method requires. Taking only the answered requests from `requests.csv.gz`, the default run's heartbeat p95 is 31.9 ms (2,271 requests) and its write p95 31.8 ms, against 30.5 ms and 31.1 ms with the failures. So the failures explain about 1 ms, and the gap to the diagnostic run's heartbeat p95 of 53.4 ms is **unexplained**: the longer keep-alive may cost something, or it may be run-to-run variance, and with one run each this can't be told apart. Both are well under 300 ms.
 
 The slowest endpoint is starting a Blind attempt: p95 205 ms in the default run, median 53 ms. Each start runs `require_step`, inserts the attempt, signs a token and queues the expiry job. The 20 starts arrive together every 125 s with the matching heartbeats. All other endpoints have p95 at or under 34 ms (`results.md` per run).
 
@@ -111,7 +112,11 @@ The 32% maximum is one-second samples during the Blind start bursts. The target 
 | Read p95 | under 200 ms | 22.4 ms: meets | 22.4 ms: meets |
 | Write p95 | under 300 ms | 31.1 ms: meets | 46.9 ms: meets |
 | Server CPU, mean | under 30% | 6.6%: meets | 6.7%: meets |
+| Error rate, reads and writes each (proposed) | under 1% | writes 4.96%: **misses** | 0%: meets |
+| Delivered load (proposed) | at least 95% of 15 req/s and 4 beats/s | 15.21 and 4.20: meets | 15.18 and 4.19: meets |
 | **Stage 0** | the same | **deferred until staging — unverified** | |
+
+The two run-validity rows were added to the runner after these runs; this table applies them to each run's `results.json`. The committed `results.md` files show only the three targets.
 
 ### Slow queries
 
@@ -130,7 +135,8 @@ The heartbeat's own `UPDATE practice.blind_attempts … WHERE id = $1` (Database
 
 1. **Heartbeats meet closed keep-alive connections.** uvicorn's default keep-alive timeout (5 s) equals the heartbeat interval, so a beat that reuses the connection can arrive as the server closes it. k6 reports `connection reset by peer` or EOF (error codes 1220 and 1000).
    - In the default run, 249 of 2,520 heartbeats (9.9%) failed this way. With `--timeout-keep-alive 10` there were none.
-   - No listen was voided: one lost beat is a 10 s gap, under the 15 s limit.
+   - k6 saw no listen stopped by the server: one lost beat is a 10 s gap, under the 15 s limit. These runs didn't record the attempts' final outcomes, though. A listen whose `ended` beat got no answer stays unfinished, and the expiry worker voids it where k6 can't see. The runner now records every Blind attempt's outcome at the end of a run.
+   - The web player is less forgiving than k6. It stalls after 10 s without an answered beat (`STALL_AFTER_MS` in `apps/web/src/features/blind/listen.ts`), so two lost beats in a row use up the listen's one resume, and a second stall voids it. At a 9.9% loss rate that would hit real learners.
    - Deployment settings belong to the deploy pipeline, so this is filed as [#216](https://github.com/abubakar1010/ListenUp/issues/216) rather than changed here.
 2. **No slow queries** at stage-0 data volume (150 learners, about 3 months of clips). The hot paths use the indexes Database Design 11 lists.
 3. **Signing in costs about 0.75 ms per request** in `identity.resolve_auth_session`. It's the largest share of database time, but far from a constraint at stage 0. Revisit only if a later stage shows it matters.
@@ -150,11 +156,12 @@ Short smoke runs (25 learners, 30 s) were used only to develop the harness.
 - The fake AI configuration and no media worker: speech and AI work compete for CPU on stage 0 (System Design 5.2), and B5 does not measure them.
 - Seeded clips have no audio, so media redirects and signed-URL downloads are not in the mix. Uploads, sign-ins and the event stream are not in it either (ADR 0065).
 - One run per configuration, 600 s each. No repeat-run variance is reported.
+- The two runs were made before the fixes from the review on the pull request: the private manifest, deleting the seeded learners, the agreed wall-clock start, the answered p95, the attempt outcomes and the run-validity checks. Their `results.json` and `results.md` are kept as produced.
 
 ## Rerunning on stage 0
 
 Follow ADR 0065's stage-0 section and `spikes/README.md` (B5):
-- Run `spike-b5 --stage0` against the deployed release candidate.
+- Run `spike-b5 --stage0 --skip-up --base-url <deployment>` against the deployed release candidate, with `--database-url` naming the deployment's database owner.
 - Use the load generator on another machine where possible.
 - Record the deployment's own CPU.
 - Keep the raw `requests.csv.gz`.

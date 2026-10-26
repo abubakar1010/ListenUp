@@ -34,17 +34,32 @@ stage-0 run repeats a reviewed method rather than inventing one under launch pre
   (`tests/integration/seed.py`), a cached transcript, 10 more clips with their
   sessions, and a login session. Sign-in is seeded through the identity repository,
   because the per-IP sign-in limit would refuse 150 sign-ins from one load generator.
-  CSRF goes through the real double-submit check.
+  CSRF goes through the real double-submit check. The manifest of session tokens is
+  written owner-only into a private temporary folder outside the results and removed
+  however the run ends; the seeded learners, with their data and login sessions, are
+  deleted after the run unless `--keep-data` is given.
 - **Measures.** p95 is nearest-rank over every request in the measured window, failed
-  requests and timeouts included; the error rate counts no response and every status
-  of 400 or more. CPU is sampled each second with `docker stats` as each container's
-  share of all host cores; the **server** figure (API + database + worker), averaged
-  over the window, is what the 30% target is checked against, with the load
-  generator reported separately. pg_stat_statements is reset at the end of warm-up and
-  its top 20 statements by total and by mean time are recorded; any statement with a
-  mean of 10 ms or more is listed for a fix or a follow-up story.
-- **Labels.** A run is local unless started with `--stage0`; local results say they
-  are not stage-0 evidence in the report's first lines.
+  requests and timeouts included; a second p95 over the requests that got a response
+  shows how far fast failures pull it down. The error rate counts no response and
+  every status of 400 or more. CPU comes from the `docker stats` stream (about two
+  samples a second) as each container's share of all host cores; the **server** figure
+  (API + database + worker, summed per sampling round, leaving out and counting any
+  round that misses one of them), averaged over the window, is what the 30% target is
+  checked against, with the load generator reported separately. pg_stat_statements is
+  reset at the end of warm-up and its top 20 statements by total and by mean time are
+  recorded, through the owner's database URL; any statement with a mean of 10 ms or
+  more is listed for a fix or a follow-up story. The Blind sessions' attempts are
+  counted by outcome at the end of the run (listened, unfinished, voided by reason).
+- **Window.** The runner picks a wall-clock start; k6 waits for it in `setup()` and
+  fails if it starts late, so the warm-up, the statement reset and the CPU window all
+  follow one clock.
+- **Run validity (proposed, for the owner to confirm).** A run passes only if, besides
+  the three targets, reads and writes each fail under 1% of the time and at least 95% of
+  the planned mixed and heartbeat rates is delivered. Fast failures would otherwise
+  pass the latency targets, and #155 keeps failures in the outcome.
+- **Labels.** A run is local unless started with `--stage0`, which needs `--skip-up` and
+  the deployment's `--base-url`; local results say they are not stage-0 evidence in the
+  report's first lines, and every report records the host name and base URL.
 
 ## Local result (preliminary, not stage-0 evidence)
 
@@ -57,12 +72,20 @@ On a 4-core cloud container, with the load generator on the same machine, 2026-1
   delivered. No statement averaged 10 ms or more.
 - **Errors:** 249 heartbeats (9.9%) failed without a response, because the API's
   default 5 s keep-alive equals the 5 s heartbeat interval. With
-  `--timeout-keep-alive 10` there were none, and heartbeat p95 was 53.4 ms; the default
-  run's figure is flattered by those fast failures. No listen was voided. This is
-  follow-up [#216](https://github.com/abubakar1010/ListenUp/issues/216) for the
-  deployment settings.
+  `--timeout-keep-alive 10` there were none, and heartbeat p95 was 53.4 ms. The
+  failures hardly moved the default run's figure: its answered heartbeats alone have a
+  p95 of 31.9 ms (30.5 ms with the failures). The difference to 53.4 ms is unexplained;
+  there is one run of each configuration and no repeat-run variance. k6 saw no listen
+  stopped by the server; these runs did not record the attempts' final outcomes, so a
+  listen whose `ended` beat got no answer may have been voided later by the expiry
+  worker. This is follow-up [#216](https://github.com/abubakar1010/ListenUp/issues/216)
+  for the deployment settings.
+- **Against the run-validity checks** (added after these runs, applied to their
+  `results.json`): the default run misses the error check (4.96% of writes failed); the
+  diagnostic run meets every check.
 
-Locally, every B5 target is met with wide margin. That says nothing about stage 0.
+Locally, the latency and CPU targets are met with wide margin, and the default
+configuration fails on heartbeat errors (#216). That says nothing about stage 0.
 
 ## Stage-0 pass/fail: deferred until staging — unverified
 
@@ -82,8 +105,13 @@ Targets that stay unverified until then: read p95 under 200 ms, write p95 under
 
 ## Consequences
 
-- The stage-0 run reuses a tested harness; only the host and its CPU sampling may need
-  adapting.
+- The stage-0 run reuses a tested harness: seeding, statements and attempt outcomes go
+  through `--database-url`, and k6 can run from another machine. The CPU sampling still
+  relies on `docker stats` on the same host; where it cannot see the deployment's
+  containers the server CPU is missing and the check fails, so the deployment's own CPU
+  must be recorded instead.
+- The seeded learners are deleted after a run, so the stage-0 database is left as it
+  was apart from the run's log and statistics.
 - The mix excludes media playback, uploads and the event stream: media goes straight
   to storage with signed URLs, uploads are rate-limited and rare, and the event
   stream is long-lived rather than per-request. Speech work is B1 to B4.
