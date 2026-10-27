@@ -14,7 +14,9 @@ Playback-ended writes remain possible after withdrawal; they prove no recording.
 No new table, consent mechanism or migration is needed.
 
 The browser asks for microphone access only after an explicit button activation.
-An AudioContext analyser reads transient samples locally, without connecting to
+Resume the AudioContext during button activation, before awaiting microphone
+permission, so a delayed permission prompt cannot consume that activation. Its
+analyser reads transient samples locally, without connecting to
 speakers, saving audio, using MediaRecorder or sending audio to the server. The
 short check requires three audible, non-clipped samples within ten seconds;
 pauses between words are allowed. This is an input check, not speech recognition,

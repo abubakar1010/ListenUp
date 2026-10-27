@@ -12,7 +12,7 @@ it.each([
     'GET /auth/consent-versions': jsonResponse(200, { voice_recording: 'voice-2026-1' }),
     'GET /me/consents': jsonResponse(200, { consents: [] }),
   });
-  vi.stubGlobal('AudioContext', vi.fn());
+  media();
   const getUserMedia = vi.fn().mockRejectedValue(new DOMException('failure', name));
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
   const ready = vi.fn();
@@ -59,6 +59,7 @@ function media(amplitude: number | (() => number) = 0.1) {
   track.stop = vi.fn();
   const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
   const close = vi.fn().mockResolvedValue(undefined);
+  const resume = vi.fn().mockResolvedValue(undefined);
   vi.stubGlobal(
     'AudioContext',
     class {
@@ -72,9 +73,7 @@ function media(amplitude: number | (() => number) = 0.1) {
       createMediaStreamSource() {
         return { connect: vi.fn() };
       }
-      resume() {
-        return Promise.resolve();
-      }
+      resume = resume;
       close = close;
     },
   );
@@ -82,7 +81,7 @@ function media(amplitude: number | (() => number) = 0.1) {
     configurable: true,
     value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
   });
-  return { stream, track, close };
+  return { stream, track, close, resume };
 }
 
 function activeConsent(version = 'voice-2026-1', withdrawn_at: string | null = null) {
@@ -329,3 +328,24 @@ it.each(['versions', 'records'])(
     await vi.waitFor(() => expect(ready).toHaveBeenLastCalledWith(true));
   },
 );
+
+it('resumes the audio context during activation before waiting for permission', async () => {
+  mockRoutes({
+    'GET /auth/consent-versions': jsonResponse(200, { voice_recording: 'voice-2026-1' }),
+    'GET /me/consents': activeConsent(),
+  });
+  const { stream, resume } = media();
+  let resolve!: (value: unknown) => void;
+  navigator.mediaDevices.getUserMedia = vi.fn().mockReturnValue(
+    new Promise((r) => {
+      resolve = r;
+    }),
+  );
+  const ready = vi.fn();
+  renderWithProviders(<ShadowReadiness onReady={ready} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Check microphone' }));
+  expect(resume).toHaveBeenCalledOnce();
+  expect(ready).not.toHaveBeenCalledWith(true);
+  resolve(stream);
+  await screen.findByText('Microphone ready. Sound detected.');
+});

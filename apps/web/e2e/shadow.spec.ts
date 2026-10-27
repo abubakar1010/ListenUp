@@ -139,6 +139,7 @@ test('three Shadow rounds use keyboard controls at 360 px and original speed', a
     mark_count: 0,
     locked_at: null as string | null,
   };
+  let granted = false;
   const rounds: {
     round: number;
     transcript_shown: boolean;
@@ -151,12 +152,22 @@ test('three Shadow rounds use keyboard controls at 360 px and original speed', a
     const path = new URL(request.url()).pathname.replace('/api/v1', '');
     if (path === '/auth/consent-versions')
       return route.fulfill({ json: { voice_recording: 'voice-2026-1' } });
-    if (path === '/me/consents')
+    if (path === '/me/consents') {
+      if (request.method() === 'POST') {
+        expect(request.postDataJSON()).toEqual({
+          kind: 'voice_recording',
+          version: 'voice-2026-1',
+        });
+        granted = true;
+      }
       return route.fulfill({
         json: {
-          consents: [{ kind: 'voice_recording', version: 'voice-2026-1', withdrawn_at: null }],
+          consents: granted
+            ? [{ kind: 'voice_recording', version: 'voice-2026-1', withdrawn_at: null }]
+            : [],
         },
       });
+    }
     if (path === '/health')
       return route.fulfill({
         json: { status: 'ok' },
@@ -226,6 +237,19 @@ test('three Shadow rounds use keyboard controls at 360 px and original speed', a
   await mic.focus();
   await mic.press('Enter');
   await expect(page.getByText('Microphone ready. Sound detected.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start round 1', exact: true })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  const agreement = page.getByRole('checkbox', { name: /I agree/ });
+  await agreement.focus();
+  await agreement.press('Space');
+  await page.keyboard.press('Tab');
+  const accept = page.getByRole('button', { name: 'Agree to voice recording' });
+  await expect(accept).toBeFocused();
+  await accept.press('Enter');
+  await expect(page.getByText(/You agreed to this version/)).toBeFocused();
+  expect(granted).toBe(true);
   for (const number of [1, 2, 3]) {
     const start = page.getByRole('button', { name: `Start round ${number}`, exact: true });
     await start.focus();

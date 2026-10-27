@@ -47,22 +47,49 @@ See ADR 0065 for the #81 interface and resource/consent lifecycle.
   regression failed while readiness stayed true, then passed after adding the
   muted-track handler.
 
+- Red/green: `pnpm vitest run src/features/shadow/ShadowReadiness.test.tsx -t 'during activation'`
+  failed because AudioContext.resume was deferred until after permission. The
+  final flow resumes in the button activation before awaiting getUserMedia;
+  the focused legal/Shadow suite then passed 55 tests.
+- The new unknown-legal-text axe state first failed because the test API always
+  returned its default version. Its default now yields to a state's explicit
+  answer; all 15 Shadow axe states pass without exceptions.
+
 ## Final verification
 
 - Backend round integration: 14 passed with restricted API-role PostgreSQL.
 - Full frontend suite: 655 passed. Subsequent accessibility changes are covered
-  by the final focused legal/Shadow suite (54 passed).
+  by the final focused legal/Shadow suite (55 passed).
 - Full Chromium suite: 60 passed; final affected Shadow browser suite: 4 passed.
-- Shadow axe scans: 3 passed (desktop, 360 px, dark theme).
+- Shadow axe scans: 15 passed (five states across desktop, 360 px and dark theme).
 - Frontend lint, types, formatting, production build and bundle budget passed.
 - Backend lint, formatting, strict types and all six import contracts passed.
 - Development database upgraded to head; Alembic reports no model drift.
 - Uninstrumented performance test: 1 passed (development evidence only).
-- Full required-service backend coverage suite is running; final result and
-  changed-line coverage will be recorded in the follow-up validation commit.
+- Full required-service backend suite: 2,218 passed, one optional real-profile
+  test skipped because LISTENUP_REAL_PROFILE_FIXTURE was not configured, and
+  the performance test deselected for its separate run. PostgreSQL and S3 were
+  required and available.
+- Latest-main additions: 87 passed (collected after the full run had started),
+  with coverage combined into the backend report. Total functional tests:
+  2,305 passed, one optional real-model fixture skipped.
+- Final round/segment integration rerun: 32 passed. The server file moved by
+  one line during schema cleanup; its stale coverage measurement was discarded
+  before this rerun so the final report measures the current source accurately.
+- Changed executable lines: backend 100%, frontend 98%; both complete runtime
+  source inventories pass check-coverage.py. Two uncovered frontend lines are
+  defensive cleanup after a pending AudioContext.resume resolves following
+  cancellation; late permission-result disposal and ordinary cleanup are tested.
+- CI has not run: automatic approval review rejected pushing to the external
+  GitHub origin without explicit user authorization. No push or PR was created.
 - A fresh independent review remains required before merge.
 
 Browser API responses are mocked; browser checks establish permission/media/
 keyboard behavior, while restricted-role PostgreSQL tests establish server
-consent enforcement. The full frontend run preceded the final small accessibility
+consent enforcement. The full frontend run preceded the final readiness and accessibility
 refinements; affected tests and browser checks were rerun afterward.
+
+Screen-reader support is checked through semantic roles, labelled meter,
+state-only live announcements and axe; a manual assistive-technology session was
+not performed. Recording/upload/replay remain excluded and grading stays
+unavailable under ADR 0050.

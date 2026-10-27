@@ -86,6 +86,12 @@ export function ShadowReadiness({ onReady }: { onReady: (ready: boolean) => void
       if (!navigator.mediaDevices?.getUserMedia || !globalThis.AudioContext) {
         throw new DOMException('Unavailable', 'NotSupportedError');
       }
+      // Resume during the button activation: permission prompts may outlast the
+      // browser's user-activation window (notably on mobile browsers).
+      context = new AudioContext();
+      const resumed = context.resume();
+      // A denied/cancelled permission may close the context before this is awaited.
+      void resumed.catch(() => {});
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (generation.current !== token) {
         cleanup();
@@ -94,10 +100,9 @@ export function ShadowReadiness({ onReady }: { onReady: (ready: boolean) => void
       if (!stream.getAudioTracks().some((track) => track.readyState === 'live')) {
         throw new DOMException('No microphone', 'NotFoundError');
       }
-      context = new AudioContext();
       const analyser = context.createAnalyser();
       context.createMediaStreamSource(stream).connect(analyser);
-      await context.resume();
+      await resumed;
       if (generation.current !== token) {
         cleanup();
         return;
