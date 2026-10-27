@@ -3,12 +3,15 @@
 import pytest
 
 from listenup.modules.review.domain import (
+    MARK_TAGS,
     MAX_MARK_WORDS,
     MAX_NOTE_LENGTH,
     MarkOutOfRange,
     MarkTooLong,
     MarkWithoutWords,
     NoteTooLong,
+    TagUnknown,
+    check_tag,
     clean_note,
     place_mark,
 )
@@ -62,3 +65,21 @@ def test_a_note_holds_at_most_500_characters():
     assert clean_note("x" * MAX_NOTE_LENGTH) == "x" * MAX_NOTE_LENGTH
     with pytest.raises(NoteTooLong):
         clean_note("x" * (MAX_NOTE_LENGTH + 1))
+
+
+# -- tags (#61, FR-TR-4) -------------------------------------------------------------------
+
+
+def test_the_four_tags_match_the_database_check():
+    assert MARK_TAGS == ("linking", "reduction", "weak_form", "unknown_word")
+
+
+@pytest.mark.parametrize("tag", ["linking", "reduction", "weak_form", "unknown_word", None])
+def test_a_known_tag_or_no_tag_is_kept(tag):
+    assert check_tag(tag) == tag
+
+
+@pytest.mark.parametrize("tag", ["accent", "", "Linking", "weak form", " linking"])
+def test_any_other_tag_is_refused(tag):
+    with pytest.raises(TagUnknown):
+        check_tag(tag)
