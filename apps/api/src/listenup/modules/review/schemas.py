@@ -67,3 +67,13 @@ class Mark(BaseModel):
 
 class MarkList(BaseModel):
     marks: list[Mark]
+
+
+class SavedMark(Mark):
+    content_id: uuid.UUID
+    source_url: str
+
+
+class SavedMarkList(BaseModel):
+    marks: list[SavedMark]
+    next_cursor: str | None

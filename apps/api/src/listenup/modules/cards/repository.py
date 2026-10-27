@@ -131,3 +131,33 @@ async def audio_row(
             {"id": card_id, "user": learner},
         )
     ).first()
+
+
+async def reviews(db: AsyncSession, card_id: uuid.UUID) -> schemas.ReviewHistory:
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id,card_id,result,reviewed_at FROM practice.card_reviews "
+                "WHERE card_id=:card ORDER BY reviewed_at DESC,id DESC LIMIT 50"
+            ),
+            {"card": card_id},
+        )
+    ).all()
+    return schemas.ReviewHistory(
+        reviews=[schemas.CardReview.model_validate(row, from_attributes=True) for row in rows]
+    )
+
+
+async def insert_review(
+    db: AsyncSession, learner: uuid.UUID, card_id: uuid.UUID, review_id: uuid.UUID, result: str
+) -> schemas.CardReview:
+    row = (
+        await db.execute(
+            text(
+                "INSERT INTO practice.card_reviews(id,card_id,user_id,result) "
+                "VALUES (:id,:card,:user,:result) RETURNING id,card_id,result,reviewed_at"
+            ),
+            {"id": review_id, "card": card_id, "user": learner, "result": result},
+        )
+    ).one()
+    return schemas.CardReview.model_validate(row, from_attributes=True)

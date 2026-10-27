@@ -1,7 +1,7 @@
 """The Transcript experience composes public module services, never cache queries.
 
 Marks (#58, FR-TR-2, ADR 0047) are this module's own rows in `practice.marks`. Every
-mark route passes the Transcript gate (`practice.require_reached`) first. A new mark
+session mark route passes the Transcript gate (`practice.require_reached`) first. A new mark
 is named by the browser and saved with one INSERT; its audio time and phrase come
 from the passage words, never from the browser. Later stories add to these
 functions: tags (#61), the mark list and count (#60), Dictation pre-fill (#59).
@@ -282,3 +282,7 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
     return ExportPart(
         tables=(await learner_rows(session, "practice.marks", learner, order_by="created_at"),)
     )
+
+
+async def saved_marks(db: AsyncSession, cursor: str | None, limit: int) -> schemas.SavedMarkList:
+    return await repository.saved_marks(db, cursor, limit)

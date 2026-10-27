@@ -1,9 +1,9 @@
 """Transcript step HTTP boundary (FR-TR-1, FR-TR-2, FR-TR-3, FR-TX-5)."""
 
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from listenup.modules.identity.service import CurrentLearner
@@ -167,3 +167,15 @@ async def remove_mark(
 ) -> None:
     """Remove the mark. A second removal answers 404 `mark_not_found`."""
     await service.remove_mark(db, session_id, mark_id)
+
+
+@router.get("/marks")
+async def saved_marks(
+    response: Response,
+    learner: CurrentLearner,
+    db: DbSession,
+    cursor: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> schemas.SavedMarkList:
+    response.headers.update(_NO_STORE)
+    return await service.saved_marks(db, cursor, limit)
