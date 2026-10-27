@@ -55,3 +55,36 @@ one with its cause (#216). Review against the unchanged B5 targets: read p95
 and delivered-load validity checks and identify their proposal status. Link the
 independently reviewed evidence from #94/#155. Local synthetic success cannot
 satisfy these criteria or justify closing #216 as fully validated.
+
+## Local validation outcome
+
+Tested configuration commit: `fa4d404c1fdc2abda7e45295d00e14ef41e0514d`.
+Production Compose resolved with `infra/deploy/env.example` and `LISTENUP_IMAGE_TAG=r1`;
+Caddy **2.10.2** `validate --config infra/caddy/Caddyfile --adapter caddyfile`
+passed. Uvicorn is pinned at **0.54.0**. The API image built successfully.
+`pytest apps/api/tests/unit/test_compose_prod.py apps/api/tests/unit/test_deploy_scripts.py -q`
+passed **51 tests**; changed test formatting and Ruff lint passed; `git diff --check`
+passed. Full application suites were not run: application code is unchanged.
+Fresh-session independent review and required CI remain outstanding.
+
+A reduced B5 comparison was attempted with the existing harness: 25 learners,
+1 history clip each, 20 Blind learners, 15 mixed requests/s, 20 s warm-up and
+120 s measurement; control API timeout 5 s, intended fixed API timeout 30 s
+and proxy pool lifetime 15 s. **No valid new comparison completed: request counts
+and failures are unavailable, not zero.** Startup exposed workspace permissions
+(non-root migration could not read pyproject.toml; bind-mounted source was not
+readable by the image user). Scratch-only root users allowed startup. Then the
+harness's fixed `listenup-b5-k6` container name conflicted with an active container.
+Automatic approval review rejected the follow-up as potentially interfering with
+an active load test on the project/network/database. No workaround was attempted
+after that rejection. No counts from that concurrent run are used here. The
+real server/proxy reuse experiment also remains unrun; Caddy validation proves
+configuration acceptance, not runtime transport reliability.
+
+The historical comparison in [#94's report](94-b5-load-test.md) remains the only
+completed B5 comparison: at 15 mixed requests/s plus 20 Blind learners, the 5 s
+run had 249 failures out of 2,520 heartbeats; the diagnostic 10 s run had 0 out of
+2,512. Those are historical local results, not measurements of this commit or of
+the new proxy settings. Repeat the local comparison in a fully disposable stack
+with unique ports, project, database and k6 name before treating this PR's local
+transport verification as complete.
