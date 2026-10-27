@@ -1,0 +1,22 @@
+{
+  "api_idle_s": 30,
+  "proxy_idle_s": 15,
+  "post_count": 3,
+  "failures": 0,
+  "reused_after_5_2s": true,
+  "fresh_after_16s": true,
+  "upstream_peers": [
+    [
+      "127.0.0.1",
+      33164
+    ],
+    [
+      "127.0.0.1",
+      33164
+    ],
+    [
+      "127.0.0.1",
+      58952
+    ]
+  ]
+}

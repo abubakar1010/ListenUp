@@ -99,6 +99,9 @@ services:
       - 0.0.0.0
       - --port
       - "8000"
+      # HTTP idle lifetime: above Caddy's 15 s pool lifetime (#216).
+      - --timeout-keep-alive
+      - "30"
       - --timeout-graceful-shutdown
       - "5"
       - --proxy-headers

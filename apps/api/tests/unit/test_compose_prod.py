@@ -5,7 +5,9 @@ These read the file as data, so they run anywhere; the local rehearsal recorded 
 docs/runbooks/deploy.md runs the same file against real containers.
 """
 
+import json
 import re
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -245,3 +247,38 @@ def test_long_running_services_restart_and_report_health() -> None:
         assert SERVICES[name]["restart"] == "unless-stopped", name
     for name in ("edge", "api"):
         assert SERVICES[name]["healthcheck"]["test"], name
+
+
+@pytest.mark.parametrize("source", ["production", "image", "development", "b5"])
+def test_api_keepalive_has_margin_above_blind_heartbeat(source: str) -> None:
+    """Every launch command must override Uvicorn's unsafe 5 s default (#216)."""
+    if source == "production":
+        command = SERVICES["api"]["command"]
+    elif source == "image":
+        dockerfile = (REPO / "infra/docker/backend.Dockerfile").read_text()
+        api_stage = dockerfile.split("FROM base AS api\n")[1].split("FROM base AS worker\n")[0]
+        command = json.loads(re.search(r"^CMD (.+)$", api_stage, re.M)[1])
+    elif source == "development":
+        command = shlex.split(DEV["services"]["api"]["command"])
+    else:
+        b5 = yaml.safe_load(
+            (REPO / "spikes/load/compose.b5.yml").read_text().replace("!override ", "")
+        )
+        command = shlex.split(b5["services"]["api"]["command"])
+    assert "--timeout-keep-alive" in command, source
+    assert int(command[command.index("--timeout-keep-alive") + 1]) == 30
+    # Shutdown grace is unrelated to idle HTTP connections and stays unchanged.
+    assert command[command.index("--timeout-graceful-shutdown") + 1] == "5"
+
+
+def test_proxy_retires_idle_connections_before_the_api() -> None:
+    """Caddy keepalive is pool idle lifetime, not TCP probe interval (#216)."""
+    caddyfile = (REPO / "infra/caddy/Caddyfile").read_text()
+    [transport] = re.findall(r"transport http \{([^}]+)\}", caddyfile)
+    [seconds] = re.findall(r"^\s*keepalive (\d+)s\s*$", transport, re.M)
+    assert int(seconds) == 15  # 3 heartbeat intervals, below Uvicorn's 30 s.
+    assert "keepalive off" not in transport
+    # Do not turn this idle-pool fix into a deadline for active event streams.
+    assert not re.search(
+        r"^\s*(read_timeout|write_timeout|response_header_timeout)\s", transport, re.M
+    )
