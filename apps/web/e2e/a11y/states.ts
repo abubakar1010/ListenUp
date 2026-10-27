@@ -198,6 +198,9 @@ function session(
     '/sessions/session-1/dictation/attempt': problem(404, 'attempt_not_found', 'No attempt.'),
     '/contents/clip-1': { json: DETAIL },
     '/cards': { json: { cards: [], remaining: 2, next_cursor: null } },
+    '/sessions/session-1/cards/suggestions': {
+      json: { suggestions: [] } satisfies Schema['CardSuggestions'],
+    },
     ...answers,
   };
 }
@@ -807,8 +810,7 @@ export const STATES: ScanState[] = [
     name: 'card suggested phrases',
     path: '/sessions/session-1',
     signedIn: true,
-    answers: {
-      ...session('blind', 2),
+    answers: session('blind', 2, {
       '/sessions/session-1/cards/suggestions': {
         json: {
           suggestions: [
@@ -817,7 +819,7 @@ export const STATES: ScanState[] = [
           ],
         } satisfies Schema['CardSuggestions'],
       },
-    },
+    }),
     act: async (page) => {
       await page.getByRole('combobox', { name: 'Marked phrase' }).selectOption('m-1');
     },
