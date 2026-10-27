@@ -40,3 +40,10 @@ def test_the_event_stream_is_never_compressed() -> None:
 def test_client_addresses_are_never_taken_from_request_headers() -> None:
     # Without trusted_proxies Caddy replaces any client-sent X-Forwarded-For.
     assert "trusted_proxies" not in CADDYFILE
+
+
+def test_hsts_covers_only_the_site_itself() -> None:
+    # The domain is not chosen yet (#16): includeSubDomains on an apex domain would force
+    # HTTPS on every other service under it. Widen it only as a deliberate decision.
+    [hsts] = re.findall(r'Strict-Transport-Security "([^"]+)"', CADDYFILE)
+    assert hsts == "max-age=31536000"
