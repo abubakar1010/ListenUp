@@ -171,5 +171,5 @@ Follow ADR 0065's stage-0 section and `spikes/README.md` (B5):
 
 Normal API commands now explicitly use 30 s idle keep-alive, with Caddy upstream
 pooling at 15 s. See [the follow-up record](216-connection-timeouts.md) for
-semantics, passing configuration tests, the blocked local rerun, and exact
+semantics, passing configuration tests, the completed reduced local comparison, and exact
 outstanding stage-0 verification. The historical results above are unchanged.

@@ -56,7 +56,7 @@ and delivered-load validity checks and identify their proposal status. Link the
 independently reviewed evidence from #94/#155. Local synthetic success cannot
 satisfy these criteria or justify closing #216 as fully validated.
 
-## Local validation outcome
+## Initial local validation attempt (superseded below)
 
 Tested configuration commit: `fa4d404c1fdc2abda7e45295d00e14ef41e0514d`.
 Production Compose resolved with `infra/deploy/env.example` and `LISTENUP_IMAGE_TAG=r1`;
@@ -88,3 +88,87 @@ run had 249 failures out of 2,520 heartbeats; the diagnostic 10 s run had 0 out 
 the new proxy settings. Repeat the local comparison in a fully disposable stack
 with unique ports, project, database and k6 name before treating this PR's local
 transport verification as complete.
+
+## Follow-up: isolated runtime verification
+
+The follow-up uses a separate `listenup-216-verify` Compose project, network and
+volumes, PostgreSQL at host port 56432, storage at 19000, API at 18001 and Caddy at
+18081. k6 is named `listenup-216-verify-k6`. It shares no database or mutable
+container state with the earlier project or another session. Local-only root
+users compensate for the workspace's source permissions; they are not production
+changes. The API/worker use the built `listenup-216-api` image; Caddy is 2.10.2.
+
+### Live connection experiment
+
+A disposable ASGI probe returns its actual TCP peer address. Uvicorn 0.54.0 uses
+the 30 s value read from production Compose. Caddy 2.10.2 uses the production
+Caddyfile, with only the listener/upstream addresses changed to separate loopback
+ports (18083/18082), the media origin replaced, and its admin endpoint disabled.
+Forwarded-header processing is disabled only on the probe so the recorded port
+is the TCP port rather than the forwarded client port (which Uvicorn sets to 0).
+
+Using one stdlib `http.client.HTTPConnection` with no retry, send a POST, wait
+5.2 s and send another, then wait 16 s and send a third. Assert the first two
+responses identify the same upstream port and the third identifies a new one.
+**Passed: 3 requests, 0 failures**; ports were 33164, 33164, 58952. This verifies
+reuse beyond a normal beat and proxy retirement before the API's idle deadline.
+It is a synthetic transport check, not an application or stage-0 benchmark.
+The first development probe ran before Uvicorn was ready and received 502;
+readiness was corrected before this successful experiment. An initial assertion
+also exposed forwarded-port rewriting; neither development attempt is counted
+as a successful transport experiment.
+
+### Follow-up B5 method and exclusions
+
+The existing JS workload and Python summary logic are unchanged. A scratch
+launcher supplies the unique k6 name and excludes only local API/edge addresses
+from the outbound HTTP proxy (`NO_PROXY` and `no_proxy` in k6's container).
+Without this local exclusion the platform proxy returned 403 even though the
+same learner's direct API request succeeded. Those authorization-refused runs
+(and an interrupted follow-up) delivered no useful Blind comparison and are
+excluded, not combined with the results below.
+
+All accepted modes use 25 learners with one history clip each, 20 concurrent
+Blind learners, 15 mixed requests/s, 20 s warm-up and 120 s measured. They use
+fresh seeded learners per mode and run sequentially. The control explicitly
+sets API idle to 5 s; fixed-direct uses the normal 30 s command; fixed-proxy
+uses API 30 s through the committed Caddyfile's 15 s pool lifetime. Fake AI,
+PostgreSQL 16 and local storage are used; no media-worker/model load.
+
+The tested HEAD is `7d86961d5c04edf254c7513e1f3c073ffbd41b20`, whose configuration
+is identical to `fa4d404c1fdc2abda7e45295d00e14ef41e0514d`. The harness records
+`git_dirty=true` because this evidence document was being updated during the
+runs; no application, harness or deployment configuration files changed.
+The small loopback transport probe overlapped the control's early window;
+these runs establish local failure/reuse behavior, not performance qualification
+or a controlled latency comparison. Another project's idle services were not
+stopped or used. Raw reports and reproduction details are in
+[`data/216/`](data/216/README.md). No private manifest or tokens are retained.
+
+Effective fixed container command: `uvicorn listenup.main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 5 --timeout-keep-alive 30`. Caddy adaptation confirms `keep_alive.idle_timeout=15000000000` ns (15 s); the adapted JSON is retained with the evidence. API and worker image digest: `sha256:2a5cb05240cddc3f7bb17861e7fe665d38b29d65f4cf1e6b761ad5ceec517bd7`.
+
+The first proxy-mode attempt was also excluded: Caddy's inherited outbound proxy
+answered `403 Loopback targets forbidden` for its local upstream. The scratch
+edge was recreated with `NO_PROXY`/`no_proxy` for `api-via-edge,api,localhost,127.0.0.1`
+before the accepted proxy rerun. No production setting was changed for this
+managed-environment networking issue.
+
+### Accepted local results
+
+| Mode | Read requests / errors | Write requests / errors (beats included) | Heartbeats / errors | Mixed req/s | Beats/s |
+| --- | --- | --- | --- | --- | --- |
+| control | 1347 / 0 | 980 / 84 | 520 / 84 | 15.06 | 4.33 |
+| fixed-direct | 1338 / 0 | 1009 / 0 | 520 / 0 | 15.22 | 4.33 |
+| fixed-proxy | 1332 / 0 | 1000 / 0 | 520 / 0 | 15.10 | 4.33 |
+
+The control's 84 no-response failures were 70 k6 code 1220 (connection reset)
+and 14 code 1000 (EOF), all heartbeat requests. No response failures occurred
+in either fixed mode. Each mode sent 520 measured heartbeats. This reproduces
+the local timeout defect and supports the chosen settings, without proving
+stage-0 performance. Per-endpoint counts, CPU, attempt outcomes and latencies
+are retained in the raw reports, including unfinished attempts at the short
+measurement boundary. The harness does not mimic the browser's 10 s stall behavior.
+
+CI and Deploy check passed for tested HEAD `7d86961` (CI run 737, Deploy check 20).
+The follow-up commit adds evidence only; its own CI status is reported in the PR.
+Fresh-session independent review remains outstanding.
