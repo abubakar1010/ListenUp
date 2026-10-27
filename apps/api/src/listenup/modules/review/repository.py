@@ -25,10 +25,11 @@ class MarkRow:
     note: str | None
     source: str
     status: str
+    tag: str | None
     created_at: datetime
 
 
-_COLUMNS = "id, session_id, word_from, word_to, at_ms, note, source, status, created_at"
+_COLUMNS = "id, session_id, word_from, word_to, at_ms, note, source, status, tag, created_at"
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class NewMark:
     note: str | None
     source: str
     status: str = "confirmed"
+    tag: str | None = None
 
 
 async def insert(session: AsyncSession, mark: NewMark) -> MarkRow | None:
@@ -50,9 +52,9 @@ async def insert(session: AsyncSession, mark: NewMark) -> MarkRow | None:
         await session.execute(
             text(f"""
             INSERT INTO practice.marks
-              (id, session_id, user_id, word_from, word_to, at_ms, note, source, status)
+              (id, session_id, user_id, word_from, word_to, at_ms, note, source, status, tag)
             VALUES (:id, :session_id, :user_id, :word_from, :word_to, :at_ms, :note, :source,
-                    :status)
+                    :status, :tag)
             ON CONFLICT DO NOTHING
             RETURNING {_COLUMNS}
             """),
@@ -110,6 +112,22 @@ async def set_note(
             RETURNING {_COLUMNS}
             """),
             {"id": mark_id, "session_id": session_id, "note": note},
+        )
+    ).first()
+    return MarkRow(*row) if row else None
+
+
+async def set_tag(
+    session: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UUID, tag: str | None
+) -> MarkRow | None:
+    row = (
+        await session.execute(
+            text(f"""
+            UPDATE practice.marks SET tag = :tag
+             WHERE id = :id AND session_id = :session_id
+            RETURNING {_COLUMNS}
+            """),
+            {"id": mark_id, "session_id": session_id, "tag": tag},
         )
     ).first()
     return MarkRow(*row) if row else None
