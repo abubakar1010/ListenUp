@@ -258,6 +258,9 @@ Read the section for the area you are changing before you change it. The rules e
   the tag. In `MarkSync` the tag joins the note's debounced `update` (note, then tag,
   then confirmation). Set it with `TagSelect`, a native select, in the mark panel and
   each list row; show the tag in words in the list and in the word's description.
+  Persist tag-write uncertainty before the PUT starts and recover it even if the
+  initial GET matches the local tag; that GET may predate the old PUT's commit.
+  Undo of an unsent removal must keep an uncertain tag update queued.
 
 ## Media sandbox and scanning (ADR 0049)
 
