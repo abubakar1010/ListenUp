@@ -80,8 +80,9 @@ See ADR 0065 for the #81 interface and resource/consent lifecycle.
   source inventories pass check-coverage.py. Two uncovered frontend lines are
   defensive cleanup after a pending AudioContext.resume resolves following
   cancellation; late permission-result disposal and ordinary cleanup are tested.
-- CI has not run: automatic approval review rejected pushing to the external
-  GitHub origin without explicit user authorization. No push or PR was created.
+- The initial push was blocked by automatic approval review pending explicit
+  authorization. The owner subsequently authorized publishing the branch and
+  opening a draft PR; remote CI results are tracked on that PR.
 - A fresh independent review remains required before merge.
 
 Browser API responses are mocked; browser checks establish permission/media/
