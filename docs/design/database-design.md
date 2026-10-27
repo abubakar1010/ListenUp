@@ -566,7 +566,20 @@ ALTER TABLE practice.shadow_rounds ENABLE ROW LEVEL SECURITY;
 CREATE POLICY own_rows ON practice.shadow_rounds
   USING (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)
   WITH CHECK (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid);
--- #81 adds recording/upload metadata and its recording-expiry index.
+-- #81 (migration 81_shadow_recordings, ADR 0070):
+ALTER TABLE practice.shadow_rounds
+  ADD COLUMN recording_key   text,   -- users/<user id>/shadow/<session id>/round-<n>-<round id>.<webm|m4a>
+  ADD COLUMN recording_mime  text,   -- audio/webm or audio/mp4
+  ADD COLUMN recording_bytes int,    -- 1 byte to 5 MB
+  ADD COLUMN uploaded_at     timestamptz,
+  ADD CONSTRAINT shadow_rounds_recording_private CHECK (recording_key IS NULL OR (
+    char_length(recording_key) <= 300 AND recording_key LIKE 'users/' || user_id::text || '/shadow/%'
+    AND recording_mime IN ('audio/webm','audio/mp4') AND recording_bytes BETWEEN 1 AND 5242880)),
+  ADD CONSTRAINT shadow_rounds_recording_all_or_none CHECK (
+    (recording_key IS NULL) = (recording_mime IS NULL) AND (recording_key IS NULL) = (recording_bytes IS NULL)),
+  ADD CONSTRAINT shadow_rounds_uploaded CHECK (
+    uploaded_at IS NULL OR (recording_key IS NOT NULL AND recorded_at IS NOT NULL));
+CREATE INDEX shadow_rounds_expiry_idx ON practice.shadow_rounds (recorded_at) WHERE recording_key IS NOT NULL;
 
 ```
 
@@ -578,7 +591,7 @@ Shadow segment ownership, RLS/grants and immutable locking follow [ADR 0057](../
 `shadow_round_order` locks the session then segment, requires sequential insertion
 following an ended playback, locks the segment on round 1, and refuses changing
 round identity or resetting ended playback. `playback_status` is independent of
-`recorded_at`; playback never sets recording success or completes the plan.
+`recorded_at`; playback never sets recording success or completes the plan. Recordings (ADR 0070) can be offered only after playback ended and are write-once; `recorded_at` and `uploaded_at` are set when the stored object matches the declared size and type.
 
 Blind and Dictation attempt rows use `own_rows`; the API has `SELECT, INSERT, UPDATE`, with no independent draft deletion. `interrupted` records a second interruption, a device pause of 5 s or more, or an unreported pause beyond the anchor tolerance. The one resume (FR-BL-3) resets the 20 s buffering allowance and records `resume_stop_ms`; draft saves use `draft_version` to reject stale differing text with 409 `draft_conflict`, while an identical resend succeeds ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md), [ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)).
 
