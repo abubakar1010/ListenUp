@@ -10,6 +10,7 @@ from listenup.modules.analytics import service as analytics
 from listenup.modules.cards import jobs, repository, schemas
 from listenup.modules.cards.domain import cursor as cursors
 from listenup.modules.cards.domain.snippet import snippet_window
+from listenup.modules.cards.domain.suggestions import Candidate, normalize, rank
 from listenup.modules.content import service as content
 from listenup.modules.practice import service as practice
 from listenup.modules.review import service as review
@@ -99,6 +100,38 @@ async def create(
     )
     await analytics.record_card_created(db, learner, session_id, card_id)
     return await repository.get(db, card_id)
+
+
+async def suggestions(
+    db: AsyncSession, learner: uuid.UUID, session_id: uuid.UUID, worker_database: Database
+) -> schemas.CardSuggestions:
+    """FR-CA-4: the marks, likely connected-speech candidates first. Reading creates nothing."""
+    await practice.require_reached(db, session_id, practice.Step.CARD)
+    marks = await review.list_marks(db, session_id)
+    transcript = await review.read_transcript(db, worker_database, learner, session_id)
+    words = {word.index: word.text for line in transcript.lines for word in line.words}
+    phrases = {
+        mark.id: " ".join(
+            words[index] for index in range(mark.word_from, mark.word_to + 1) if words.get(index)
+        )
+        for mark in marks
+    }
+    earlier = {
+        normalize(phrase)
+        for phrase in await review.earlier_phrases(db, worker_database, learner, session_id)
+    }
+    ranked = rank([Candidate(m.id, phrases[m.id], m.tag) for m in marks], earlier)
+    return schemas.CardSuggestions(
+        suggestions=[
+            schemas.CardSuggestion(
+                mark_id=item.mark_id,
+                phrase=phrases[item.mark_id],
+                suggested=item.suggested,
+                reasons=list(item.reasons),
+            )
+            for item in ranked
+        ]
+    )
 
 
 async def list_cards(

@@ -265,6 +265,36 @@ async def session_marks(db: AsyncSession, session_id: uuid.UUID) -> list[schemas
     return [_mark(row) for row in await repository.list_for_session(db, session_id)]
 
 
+EARLIER_MARKS = 100
+EARLIER_SESSIONS = 5
+
+
+async def earlier_phrases(
+    db: AsyncSession, worker_database: Database, learner: uuid.UUID, session_id: uuid.UUID
+) -> list[str]:
+    """Phrases the learner marked in their other recent sessions (FR-CA-4).
+
+    Bounded: the newest EARLIER_MARKS marks, read from at most EARLIER_SESSIONS
+    sessions. A session whose passage cannot be read adds nothing.
+    """
+    by_session: dict[uuid.UUID, list[tuple[int, int]]] = {}
+    for other, word_from, word_to in await repository.other_session_ranges(
+        db, session_id, EARLIER_MARKS
+    ):
+        if other in by_session or len(by_session) < EARLIER_SESSIONS:
+            by_session.setdefault(other, []).append((word_from, word_to))
+    phrases: list[str] = []
+    for other, ranges in by_session.items():
+        try:
+            passage = await transcript.read_passage(db, worker_database, learner, other)
+        except ProblemError:
+            continue
+        phrases.extend(
+            " ".join(passage.words[word_from : word_to + 1]) for word_from, word_to in ranges
+        )
+    return phrases
+
+
 async def change_note(
     db: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UUID, note: str | None
 ) -> schemas.Mark:
