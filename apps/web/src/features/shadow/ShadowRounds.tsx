@@ -138,7 +138,7 @@ export function ShadowRounds({
       )}
       {ended && <p>Playback ended.</p>}
       {note && <p>{note}</p>}
-      {held && upload.isError && (
+      {held && !recorded && upload.isError && (
         <div role="alert" className="flex flex-col gap-2">
           <p>Your recording did not upload. It is still here; nothing needs recording again.</p>
           <BusyButton
@@ -184,7 +184,7 @@ export function ShadowRounds({
         <BusyButton
           type="button"
           className={buttonClass('primary', 'self-start')}
-          busy={change.isPending || state.isFetching}
+          busy={change.isPending || state.isFetching || upload.isPending}
           aria-disabled={selectionPending || !ready || undefined}
           onClick={() => {
             if (selectionPending || !ready) return;

@@ -87,10 +87,17 @@ export function useUploadRecording(id: string) {
       number: number;
       recording: { blob: Blob; mime: string };
     }) => {
-      const started = await api<components['schemas']['RecordingUpload']>(
-        `/sessions/${encodeURIComponent(id)}/shadow/rounds/${number}/recording`,
-        { method: 'POST', body: { mime: recording.mime, size_bytes: recording.blob.size } },
-      );
+      let started;
+      try {
+        started = await api<components['schemas']['RecordingUpload']>(
+          `/sessions/${encodeURIComponent(id)}/shadow/rounds/${number}/recording`,
+          { method: 'POST', body: { mime: recording.mime, size_bytes: recording.blob.size } },
+        );
+      } catch (error) {
+        // A lost response to `complete` leaves the round saved: nothing more to send.
+        if (error instanceof ApiError && error.code === 'recording_exists') return;
+        throw error;
+      }
       const sent = await fetch(started.upload.url, {
         method: started.upload.method,
         headers: started.upload.headers,

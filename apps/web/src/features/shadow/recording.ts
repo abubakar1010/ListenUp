@@ -67,6 +67,8 @@ export function useRoundRecorder() {
     }
   }, [cancel, release]);
   const finish = useCallback((): Promise<Recording | null> => {
+    // A microphone still opening must not start recording after the round ended.
+    generation.current++;
     const active = recorder.current;
     if (!active || active.state !== 'recording') {
       release();

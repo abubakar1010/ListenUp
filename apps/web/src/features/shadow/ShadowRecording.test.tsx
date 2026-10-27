@@ -214,3 +214,38 @@ it('discards the recording when the round is stopped', async () => {
   await waitFor(() => expect(track.stop).toHaveBeenCalled());
   expect(calls.some((c) => c.path.includes('/recording'))).toBe(false);
 });
+
+it('treats a round whose completion response was lost as saved on retry', async () => {
+  let asked = 0;
+  let ended = false;
+  // After the lost response the server already holds the recording.
+  const { calls } = mockRoutes({
+    'GET /sessions/s/shadow/rounds': () =>
+      jsonResponse(200, stateOf(asked > 1 ? 'saved' : ended ? 'ended' : 'ready')),
+    'POST /sessions/s/shadow/rounds/1/playback-ended': () => {
+      ended = true;
+      return new Response(null, { status: 204 });
+    },
+    'POST /sessions/s/shadow/rounds/1/recording': () =>
+      ++asked === 1
+        ? jsonResponse(200, {
+            round_id: 'r1',
+            upload: {
+              url: 'https://storage.test/put',
+              method: 'PUT',
+              headers: { 'Content-Type': 'audio/webm' },
+              expires_at: '2026-10-27T10:05:00Z',
+            },
+          })
+        : jsonResponse(409, { code: 'recording_exists', detail: 'Already recorded.' }),
+    'PUT https://storage.test/put': new Response(null, { status: 200 }),
+    'POST /shadow/rounds/r1/complete': new Response(null, { status: 503 }),
+    'GET /contents/c': jsonResponse(200, { media_url: '/audio' }),
+  });
+  renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
+  await playRound();
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry upload' }));
+  await screen.findByText(/Recording saved/);
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(calls.filter((c) => c.path === '/shadow/rounds/r1/complete')).toHaveLength(1);
+});
