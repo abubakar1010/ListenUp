@@ -299,6 +299,13 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
       mark['note'] = (req.postDataJSON() as { note: string | null }).note;
       return route.fulfill({ json: mark });
     }
+    // #61: the tag route keeps the whole tag it is sent.
+    if (req.method() === 'PUT' && /^\/sessions\/s-57\/marks\/[^/]+\/tag$/.test(path)) {
+      const mark = marks.find((m) => path.endsWith(`/${String(m['id'])}/tag`));
+      if (!mark) return route.fulfill({ status: 404, json: { code: 'mark_not_found' } });
+      mark['tag'] = (req.postDataJSON() as { tag: string | null }).tag;
+      return route.fulfill({ json: mark });
+    }
     if (req.method() === 'DELETE' && /^\/sessions\/s-57\/marks\/[^/]+$/.test(path)) {
       const index = marks.findIndex((m) => path.endsWith(`/${String(m['id'])}`));
       if (index < 0) return route.fulfill({ status: 404, json: { code: 'mark_not_found' } });
@@ -327,7 +334,7 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await page.goto('/sessions/s-57');
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeEnabled();
   await expect(page.getByText('Entry locked')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Jump to Hello. (edited)' })).toContainText(
+  await expect(page.getByRole('button', { name: 'Jump to Hello., edited' })).toContainText(
     'Edited',
   );
   const second = page.getByRole('button', { name: 'Jump to Again.' });
@@ -362,7 +369,7 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
   // Mark a phrase by keyboard (#58, UI-4): arrows move, Shift+arrow selects, M marks.
-  const first = page.getByRole('button', { name: 'Jump to Hello. (edited)' });
+  const first = page.getByRole('button', { name: 'Jump to Hello., edited' });
   await first.focus();
   await page.keyboard.press('ArrowRight');
   await expect(second).toBeFocused();
@@ -392,6 +399,14 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   // page instead of floating over the transcript.
   await page.getByLabel('Note (optional)').fill('sounds like one word');
   await expect(panel).toHaveAttribute('data-sticky', 'false');
+  // #61, FR-TR-4: the mark's tag is a native select, chosen here by keyboard alone.
+  const panelTag = page.getByRole('combobox', { name: 'Tag (optional)' });
+  await panelTag.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(panelTag).toHaveValue('linking');
+  await expect(page.getByText('Your mark · Linking')).toBeVisible();
+  await expect.poll(() => marks[0]?.['tag'], { timeout: 5000 }).toBe('linking');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   // While words are chosen it sticks below the practice header, never over it.
   await page.keyboard.press('Escape'); // focus is still in the note field: move back to a word
   await first.focus();
@@ -412,7 +427,7 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   // The saved mark is there again after a reload.
   await page.reload();
   await expect(page.getByRole('button', { name: 'Jump to Again.' })).toHaveAccessibleDescription(
-    'Marked',
+    'Marked Tag: Linking',
   );
   // #60 / AT-4: activate the list's native button by keyboard against real media.
   await expect(page.getByText('1 mark', { exact: true })).toBeVisible();
@@ -439,6 +454,17 @@ test('transcript_keyboard_controls_at_360px', async ({ page }) => {
   await page.keyboard.press('Enter');
   await expect(page.getByText('1 mark', { exact: true })).toBeVisible();
   await expect(list).toContainText('x'.repeat(500));
+  // The tag came back with Undo; change it and clear it from the list by keyboard.
+  const listTag = list.getByRole('combobox', { name: /^Tag for mark / });
+  await expect(listTag).toHaveValue('linking');
+  await listTag.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(listTag).toHaveValue('reduction');
+  await expect(list).toContainText('Your mark · Reduction');
+  await page.keyboard.press('Home');
+  await expect(listTag).toHaveValue('');
+  await expect(list).not.toContainText('Your mark ·');
+  await expect.poll(() => marks[0]?.['tag'], { timeout: 5000 }).toBeNull();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const finish = page.getByRole('button', { name: 'Finish Transcript', exact: true });
   await expect(finish).toBeEnabled({ timeout: 5000 });
@@ -544,7 +570,7 @@ test('dictation_marks_confirm_and_remove_with_reload_and_noncolour_cues_at_360px
   await expect(page.getByText('2 marks', { exact: true })).toBeVisible();
   await list.getByRole('button', { name: 'Confirm mark Hello.' }).focus();
   await page.keyboard.press('Enter');
-  await expect(list.getByRole('button', { name: /Play mark Hello/ })).toBeFocused();
+  await expect(list.getByRole('button', { name: 'Play mark 00:00 Hello.' })).toBeFocused();
   await expect.poll(() => confirmations).toBe(1);
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem('listenup:marks:s-57')), { timeout: 1000 })

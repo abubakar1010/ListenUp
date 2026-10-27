@@ -20,13 +20,25 @@ export function AppLayout() {
   const me = useMe();
   return (
     <>
-      <header className={HEADER_CLASS}>
+      <header
+        className={`${HEADER_CLASS} h-auto min-h-14 flex-wrap py-2 md:h-16 md:flex-nowrap md:py-0`}
+      >
         <Wordmark to="/library" />
-        <nav aria-label="Main" className="md:ml-6">
+        <nav aria-label="Main" className="order-last w-full md:order-none md:ml-6 md:w-auto">
           <ul className="flex items-center gap-1">
             <li>
               <NavLink to="/library" className={navLinkClass}>
                 Library
+              </NavLink>
+            </li>
+            <li>
+              <NavLink to="/cards" className={navLinkClass}>
+                Cards
+              </NavLink>
+            </li>
+            <li>
+              <NavLink to="/marks" className={navLinkClass}>
+                Marks
               </NavLink>
             </li>
           </ul>

@@ -402,3 +402,14 @@ async def test_run_task_records_the_version_written_in_the_prompt_file(
         load_task("grade_gist").version,
         "vnext",
     ]
+
+
+@pytest.mark.anyio
+async def test_quota_exhaustion_is_distinct_and_does_not_call_provider(fake_accounting):
+    servers = Servers()
+    gateway = build(servers, [hosted(), local()])
+    fake_accounting.exhausted.update({"groq", "ollama"})
+    with pytest.raises(AIUnavailable) as caught:
+        await grade(gateway)
+    assert caught.value.reason == "quota_exhausted"
+    assert servers.requests == []

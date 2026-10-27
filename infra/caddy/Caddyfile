@@ -1,0 +1,66 @@
+# The production edge (#112): automatic HTTPS, HTTP→HTTPS redirect, security headers,
+# the API under /api and the single-page app for everything else. Values come from the
+# environment (compose.prod.yml): LISTENUP_DOMAIN, LISTENUP_ACME_EMAIL and
+# LISTENUP_MEDIA_ORIGIN (the storage origin in signed URLs).
+#
+# Caddy obtains and renews the certificate itself (Let's Encrypt, ZeroSSL as fallback)
+# and redirects every http:// request to https:// (CI-A, NFR-SEC-1). Names under
+# .localhost get a certificate from Caddy's internal CA, which the local rehearsal uses.
+# Only Caddy's own address reaches the API. No proxy in front is trusted, so Caddy
+# replaces any client-sent X-Forwarded-For with the real peer address. If a CDN ever
+# fronts this server, list its ranges as trusted proxies in a `servers` global option.
+{
+	email {$LISTENUP_ACME_EMAIL}
+}
+
+{$LISTENUP_DOMAIN} {
+	# The event stream (GET /api/v1/events) stays uncompressed, so no compression buffer
+	# can hold an event back, whatever this Caddy version's defaults are.
+	@compressible not path /api/v1/events
+	encode @compressible zstd gzip
+
+	header {
+		# This site only: includeSubDomains (and preload) would also bind every other
+		# service under the domain, so they wait for a deliberate decision.
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Cross-Origin-Opener-Policy "same-origin"
+		# The microphone is for Shadow rounds on this origin only.
+		Permissions-Policy "camera=(), geolocation=(), microphone=(self), payment=(), usb=()"
+		# Media and uploads use signed URLs on the storage origin; Google sign-in is a
+		# top-level redirect from the API.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: {$LISTENUP_MEDIA_ORIGIN}; media-src 'self' blob: {$LISTENUP_MEDIA_ORIGIN}; connect-src 'self' {$LISTENUP_MEDIA_ORIGIN}; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'"
+		-Server
+	}
+
+	handle /api/* {
+		# Server-sent events (GET /api/v1/events) are streamed: Caddy flushes them as
+		# they arrive.
+		# api-via-edge resolves on the edge network only: the API trusts forwarded
+		# client addresses from this container's address there and nowhere else.
+		reverse_proxy api-via-edge:8000 {
+			header_down -Server
+		}
+	}
+
+	# Content-hashed build output never changes under one name: cache it for a year,
+	# in browsers and in any CDN placed in front. A missing asset is a 404, never the
+	# app, and is not marked immutable, so no cache keeps it.
+	handle /assets/* {
+		root * /srv
+		@exists file
+		header @exists Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Everything else is the app: index.html is revalidated on every load so a deploy
+	# reaches learners at once.
+	handle {
+		root * /srv
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

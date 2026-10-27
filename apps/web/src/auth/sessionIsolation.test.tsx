@@ -13,6 +13,9 @@ const PRIVATE_KEYS = [
   ['library', 'contents'],
   ['sessions', 'a-session'],
   ['exports', 'latest'],
+  ['cards', 'deck'],
+  ['cards', 'reviews', 'a-card'],
+  ['saved-marks'],
 ];
 const clients: ReturnType<typeof createQueryClient>[] = [];
 

@@ -5,6 +5,11 @@ Read the section for the area you are changing before you change it. The rules e
 ## Jobs (ADR 0015, 0029, 0036)
 
 - A `unique_key` holds while a job with that key waits or runs: `enqueue` returns None meanwhile. A job that also runs on a schedule passes `schedule="<cron>"` to `@job`. A job whose worker died is settled by `platform.recover_stalled_jobs` (back to the queue, or `on_give_up` after its last attempt), so a handler must be safe to run again after doing part of its work.
+- Handlers settle their own permanent refusals before raising `PermanentError`
+  (including before sandbox exit 65); `on_give_up` also covers exhausted transient
+  failures and supervisor resource failures. A resource that allows retry before
+  the old queue row settles uses a new cycle key and fences old callbacks against
+  the current generation.
 
 ## Email (ADR 0017)
 
@@ -128,6 +133,14 @@ Read the section for the area you are changing before you change it. The rules e
 - The AI gateway (#64) calls `record_ai_call` and `record_ai_quota`, and grading jobs call `record_grading`; the alert rules already read those metrics. A new alert goes in `infra/observability/alerts.yml` with a case in `alerts.test.yml` (it fires, and stays quiet just below the threshold), a `runbook` entry in `docs/runbooks/alerts.md`, and a row in ADR 0031.
 - Backups are `python -m listenup.ops.backup` (the `backup` image target). A backup is complete only with its `manifest.json`; the restore test is a monthly run recorded in the log at the end of `docs/runbooks/backups.md`. A migration that adds a schema or role must keep a restore into a database with the roles in place working (`tests/integration/test_backup.py`).
 
+## Deployment (ADR 0066)
+
+- Production is `infra/compose/compose.prod.yml` at one immutable tag (`sha-<12 hex>` or `r<n>`), deployed by `infra/deploy/deploy.sh` and described in `docs/runbooks/deploy.md`. A new setting goes into the services that read it as `${NAME:?set in .env}` (or `${NAME:-default}`) and into `infra/deploy/env.example`; never a literal secret, and never into a service that does not use it. `tests/unit/test_compose_prod.py` checks roles, credentials, ports and the media sandbox.
+- Keep the previous release deployable: migrations stay expand-only within a release, and a change to `compose.prod.yml` must also run the previous release's images, because a rollback changes images only.
+  `rollback.sh` refuses a release older than the previous one without `--force`.
+- A new image target is added to the `images` matrix in `.github/workflows/release.yml` and to the compose file; only `edge` publishes ports, and the API is reached only through the `api-via-edge` alias.
+- The media worker reaches the managed database and storage only through `db-relay`; do not attach it to another network or give it another route.
+
 ## Admin (ADR 0045)
 
 - Usage reports (ADR 0052) use `LISTENUP_ADMIN_REPORT_DATABASE_URL`, a separate
@@ -150,6 +163,7 @@ Read the section for the area you are changing before you change it. The rules e
 - Drafts and marks save through `src/lib/autosave` (`useAutosave`, `SaveStatus`): a local copy at once, a server save 2 s after the last edit on the server's version, `SaveConflict` on a stale version (ADR 0025). The Dictation player's control policy is `src/features/dictation/policy.ts`; Blind's playback policy and heartbeat protocol are in `src/features/blind/listen.ts`, and it reports a leave with `api(..., {keepalive: true})` because sendBeacon cannot send the CSRF header.
 - Clip notices (`src/features/content/ClipNotices.tsx`) turn `content.ready` into a polite live-region notice that never takes focus and waits while a `/sessions/` page is open. Upload refusals map to messages in `src/features/library/refusals.ts`.
 - Account settings live at `/settings` (`src/features/account/SettingsPage.tsx`); each section is its own component (`DataExportSection.tsx`, `ConsentsSection.tsx`, `DeleteAccountSection.tsx`). `RequireAuth` shows `auth/ConsentPrompt.tsx` instead of a signed-in page while `me.consents_required` is not empty, except `/settings` and `/settings/delete-account`, and on a `/sessions/` page only after a request was refused with `consent_required` (ADR 0048); consent hooks live in `src/auth/consentApi.ts`.
+- Every route and main state has an entry in `e2e/a11y/states.ts`; `pnpm e2e:a11y` runs axe on each at 1280 px, 360 px and in the dark theme and fails on serious or critical WCAG 2.1 A/AA violations (#98). Each state must reach the screen it names: an unanswered request or an unexpected alert fails it, and fixtures are typed against `src/api/schema.ts`. Fix violations in the change that adds them; only a screen owned by #70, #73 or #79 may get an `e2e/a11y/allowlist.ts` entry, with a reason and that story's issue.
 
 ## Google authentication (ADRs 0039, 0040)
 
@@ -237,6 +251,13 @@ Read the section for the area you are changing before you change it. The rules e
   one second in the panel's single polite region (UX-22). Undo cancels only a
   deletion that was never sent; an attempted deletion may need recreation after
   a lost response. Refused deletions preserve the known saved mark and note.
+- Mark tags (#61, ADR 0067): the four tags live in `review/domain/marks.MARK_TAGS`
+  (the `practice.marks.tag` CHECK holds the same values) and `features/review/tags.ts`.
+  `PUT .../marks/{id}/tag` sends the whole tag (null clears it) and needs no `run_once`;
+  the service refuses any other value with 422 `mark_tag_invalid`. A create may carry
+  the tag. In `MarkSync` the tag joins the note's debounced `update` (note, then tag,
+  then confirmation). Set it with `TagSelect`, a native select, in the mark panel and
+  each list row; show the tag in words in the list and in the word's description.
 
 ## Media sandbox and scanning (ADR 0049)
 
@@ -263,7 +284,7 @@ Read the section for the area you are changing before you change it. The rules e
   through DB to the default pool; never add a collector route to media-data.
 
 
-## Cards (ADR 0060)
+## Cards (ADRs 0060, 0064)
 
 - Cards read marks only through `review.service.list_marks`. Creation and completion
   lock the session row before calling `practice.service.require_step(..., Step.CARD)`;
@@ -271,7 +292,27 @@ Read the section for the area you are changing before you change it. The rules e
   independently by the database. Deletion frees a slot (D14).
 - Keep `at_ms` from the selected mark as a source-time snapshot. A deleted mark sets
   `mark_id` to NULL while the saved forms and time remain. Source links use
-  `/contents/{id}?at_ms={absolute_ms}`. Snippets remain #73.
+  `/contents/{id}?at_ms={absolute_ms}`.
+- Snippets (#73, ADR 0064) snapshot authorized word timings on creation. Refuse
+  phrases longer than six seconds before inserting a card. Generation uses the
+  intake lane and deterministic learner/card storage keys; never resolve audio
+  through source playback after it is ready. Card JSON exposes status only.
+- Deletion records a cleanup tombstone through a trigger, including cascades.
+  Background cleanup removes the tombstone only after successful object deletion;
+  the minute sweep recovers missed/exhausted cleanup jobs. Before upload, generation
+  commits a `card_snippet_writes` registration under the account/card locks, then
+  rechecks both before writing. Cleanup skips registered writers, and the guard
+  registered through `identity.service.on_account_purge` postpones account purge
+  before its first sweep. The writer FK uses RESTRICT to preserve that barrier.
+  Never expire registrations by age or job status; reconcile killed/uncertain
+  writers using [the runbook](runbooks/card-snippet-writers.md).
+- A retry creates a fresh internal `audio_generation` UUID and unique enqueue key,
+  with the same per-card execution lock. Generation and terminal callbacks check
+  the UUID, so an old job cannot change a newer attempt. Exports omit this UUID
+  and writer identity/owner fields. Upload cancellation drains before releasing
+  the registration; an uncertain S3 response retains it.
+- Cards-local playback pauses on unmount; pending cards poll and readiness/failure
+  events invalidate `['cards', sessionId]`. Keep shared-player behavior unchanged.
 
 ## Gist feedback (ADR 0054, #69)
 
@@ -288,7 +329,23 @@ Read the section for the area you are changing before you change it. The rules e
   pending reads also poll. Submission keeps the result visible until Continue
   refreshes both the session and its Blind attempt, including a fresh cached
   completed listen. Render the saved gist independently of grading readiness.
-  #70 owns unavailable/delayed/retry behavior.
+  Recovery (#70, ADR 0062): `pending` becomes `unavailable` at the configured
+  30-second deadline or exhausted failures; a quota `delayed` state takes precedence.
+  Both remain eligible for a late ready result. `wait_ms` is server-relative.
+  `POST /grades/{attempt_id}/retry` returns 202 with `status: accepted`; it reuses
+  waiting/running work and leaves ready grades unchanged. New cycles update the
+  deadline only after unique queue admission. Deadline checks match the cycle's
+  stored deadline. Retry invalidates grade queries without invalidating practice
+  progress. Missing references and quota waits postpone work without using up
+  grading failures. The normal authentication, consent, CSRF, ownership and D4
+  rules apply to every read and retry.
+  Exhausted reference work clears worker-only quota metadata. When a missing
+  reference is no longer quota-delayed, its waiting gist leaves `delayed` and
+  applies the original deadline, restoring retry after expiry. Do not reset that
+  deadline or overwrite a ready grade while settling dependency failures.
+  A non-quota gist failure (including invalid output and timeout cancellation)
+  likewise clears stale `delayed` state and applies the original deadline in a
+  separate transaction, then re-raises for the lane's normal bounded retries.
 
 ## Shadow segments (ADR 0057)
 
@@ -296,6 +353,43 @@ Read the section for the area you are changing before you change it. The rules e
   through `review.service.list_marks`; mode endpoints require `Step.SHADOW`.
   Saved segments use absolute, half-open media milliseconds. The shared session
   waveform accepts optional `boundsFor` and `label`, preserving passage defaults.
-- `locked_at` is the database boundary for the future round 1 transaction (#78).
+- `locked_at` is the database boundary set atomically by round 1 insertion (#79).
   Once set, the segment is immutable, including its lock. Do not clear it to adjust
   a selection. The parent session/account cascade is still allowed.
+
+## Shadow playback rounds (ADR 0063)
+
+- `shadow.service.change_round` serializes numbered starts and playback-ended writes
+  through `practice.service.lock_session`, then `require_step(Step.SHADOW)`. The
+  database also enforces sequential rounds 1–3 and locks the segment on insertion
+  of round 1. Round identity and an ended playback cannot be reset.
+- Round start/end submissions use `run_once` but store only bodyless 204 results.
+  `GET /sessions/{id}/shadow/rounds` includes segment text only while the current
+  round is 1; round 2/3 omit it entirely, including history. Reference words come
+  only through `transcript.service`, never through its repository. All responses
+  use private/no-store; cancel pending reads and clear transcript before client
+  mutations and again at settlement, before invalidating queries. Hide cached
+  transcript after failed reads until a successful authoritative refresh.
+- Shadow controls enforce 1x in preview and rounds. Numbered playbacks have a
+  three-second count-in and explicit advancement. Stop, hidden pages and reload
+  restart the same unended round; native buttons support Enter/Space. Keep round
+  status inside Shadow; use the shared busy button to preserve focus. Shadow uses
+  native Tab/Enter/Space controls rather than the general UX-07 transport keys.
+- `playback_status = ended` is not recorded/uploaded success: leave `recorded_at`
+  unset, do not emit `record_shadow_round_completed` and do not complete the step.
+  #78/#81/#87 add microphone/consent, recording/upload and completion respectively.
+  No reference-profile readiness check gates playback (ADR 0050).
+
+## Saved review (ADR 0068)
+
+- `/cards` reuses the merged learner-scoped deck list and private audio endpoint.
+  Review players use neutral labels until reveal; only a completed snippet unlocks
+  the written/heard forms. Do not fall back to whole-source audio.
+- `cards` owns append-only `practice.card_reviews`. Save through the idempotent
+  reviews route, with learner RLS and a composite card/learner foreign key. Recent
+  history is bounded to 50 rows; exports contain all rows. Results do not schedule
+  another review or change session progression.
+- `review.service.saved_marks` reads marks across sessions using a newest-first
+  keyset and derives source URLs from the owning session and absolute `at_ms`.
+  This read has no Transcript step gate and exposes no transcript cache content.
+  It has no dependency on tags or suggested phrases.

@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,6 +23,7 @@ class Card(BaseModel):
     heard_form: str
     at_ms: int
     content_id: uuid.UUID
+    audio_status: Literal["pending", "ready", "failed", "unavailable"]
     source_url: str
     created_at: datetime
 
@@ -30,3 +32,18 @@ class CardList(BaseModel):
     cards: list[Card]
     next_cursor: str | None
     remaining: int | None = None
+
+
+class ReviewResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    result: Literal["heard", "unsure", "missed"]
+
+
+class CardReview(ReviewResult):
+    id: uuid.UUID
+    card_id: uuid.UUID
+    reviewed_at: datetime
+
+
+class ReviewHistory(BaseModel):
+    reviews: list[CardReview]

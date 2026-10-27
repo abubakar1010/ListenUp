@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from listenup.modules.review.domain import MARK_TAGS, MarkTag
+
 
 class TranscriptPassage(BaseModel):
     start_ms: int
@@ -34,6 +36,12 @@ class TranscriptReview(BaseModel):
     lines: list[TranscriptLine]
 
 
+_TAG_VALUES = (
+    f"One of {', '.join(MARK_TAGS)}, or null for no tag; "
+    "any other value is refused with `mark_tag_invalid`."
+)
+
+
 class NewMark(BaseModel):
     """A mark the learner just made. The browser names it, so a resend is harmless."""
 
@@ -41,6 +49,7 @@ class NewMark(BaseModel):
     word_from: int = Field(ge=0, le=2**31 - 1)
     word_to: int = Field(ge=0, le=2**31 - 1)
     note: str | None = None
+    tag: str | None = Field(default=None, description=_TAG_VALUES)
 
 
 class MarkNote(BaseModel):
@@ -53,6 +62,12 @@ class MarkStatus(BaseModel):
     status: Literal["confirmed"]
 
 
+class MarkTagChange(BaseModel):
+    """FR-TR-4: the mark's optional tag. Checked by the service so a refusal has its code."""
+
+    tag: str | None = Field(description=_TAG_VALUES)
+
+
 class Mark(BaseModel):
     id: uuid.UUID
     session_id: uuid.UUID
@@ -62,8 +77,19 @@ class Mark(BaseModel):
     note: str | None
     source: Literal["dictation", "manual"]
     status: Literal["suggested", "confirmed"]
+    tag: MarkTag | None
     created_at: datetime
 
 
 class MarkList(BaseModel):
     marks: list[Mark]
+
+
+class SavedMark(Mark):
+    content_id: uuid.UUID
+    source_url: str
+
+
+class SavedMarkList(BaseModel):
+    marks: list[SavedMark]
+    next_cursor: str | None

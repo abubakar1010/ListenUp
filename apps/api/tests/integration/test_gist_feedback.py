@@ -42,7 +42,10 @@ def submitted(client, clock, migrated_url, entry):
 def test_pending_gist_is_visible_when_transcript_opens(client, clock, migrated_url, entry):
     session, attempt = submitted(client, clock, migrated_url, entry)
     if entry == "both":
-        assert client.get(f"/api/v1/gists/{attempt}/grade").json() == {"status": "pending"}
+        assert client.get(f"/api/v1/gists/{attempt}/grade").json() == {
+            "status": "pending",
+            "wait_ms": 30000,
+        }
 
         async def advance():
             from listenup.modules.practice import service as practice
@@ -56,7 +59,7 @@ def test_pending_gist_is_visible_when_transcript_opens(client, clock, migrated_u
         asyncio.run(advance())
     response = client.get(f"/api/v1/gists/{attempt}/grade")
     assert response.status_code == 200
-    assert response.json() == {"status": "pending", "gist": SENTENCES_3}
+    assert response.json() == {"status": "pending", "wait_ms": 30000, "gist": SENTENCES_3}
 
 
 @pytest.mark.parametrize("entry", ["blind", "both"])
@@ -122,11 +125,11 @@ def test_pending_grade_and_unknown_attempt(client, clock, migrated_url):
     _, attempt = submitted(client, clock, migrated_url, "both")
     response = client.get(f"/api/v1/gists/{attempt}/grade")
     assert response.status_code == 200
-    assert response.json() == {"status": "pending"}
+    assert response.json() == {"status": "pending", "wait_ms": 30000}
     assert client.get(f"/api/v1/gists/{uuid.uuid4()}/grade").status_code == 404
 
 
-def test_unsubmitted_and_unavailable_are_neutral(client, clock, migrated_url):
+def test_unsubmitted_is_neutral_and_unavailable_is_visible(client, clock, migrated_url):
     session = start_session(client, migrated_url, "both")
     attempt = attempt_id(start_attempt(client, session))
     assert client.get(f"/api/v1/gists/{attempt}/grade").json() == {"status": "pending"}
@@ -136,7 +139,7 @@ def test_unsubmitted_and_unavailable_are_neutral(client, clock, migrated_url):
         conn.execute(
             "UPDATE grading.gist_grades SET status='unavailable' WHERE attempt_id=%s", [attempt]
         )
-    assert client.get(f"/api/v1/gists/{attempt}/grade").json() == {"status": "pending"}
+    assert client.get(f"/api/v1/gists/{attempt}/grade").json() == {"status": "unavailable"}
 
 
 def test_other_learner_cannot_read_gist_grade(client, clock, migrated_url, make_client):

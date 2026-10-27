@@ -15,6 +15,8 @@ def test_every_job_module_imports_and_registers_its_jobs() -> None:
         importlib.import_module(module)
 
     assert "identity.send_password_reset" in jobs._registry
+    assert jobs._registry["cards.generate_snippet"].lane is jobs.Lane.INTAKE
+    assert jobs._registry["cards.cleanup_snippets"].lane is jobs.Lane.BACKGROUND
 
 
 def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
@@ -22,6 +24,7 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
 ) -> None:
     """ADR 0029: the account purge sweep and the stalled-job recovery tick in the
     default pool (background lane)."""
+    from listenup.modules.cards import jobs as card_jobs
     from listenup.modules.identity import jobs as identity_jobs
 
     importlib.import_module("listenup.ai.jobs")
@@ -38,7 +41,12 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
 
     media = [lane for spec in POOLS["media"] for lane in spec.lanes]
     default = [lane for spec in POOLS["default"] for lane in spec.lanes]
-    scheduled = [jobs.RECOVER_STALLED_JOBS, identity_jobs.PURGE_DUE_ACCOUNTS, "ai.maintain"]
+    scheduled = [
+        jobs.RECOVER_STALLED_JOBS,
+        identity_jobs.PURGE_DUE_ACCOUNTS,
+        "ai.maintain",
+        card_jobs.CLEANUP,
+    ]
 
     assert jobs.install_schedules(media) == []
     assert set(jobs.install_schedules(default)) == set(scheduled)
@@ -46,10 +54,11 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
         (jobs.RECOVER_SCHEDULE, jobs.RECOVER_STALLED_JOBS),
         (identity_jobs.PURGE_SCHEDULE, identity_jobs.PURGE_DUE_ACCOUNTS),
         ("*/5 * * * *", "ai.maintain"),
+        ("* * * * *", card_jobs.CLEANUP),
     }
     # Installing again (a second worker of the pool) registers nothing twice.
     assert set(jobs.install_schedules(default)) == set(scheduled)
-    assert len(installed) == 3
+    assert len(installed) == 4
 
 
 @pytest.mark.anyio

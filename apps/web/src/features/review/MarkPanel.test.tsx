@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import { STICKY_HEADER_CLEARANCE } from '../session/PracticeLayout';
 import { MarkPanel } from './MarkPanel';
@@ -17,6 +17,7 @@ const IDLE = {
   onSelect: () => {},
   onMark: () => {},
   onNote: () => {},
+  onTag: () => {},
   onConfirm: () => {},
   onRemove: () => {},
   onNoteFocused: () => {},
@@ -63,6 +64,7 @@ test('a_panel_that_scrolls_with_the_page_leaves_the_scroll_padding_to_the_header
     word_to: 0,
     at_ms: 1000,
     note: null,
+    tag: null,
     source: 'manual' as const,
     status: 'confirmed' as const,
     saved: true,
@@ -93,4 +95,55 @@ test('the_visual_count_is_immediate_and_one_polite_region_debounces_counter_anno
   } finally {
     vi.useRealTimers();
   }
+});
+
+// -- tags (#61, FR-TR-4) -------------------------------------------------------------------
+
+const MARKED = {
+  id: 'm1',
+  word_from: 0,
+  word_to: 0,
+  at_ms: 0,
+  note: null,
+  tag: null,
+  source: 'manual' as const,
+  status: 'confirmed' as const,
+  saved: true,
+};
+
+test('the_tag_of_the_selected_mark_can_be_set_changed_and_cleared', () => {
+  const onTag = vi.fn();
+  const { rerender } = render(
+    <MarkPanel
+      {...IDLE}
+      selection={{ anchor: 0, focus: 0 }}
+      phrase="Hello"
+      mark={MARKED}
+      onTag={onTag}
+    />,
+  );
+  const select = screen.getByRole('combobox', { name: 'Tag (optional)' });
+  expect(select).toHaveValue('');
+  fireEvent.change(select, { target: { value: 'reduction' } });
+  expect(onTag).toHaveBeenLastCalledWith('m1', 'reduction');
+  rerender(
+    <MarkPanel
+      {...IDLE}
+      selection={{ anchor: 0, focus: 0 }}
+      phrase="Hello"
+      mark={{ ...MARKED, tag: 'reduction' }}
+      onTag={onTag}
+    />,
+  );
+  expect(select).toHaveValue('reduction');
+  fireEvent.change(select, { target: { value: 'linking' } });
+  expect(onTag).toHaveBeenLastCalledWith('m1', 'linking');
+  fireEvent.change(select, { target: { value: '' } });
+  expect(onTag).toHaveBeenLastCalledWith('m1', null);
+  expect(within(select).getByRole('option', { name: 'No tag' })).toBeInTheDocument();
+});
+
+test('words_not_yet_marked_have_no_tag_choice', () => {
+  render(<MarkPanel {...IDLE} selection={{ anchor: 0, focus: 0 }} phrase="Hello" />);
+  expect(screen.queryByRole('combobox', { name: 'Tag (optional)' })).not.toBeInTheDocument();
 });

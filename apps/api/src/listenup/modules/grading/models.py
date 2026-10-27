@@ -57,7 +57,7 @@ class KeyPoints(Base):
 class GistGrade(Base):
     __tablename__ = "gist_grades"
     __table_args__ = (
-        CheckConstraint("status IN ('pending','ready','unavailable')"),
+        CheckConstraint("status IN ('pending','ready','unavailable','delayed')"),
         CheckConstraint("overall BETWEEN 0 AND 100"),
         CheckConstraint("level IN ('needs_work','fair','good','excellent')"),
         CheckConstraint("char_length(feedback) BETWEEN 1 AND 1500"),
@@ -105,6 +105,9 @@ class GistGrade(Base):
     feedback: Mapped[str | None] = mapped_column(Text)
     rubric_version: Mapped[str | None] = mapped_column(Text)
     provider_info: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    feedback_deadline: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
     attempts_made: Mapped[int] = mapped_column(SmallInteger, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
@@ -112,3 +115,16 @@ class GistGrade(Base):
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
+
+
+class KeyPointDelay(Base):
+    """Worker-only quota signal for an exact shared reference; contains no text."""
+
+    __tablename__ = "key_point_delays"
+    __table_args__ = ({"schema": "grading"},)
+
+    media_object_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("content.media_objects.id", ondelete="CASCADE"), primary_key=True
+    )
+    span: Mapped[Range[int]] = mapped_column(INT4RANGE, primary_key=True)
+    prompt_version: Mapped[str] = mapped_column(Text, primary_key=True)

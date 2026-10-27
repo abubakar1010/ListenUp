@@ -477,21 +477,56 @@ CREATE TABLE practice.cards (
   written_form    text NOT NULL CHECK (char_length(written_form) BETWEEN 1 AND 100),
   heard_form      text NOT NULL CHECK (char_length(heard_form) BETWEEN 1 AND 100),
   at_ms           int4 NOT NULL CHECK (at_ms >= 0), -- source-time snapshot (ADR 0060)
+  audio_status    text NOT NULL DEFAULT 'unavailable'
+                  CHECK (audio_status IN ('unavailable','pending','ready','failed')),
+  audio_generation uuid,                -- internal retry identity, omitted from export
   snippet_key     text,                 -- 3 to 6 s clip; survives media expiry
   snippet_span    int4range,
   created_at      timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (session_id, slot)
+  UNIQUE (session_id, slot),
+  CONSTRAINT cards_id_user_unique UNIQUE (id, user_id), -- review ownership (ADR 0068)
+  CONSTRAINT cards_ready_audio CHECK
+    (audio_status <> 'ready' OR (snippet_key IS NOT NULL AND snippet_span IS NOT NULL)),
+  CONSTRAINT cards_snippet_bounds CHECK
+    (snippet_span IS NULL OR (NOT isempty(snippet_span) AND NOT lower_inf(snippet_span)
+     AND NOT upper_inf(snippet_span) AND lower(snippet_span) >= 0
+     AND upper(snippet_span) - lower(snippet_span) BETWEEN 3000 AND 6000))
 );
 CREATE INDEX cards_user_idx ON practice.cards (user_id, created_at DESC, id);
+-- ADR 0064: existing cards remain unavailable, without backfill.
+-- A deletion trigger stores this tombstone, including session cascades. A worker
+-- deletes its deterministic learner/card object before removing the tombstone.
+CREATE TABLE practice.card_snippet_cleanup (
+  card_id    uuid PRIMARY KEY,
+  user_id    uuid NOT NULL REFERENCES identity.users(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- ADR 0064: committed before storage writes; not a child of the deletable card.
+-- RESTRICT preserves unresolved writers across account purge attempts. Settled
+-- writers remove their own registrations; killed/uncertain ones need explicit
+-- reconciliation, never time-based expiry. Learner RLS applies; API has SELECT only.
+CREATE TABLE practice.card_snippet_writes (
+  id         uuid PRIMARY KEY,
+  card_id    uuid NOT NULL,
+  user_id    uuid NOT NULL REFERENCES identity.users(id) ON DELETE RESTRICT,
+  owner      text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX card_snippet_writes_card_idx ON practice.card_snippet_writes(card_id);
+CREATE INDEX card_snippet_writes_user_idx ON practice.card_snippet_writes(user_id);
 
 CREATE TABLE practice.card_reviews (
   id          uuid PRIMARY KEY,
-  card_id     uuid NOT NULL REFERENCES practice.cards ON DELETE CASCADE,
+  card_id     uuid NOT NULL,
   user_id     uuid NOT NULL,
   result      text NOT NULL CHECK (result IN ('heard', 'unsure', 'missed')),
-  reviewed_at timestamptz NOT NULL DEFAULT now()
+  reviewed_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (card_id, user_id) REFERENCES practice.cards (id, user_id) ON DELETE CASCADE
 );
-CREATE INDEX card_reviews_card_idx ON practice.card_reviews (card_id, reviewed_at DESC);
+CREATE INDEX card_reviews_card_idx ON practice.card_reviews (card_id, reviewed_at DESC, id DESC);
+-- ADR 0068: card_reviews uses learner RLS and SELECT/INSERT-only API grants.
+CREATE INDEX marks_user_created_idx ON practice.marks (user_id, created_at DESC, id DESC);
 
 CREATE TABLE practice.shadow_segments (
   session_id uuid PRIMARY KEY,
@@ -511,31 +546,39 @@ CREATE POLICY own_rows ON practice.shadow_segments
   USING (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)
   WITH CHECK (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid);
 
+ALTER TABLE practice.shadow_segments
+  ADD CONSTRAINT shadow_segments_session_user_uq UNIQUE (session_id, user_id);
 CREATE TABLE practice.shadow_rounds (
   id               uuid PRIMARY KEY,
-  session_id       uuid NOT NULL REFERENCES practice.shadow_segments ON DELETE CASCADE,
+  session_id       uuid NOT NULL,
   user_id          uuid NOT NULL,
   round            int2 NOT NULL CHECK (round BETWEEN 1 AND 3),
   transcript_shown boolean GENERATED ALWAYS AS (round = 1) STORED,
-  status           text NOT NULL DEFAULT 'recording'
-                   CHECK (status IN ('recording', 'uploaded', 'analysing', 'scored', 'failed')),
-  recording_key    text,
-  recording_mime   text CHECK (recording_mime IN ('audio/webm', 'audio/mp4')),
-  recording_bytes  int4 CHECK (recording_bytes BETWEEN 1 AND 5000000),
-  duration_ms      int4,
+  playback_status  text NOT NULL DEFAULT 'ready' CHECK (playback_status IN ('ready','ended')),
   created_at       timestamptz NOT NULL DEFAULT now(),
   recorded_at      timestamptz,
-  UNIQUE (session_id, round)
+  UNIQUE (session_id, round),
+  FOREIGN KEY (session_id, user_id)
+    REFERENCES practice.shadow_segments(session_id, user_id) ON DELETE CASCADE
 );
-CREATE INDEX shadow_rounds_expiry_idx ON practice.shadow_rounds (recorded_at)
-  WHERE recording_key IS NOT NULL;
+GRANT SELECT, INSERT, UPDATE ON practice.shadow_rounds TO listenup_api;
+ALTER TABLE practice.shadow_rounds ENABLE ROW LEVEL SECURITY;
+CREATE POLICY own_rows ON practice.shadow_rounds
+  USING (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)
+  WITH CHECK (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid);
+-- #81 adds recording/upload metadata and its recording-expiry index.
+
 ```
 
 - **Two cards without locks.** A card takes slot 1 or 2, and `UNIQUE (session_id, slot)` makes a third card impossible even when two requests race. Deleting a card frees its slot.
 - **Round 1 shows the transcript, rounds 2 and 3 do not.** This is a generated column, so it can never disagree with the round number.
 - **Shadow rounds hang off the segment,** so a round cannot exist before a valid segment does: 60 to 90 s, or the whole passage when the passage is 30 to 60 s.
 
-Shadow segment ownership, RLS/grants and immutable locking follow [ADR 0057](../adr/0057-shadow-segment-proposals.md). The API cannot independently delete a segment; parent deletion still cascades.
+Shadow segment ownership, RLS/grants and immutable locking follow [ADR 0057](../adr/0057-shadow-segment-proposals.md). The API cannot independently delete a segment; parent deletion still cascades. Playback rounds follow [ADR 0063](../adr/0063-shadow-playback-rounds.md):
+`shadow_round_order` locks the session then segment, requires sequential insertion
+following an ended playback, locks the segment on round 1, and refuses changing
+round identity or resetting ended playback. `playback_status` is independent of
+`recorded_at`; playback never sets recording success or completes the plan.
 
 Blind and Dictation attempt rows use `own_rows`; the API has `SELECT, INSERT, UPDATE`, with no independent draft deletion. `interrupted` records a second interruption, a device pause of 5 s or more, or an unreported pause beyond the anchor tolerance. The one resume (FR-BL-3) resets the 20 s buffering allowance and records `resume_stop_ms`; draft saves use `draft_version` to reject stale differing text with 409 `draft_conflict`, while an identical resend succeeds ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md), [ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)).
 
@@ -565,11 +608,19 @@ CREATE TABLE grading.key_points (
   UNIQUE (media_object_id, span, prompt_version)  -- shared by every learner on that passage
 );
 
+-- ADR 0062: worker-only quota wait metadata, no reference text or API-role grant.
+CREATE TABLE grading.key_point_delays (
+  media_object_id uuid NOT NULL REFERENCES content.media_objects ON DELETE CASCADE,
+  span int4range NOT NULL,
+  prompt_version text NOT NULL,
+  PRIMARY KEY (media_object_id, span, prompt_version)
+);
+
 CREATE TABLE grading.gist_grades (
   attempt_id       uuid PRIMARY KEY REFERENCES practice.attempts ON DELETE CASCADE,
   user_id          uuid NOT NULL,
   status           text NOT NULL DEFAULT 'pending'
-                   CHECK (status IN ('pending', 'ready', 'unavailable')),
+                   CHECK (status IN ('pending', 'ready', 'unavailable', 'delayed')),
   key_points_id    uuid REFERENCES grading.key_points ON DELETE SET NULL,
   dimension_scores jsonb,                  -- {main_idea, key_details, accuracy}: 0 to 100 each
   overall          int2 CHECK (overall BETWEEN 0 AND 100),  -- computed by our code
@@ -579,6 +630,7 @@ CREATE TABLE grading.gist_grades (
   feedback         text CHECK (char_length(feedback) <= 1500),
   rubric_version   text,
   provider_info    jsonb,
+  feedback_deadline timestamptz NOT NULL DEFAULT now(), -- current cycle; ADR 0062
   attempts_made    int2 NOT NULL DEFAULT 0,
   created_at       timestamptz NOT NULL DEFAULT now(),
   updated_at       timestamptz NOT NULL DEFAULT now(),
@@ -815,7 +867,7 @@ Every product rule that can be checked from the data alone is enforced by the da
 | Entry choice cannot change once Transcript opened | FR-PL-5 | Trigger `sessions_entry_lock` |
 | At most two cards per session | FR-CA-1 | `slot IN (1, 2)` plus `UNIQUE (session_id, slot)` |
 | Shadow segment 60 to 90 s, or the whole passage when it is 30 to 60 s; fixed once round 1 starts | FR-SH-1 | `CHECK` on span plus triggers `segments_span` and `segments_lock` |
-| Exactly rounds 1, 2, 3; transcript only in round 1 | FR-SH-2 | `CHECK`, `UNIQUE (session_id, round)`, generated column |
+| Exactly rounds 1, 2, 3; transcript only in round 1 | FR-SH-2 | `CHECK`, `UNIQUE (session_id, round)`, generated column, `shadow_round_order` trigger; Shadow response disclosure in service |
 | Passage 30 s to 15 minutes | C2 | `CHECK` on `sessions.passage` |
 | A child row belongs to the same learner as its session | NFR-SEC-2 | Composite foreign keys on `(session_id, user_id)` |
 | Shared media is deleted only when unused | System design 6.2 | Trigger `contents_ref_count` plus `ON DELETE NO ACTION` |
@@ -919,7 +971,7 @@ Four database roles separate who can change the schema, who serves learners and 
 
 | Role | Used by | Rights |
 | --- | --- | --- |
-| `listenup_owner` | Migrations only | Owns all schemas and tables; never used by running services |
+| `listenup_owner` | Migrations, and the nightly backup ([ADR 0032](../adr/0032-nightly-pg-dump-with-manifest-and-restore-tests.md)) | Owns all schemas and tables, so a dump reads every row without `BYPASSRLS`; `CREATEDB` for the backup's scratch restore test. Never used by the API or the worker pools |
 | `listenup_api` | API processes | Read and write learner tables, **subject to row-level security**; read-only on `ai.calls` |
 | `listenup_worker` | Worker processes | Read and write all application tables with `BYPASSRLS` (jobs act for many learners); no DDL |
 | `listenup_readonly` | Admin reports, debugging | `SELECT` only, with row-level security, on non-personal tables and on aggregates |
