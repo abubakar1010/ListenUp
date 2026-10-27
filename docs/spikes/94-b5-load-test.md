@@ -166,3 +166,10 @@ Follow ADR 0065's stage-0 section and `spikes/README.md` (B5):
 - Record the deployment's own CPU.
 - Keep the raw `requests.csv.gz`.
 - Link the reviewed result from #94 and #155.
+
+## #216 configuration follow-up
+
+Normal API commands now explicitly use 30 s idle keep-alive, with Caddy upstream
+pooling at 15 s. See [the follow-up record](216-connection-timeouts.md) for
+semantics, passing configuration tests, the completed reduced local comparison, and exact
+outstanding stage-0 verification. The historical results above are unchanged.

@@ -34,9 +34,14 @@ import {
  * confirmation waiting on one mark are both sent. Undo of a removed Dictation mark brings
  * it back through the Dictation route, which checks the words against the scored diff, so
  * it keeps its source (ADR 0058).
+ *
+ * A tag (#61, FR-TR-4) is part of the same `update` as the note: it waits for the debounce,
+ * so moving through the tag choices sends only the last one, and travels with an unsent
+ * create. A refused tag puts back the server's tag (ADR 0067).
  */
 
 export type SavedMark = components['schemas']['Mark'];
+export type MarkTag = NonNullable<SavedMark['tag']>;
 
 export interface MarkTransport {
   create(mark: {
@@ -44,11 +49,13 @@ export interface MarkTransport {
     word_from: number;
     word_to: number;
     note: string | null;
+    tag: MarkTag | null;
   }): Promise<SavedMark>;
   setNote(id: string, note: string | null): Promise<SavedMark>;
+  setTag(id: string, tag: MarkTag | null): Promise<SavedMark>;
   confirm(id: string): Promise<SavedMark>;
   /** Add the words again from Dictation; words already marked give back that mark. */
-  restore(mark: { id: string; word_from: number; word_to: number }): Promise<NewLocalMark>;
+  restore(mark: { id: string; word_from: number; word_to: number }): Promise<OtherMark>;
   remove(id: string): Promise<void>;
   list(): Promise<SavedMark[]>;
 }
@@ -60,6 +67,7 @@ export interface LocalMark {
   word_to: number;
   at_ms: number;
   note: string | null;
+  tag: MarkTag | null;
   source: SavedMark['source'];
   status: SavedMark['status'];
   saved: boolean;
@@ -67,8 +75,14 @@ export interface LocalMark {
 
 export type NewLocalMark = Omit<LocalMark, 'saved'>;
 
-/** A mark made here: the learner's own, so it is confirmed from the start. */
-export type MarkDraft = Omit<NewLocalMark, 'source' | 'status'>;
+/** A mark from the Dictation route, which has no tag: it starts untagged. */
+export type OtherMark = Omit<NewLocalMark, 'tag'> & { tag?: MarkTag | null };
+
+/** A mark made here: the learner's own, so it is confirmed from the start; untagged unless
+ * Undo brings back a tagged one. */
+export type MarkDraft = Omit<NewLocalMark, 'source' | 'status' | 'tag'> & {
+  tag?: MarkTag | null;
+};
 
 export type MarkSyncStatus = AutosaveStatus<never>;
 
@@ -96,7 +110,7 @@ export interface MarkSyncOptions {
 }
 
 /**
- * `update`: the note or the status differs from the server's. `restore`: Undo of a
+ * `update`: the note, the tag or the status differs from the server's. `restore`: Undo of a
  * removed Dictation mark, added again from Dictation.
  */
 type Op = 'none' | 'create' | 'restore' | 'update' | 'delete';
@@ -115,27 +129,37 @@ interface Entry {
   attempted: boolean;
   /** A lost DELETE response may still mean the server removed this mark. */
   deleteAttempted?: boolean;
+  /** A tag request may have landed without an answer; resend even if it matches server. */
+  tagUncertain?: boolean;
 }
 
-/** A copy kept before marks had a source (#59) has none: it is the learner's own. */
+/**
+ * A copy kept before marks had a source (#59) has none: it is the learner's own. One kept
+ * before tags (#61) has no tag, which is no tag change.
+ */
 type StoredMark = MarkDraft & Partial<Pick<NewLocalMark, 'source' | 'status'>>;
 
 interface StoredCopy {
-  ops: { op: Exclude<Op, 'none'>; mark: StoredMark; attempted?: boolean }[];
+  ops: {
+    op: Exclude<Op, 'none'>;
+    mark: StoredMark;
+    attempted?: boolean;
+    tagUncertain?: boolean;
+  }[];
 }
 
-function fromServer(mark: SavedMark | NewLocalMark): Entry {
+function fromServer(mark: SavedMark | OtherMark): Entry {
   return { mark: local(mark), op: 'none', rev: 0, server: local(mark), attempted: false };
 }
 
-function local(mark: SavedMark | NewLocalMark): NewLocalMark {
+function local(mark: SavedMark | OtherMark): NewLocalMark {
   const { id, word_from, word_to, at_ms, note, source, status } = mark;
-  return { id, word_from, word_to, at_ms, note, source, status };
+  return { id, word_from, word_to, at_ms, note, tag: mark.tag ?? null, source, status };
 }
 
 /** True when the learner's version of a mark has something the server's lacks. */
 function differs(mark: NewLocalMark, server: NewLocalMark): boolean {
-  return mark.note !== server.note || needsConfirm(mark, server);
+  return mark.note !== server.note || mark.tag !== server.tag || needsConfirm(mark, server);
 }
 
 function needsConfirm(mark: NewLocalMark, server: NewLocalMark): boolean {
@@ -219,8 +243,9 @@ export class MarkSync {
     // Undo of a queued deletion cancels it. Keep the server snapshot so a refused
     // unsaved note rolls back to the saved mark, rather than removing it as new.
     if (previous?.op === 'delete' && previous.server && !previous.deleteAttempted) {
-      previous.mark = { ...previous.mark, note: draft.note };
-      previous.op = differs(previous.mark, previous.server) ? 'update' : 'none';
+      previous.mark = { ...previous.mark, note: draft.note, tag: draft.tag ?? previous.mark.tag };
+      previous.op =
+        previous.tagUncertain || differs(previous.mark, previous.server) ? 'update' : 'none';
       previous.rev += 1;
       this.changed();
       return;
@@ -231,6 +256,7 @@ export class MarkSync {
       word_to: draft.word_to,
       at_ms: draft.at_ms,
       note: draft.note,
+      tag: draft.tag ?? null,
       source: 'manual',
       status: 'confirmed',
     };
@@ -275,6 +301,19 @@ export class MarkSync {
     this.changed();
   }
 
+  /** FR-TR-4: set, change or clear (null) the tag; sent after the debounce like a note. */
+  setTag(id: string, tag: MarkTag | null): void {
+    const entry = this.entries.get(id);
+    if (!entry || entry.op === 'delete' || entry.mark.tag === tag) return;
+    entry.mark = { ...entry.mark, tag };
+    entry.rev += 1;
+    if (entry.op === 'none') entry.op = 'update';
+    // Keep an update queued even when changed back: an in-flight request may store
+    // the intermediate value, and its response may never arrive. sendUpdate skips
+    // unchanged fields when no request has been sent.
+    this.changed();
+  }
+
   /** FR-TR-3: keep a suggested Dictation mark; sent at once. */
   confirm(id: string): void {
     const entry = this.entries.get(id);
@@ -303,7 +342,7 @@ export class MarkSync {
    * result beside the transcript adds them through its own route (#55). Nothing is sent,
    * and a mark this tab already has keeps this tab's version.
    */
-  takeSaved(marks: NewLocalMark[]): void {
+  takeSaved(marks: OtherMark[]): void {
     const fresh = marks.filter((mark) => !this.entries.has(mark.id));
     for (const mark of fresh) this.entries.set(mark.id, fromServer(mark));
     if (fresh.length > 0) this.emit();
@@ -401,12 +440,13 @@ export class MarkSync {
         word_from: mark.word_from,
         word_to: mark.word_to,
         note: mark.note,
+        tag: mark.tag,
       });
       this.settled(entry, rev, local(stored));
       // A resend after a lost answer gets the mark the server already held, with the note
-      // it had then: the note written since still has to go.
-      if (entry.op === 'none' && stored.note !== mark.note) {
-        entry.mark = { ...entry.mark, note: mark.note };
+      // and tag it had then: the ones written since still have to go.
+      if (entry.op === 'none' && (stored.note !== mark.note || (stored.tag ?? null) !== mark.tag)) {
+        entry.mark = { ...entry.mark, note: mark.note, tag: mark.tag };
         entry.op = 'update';
       }
     } else if (op === 'restore') {
@@ -423,7 +463,7 @@ export class MarkSync {
   }
 
   /**
-   * Send what differs from the server: the note, then the confirmation. Each answer
+   * Send what differs from the server: the note, the tag, then the confirmation. Each answer
    * becomes the server's version at once, so a failure between the two resends only
    * what is left and a refusal puts back what the server really holds.
    */
@@ -433,6 +473,16 @@ export class MarkSync {
     if (!entry.server || mark.note !== server.note) {
       const stored = await this.gone(() => this.options.transport.setNote(mark.id, mark.note));
       if (!stored) return void this.entries.delete(mark.id);
+      server = entry.server = local(stored);
+    }
+    if (entry.tagUncertain || mark.tag !== server.tag) {
+      // Until the answer arrives, the server may hold either tag. On a lost answer,
+      // retry the learner's value rather than trusting the pre-request snapshot.
+      entry.tagUncertain = true;
+      this.writeLocal(); // a reload's GET may finish before this PUT commits
+      const stored = await this.gone(() => this.options.transport.setTag(mark.id, mark.tag));
+      if (!stored) return void this.entries.delete(mark.id);
+      entry.tagUncertain = false;
       server = entry.server = local(stored);
     }
     if (needsConfirm(mark, server)) {
@@ -472,6 +522,10 @@ export class MarkSync {
       entry.op = 'none';
     } else if (entry.op === 'create') {
       entry.op = 'update'; // created now; the newer note still has to go
+    } else if (entry.op === 'none' && differs(entry.mark, stored)) {
+      // Changed back while this request was on its way: the server now holds what was
+      // sent, so the learner's older value has to go again.
+      entry.op = 'update';
     }
   }
 
@@ -517,7 +571,7 @@ export class MarkSync {
       // replaced its entry: reuse that known snapshot instead of recreating it.
       current.server = entry.server;
       if (current.op === 'create' || current.op === 'restore') {
-        current.mark = { ...entry.server, note: current.mark.note };
+        current.mark = { ...entry.server, note: current.mark.note, tag: current.mark.tag };
         current.op = differs(current.mark, entry.server) ? 'update' : 'none';
       } else this.takeBack(current);
       return;
@@ -532,6 +586,7 @@ export class MarkSync {
     } else if (entry.server) {
       entry.mark = entry.server;
       entry.op = 'none';
+      entry.tagUncertain = false;
     } else {
       entry.op = 'create'; // a removal of a mark never confirmed: it stays, and is sent again
     }
@@ -597,8 +652,13 @@ export class MarkSync {
   private restore(): void {
     const copy = this.readLocal();
     if (!copy) return;
-    for (const { op, mark: kept, attempted = false } of copy.ops) {
-      const mark: NewLocalMark = { source: 'manual', status: 'confirmed', ...kept };
+    for (const { op, mark: kept, attempted = false, tagUncertain = false } of copy.ops) {
+      const mark: NewLocalMark = {
+        source: 'manual',
+        status: 'confirmed',
+        ...kept,
+        tag: kept.tag ?? null,
+      };
       const entry = this.entries.get(mark.id);
       if ((op === 'create' || op === 'restore') && !entry) {
         this.entries.set(mark.id, { mark, op, rev: 1, server: null, attempted });
@@ -608,18 +668,23 @@ export class MarkSync {
       } else if (entry && op === 'delete') {
         entry.op = 'delete';
         entry.rev = 1;
+        entry.tagUncertain = tagUncertain;
       } else if (entry) {
         // A confirmation kept here still counts once the server holds the mark. A kept
         // create or restore the server already holds (Undo while its DELETE was in
-        // flight) is a resend: only its note can be newer, and its status is not a
+        // flight) is a resend: only its note and tag can be newer, and its status is not a
         // confirmation the learner made.
         const confirmed = op === 'update' && kept.status === 'confirmed';
         const next = { ...entry.mark, note: kept.note };
+        if (kept.tag !== undefined) next.tag = kept.tag;
         if (confirmed) next.status = 'confirmed';
-        if (differs(next, entry.mark)) {
+        // The GET can predate a PUT left running by the old page. Replay an
+        // uncertain tag even if this snapshot still matches the learner's choice.
+        if (tagUncertain || differs(next, entry.mark)) {
           entry.mark = next;
           entry.op = 'update';
           entry.rev = 1;
+          entry.tagUncertain = tagUncertain;
         }
       }
       // Anything else is already on the server, or gone from it.
@@ -647,6 +712,7 @@ export class MarkSync {
         op: entry.op as Exclude<Op, 'none'>,
         mark: entry.mark,
         ...(entry.attempted && !entry.server ? { attempted: true } : {}),
+        ...(entry.tagUncertain ? { tagUncertain: true } : {}),
       }));
     try {
       if (ops.length === 0) this.options.storage?.removeItem(this.options.storageKey);

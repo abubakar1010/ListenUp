@@ -280,6 +280,16 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         "session_not_found",
         params=lambda w: {"session_id": w.a.sessions["card"]},
     ),
+    ("GET", "/api/v1/marks"): Scoped(a_sees=lambda w: [w.a.mark_id]),
+    ("GET", "/api/v1/cards/{card_id}/reviews"): Owned(
+        "card_not_found",
+        params=lambda w: {"card_id": w.a.card_id},
+    ),
+    ("POST", "/api/v1/cards/{card_id}/reviews"): Owned(
+        "card_not_found",
+        params=lambda w: {"card_id": w.a.card_id},
+        body=lambda w: {"result": "heard"},
+    ),
     ("GET", "/api/v1/cards"): Scoped(a_sees=lambda w: [w.a.card_id]),
     ("DELETE", "/api/v1/cards/{card_id}"): Owned(
         "card_not_found",
@@ -321,6 +331,11 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         "session_not_found",
         params=lambda w: {"session_id": w.a.sessions["transcript"], "mark_id": w.a.mark_id},
         body=lambda w: {"status": "confirmed"},
+    ),
+    ("PUT", "/api/v1/sessions/{session_id}/marks/{mark_id}/tag"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["transcript"], "mark_id": w.a.mark_id},
+        body=lambda w: {"tag": "linking"},
     ),
     ("DELETE", "/api/v1/sessions/{session_id}/marks/{mark_id}"): Owned(
         "session_not_found",

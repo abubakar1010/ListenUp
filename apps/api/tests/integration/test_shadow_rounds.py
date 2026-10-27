@@ -20,7 +20,15 @@ def client(api_role_url, migrated_url):
         )
 
 
-def setup(client, migrated_url, api_role_url):
+def setup(client, migrated_url, api_role_url, *, consent=True):
+    if consent:
+        version = client.get("/api/v1/auth/consent-versions").json()["voice_recording"]
+        assert (
+            client.post(
+                "/api/v1/me/consents", json={"kind": "voice_recording", "version": version}
+            ).status_code
+            == 200
+        )
     sid = open_shadow(client, migrated_url, api_role_url)
     with psycopg.connect(migrated_url) as db:
         clip = db.execute("SELECT content_id FROM practice.sessions WHERE id=%s", [sid]).fetchone()[
@@ -284,3 +292,46 @@ def test_round_replay_after_skip_refuses(client, migrated_url, api_role_url):
     ):
         assert response.status_code == 409
         assert response.json()["code"] in ("step_locked", "session_closed")
+
+
+def test_voice_consent_required_before_start_and_replay(client, migrated_url, api_role_url):
+    sid = setup(client, migrated_url, api_role_url, consent=False)
+    refused = start_round(client, sid, 1)
+    assert refused.status_code == 403
+    assert refused.json()["code"] == "voice_consent_required"
+    assert client.get(base(sid)).json()["rounds"] == []
+    version = client.get("/api/v1/auth/consent-versions").json()["voice_recording"]
+    assert (
+        client.post(
+            "/api/v1/me/consents", json={"kind": "voice_recording", "version": version}
+        ).status_code
+        == 200
+    )
+    key = str(uuid.uuid4())
+    assert start_round(client, sid, 1, key).status_code == 204
+    assert (
+        client.post("/api/v1/me/consents/withdraw", json={"kind": "voice_recording"}).status_code
+        == 200
+    )
+    assert start_round(client, sid, 1, key).status_code == 403
+    assert end_round(client, sid, 1).status_code == 204
+    assert start_round(client, sid, 2).status_code == 403
+
+
+def test_stale_voice_consent_refuses_new_start_and_saved_replay(client, migrated_url, api_role_url):
+    sid = setup(client, migrated_url, api_role_url)
+    key = str(uuid.uuid4())
+    assert start_round(client, sid, 1, key).status_code == 204
+    assert end_round(client, sid, 1).status_code == 204
+    # Publish a new configured label: both a saved result and a new numbered start
+    # must read the app's current policy, rather than trust the accepted old label.
+    settings = client.app.state.settings
+    client.app.state.settings = settings.model_copy(update={"voice_consent_version": "voice-new"})
+    try:
+        for number, replay_key in ((1, key), (2, None)):
+            response = start_round(client, sid, number, replay_key)
+            assert response.status_code == 403
+            assert response.json()["code"] == "voice_consent_required"
+        assert len(client.get(base(sid)).json()["rounds"]) == 1
+    finally:
+        client.app.state.settings = settings

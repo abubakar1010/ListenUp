@@ -1,0 +1,814 @@
+{
+  "environment": {
+    "host": "local Docker Compose",
+    "hostname": "49365c413b41",
+    "base_url": "http://edge:8080",
+    "git_sha": "7d86961d5c04edf254c7513e1f3c073ffbd41b20",
+    "git_dirty": true,
+    "cores": 3,
+    "machine": {
+      "cpu": "AMD EPYC 9V74 80-Core Processor",
+      "cores": 3,
+      "memory_gb": 9.7,
+      "machine": "x86_64",
+      "python": "3.12.14",
+      "omp_num_threads": null,
+      "date": "2026-10-27"
+    },
+    "images": {
+      "api": "sha256:2a5cb05240cddc3f7bb17861e7fe665d38b29d65f4cf1e6b761ad5ceec517bd7",
+      "worker": "sha256:2a5cb05240cddc3f7bb17861e7fe665d38b29d65f4cf1e6b761ad5ceec517bd7",
+      "postgres": "sha256:6a2e324ebe59af6031c4c1cd96c1d5072c2ebc36563d2196365e43b8297c062d"
+    },
+    "k6_image": "grafana/k6:1.3.0",
+    "api_command": "uvicorn, one process, no reload (spikes/load/compose.b5.yml)",
+    "seed": {
+      "learners": 25,
+      "history_clips": 1,
+      "blind_learners": 20
+    }
+  },
+  "load": {
+    "mixed_rps": 15,
+    "blind_learners": 20,
+    "warmup_s": 20,
+    "duration_s": 120,
+    "measured_from": 1793081282.4109242,
+    "measured_to": 1793081402.4109242
+  },
+  "requests": {
+    "read": {
+      "count": 1332,
+      "p50_ms": 7.597951,
+      "p95_ms": 15.613893,
+      "p99_ms": 23.95937,
+      "max_ms": 166.748939,
+      "p50_answered_ms": 7.597951,
+      "p95_answered_ms": 15.613893,
+      "errors": 0,
+      "error_rate": 0.0,
+      "by_status": {
+        "200": 1332
+      }
+    },
+    "write": {
+      "count": 1000,
+      "p50_ms": 12.934851,
+      "p95_ms": 69.353962,
+      "p99_ms": 142.550393,
+      "max_ms": 199.485762,
+      "p50_answered_ms": 12.934851,
+      "p95_answered_ms": 69.353962,
+      "errors": 0,
+      "error_rate": 0.0,
+      "by_status": {
+        "200": 818,
+        "201": 101,
+        "204": 81
+      }
+    },
+    "heartbeat": {
+      "count": 520,
+      "p50_ms": 16.768914,
+      "p95_ms": 72.987673,
+      "p99_ms": 116.87527,
+      "max_ms": 154.937485,
+      "p50_answered_ms": 16.768914,
+      "p95_answered_ms": 72.987673,
+      "errors": 0,
+      "error_rate": 0.0,
+      "by_status": {
+        "200": 520
+      }
+    },
+    "all": {
+      "count": 2332,
+      "p50_ms": 8.733127,
+      "p95_ms": 25.01378,
+      "p99_ms": 109.971833,
+      "max_ms": 199.485762,
+      "p50_answered_ms": 8.733127,
+      "p95_answered_ms": 25.01378,
+      "errors": 0,
+      "error_rate": 0.0,
+      "by_status": {
+        "200": 2150,
+        "201": 101,
+        "204": 81
+      }
+    },
+    "errors_by_endpoint": {},
+    "by_endpoint": {
+      "DELETE /sessions/{id}/marks/{id}": {
+        "count": 81,
+        "p50_ms": 6.375738,
+        "p95_ms": 14.726119,
+        "p99_ms": 75.736113,
+        "max_ms": 75.736113,
+        "p50_answered_ms": 6.375738,
+        "p95_answered_ms": 14.726119,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "204": 81
+        }
+      },
+      "GET /cards": {
+        "count": 57,
+        "p50_ms": 7.702444,
+        "p95_ms": 12.923788,
+        "p99_ms": 14.909045,
+        "max_ms": 14.909045,
+        "p50_answered_ms": 7.702444,
+        "p95_answered_ms": 12.923788,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "200": 57
+        }
+      },
+      "GET /contents": {
+        "count": 60,
+        "p50_ms": 6.642226,
+        "p95_ms": 9.758588,
+        "p99_ms": 23.404456,
+        "max_ms": 23.404456,
+        "p50_answered_ms": 6.642226,
+        "p95_answered_ms": 9.758588,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "200": 60
+        }
+      },
+      "GET /dictation/attempts/{id}": {
+        "count": 74,
+        "p50_ms": 6.444978,
+        "p95_ms": 12.338389,
+        "p99_ms": 22.280237,
+        "max_ms": 22.280237,
+        "p50_answered_ms": 6.444978,
+        "p95_answered_ms": 12.338389,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "200": 74
+        }
+      },
+      "GET /library/contents": {
+        "count": 141,
+        "p50_ms": 7.395977,
+        "p95_ms": 13.589582,
+        "p99_ms": 22.742249,
+        "max_ms": 23.95937,
+        "p50_answered_ms": 7.395977,
+        "p95_answered_ms": 13.589582,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "200": 141
+        }
+      },
+      "GET /me": {
+        "count": 162,
+        "p50_ms": 6.060696,
+        "p95_ms": 10.847591,
+        "p99_ms": 17.742047,
+        "max_ms": 109.971833,
+        "p50_answered_ms": 6.060696,
+        "p95_answered_ms": 10.847591,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "200": 162
+        }
+      },
+      "GET /sessions": {
+        "count": 158,
+        "p50_ms": 9.207073,
+        "p95_ms": 16.496328,
+        "p99_ms": 24.12176,
+        "max_ms": 100.596383,
+        "p50_answered_ms": 9.207073,
+        "p95_answered_ms": 16.496328,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "200": 158
+        }
+      },
+      "GET /sessions/{id}": {
+        "count": 360,
+        "p50_ms": 7.128491,
+        "p95_ms": 12.159532,
+        "p99_ms": 20.39613,
+        "max_ms": 63.751589,
+        "p50_answered_ms": 7.128491,
+        "p95_answered_ms": 12.159532,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "200": 360
+        }
+      },
+      "GET /sessions/{id}/blind": {
+        "count": 62,
+        "p50_ms": 8.016412,
+        "p95_ms": 11.61649,
+        "p99_ms": 25.70643,
+        "max_ms": 25.70643,
+        "p50_answered_ms": 8.016412,
+        "p95_answered_ms": 11.61649,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "200": 62
+        }
+      },
+      "GET /sessions/{id}/marks": {
+        "count": 119,
+        "p50_ms": 7.554557,
+        "p95_ms": 13.929111,
+        "p99_ms": 18.531952,
+        "max_ms": 65.685368,
+        "p50_answered_ms": 7.554557,
+        "p95_answered_ms": 13.929111,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "200": 119
+        }
+      },
+      "GET /sessions/{id}/transcript": {
+        "count": 139,
+        "p50_ms": 13.191889,
+        "p95_ms": 22.854264,
+        "p99_ms": 50.90691,
+        "max_ms": 166.748939,
+        "p50_answered_ms": 13.191889,
+        "p95_answered_ms": 22.854264,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "200": 139
+        }
+      },
+      "PATCH /sessions/{id}/marks/{id}": {
+        "count": 108,
+        "p50_ms": 8.052699,
+        "p95_ms": 14.481963,
+        "p99_ms": 17.695104,
+        "max_ms": 18.502312,
+        "p50_answered_ms": 8.052699,
+        "p95_answered_ms": 14.481963,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "200": 108
+        }
+      },
+      "POST /blind/attempts/{id}/heartbeat": {
+        "count": 520,
+        "p50_ms": 16.768914,
+        "p95_ms": 72.987673,
+        "p99_ms": 116.87527,
+        "max_ms": 154.937485,
+        "p50_answered_ms": 16.768914,
+        "p95_answered_ms": 72.987673,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "200": 520
+        }
+      },
+      "POST /sessions/{id}/blind/attempts": {
+        "count": 20,
+        "p50_ms": 136.587609,
+        "p95_ms": 194.69131,
+        "p99_ms": 199.485762,
+        "max_ms": 199.485762,
+        "p50_answered_ms": 136.587609,
+        "p95_answered_ms": 194.69131,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "201": 20
+        }
+      },
+      "POST /sessions/{id}/dictation/attempts": {
+        "count": 95,
+        "p50_ms": 9.054178,
+        "p95_ms": 15.92039,
+        "p99_ms": 81.677738,
+        "max_ms": 81.677738,
+        "p50_answered_ms": 9.054178,
+        "p95_answered_ms": 15.92039,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "200": 95
+        }
+      },
+      "POST /sessions/{id}/marks": {
+        "count": 81,
+        "p50_ms": 16.046503,
+        "p95_ms": 27.684129,
+        "p99_ms": 105.636855,
+        "max_ms": 105.636855,
+        "p50_answered_ms": 16.046503,
+        "p95_answered_ms": 27.684129,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "201": 81
+        }
+      },
+      "PUT /dictation/attempts/{id}/draft": {
+        "count": 95,
+        "p50_ms": 6.85037,
+        "p95_ms": 12.058983,
+        "p99_ms": 17.376976,
+        "max_ms": 17.376976,
+        "p50_answered_ms": 6.85037,
+        "p95_answered_ms": 12.058983,
+        "errors": 0,
+        "error_rate": 0.0,
+        "by_status": {
+          "200": 95
+        }
+      }
+    }
+  },
+  "achieved": {
+    "mixed_rps": 15.1,
+    "heartbeat_rps": 4.333333333333333
+  },
+  "planned": {
+    "mixed_rps": 15.0,
+    "heartbeat_rps": 4.0
+  },
+  "blind_stops": {},
+  "blind_attempts": {
+    "listened": 20,
+    "unfinished": 20
+  },
+  "cpu": {
+    "api": {
+      "mean_pct": 3.8588333333333336,
+      "p95_pct": 6.326666666666667,
+      "max_pct": 13.106666666666667,
+      "samples": 480
+    },
+    "db": {
+      "mean_pct": 1.5909166666666665,
+      "p95_pct": 2.6166666666666667,
+      "max_pct": 11.206666666666665,
+      "samples": 480
+    },
+    "worker": {
+      "mean_pct": 0.21309722222222222,
+      "p95_pct": 0.3333333333333333,
+      "max_pct": 2.2966666666666664,
+      "samples": 480
+    },
+    "load": {
+      "mean_pct": 0.7799166666666667,
+      "p95_pct": 1.2966666666666666,
+      "max_pct": 1.71,
+      "samples": 480
+    },
+    "server": {
+      "mean_pct": 5.662847222222222,
+      "p95_pct": 8.89,
+      "max_pct": 25.05666666666666,
+      "samples": 480,
+      "incomplete_rounds": 0
+    }
+  },
+  "statements": {
+    "by_total": [
+      {
+        "query": "SELECT identity.resolve_auth_session($1)",
+        "calls": 2332,
+        "total_ms": 1242.319828000001,
+        "mean_ms": 0.5327271989708411,
+        "max_ms": 12.824497000000001,
+        "rows": 2332,
+        "shared_blks_hit": 50360,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT s.user_id FROM identity.auth_sessions s\n    JOIN identity.users u ON u.id = s.user_id\n   WHERE s.token_hash = p_token_hash AND s.expires_at > now() AND u.status = $2",
+        "calls": 2332,
+        "total_ms": 74.69897499999995,
+        "mean_ms": 0.03203215051457976,
+        "max_ms": 1.135417,
+        "rows": 2332,
+        "shared_blks_hit": 4664,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT unnest(procrastinate.procrastinate_defer_jobs_v1(ARRAY[ROW(\n                  $1, $2, $3, $4, $5, CAST($6 AS jsonb), $7\n                )::procrastinate.procrastinate_job_to_defer_v1]))",
+        "calls": 20,
+        "total_ms": 60.546721000000005,
+        "mean_ms": 3.0273360499999997,
+        "max_ms": 9.373197,
+        "rows": 20,
+        "shared_blks_hit": 3531,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT kind, version, granted_at, withdrawn_at FROM identity.consents\n         WHERE user_id = $1\n           AND (kind, version) IN (('terms', $2), ('privacy', $3),\n                                   ('voice_recording', $4))",
+        "calls": 2332,
+        "total_ms": 54.920958999999925,
+        "mean_ms": 0.023551011578044564,
+        "max_ms": 0.7987380000000001,
+        "rows": 6996,
+        "shared_blks_hit": 4664,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT id, user_id, content_id, passage, entry, status, version,\n       entry_locked_at, completed_at, created_at, updated_at\n  FROM practice.sessions\n WHERE id = $1",
+        "calls": 1620,
+        "total_ms": 53.68687099999999,
+        "mean_ms": 0.0331400438271605,
+        "max_ms": 0.9291809999999999,
+        "rows": 1620,
+        "shared_blks_hit": 4948,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "WITH inserted_jobs AS (\n        INSERT INTO procrastinate_jobs (queue_name, task_name, priority, lock, queueing_lock, args, scheduled_at)\n        SELECT (job).queue_name,\n               (job).task_name,\n               (job).priority,\n               (job).lock,\n               (job).queueing_lock,\n               (job).args,\n               (job).scheduled_at\n        FROM unnest(jobs) AS job\n        RETURNING id\n    )\n    SELECT array_agg(id) FROM inserted_jobs",
+        "calls": 24,
+        "total_ms": 48.682660000000006,
+        "mean_ms": 2.028444166666666,
+        "max_ms": 6.633873,
+        "rows": 24,
+        "shared_blks_hit": 3183,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT id, status, task_name, priority, lock, queueing_lock, args, scheduled_at, queue_name, attempts, worker_id\n    FROM procrastinate_fetch_job_v2($1::varchar[], $2)",
+        "calls": 114,
+        "total_ms": 47.18479299999999,
+        "mean_ms": 0.41390169298245616,
+        "max_ms": 2.342473,
+        "rows": 114,
+        "shared_blks_hit": 6128,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT step, position, status FROM practice.session_steps\n             WHERE session_id = $1 ORDER BY position",
+        "calls": 1620,
+        "total_ms": 41.74935899999999,
+        "mean_ms": 0.025771209259259277,
+        "max_ms": 0.31305299999999997,
+        "rows": 8100,
+        "shared_blks_hit": 4893,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT session_id, step, position, status FROM practice.session_steps\n         WHERE session_id = ANY($1) ORDER BY session_id, position",
+        "calls": 158,
+        "total_ms": 37.75754000000001,
+        "mean_ms": 0.23897177215189863,
+        "max_ms": 0.550242,
+        "rows": 11980,
+        "shared_blks_hit": 4743,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "UPDATE practice.blind_attempts\n               SET last_position_ms = $1,\n                   last_heartbeat_at = $2,\n                   anchor_position_ms = $3,\n                   anchor_at = $4,\n                   buffering_ms = $5,\n                   resume_count = $6,\n                   resume_stop_ms = $7,\n                   media_expires_at = greatest(media_expires_at, $8),\n                   void_reason = coalesce($9, void_reason),\n                   gist_text = coalesce($10, gist_text)\n             WHERE attempt_id = $11\n            RETURNING attempt_id, user_id, media_token_hash, media_expires_at, passage_start_ms,\n    passage_end_ms, last_position_ms, last_heartbeat_at, anchor_position_ms, anchor_at,\n    buffering_ms, resume_count, resume_stop_ms, void_reason, gist_text",
+        "calls": 360,
+        "total_ms": 36.11101100000001,
+        "mean_ms": 0.10030836388888896,
+        "max_ms": 1.370783,
+        "rows": 360,
+        "shared_blks_hit": 3106,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT c.id, c.title, m.source, m.status, m.duration_ms, c.created_at,\n                   m.id, m.has_video, c.keep_video, m.error_code, \n       CASE WHEN m.status NOT IN ('pending', 'downloading') THEN NULL\n            WHEN m.status = 'pending' AND u.confirmed_at IS NOT NULL AND u.queued_at IS NULL\n              THEN 'queued'\n            WHEN m.status = 'downloading' THEN coalesce(m.stage, 'downloading')\n            ELSE coalesce(m.stage, 'waiting') END,\n       CASE WHEN m.status = 'pending' AND u.confirmed_at IS NOT NULL AND u.queued_at IS NULL\n            THEN (SELECT count(*) FROM content.uploads h\n                    JOIN content.media_objects hm ON hm.id = h.media_object_id\n                   WHERE h.user_id = c.user_id AND hm.status = 'pending'\n                     AND h.confirmed_at IS NOT NULL AND h.queued_at IS NULL\n                     AND (h.confirmed_at, h.id) <= (u.confirmed_at, u.id)) END\n\n              FROM content.contents c\n              JOIN content.media_objects m ON m.id = c.media_object_id\n              LEFT JOIN content.uploads u ON u.content_id = c.id\n             WHERE c.id = $1 AND c.user_id = $2",
+        "calls": 454,
+        "total_ms": 31.743810999999983,
+        "mean_ms": 0.0699202885462555,
+        "max_ms": 0.597844,
+        "rows": 454,
+        "shared_blks_hit": 4149,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "INSERT INTO ops.analytics_events\n  (id, user_id, event_type, subject_id, step, content_id, session_id, properties)\nVALUES\n  ($1, $2, $3, $4, $5, $6, $7,\n   CAST($8 AS jsonb))\nON CONFLICT DO NOTHING",
+        "calls": 101,
+        "total_ms": 26.98407,
+        "mean_ms": 0.2671690099009902,
+        "max_ms": 1.722004,
+        "rows": 101,
+        "shared_blks_hit": 2685,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT c.id, c.title, m.source, m.status, m.duration_ms, c.created_at, \n       CASE WHEN m.status NOT IN ($3, $4) THEN $5\n            WHEN m.status = $6 AND u.confirmed_at IS NOT NULL AND u.queued_at IS NULL\n              THEN $7\n            WHEN m.status = $8 THEN coalesce(m.stage, $9)\n            ELSE coalesce(m.stage, $10) END,\n       CASE WHEN m.status = $11 AND u.confirmed_at IS NOT NULL AND u.queued_at IS NULL\n            THEN (SELECT count(*) FROM content.uploads h\n                    JOIN content.media_objects hm ON hm.id = h.media_object_id\n                   WHERE h.user_id = c.user_id AND hm.status = $12\n                     AND h.confirmed_at IS NOT NULL AND h.queued_at IS NULL\n                     AND (h.confirmed_at, h.id) <= (u.confirmed_at, u.id)) END\n\n  FROM content.contents c\n  JOIN content.media_objects m ON m.id = c.media_object_id\n  LEFT JOIN content.uploads u ON u.content_id = c.id\n WHERE c.user_id = $1 ORDER BY c.created_at DESC, c.id DESC LIMIT $2",
+        "calls": 201,
+        "total_ms": 21.420875999999996,
+        "mean_ms": 0.10657152238805968,
+        "max_ms": 0.6077189999999999,
+        "rows": 402,
+        "shared_blks_hit": 2229,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "UPDATE practice.blind_attempts\n               SET last_position_ms = $1,\n                   last_heartbeat_at = $2,\n                   anchor_position_ms = $3,\n                   anchor_at = $4,\n                   buffering_ms = $5,\n                   resume_count = $6,\n                   resume_stop_ms = $7,\n                   media_expires_at = greatest(media_expires_at, $8),\n                   void_reason = coalesce($9, void_reason),\n                   gist_text = coalesce($10, gist_text)\n             WHERE attempt_id = $11\n            RETURNING attempt_id, user_id, media_token_hash, media_expires_at, passage_start_ms,\n    passage_end_ms, last_position_ms, last_heartbeat_at, anchor_position_ms, anchor_at,\n    buffering_ms, resume_count, resume_stop_ms, void_reason, gist_text",
+        "calls": 160,
+        "total_ms": 21.244038999999994,
+        "mean_ms": 0.13277524374999997,
+        "max_ms": 2.463086,
+        "rows": 160,
+        "shared_blks_hit": 1496,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "WITH candidate AS (\n        SELECT jobs.*\n            FROM procrastinate_jobs AS jobs\n            WHERE\n                -- reject the job if its lock has earlier or higher priority jobs\n                NOT EXISTS (\n                    SELECT 1\n                        FROM procrastinate_jobs AS other_jobs\n                        WHERE\n                            jobs.lock IS NOT NULL\n                            AND other_jobs.lock = jobs.lock\n                            AND (\n                                -- job with same lock is already running\n                                other_jobs.status = 'doing'\n                                OR\n                                -- job with same lock is waiting and has higher priority (or same priority but was queued first)\n                                (\n                                    other_jobs.status = 'todo'\n                                    AND (\n                                        other_jobs.priority > jobs.priority\n                                        OR (\n                                        other_jobs.priority = jobs.priority\n                                        AND other_jobs.id < jobs.id\n                                        )\n                                    )\n                                )\n                            )\n                )\n                AND jobs.status = 'todo'\n                AND (target_queue_names IS NULL OR jobs.queue_name = ANY( target_queue_names ))\n                AND (jobs.scheduled_at IS NULL OR jobs.scheduled_at <= now())\n            ORDER BY jobs.priority DESC, jobs.id ASC LIMIT 1\n            FOR UPDATE OF jobs SKIP LOCKED\n    )\n    UPDATE procrastinate_jobs\n        SET status = 'doing', worker_id = p_worker_id\n        FROM candidate\n        WHERE procrastinate_jobs.id = candidate.id\n        RETURNING procrastinate_jobs.*",
+        "calls": 114,
+        "total_ms": 20.672448000000003,
+        "mean_ms": 0.1813372631578947,
+        "max_ms": 1.059483,
+        "rows": 49,
+        "shared_blks_hit": 5414,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT attempt_id, user_id, media_token_hash, media_expires_at, passage_start_ms,\n    passage_end_ms, last_position_ms, last_heartbeat_at, anchor_position_ms, anchor_at,\n    buffering_ms, resume_count, resume_stop_ms, void_reason, gist_text FROM practice.blind_attempts WHERE attempt_id = $1 FOR UPDATE",
+        "calls": 565,
+        "total_ms": 19.981629999999996,
+        "mean_ms": 0.03536571681415928,
+        "max_ms": 1.234777,
+        "rows": 520,
+        "shared_blks_hit": 3356,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "INSERT INTO practice.marks\n              (id, session_id, user_id, word_from, word_to, at_ms, note, source, status)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8,\n                    $9)\n            ON CONFLICT DO NOTHING\n            RETURNING id, session_id, word_from, word_to, at_ms, note, source, status, created_at",
+        "calls": 81,
+        "total_ms": 19.108596999999993,
+        "mean_ms": 0.23590860493827154,
+        "max_ms": 2.2676089999999998,
+        "rows": 81,
+        "shared_blks_hit": 1173,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT procrastinate_finish_job_v1($1, $2, $3)",
+        "calls": 49,
+        "total_ms": 16.526750999999994,
+        "mean_ms": 0.33728063265306124,
+        "max_ms": 1.506749,
+        "rows": 49,
+        "shared_blks_hit": 1194,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "INSERT INTO practice.attempts (id, session_id, user_id, mode)\n            VALUES ($1, $2, $3, $4)\n            RETURNING id, session_id, user_id, mode, status, started_at, finished_at",
+        "calls": 20,
+        "total_ms": 15.775676,
+        "mean_ms": 0.7887838,
+        "max_ms": 3.9354430000000002,
+        "rows": 20,
+        "shared_blks_hit": 752,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT id, session_id, user_id, mode, status, started_at, finished_at FROM practice.attempts WHERE id = $1",
+        "calls": 689,
+        "total_ms": 15.046315999999988,
+        "mean_ms": 0.021837904208998546,
+        "max_ms": 0.427887,
+        "rows": 689,
+        "shared_blks_hit": 4134,
+        "shared_blks_read": 0
+      }
+    ],
+    "by_mean": [
+      {
+        "query": "SELECT unnest(procrastinate.procrastinate_defer_jobs_v1(ARRAY[ROW(\n                  $1, $2, $3, $4, $5, CAST($6 AS jsonb), $7\n                )::procrastinate.procrastinate_job_to_defer_v1]))",
+        "calls": 20,
+        "total_ms": 60.546721000000005,
+        "mean_ms": 3.0273360499999997,
+        "max_ms": 9.373197,
+        "rows": 20,
+        "shared_blks_hit": 3531,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "WITH inserted_jobs AS (\n        INSERT INTO procrastinate_jobs (queue_name, task_name, priority, lock, queueing_lock, args, scheduled_at)\n        SELECT (job).queue_name,\n               (job).task_name,\n               (job).priority,\n               (job).lock,\n               (job).queueing_lock,\n               (job).args,\n               (job).scheduled_at\n        FROM unnest(jobs) AS job\n        RETURNING id\n    )\n    SELECT array_agg(id) FROM inserted_jobs",
+        "calls": 24,
+        "total_ms": 48.682660000000006,
+        "mean_ms": 2.028444166666666,
+        "max_ms": 6.633873,
+        "rows": 24,
+        "shared_blks_hit": 3183,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT procrastinate_defer_periodic_job_v2($1, $2, $3, $4, $5, $6, $7, $8) AS id",
+        "calls": 8,
+        "total_ms": 14.764412,
+        "mean_ms": 1.8455515,
+        "max_ms": 2.7877959999999997,
+        "rows": 8,
+        "shared_blks_hit": 340,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "INSERT\n        INTO procrastinate_periodic_defers (task_name, periodic_id, defer_timestamp)\n        VALUES (_task_name, _periodic_id, _defer_timestamp)\n        ON CONFLICT DO NOTHING\n        RETURNING id",
+        "calls": 8,
+        "total_ms": 9.396101999999999,
+        "mean_ms": 1.1745127499999999,
+        "max_ms": 2.670639,
+        "rows": 4,
+        "shared_blks_hit": 60,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "UPDATE procrastinate_periodic_defers\n        SET job_id = (\n            SELECT COALESCE((\n                SELECT unnest(procrastinate_defer_jobs_v1(\n                    ARRAY[\n                        ROW(\n                            _queue_name,\n                            _task_name,\n                            _priority,\n                            _lock,\n                            _queueing_lock,\n                            _args,\n                            NULL::timestamptz\n                        )\n                    ]::procrastinate_job_to_defer_v1[]\n                ))\n            ), NULL)\n        )\n        WHERE id = _defer_id\n        RETURNING job_id",
+        "calls": 4,
+        "total_ms": 4.074143,
+        "mean_ms": 1.0185357499999999,
+        "max_ms": 1.5782669999999999,
+        "rows": 4,
+        "shared_blks_hit": 256,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "INSERT INTO practice.attempts (id, session_id, user_id, mode)\n            VALUES ($1, $2, $3, $4)\n            RETURNING id, session_id, user_id, mode, status, started_at, finished_at",
+        "calls": 20,
+        "total_ms": 15.775676,
+        "mean_ms": 0.7887838,
+        "max_ms": 3.9354430000000002,
+        "rows": 20,
+        "shared_blks_hit": 752,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT ai.maintain_partitions()",
+        "calls": 1,
+        "total_ms": 0.636603,
+        "mean_ms": 0.636603,
+        "max_ms": 0.636603,
+        "rows": 1,
+        "shared_blks_hit": 14,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT identity.resolve_auth_session($1)",
+        "calls": 2332,
+        "total_ms": 1242.319828000001,
+        "mean_ms": 0.5327271989708411,
+        "max_ms": 12.824497000000001,
+        "rows": 2332,
+        "shared_blks_hit": 50360,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "INSERT INTO procrastinate_events(job_id, type, at)\n        VALUES (NEW.id, $16::procrastinate_job_event_type, NEW.scheduled_at)",
+        "calls": 20,
+        "total_ms": 8.616372,
+        "mean_ms": 0.43081859999999994,
+        "max_ms": 1.5299829999999999,
+        "rows": 20,
+        "shared_blks_hit": 877,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT id, status, task_name, priority, lock, queueing_lock, args, scheduled_at, queue_name, attempts, worker_id\n    FROM procrastinate_fetch_job_v2($1::varchar[], $2)",
+        "calls": 114,
+        "total_ms": 47.18479299999999,
+        "mean_ms": 0.41390169298245616,
+        "max_ms": 2.342473,
+        "rows": 114,
+        "shared_blks_hit": 6128,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT procrastinate_finish_job_v1($1, $2, $3)",
+        "calls": 49,
+        "total_ms": 16.526750999999994,
+        "mean_ms": 0.33728063265306124,
+        "max_ms": 1.506749,
+        "rows": 49,
+        "shared_blks_hit": 1194,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "INSERT INTO practice.blind_attempts (\n              attempt_id, user_id, media_token_hash, media_expires_at, passage_start_ms,\n              passage_end_ms, last_position_ms, last_heartbeat_at, anchor_position_ms,\n              anchor_at, buffering_ms, resume_count, resume_stop_ms)\n            VALUES (\n              $1, $2, $3, $4, $5,\n              $6, $7, $8, $9,\n              $10, $11, $12, $13)\n            RETURNING attempt_id, user_id, media_token_hash, media_expires_at, passage_start_ms,\n    passage_end_ms, last_position_ms, last_heartbeat_at, anchor_position_ms, anchor_at,\n    buffering_ms, resume_count, resume_stop_ms, void_reason, gist_text",
+        "calls": 20,
+        "total_ms": 5.538878,
+        "mean_ms": 0.27694389999999997,
+        "max_ms": 1.162859,
+        "rows": 20,
+        "shared_blks_hit": 373,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "INSERT INTO ops.analytics_events\n  (id, user_id, event_type, subject_id, step, content_id, session_id, properties)\nVALUES\n  ($1, $2, $3, $4, $5, $6, $7,\n   CAST($8 AS jsonb))\nON CONFLICT DO NOTHING",
+        "calls": 101,
+        "total_ms": 26.98407,
+        "mean_ms": 0.2671690099009902,
+        "max_ms": 1.722004,
+        "rows": 101,
+        "shared_blks_hit": 2685,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "UPDATE procrastinate_jobs\n        SET status = end_status,\n            abort_requested = $3,\n            attempts = CASE status\n                WHEN $4 THEN attempts + $5 ELSE attempts\n            END\n        WHERE id = job_id AND status IN ($6, $7)\n        RETURNING id",
+        "calls": 49,
+        "total_ms": 12.583071,
+        "mean_ms": 0.25679736734693875,
+        "max_ms": 0.8973880000000001,
+        "rows": 49,
+        "shared_blks_hit": 1126,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT session_id, step, position, status FROM practice.session_steps\n         WHERE session_id = ANY($1) ORDER BY session_id, position",
+        "calls": 158,
+        "total_ms": 37.75754000000001,
+        "mean_ms": 0.23897177215189863,
+        "max_ms": 0.550242,
+        "rows": 11980,
+        "shared_blks_hit": 4743,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "INSERT INTO practice.marks\n              (id, session_id, user_id, word_from, word_to, at_ms, note, source, status)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8,\n                    $9)\n            ON CONFLICT DO NOTHING\n            RETURNING id, session_id, word_from, word_to, at_ms, note, source, status, created_at",
+        "calls": 81,
+        "total_ms": 19.108596999999993,
+        "mean_ms": 0.23590860493827154,
+        "max_ms": 2.2676089999999998,
+        "rows": 81,
+        "shared_blks_hit": 1173,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT EXISTS (\n          SELECT FROM procrastinate.procrastinate_jobs\n           WHERE queueing_lock = $1 AND status IN ($2, $3))",
+        "calls": 20,
+        "total_ms": 4.498828999999999,
+        "mean_ms": 0.22494144999999996,
+        "max_ms": 2.84578,
+        "rows": 20,
+        "shared_blks_hit": 240,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "INSERT INTO procrastinate_events(job_id, type)\n        VALUES (NEW.id, $15::procrastinate_job_event_type)",
+        "calls": 24,
+        "total_ms": 5.143679,
+        "mean_ms": 0.2143199583333334,
+        "max_ms": 2.557979,
+        "rows": 24,
+        "shared_blks_hit": 291,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "WITH candidate AS (\n        SELECT jobs.*\n            FROM procrastinate_jobs AS jobs\n            WHERE\n                -- reject the job if its lock has earlier or higher priority jobs\n                NOT EXISTS (\n                    SELECT 1\n                        FROM procrastinate_jobs AS other_jobs\n                        WHERE\n                            jobs.lock IS NOT NULL\n                            AND other_jobs.lock = jobs.lock\n                            AND (\n                                -- job with same lock is already running\n                                other_jobs.status = 'doing'\n                                OR\n                                -- job with same lock is waiting and has higher priority (or same priority but was queued first)\n                                (\n                                    other_jobs.status = 'todo'\n                                    AND (\n                                        other_jobs.priority > jobs.priority\n                                        OR (\n                                        other_jobs.priority = jobs.priority\n                                        AND other_jobs.id < jobs.id\n                                        )\n                                    )\n                                )\n                            )\n                )\n                AND jobs.status = 'todo'\n                AND (target_queue_names IS NULL OR jobs.queue_name = ANY( target_queue_names ))\n                AND (jobs.scheduled_at IS NULL OR jobs.scheduled_at <= now())\n            ORDER BY jobs.priority DESC, jobs.id ASC LIMIT 1\n            FOR UPDATE OF jobs SKIP LOCKED\n    )\n    UPDATE procrastinate_jobs\n        SET status = 'doing', worker_id = p_worker_id\n        FROM candidate\n        WHERE procrastinate_jobs.id = candidate.id\n        RETURNING procrastinate_jobs.*",
+        "calls": 114,
+        "total_ms": 20.672448000000003,
+        "mean_ms": 0.1813372631578947,
+        "max_ms": 1.059483,
+        "rows": 49,
+        "shared_blks_hit": 5414,
+        "shared_blks_read": 0
+      },
+      {
+        "query": "SELECT c.id, c.session_id, c.slot, c.mark_id, c.written_form, c.heard_form, c.at_ms, c.created_at, c.audio_status, s.content_id, $5 || s.content_id || $6 || c.at_ms AS source_url\n        FROM practice.cards c JOIN practice.sessions s ON s.id=c.session_id AND s.user_id=c.user_id\n        WHERE (CAST($1 AS uuid) IS NULL OR c.session_id=$1)\n        AND (CAST($2 AS timestamptz) IS NULL OR (c.created_at,c.id)<($2,$3))\n        ORDER BY c.created_at DESC, c.id DESC LIMIT $4",
+        "calls": 57,
+        "total_ms": 8.540012000000003,
+        "mean_ms": 0.1498247719298246,
+        "max_ms": 0.9900370000000001,
+        "rows": 1197,
+        "shared_blks_hit": 1389,
+        "shared_blks_read": 0
+      }
+    ],
+    "slow": []
+  },
+  "verdict": {
+    "checks": {
+      "read_p95": true,
+      "write_p95": true,
+      "cpu": true,
+      "errors": true,
+      "delivered": true
+    },
+    "meets_targets": true,
+    "stage0_evidence": false,
+    "label": "Local Docker Compose run: preliminary, not stage-0 evidence (ADR 0039, #155)",
+    "targets": {
+      "read_p95_ms": 200.0,
+      "write_p95_ms": 300.0,
+      "server_cpu_mean_pct": 30.0,
+      "max_error_rate": 0.01,
+      "min_delivered_share": 0.95
+    }
+  }
+}
