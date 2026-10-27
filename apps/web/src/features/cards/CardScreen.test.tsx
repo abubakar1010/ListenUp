@@ -467,3 +467,80 @@ test('older cards explain unavailable audio without offering a retry', async () 
   expect(await screen.findByText('Audio is unavailable for this older card.')).toBeVisible();
   expect(screen.queryByRole('button', { name: /Retry audio/ })).not.toBeInTheDocument();
 });
+
+const second = { ...mark, id: 'mark-2', word_from: 2, word_to: 2, at_ms: 30000, tag: null };
+const suggestionsPath = `GET /sessions/${session.id}/cards/suggestions`;
+function suggestionRoutes(suggestions: object[]) {
+  return {
+    [`GET /sessions/${session.id}/marks`]: jsonResponse(200, { marks: [mark, second] }),
+    [`GET /sessions/${session.id}/transcript`]: jsonResponse(200, {
+      lines: [
+        {
+          words: [
+            { index: 0, text: 'a lot' },
+            { index: 1, text: 'of' },
+            { index: 2, text: 'cats' },
+          ],
+        },
+      ],
+    }),
+    [suggestionsPath]: jsonResponse(200, { suggestions }),
+  };
+}
+const reduction = {
+  mark_id: mark.id,
+  phrase: 'a lot of',
+  suggested: true,
+  reasons: ['multi_word', 'reduction'],
+};
+const plain = { mark_id: second.id, phrase: 'cats', suggested: false, reasons: [] };
+
+test('shows a tagged reduction among labelled suggestions, ahead of other marks (FR-CA-4)', async () => {
+  setup([], suggestionRoutes([reduction, plain]));
+  const suggested = await screen.findByRole('group', { name: 'Suggested phrases' });
+  expect(within(suggested).getByRole('option', { name: /a lot of/ })).toBeInTheDocument();
+  const others = screen.getByRole('group', { name: 'Other marks' });
+  expect(within(others).getByRole('option', { name: /cats/ })).toBeInTheDocument();
+  expect(screen.getByText(/Suggestions are only a nudge/)).toBeVisible();
+  const options = screen.getAllByRole('option').map((option) => option.textContent);
+  expect(options[0]).toBe('Choose a mark');
+  expect(options[1]).toMatch(/a lot of/);
+});
+
+test('suggestions choose nothing: no card is created until the learner saves (FR-CA-4)', async () => {
+  const { calls } = setup([], suggestionRoutes([reduction, plain]));
+  await screen.findByRole('group', { name: 'Suggested phrases' });
+  expect(screen.getByRole('combobox', { name: 'Marked phrase' })).toHaveValue('');
+  expect(screen.getByRole('textbox', { name: 'Written form' })).toHaveValue('');
+  fireEvent.click(screen.getByRole('button', { name: 'Save card' }));
+  expect(calls.filter((call) => call.method === 'POST' && call.path === path)).toHaveLength(0);
+});
+
+test('choosing a suggestion explains why it was suggested and fills the written form', async () => {
+  setup([], suggestionRoutes([reduction, plain]));
+  await screen.findByRole('group', { name: 'Suggested phrases' });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Marked phrase' }), {
+    target: { value: mark.id },
+  });
+  expect(screen.getByRole('textbox', { name: 'Written form' })).toHaveValue('a lot of');
+  expect(screen.getByRole('combobox', { name: 'Marked phrase' })).toHaveAccessibleDescription(
+    'Suggested: several words, tagged reduction.',
+  );
+});
+
+test('with no suggested mark every mark is listed without a suggestions group', async () => {
+  setup([], suggestionRoutes([{ ...plain }, { ...plain, mark_id: mark.id, phrase: 'a lot' }]));
+  expect(await screen.findByRole('option', { name: /cats/ })).toBeInTheDocument();
+  expect(screen.queryByRole('group')).not.toBeInTheDocument();
+  expect(screen.queryByText(/Suggestions are only a nudge/)).not.toBeInTheDocument();
+});
+
+test('when suggestions are unavailable the marks are listed as before', async () => {
+  setup([], {
+    ...suggestionRoutes([]),
+    [suggestionsPath]: problem(503, 'unavailable', 'Suggestions unavailable'),
+  });
+  expect(await screen.findByRole('option', { name: /a lot of/ })).toBeInTheDocument();
+  expect(screen.queryByRole('group')).not.toBeInTheDocument();
+  expect(screen.queryByText(/Suggestions are only a nudge/)).not.toBeInTheDocument();
+});

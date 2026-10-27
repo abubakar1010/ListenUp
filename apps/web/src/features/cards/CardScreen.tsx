@@ -10,13 +10,23 @@ import { STEP_RULES } from '../session/plan';
 import { formatClock } from '../session/time';
 import { CardAudio } from './CardAudio';
 import {
+  useCardSuggestions,
   useCards,
   useCreateCard,
   useDeleteCard,
   useFinishCards,
   type Card,
+  type CardSuggestion,
   type NewCard,
 } from './api';
+
+const REASON_TEXT: Record<CardSuggestion['reasons'][number], string> = {
+  multi_word: 'several words',
+  linking: 'tagged linking',
+  reduction: 'tagged reduction',
+  weak_form: 'tagged weak form',
+  earlier_session: 'marked in an earlier session',
+};
 
 const inputClass =
   'min-h-11 w-full min-w-0 rounded-md border border-line-strong bg-surface-raised px-3 py-2';
@@ -25,6 +35,7 @@ export function CardScreen({ session, progress }: { session: Session; progress: 
   const cards = useCards(session.id);
   const marks = useMarks(session.id);
   const transcript = useTranscript(session.id);
+  const suggestions = useCardSuggestions(session.id);
   const [selected, setSelected] = useState('');
   const [written, setWritten] = useState('');
   const [heard, setHeard] = useState('');
@@ -53,18 +64,39 @@ export function CardScreen({ session, progress }: { session: Session; progress: 
     return () => window.clearTimeout(timer);
   }, [remaining, cards.data]);
   const words = transcript.data?.lines.flatMap((line) => line.words) ?? [];
+  const markList = marks.data?.marks ?? [];
+  const bySuggestion = new Map(suggestions.data?.suggestions.map((item) => [item.mark_id, item]));
+  // Suggestions only reorder; a mark they do not know about is listed after them.
+  const ordered = suggestions.data
+    ? [
+        ...suggestions.data.suggestions.flatMap((item) =>
+          markList.filter((mark) => mark.id === item.mark_id),
+        ),
+        ...markList.filter((mark) => !bySuggestion.has(mark.id)),
+      ]
+    : markList;
+  const suggestedMarks = ordered.filter((mark) => bySuggestion.get(mark.id)?.suggested);
+  const otherMarks = ordered.filter((mark) => !bySuggestion.get(mark.id)?.suggested);
+  const chosenReasons = bySuggestion.get(selected)?.suggested
+    ? bySuggestion.get(selected)!.reasons.map((reason) => REASON_TEXT[reason])
+    : [];
+  function phraseOf(mark: { word_from: number; word_to: number }) {
+    return words
+      .filter((word) => word.index >= mark.word_from && word.index <= mark.word_to)
+      .map((word) => word.text)
+      .join(' ');
+  }
+  function option(mark: (typeof markList)[number]) {
+    return (
+      <option key={mark.id} value={mark.id}>
+        {phraseOf(mark) || 'Marked phrase'} · {formatClock(mark.at_ms)}
+      </option>
+    );
+  }
   function choose(id: string) {
     setSelected(id);
-    const mark = marks.data?.marks.find((mark) => mark.id === id);
-    setWritten(
-      mark
-        ? words
-            .filter((word) => word.index >= mark.word_from && word.index <= mark.word_to)
-            .map((word) => word.text)
-            .join(' ')
-            .slice(0, 100)
-        : '',
-    );
+    const mark = markList.find((mark) => mark.id === id);
+    setWritten(mark ? phraseOf(mark).slice(0, 100) : '');
   }
   function save(event: FormEvent) {
     event.preventDefault();
@@ -113,21 +145,27 @@ export function CardScreen({ session, progress }: { session: Session; progress: 
           <select
             className={inputClass}
             value={selected}
+            aria-describedby={chosenReasons.length > 0 ? 'card-suggestion-reason' : undefined}
             onChange={(event) => choose(event.target.value)}
             required
           >
             <option value="">Choose a mark</option>
-            {marks.data?.marks.map((mark) => (
-              <option key={mark.id} value={mark.id}>
-                {words
-                  .filter((word) => word.index >= mark.word_from && word.index <= mark.word_to)
-                  .map((word) => word.text)
-                  .join(' ') || 'Marked phrase'}{' '}
-                · {formatClock(mark.at_ms)}
-              </option>
-            ))}
+            {suggestedMarks.length > 0 ? (
+              <>
+                <optgroup label="Suggested phrases">{suggestedMarks.map(option)}</optgroup>
+                <optgroup label="Other marks">{otherMarks.map(option)}</optgroup>
+              </>
+            ) : (
+              ordered.map(option)
+            )}
           </select>
         </label>
+        {suggestedMarks.length > 0 && (
+          <p>Suggestions are only a nudge. Choose any mark, or none, and Save card to keep it.</p>
+        )}
+        {chosenReasons.length > 0 && (
+          <p id="card-suggestion-reason">Suggested: {chosenReasons.join(', ')}.</p>
+        )}
         <label className="flex flex-col gap-1">
           Written form
           <input

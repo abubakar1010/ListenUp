@@ -6,6 +6,7 @@ import { LIBRARY_KEY } from '../library/useLibrary';
 
 export type Card = components['schemas']['Card'];
 export type NewCard = components['schemas']['NewCard'];
+export type CardSuggestion = components['schemas']['CardSuggestion'];
 type CardList = components['schemas']['CardList'];
 export const cardsKey = (id: string) => ['cards', id] as const;
 export function useCards(id: string) {
@@ -15,6 +16,18 @@ export function useCards(id: string) {
       query.state.data?.cards.some((card) => card.audio_status === 'pending') ? 1000 : false,
     queryFn: () =>
       api<components['schemas']['CardList']>(`/cards?session_id=${encodeURIComponent(id)}`),
+  });
+}
+export const suggestionsKey = (id: string) => ['card-suggestions', id] as const;
+/** FR-CA-4: marks ordered with likely connected speech first; the screen works without it. */
+export function useCardSuggestions(id: string) {
+  return useQuery({
+    queryKey: suggestionsKey(id),
+    retry: false,
+    queryFn: () =>
+      api<components['schemas']['CardSuggestions']>(
+        `/sessions/${encodeURIComponent(id)}/cards/suggestions`,
+      ),
   });
 }
 export function useCreateCard(id: string, onCreated: () => void) {
