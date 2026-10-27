@@ -1268,6 +1268,43 @@ test('a_tag_changed_back_while_its_save_is_on_its_way_is_sent_again', async () =
   expect(sync.getSnapshot().status.kind).toBe('saved');
 });
 
+test.each([false, true])(
+  'a_tag_changed_back_during_a_lost_save_recovers_with_reload_%s',
+  async (reload) => {
+    const { transport, marks } = fakeServer([saved('m1', 1)]);
+    const storage = memoryStorage();
+    const sync = make(transport, storage, [saved('m1', 1)]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const real = transport.setTag.getMockImplementation()!;
+    transport.setTag.mockImplementationOnce(async (id, tag) => {
+      await gate;
+      await real(id, tag);
+      throw new TypeError('lost response');
+    });
+    sync.setTag('m1', 'linking');
+    await vi.advanceTimersByTimeAsync(2000);
+    sync.setTag('m1', null);
+    expect(sync.getSnapshot().hasPendingChanges).toBe(true);
+    expect(sync.getSnapshot().marks).toMatchObject([{ tag: null, saved: false }]);
+    expect(JSON.parse(storage.items.get(KEY)!)).toMatchObject({
+      ops: [{ op: 'update', mark: { tag: null } }],
+    });
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(marks.get('m1')!.tag).toBe('linking');
+    let again = sync;
+    if (reload) {
+      closeTab();
+      again = make(transport, storage, [...marks.values()]);
+    }
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(marks.get('m1')!.tag).toBeNull();
+    expect(again.getSnapshot().hasPendingChanges).toBe(false);
+    expect(storage.items.has(KEY)).toBe(false);
+  },
+);
+
 test('a_tag_changed_back_while_the_note_is_on_its_way_is_not_left_on_the_server', async () => {
   const { transport, marks } = fakeServer([saved('m1', 1)]);
   const sync = make(transport, memoryStorage(), [saved('m1', 1)]);

@@ -251,7 +251,7 @@ Read the section for the area you are changing before you change it. The rules e
   one second in the panel's single polite region (UX-22). Undo cancels only a
   deletion that was never sent; an attempted deletion may need recreation after
   a lost response. Refused deletions preserve the known saved mark and note.
-- Mark tags (#61, ADR 0066): the four tags live in `review/domain/marks.MARK_TAGS`
+- Mark tags (#61, ADR 0067): the four tags live in `review/domain/marks.MARK_TAGS`
   (the `practice.marks.tag` CHECK holds the same values) and `features/review/tags.ts`.
   `PUT .../marks/{id}/tag` sends the whole tag (null clears it) and needs no `run_once`;
   the service refuses any other value with 422 `mark_tag_invalid`. A create may carry

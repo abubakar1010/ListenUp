@@ -37,7 +37,7 @@ import {
  *
  * A tag (#61, FR-TR-4) is part of the same `update` as the note: it waits for the debounce,
  * so moving through the tag choices sends only the last one, and travels with an unsent
- * create. A refused tag puts back the server's tag (ADR 0066).
+ * create. A refused tag puts back the server's tag (ADR 0067).
  */
 
 export type SavedMark = components['schemas']['Mark'];
@@ -129,6 +129,8 @@ interface Entry {
   attempted: boolean;
   /** A lost DELETE response may still mean the server removed this mark. */
   deleteAttempted?: boolean;
+  /** A tag request may have landed without an answer; resend even if it matches server. */
+  tagUncertain?: boolean;
 }
 
 /**
@@ -300,9 +302,9 @@ export class MarkSync {
     entry.mark = { ...entry.mark, tag };
     entry.rev += 1;
     if (entry.op === 'none') entry.op = 'update';
-    // Changed back to what the server holds before the save: nothing is left to send.
-    else if (entry.op === 'update' && entry.server && !differs(entry.mark, entry.server))
-      entry.op = 'none';
+    // Keep an update queued even when changed back: an in-flight request may store
+    // the intermediate value, and its response may never arrive. sendUpdate skips
+    // unchanged fields when no request has been sent.
     this.changed();
   }
 
@@ -467,9 +469,13 @@ export class MarkSync {
       if (!stored) return void this.entries.delete(mark.id);
       server = entry.server = local(stored);
     }
-    if (mark.tag !== server.tag) {
+    if (entry.tagUncertain || mark.tag !== server.tag) {
+      // Until the answer arrives, the server may hold either tag. On a lost answer,
+      // retry the learner's value rather than trusting the pre-request snapshot.
+      entry.tagUncertain = true;
       const stored = await this.gone(() => this.options.transport.setTag(mark.id, mark.tag));
       if (!stored) return void this.entries.delete(mark.id);
+      entry.tagUncertain = false;
       server = entry.server = local(stored);
     }
     if (needsConfirm(mark, server)) {
@@ -573,6 +579,7 @@ export class MarkSync {
     } else if (entry.server) {
       entry.mark = entry.server;
       entry.op = 'none';
+      entry.tagUncertain = false;
     } else {
       entry.op = 'create'; // a removal of a mark never confirmed: it stays, and is sent again
     }

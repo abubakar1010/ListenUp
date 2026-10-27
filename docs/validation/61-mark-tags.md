@@ -4,7 +4,7 @@ Scope: FR-TR-4 (PRD TR-4), UI-4. Implementation is on `feat/61-mark-tags`, made 
 `main` at `5db1333`. Dependency #60 was merged (PR #188) before work started. The owner
 approved the plan and chose the recommended options (own `PUT .../tag` route, native
 select, 2 s debounce, `mark_tag_invalid`); they are recorded in
-[ADR 0066](../adr/0066-mark-tags.md). No migration: `practice.marks.tag` and its CHECK
+[ADR 0067](../adr/0067-mark-tags.md). No migration: `practice.marks.tag` and its CHECK
 of the four values have existed since migration `58_marks`, and `alembic check` reports
 no drift.
 
@@ -43,7 +43,7 @@ The Chromium extension and the "mark removed elsewhere" test were written after 
 they exercise. They add coverage and are not test-first evidence; the mutation check
 above shows the browser test detects a broken panel.
 
-## Final checks
+## Historical implementation checks
 
 - Backend: `ruff format --check`, `ruff check`, `mypy` (194 files), `lint-imports`
   (6 kept): clean. `LISTENUP_REQUIRE_DB=1 uv run pytest -m 'not performance' --cov ...`:
@@ -56,7 +56,7 @@ above shows the browser test detects a broken panel.
   **54 passed**.
 - `export_openapi.py` and `pnpm api:generate` were run; the generated client is committed.
 
-## Not run here
+## Historical environment limitation
 
 - **S3 integration tests.** There is no Docker daemon in this container, so the S3
   storage service could not start. All 8 skipped tests skip because S3 is unreachable
@@ -79,7 +79,7 @@ The review found three things, all fixed on this branch:
   passed before the fix: the changed note keeps the entry queued, so that path was never
   broken. It stays as a guard.
 - **ADR number taken again:** main added ADR 0065 (B5 load test, #217), so this one is
-  now [ADR 0066](../adr/0066-mark-tags.md); references and the generated client follow.
+  now [ADR 0067](../adr/0067-mark-tags.md); references and the generated client follow.
 - **Architecture API table:** the Transcript row now also lists the confirm route
   (`PUT .../marks/{mark_id}/status`, ADR 0058).
 
@@ -87,3 +87,25 @@ After merging main (`da4fff1`) and these fixes: `pnpm lint`, `format:check`, `ty
 clean; `pnpm test:coverage` **60 files, 664 passed**; `build` ok; `size` 125.6 kB;
 `pnpm e2e` **59 passed**. The backend results are in the PR. The S3 tests were still not
 run locally (no Docker daemon); CI runs them.
+
+
+## Current-main continuation (2026-10-27)
+
+Merged main `c7975df` without rewriting PR history. Main uses ADR 0066 for
+deployment; mark tags now use ADR 0067, including generated-client references.
+Renumbering is non-behavioral and needs no artificial failing test.
+
+The previous successful-response fix left a lost-response gap: changing a tag
+back during its PUT cleared the pending operation and recovery copy. The queue
+now retains it and resends uncertain tag writes, preserving saved notes.
+`a_tag_changed_back_during_a_lost_save_recovers_with_reload_%s` asserts pending
+state, local storage, the intermediate server value and eventual recovery.
+Red: the focused test failed at hasPendingChanges (false, expected true).
+The retry-without-reload variant was added after the initial implementation;
+removing the uncertain-tag condition made it fail (linking, expected null).
+That variant provides mutation evidence, not test-first chronology.
+Green: markSync.test.ts, 85 passed, including the earlier in-flight regressions.
+
+Current web checks: lint, format, types, 666 tests with coverage, build and size
+(125.6 kB / 200 kB) passed. Full backend and browser results will be recorded
+in the PR description; earlier results above are historical, not this head.
