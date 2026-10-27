@@ -3,7 +3,8 @@ import { buttonClass } from '../../components/button';
 import { BusyButton } from '../../components/BusyButton';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { useContent } from '../content/useContent';
-import { useChangeRound, useRounds } from './api';
+import { RECORDING_MAX_BYTES, useChangeRound, useRounds, useUploadRecording } from './api';
+import { useRoundRecorder, type Recording } from './recording';
 import { ShadowReadiness } from './ShadowReadiness';
 import { ShadowRoundPlayer } from './ShadowRoundPlayer';
 
@@ -35,9 +36,47 @@ export function ShadowRounds({
       focusRound.current = false;
     }
   }, [number]);
+  const recorder = useRoundRecorder();
+  const upload = useUploadRecording(sessionId);
+  const uploadRecording = upload.mutate;
+  const [held, setHeld] = useState<{ number: number; recording: Recording } | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const uploading = useRef<number | null>(null);
+  const { begin, finish, cancel } = recorder;
+  const countIn = useCallback(() => {
+    setHeld(null);
+    setNote(null);
+    uploading.current = null;
+    void begin().then((result) => {
+      if (result === 'unavailable')
+        setNote('This browser cannot record, so this round is not saved.');
+    });
+  }, [begin]);
+  const stopped = useCallback(() => {
+    cancel();
+  }, [cancel]);
   const end = useCallback(() => {
-    mutateRound({ number, action: 'playback-ended' });
-  }, [mutateRound, number]);
+    void finish().then((recording) => {
+      if (recording && recording.blob.size > RECORDING_MAX_BYTES) {
+        setNote('This recording is too large to save.');
+      } else if (recording) setHeld({ number, recording });
+      mutateRound({ number, action: 'playback-ended' });
+    });
+  }, [finish, mutateRound, number]);
+  const ended0 = current?.playback_status === 'ended';
+  const recorded = current?.recording_available === true;
+  // The upload starts once the server has the playback end; a retry reuses the held blob.
+  useEffect(() => {
+    if (held && !recorded && ended0 && held.number === number && uploading.current !== number) {
+      uploading.current = number;
+      uploadRecording({ number, recording: held.recording });
+    }
+  }, [held, recorded, ended0, number, uploadRecording]);
+  useEffect(() => {
+    if (upload.isSuccess) reportStatus(`Recording saved for round ${number}.`);
+    else if (upload.isPending) reportStatus(`Saving the recording of round ${number}…`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upload.isSuccess, upload.isPending]);
   if (!state.data)
     return state.isError ? (
       <ErrorPanel error={state.error} onRetry={() => void state.refetch()} />
@@ -57,11 +96,13 @@ export function ShadowRounds({
         {[1, 2, 3].map((n) => (
           <li key={n} aria-current={n === number ? 'step' : undefined}>
             Round {n}:{' '}
-            {state.data.rounds.find((r) => r.round === n)?.playback_status === 'ended'
-              ? 'playback ended'
-              : n === number
-                ? 'current'
-                : 'not started'}
+            {state.data.rounds.find((r) => r.round === n)?.recording_available
+              ? 'recorded'
+              : state.data.rounds.find((r) => r.round === n)?.playback_status === 'ended'
+                ? 'playback ended'
+                : n === number
+                  ? 'current'
+                  : 'not started'}
           </li>
         ))}
       </ol>
@@ -90,11 +131,54 @@ export function ShadowRounds({
           startMs={state.data.segment.start_ms}
           endMs={state.data.segment.end_ms}
           onEnded={end}
+          onCountIn={countIn}
+          onStopped={stopped}
           onStatus={reportStatus}
         />
       )}
-      {ended && <p>Playback ended. Feedback unavailable.</p>}
-      <p>No recording has been saved. Playback alone does not complete Shadow.</p>
+      {ended && <p>Playback ended.</p>}
+      {note && <p>{note}</p>}
+      {held && upload.isError && (
+        <div role="alert" className="flex flex-col gap-2">
+          <p>Your recording did not upload. It is still here; nothing needs recording again.</p>
+          <BusyButton
+            type="button"
+            className={buttonClass('secondary', 'self-start')}
+            busy={upload.isPending}
+            onClick={() => uploadRecording({ number: held.number, recording: held.recording })}
+          >
+            Retry upload
+          </BusyButton>
+        </div>
+      )}
+      <p>
+        Each round is recorded from the count-in to the end of the segment and saved privately to
+        your account. Playback alone does not complete Shadow.
+      </p>
+      {state.data.rounds
+        .filter((r) => r.recording_available && content.data?.media_url)
+        .map((r) => (
+          <section
+            key={r.round}
+            aria-label={`Round ${r.round} replay`}
+            className="flex flex-col gap-2"
+          >
+            <h3 className="font-display text-body">Round {r.round}: compare</h3>
+            <audio
+              controls
+              preload="none"
+              aria-label={`Original, round ${r.round} segment`}
+              src={`${content.data?.media_url}#t=${state.data.segment.start_ms / 1000},${state.data.segment.end_ms / 1000}`}
+            />
+            <audio
+              controls
+              preload="none"
+              aria-label={`Your recording of round ${r.round}`}
+              src={`/api/v1/shadow/rounds/${r.id}/recording`}
+            />
+            {r.feedback === 'unavailable' && <p>Feedback unavailable.</p>}
+          </section>
+        ))}
       {selectionPending && <p>Save your segment before starting a round.</p>}
       {(!current || ended) && number < 3 && (
         <BusyButton
@@ -112,7 +196,7 @@ export function ShadowRounds({
         </BusyButton>
       )}
       {number === 3 && ended && (
-        <p>All three playbacks have ended. Recording and plan completion are not available yet.</p>
+        <p>All three rounds are done. Finishing Shadow is not available yet.</p>
       )}
       {change.isError && (
         <ErrorPanel
