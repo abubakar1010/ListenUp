@@ -19,7 +19,17 @@ export default defineConfig({
     {
       name: 'chromium',
       testIgnore: 'a11y.spec.ts',
-      use: { ...devices['Desktop Chrome'], launchOptions: { executablePath } },
+      use: {
+        ...devices['Desktop Chrome'],
+        // Headless Shell's getUserMedia rejects with NotSupportedError even
+        // with a fake device. Full Chromium exercises the real permission path.
+        channel: 'chromium',
+        permissions: ['microphone'],
+        launchOptions: {
+          executablePath,
+          args: ['--use-fake-device-for-media-stream'],
+        },
+      },
     },
     // The axe scan of every route (#98): desktop, 360 px (UI-4) and the dark theme.
     ...[

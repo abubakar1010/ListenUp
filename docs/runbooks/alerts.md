@@ -13,7 +13,7 @@ Turn it all on locally with `LISTENUP_OTEL_ENABLED=true docker compose --profile
 
 ## Where alerts go
 
-Locally, Alertmanager emails every alert to Mailpit. On the stage 0 server (#112, not deployed yet) set the receiver in `infra/observability/alertmanager.yml` to the team's address through the production SMTP provider, or to a free push service (for example a self-hosted ntfy topic). Also set up, as part of #112:
+Locally, Alertmanager emails every alert to Mailpit. On the stage 0 server (#112; first-time setup step 13 in `deploy.md`, done at the live cutover) set the receiver in `infra/observability/alertmanager.yml` to the team's address through the production SMTP provider, or to a free push service (for example a self-hosted ntfy topic). Also set up, as part of #112:
 
 - **An external uptime monitor** (System Design 11.1, "the stage 0 server is lost"): a free external checker such as UptimeRobot's free plan or Uptime Kuma on another host, calling `GET https://<host>/api/v1/health` every 5 minutes and alerting the same people. It must run outside the VM, since Prometheus and Alertmanager die with it.
 - **Database monitoring** (Database Design 12.3): `pg_stat_statements`, connection count near the limit and table bloat, from the managed PostgreSQL provider's own alerts.

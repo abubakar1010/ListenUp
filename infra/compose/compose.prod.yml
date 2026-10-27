@@ -1,0 +1,352 @@
+# Production stack for one Docker-capable VM (#112, Architecture 11). Host-neutral:
+# any VM with Docker Engine 28+ and Compose 2.24+ (the media sandbox needs both).
+#
+# PostgreSQL, S3-compatible storage and SMTP are managed services outside this file,
+# reached through the variables in the host's .env (never in the repository; names in
+# docs/runbooks/deploy.md). Images come from the registry at one immutable release tag,
+# set by infra/deploy/deploy.sh, which also runs `migrate` and `storage-check` as
+# one-off containers before `up` restarts anything:
+#
+#   LISTENUP_IMAGE_TAG=r42 docker compose --env-file .env -f compose.prod.yml ...
+#
+# Networks:
+#   edge        Caddy and the API only. Caddy has a fixed address, the one address the
+#               API trusts for X-Forwarded-For (rate limits and sign-in lockout key on it).
+#
+# The fixed subnets and addresses default to 172.31.250.0/24 and 172.31.251.0/24; a
+# host whose own networks use that range (AWS's default VPC is 172.31.0.0/16) moves
+# them with LISTENUP_EDGE_SUBNET, LISTENUP_EDGE_IP, LISTENUP_MEDIA_SUBNET and
+# LISTENUP_RELAY_IP in its .env.
+#   default     egress for everything that calls managed services or the internet.
+#   media-data  the media worker's isolated, internal network (ADR 0049). It has no route
+#               out; db-relay forwards exactly the database and storage ports to the
+#               managed services, so the boundary stays "database and storage only".
+
+x-app-env: &app-env
+  LISTENUP_ENVIRONMENT: ${LISTENUP_ENVIRONMENT:-production}
+  LISTENUP_WEB_BASE_URL: ${LISTENUP_WEB_BASE_URL:?set in .env}
+  LISTENUP_ANALYTICS_HMAC_KEY: ${LISTENUP_ANALYTICS_HMAC_KEY:?set in .env}
+  LISTENUP_TERMS_VERSION: ${LISTENUP_TERMS_VERSION:?set in .env}
+  LISTENUP_PRIVACY_VERSION: ${LISTENUP_PRIVACY_VERSION:?set in .env}
+  LISTENUP_VOICE_CONSENT_VERSION: ${LISTENUP_VOICE_CONSENT_VERSION:?set in .env}
+  LISTENUP_S3_ENDPOINT_URL: ${LISTENUP_S3_ENDPOINT_URL:?set in .env}
+  LISTENUP_S3_PUBLIC_ENDPOINT_URL: ${LISTENUP_S3_PUBLIC_ENDPOINT_URL:?set in .env}
+  LISTENUP_S3_REGION: ${LISTENUP_S3_REGION:?set in .env}
+  LISTENUP_S3_ACCESS_KEY: ${LISTENUP_S3_ACCESS_KEY:?set in .env}
+  LISTENUP_S3_SECRET_KEY: ${LISTENUP_S3_SECRET_KEY:?set in .env}
+  LISTENUP_S3_BUCKET: ${LISTENUP_S3_BUCKET:?set in .env}
+  LISTENUP_AI_CONFIG: ${LISTENUP_AI_CONFIG:-}
+  LISTENUP_YOUTUBE_INTAKE_ENABLED: "false"  # pending legal review (OQ-6, ADR 0011)
+  LISTENUP_OTEL_ENABLED: ${LISTENUP_OTEL_ENABLED:-false}
+  LISTENUP_OTEL_TRACES_ENDPOINT: ${LISTENUP_OTEL_TRACES_ENDPOINT:-}
+  LISTENUP_OTEL_METRICS_ENDPOINT: ${LISTENUP_OTEL_METRICS_ENDPOINT:-}
+  LISTENUP_OTEL_HEADERS: ${LISTENUP_OTEL_HEADERS:-}
+
+x-hardened: &hardened
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options: {max-size: 20m, max-file: "5"}
+
+services:
+  # Caddy with the web build baked in (infra/docker/web.Dockerfile, infra/caddy/Caddyfile):
+  # automatic HTTPS, HTTP→HTTPS redirect, security headers, /api to the API, the
+  # single-page app with content-hashed assets cached for a year (CDN-ready).
+  edge:
+    <<: *hardened
+    image: ${LISTENUP_REGISTRY:?set in .env}/listenup-edge:${LISTENUP_IMAGE_TAG:?set by deploy.sh}
+    cap_add: [NET_BIND_SERVICE]
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      LISTENUP_DOMAIN: ${LISTENUP_DOMAIN:?set in .env}
+      LISTENUP_ACME_EMAIL: ${LISTENUP_ACME_EMAIL:?set in .env}
+      LISTENUP_MEDIA_ORIGIN: ${LISTENUP_MEDIA_ORIGIN:?set in .env}
+    volumes:
+      - caddy-data:/data  # certificates and ACME account: keep across deploys
+      - caddy-config:/config
+    networks:
+      default: {}
+      edge:
+        ipv4_address: ${LISTENUP_EDGE_IP:-172.31.250.10}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      retries: 6
+
+  api:
+    <<: *hardened
+    image: ${LISTENUP_REGISTRY:?set in .env}/listenup-api:${LISTENUP_IMAGE_TAG:?set by deploy.sh}
+    environment:
+      <<: *app-env
+      LISTENUP_DATABASE_URL: ${LISTENUP_API_DATABASE_URL:?set in .env}
+      # Worker-role login used only behind the transcript service gate (ADR 0043).
+      LISTENUP_TRANSCRIPT_READ_DATABASE_URL: ${LISTENUP_TRANSCRIPT_READ_DATABASE_URL:?set in .env}
+      # Reporting credentials belong only to the API (ADR 0052).
+      LISTENUP_ADMIN_REPORT_DATABASE_URL: ${LISTENUP_ADMIN_REPORT_DATABASE_URL:?set in .env}
+      LISTENUP_ADMIN_EMAILS: ${LISTENUP_ADMIN_EMAILS:-}
+      LISTENUP_GOOGLE_CLIENT_ID: ${LISTENUP_GOOGLE_CLIENT_ID:-}
+      LISTENUP_GOOGLE_CLIENT_SECRET: ${LISTENUP_GOOGLE_CLIENT_SECRET:-}
+      LISTENUP_GOOGLE_REDIRECT_URI: ${LISTENUP_GOOGLE_REDIRECT_URI:-}
+    command:
+      - uvicorn
+      - listenup.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      # HTTP idle lifetime: above Caddy's 15 s pool lifetime (#216).
+      - --timeout-keep-alive
+      - "30"
+      - --timeout-graceful-shutdown
+      - "5"
+      - --proxy-headers
+      - --forwarded-allow-ips
+      - ${LISTENUP_EDGE_IP:-172.31.250.10}
+    networks:
+      default: {}
+      # Caddy proxies to this alias, which exists on the edge network only, so its
+      # requests always come from LISTENUP_EDGE_IP (the one trusted address).
+      edge:
+        aliases: [api-via-edge]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"
+      interval: 10s
+      start_period: 20s
+      retries: 6
+
+  # Default pool: lanes ai and background (email, exports, deletion, telemetry relay).
+  worker:
+    <<: *hardened
+    image: ${LISTENUP_REGISTRY:?set in .env}/listenup-worker:${LISTENUP_IMAGE_TAG:?set by deploy.sh}
+    environment:
+      <<: *app-env
+      LISTENUP_DATABASE_URL: ${LISTENUP_WORKER_DATABASE_URL:?set in .env}
+      LISTENUP_SMTP_HOST: ${LISTENUP_SMTP_HOST:?set in .env}
+      LISTENUP_SMTP_PORT: ${LISTENUP_SMTP_PORT:?set in .env}
+      LISTENUP_SMTP_USERNAME: ${LISTENUP_SMTP_USERNAME:-}
+      LISTENUP_SMTP_PASSWORD: ${LISTENUP_SMTP_PASSWORD:-}
+      LISTENUP_SMTP_SECURITY: ${LISTENUP_SMTP_SECURITY:-starttls}
+      LISTENUP_SMTP_SENDER: ${LISTENUP_SMTP_SENDER:?set in .env}
+      LISTENUP_AI_GROQ_API_KEY: ${LISTENUP_AI_GROQ_API_KEY:-}
+
+  # The updater alone can reach the signature mirrors. Media jobs never can (ADR 0049).
+  media-signatures:
+    <<: *hardened
+    image: ${LISTENUP_REGISTRY:?set in .env}/listenup-signature-update:${LISTENUP_IMAGE_TAG:?set by deploy.sh}
+    volumes: [clamav-signatures:/signatures]
+
+  # Provisions speech models before the isolated worker starts. No learner data, no
+  # database or storage credentials; "local" keeps the settings checks from asking for
+  # production secrets this downloader never uses.
+  media-models:
+    image: ${LISTENUP_REGISTRY:?set in .env}/listenup-worker-media:${LISTENUP_IMAGE_TAG:?set by deploy.sh}
+    restart: "no"
+    environment:
+      LISTENUP_ENVIRONMENT: local
+      LISTENUP_AI_CONFIG: ${LISTENUP_AI_CONFIG:-}
+    volumes: [ai-models:/models]
+    command: [python, -c, "import asyncio; from listenup.worker import load_models; asyncio.run(load_models('media'))"]
+    healthcheck:
+      disable: true
+
+  # Media pool: lanes speech-interactive and intake. The sandbox below is the one in
+  # infra/compose/compose.yml, unchanged (tests/unit/test_compose_prod.py compares them).
+  worker-media:
+    image: ${LISTENUP_REGISTRY:?set in .env}/listenup-worker-media:${LISTENUP_IMAGE_TAG:?set by deploy.sh}
+    restart: unless-stopped
+    user: "10001:10001"
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    cpus: 2
+    mem_limit: 18g
+    memswap_limit: 18g
+    tmpfs:
+      - /scratch:rw,noexec,nosuid,nodev,size=2g,uid=10001,gid=10001,mode=0700
+      # Docker keeps these auxiliary mounts writable even with read_only=true.
+      - /dev/shm:ro,noexec,nosuid,nodev,size=64k,mode=0555
+      - /dev/mqueue:ro,noexec,nosuid,nodev,size=64k,mode=0555
+    logging:
+      driver: json-file
+      options: {max-size: 20m, max-file: "5"}
+    networks: [media-data]
+    # The managed services' real names resolve to the relay here only, so the clients
+    # still check the provider's certificate against its real name end to end (the
+    # database URLs use sslmode=verify-full; S3 is HTTPS).
+    extra_hosts:
+      - ${LISTENUP_RELAY_DB_HOST:?set in .env}:${LISTENUP_RELAY_IP:-172.31.251.10}
+      - ${LISTENUP_RELAY_S3_HOST:?set in .env}:${LISTENUP_RELAY_IP:-172.31.251.10}
+    environment:
+      LISTENUP_ENVIRONMENT: ${LISTENUP_ENVIRONMENT:-production}
+      LISTENUP_DATABASE_URL: ${LISTENUP_WORKER_DATABASE_URL:?set in .env}
+      LISTENUP_ANALYTICS_HMAC_KEY: ${LISTENUP_ANALYTICS_HMAC_KEY:?set in .env}
+      LISTENUP_TERMS_VERSION: ${LISTENUP_TERMS_VERSION:?set in .env}
+      LISTENUP_PRIVACY_VERSION: ${LISTENUP_PRIVACY_VERSION:?set in .env}
+      LISTENUP_VOICE_CONSENT_VERSION: ${LISTENUP_VOICE_CONSENT_VERSION:?set in .env}
+      LISTENUP_S3_ENDPOINT_URL: ${LISTENUP_S3_ENDPOINT_URL:?set in .env}
+      LISTENUP_S3_REGION: ${LISTENUP_S3_REGION:?set in .env}
+      LISTENUP_S3_ACCESS_KEY: ${LISTENUP_S3_ACCESS_KEY:?set in .env}
+      LISTENUP_S3_SECRET_KEY: ${LISTENUP_S3_SECRET_KEY:?set in .env}
+      LISTENUP_S3_BUCKET: ${LISTENUP_S3_BUCKET:?set in .env}
+      LISTENUP_AI_CONFIG: ${LISTENUP_AI_CONFIG:-}
+      LISTENUP_YOUTUBE_INTAKE_ENABLED: "false"
+      HF_HUB_OFFLINE: "1"
+      LISTENUP_OTEL_ENABLED: ${LISTENUP_OTEL_ENABLED:-false}
+      # Used as signal selectors only: media queues OTLP through PostgreSQL.
+      LISTENUP_OTEL_TRACES_ENDPOINT: ${LISTENUP_OTEL_TRACES_ENDPOINT:-}
+      LISTENUP_OTEL_METRICS_ENDPOINT: ${LISTENUP_OTEL_METRICS_ENDPOINT:-}
+      # Never inherit a host proxy that could bypass the network boundary.
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      ALL_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      all_proxy: ""
+      NO_PROXY: "*"
+    depends_on:
+      db-relay:
+        condition: service_started
+      media-signatures:
+        condition: service_healthy
+      media-models:
+        condition: service_completed_successfully
+    volumes:
+      - ai-models:/models:ro
+      - clamav-signatures:/signatures:ro
+
+  # Plain TCP pass-through from the isolated media network to the managed database and
+  # storage, and nowhere else (ADR 0066). It reads nothing: TLS is end to end.
+  db-relay:
+    <<: *hardened
+    image: haproxy:3.2.4-alpine
+    configs:
+      - source: db-relay
+        target: /usr/local/etc/haproxy/haproxy.cfg
+    networks:
+      default: {}
+      media-data:
+        ipv4_address: ${LISTENUP_RELAY_IP:-172.31.251.10}
+
+  # Nightly pg_dump to its own bucket, kept 14 days (ADR 0032); always on in production.
+  backup:
+    <<: *hardened
+    image: ${LISTENUP_REGISTRY:?set in .env}/listenup-backup:${LISTENUP_IMAGE_TAG:?set by deploy.sh}
+    init: true  # forwards SIGTERM, so `docker stop` flushes telemetry and exits
+    environment:
+      LISTENUP_ENVIRONMENT: ${LISTENUP_ENVIRONMENT:-production}
+      LISTENUP_ANALYTICS_HMAC_KEY: ${LISTENUP_ANALYTICS_HMAC_KEY:?set in .env}
+      LISTENUP_TERMS_VERSION: ${LISTENUP_TERMS_VERSION:?set in .env}
+      LISTENUP_PRIVACY_VERSION: ${LISTENUP_PRIVACY_VERSION:?set in .env}
+      LISTENUP_VOICE_CONSENT_VERSION: ${LISTENUP_VOICE_CONSENT_VERSION:?set in .env}
+      LISTENUP_S3_BUCKET: ${LISTENUP_S3_BUCKET:?set in .env}
+      LISTENUP_BACKUP_DATABASE_URL: ${LISTENUP_MIGRATE_DATABASE_URL:?set in .env}
+      LISTENUP_BACKUP_BUCKET: ${LISTENUP_BACKUP_BUCKET:?set in .env}
+      LISTENUP_BACKUP_S3_ENDPOINT_URL: ${LISTENUP_BACKUP_S3_ENDPOINT_URL:?set in .env}
+      LISTENUP_BACKUP_S3_REGION: ${LISTENUP_BACKUP_S3_REGION:?set in .env}
+      LISTENUP_BACKUP_S3_ACCESS_KEY: ${LISTENUP_BACKUP_S3_ACCESS_KEY:?set in .env}
+      LISTENUP_BACKUP_S3_SECRET_KEY: ${LISTENUP_BACKUP_S3_SECRET_KEY:?set in .env}
+      LISTENUP_OTEL_ENABLED: ${LISTENUP_OTEL_ENABLED:-false}
+      LISTENUP_OTEL_METRICS_ENDPOINT: ${LISTENUP_OTEL_METRICS_ENDPOINT:-}
+      LISTENUP_OTEL_HEADERS: ${LISTENUP_OTEL_HEADERS:-}
+
+  # One-off: `deploy.sh` runs it before the API restarts. The migration login takes
+  # listenup_owner's place (Database Design 9.1).
+  migrate:
+    image: ${LISTENUP_REGISTRY:?set in .env}/listenup-worker:${LISTENUP_IMAGE_TAG:?set by deploy.sh}
+    profiles: [ops]
+    restart: "no"
+    environment:
+      LISTENUP_ENVIRONMENT: ${LISTENUP_ENVIRONMENT:-production}
+      LISTENUP_DATABASE_URL: ${LISTENUP_MIGRATE_DATABASE_URL:?set in .env}
+      LISTENUP_ANALYTICS_HMAC_KEY: ${LISTENUP_ANALYTICS_HMAC_KEY:?set in .env}
+      LISTENUP_TERMS_VERSION: ${LISTENUP_TERMS_VERSION:?set in .env}
+      LISTENUP_PRIVACY_VERSION: ${LISTENUP_PRIVACY_VERSION:?set in .env}
+      LISTENUP_VOICE_CONSENT_VERSION: ${LISTENUP_VOICE_CONSENT_VERSION:?set in .env}
+    command: [alembic, upgrade, head]
+    healthcheck:
+      disable: true
+
+  # One-off: refuses a public media or backup bucket before every deploy.
+  storage-check:
+    image: ${LISTENUP_REGISTRY:?set in .env}/listenup-api:${LISTENUP_IMAGE_TAG:?set by deploy.sh}
+    profiles: [ops]
+    restart: "no"
+    environment:
+      LISTENUP_ENVIRONMENT: ${LISTENUP_ENVIRONMENT:-production}
+      LISTENUP_ANALYTICS_HMAC_KEY: ${LISTENUP_ANALYTICS_HMAC_KEY:?set in .env}
+      LISTENUP_TERMS_VERSION: ${LISTENUP_TERMS_VERSION:?set in .env}
+      LISTENUP_PRIVACY_VERSION: ${LISTENUP_PRIVACY_VERSION:?set in .env}
+      LISTENUP_VOICE_CONSENT_VERSION: ${LISTENUP_VOICE_CONSENT_VERSION:?set in .env}
+      LISTENUP_S3_ENDPOINT_URL: ${LISTENUP_S3_ENDPOINT_URL:?set in .env}
+      LISTENUP_S3_PUBLIC_ENDPOINT_URL: ${LISTENUP_S3_PUBLIC_ENDPOINT_URL:?set in .env}
+      LISTENUP_S3_REGION: ${LISTENUP_S3_REGION:?set in .env}
+      LISTENUP_S3_ACCESS_KEY: ${LISTENUP_S3_ACCESS_KEY:?set in .env}
+      LISTENUP_S3_SECRET_KEY: ${LISTENUP_S3_SECRET_KEY:?set in .env}
+      LISTENUP_S3_BUCKET: ${LISTENUP_S3_BUCKET:?set in .env}
+      LISTENUP_BACKUP_BUCKET: ${LISTENUP_BACKUP_BUCKET:?set in .env}
+      LISTENUP_BACKUP_S3_ENDPOINT_URL: ${LISTENUP_BACKUP_S3_ENDPOINT_URL:?set in .env}
+      LISTENUP_BACKUP_S3_REGION: ${LISTENUP_BACKUP_S3_REGION:?set in .env}
+      LISTENUP_BACKUP_S3_ACCESS_KEY: ${LISTENUP_BACKUP_S3_ACCESS_KEY:?set in .env}
+      LISTENUP_BACKUP_S3_SECRET_KEY: ${LISTENUP_BACKUP_S3_SECRET_KEY:?set in .env}
+    command: [python, -m, listenup.ops.storage_check]
+
+configs:
+  db-relay:
+    content: |
+      global
+        log stdout format raw local0 notice
+      # Docker's DNS, asked again every 10 s: a managed database's failover or a storage
+      # endpoint's new address reaches the media pool without restarting the relay. The
+      # last good address is kept while DNS fails, and a name that does not resolve at
+      # start leaves that backend down instead of stopping the relay.
+      resolvers docker
+        nameserver dns 127.0.0.11:53
+        hold valid 10s
+        accepted_payload_size 8192
+      defaults
+        mode tcp
+        log global
+        timeout connect 5s
+        timeout client 1h
+        timeout server 1h
+        default-server init-addr last,libc,none resolvers docker resolve-prefer ipv4
+      frontend database
+        bind :${LISTENUP_RELAY_DB_PORT:-5432}
+        default_backend database
+      backend database
+        server db ${LISTENUP_RELAY_DB_HOST:?set in .env}:${LISTENUP_RELAY_DB_PORT:-5432}
+      frontend storage
+        bind :${LISTENUP_RELAY_S3_PORT:-443}
+        default_backend storage
+      backend storage
+        server s3 ${LISTENUP_RELAY_S3_HOST:?set in .env}:${LISTENUP_RELAY_S3_PORT:-443}
+
+networks:
+  edge:
+    ipam:
+      config: [{subnet: "${LISTENUP_EDGE_SUBNET:-172.31.250.0/24}"}]
+  # Docker Engine >= 28: isolated internal bridge has no host-facing gateway.
+  media-data:
+    internal: true
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+    ipam:
+      config: [{subnet: "${LISTENUP_MEDIA_SUBNET:-172.31.251.0/24}"}]
+
+volumes:
+  caddy-data:
+  caddy-config:
+  clamav-signatures:
+  ai-models:

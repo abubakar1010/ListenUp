@@ -1,20 +1,26 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { buttonClass } from '../../components/button';
 import { BusyButton } from '../../components/BusyButton';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { useContent } from '../content/useContent';
 import { useChangeRound, useRounds } from './api';
+import { ShadowReadiness } from './ShadowReadiness';
 import { ShadowRoundPlayer } from './ShadowRoundPlayer';
 
 export function ShadowRounds({
   sessionId,
   contentId,
   selectionPending = false,
+  onStatus,
 }: {
   sessionId: string;
   contentId: string;
   selectionPending?: boolean;
+  onStatus?: (message: string) => void;
 }) {
+  const [status, setStatus] = useState('Loading rounds…');
+  const reportStatus = onStatus ?? setStatus;
+  const [ready, setReady] = useState(false);
   const state = useRounds(sessionId);
   const change = useChangeRound(sessionId);
   const content = useContent(contentId);
@@ -36,7 +42,7 @@ export function ShadowRounds({
     return state.isError ? (
       <ErrorPanel error={state.error} onRetry={() => void state.refetch()} />
     ) : (
-      <p role="status">Loading rounds…</p>
+      <p role={onStatus ? undefined : 'status'}>Loading rounds…</p>
     );
   const ended = current?.playback_status === 'ended';
   return (
@@ -63,6 +69,8 @@ export function ShadowRounds({
         Three rounds at original speed, each with a short count-in. Read the transcript in round 1;
         shadow without it in rounds 2 and 3.
       </p>
+      {!onStatus && <p role="status">{status}</p>}
+      <ShadowReadiness onReady={setReady} onStatus={reportStatus} />
       <p>Tab to a control; press Enter or Space to activate it.</p>
       {number === 1 &&
       current?.transcript_shown &&
@@ -74,7 +82,7 @@ export function ShadowRounds({
       ) : number > 1 ? (
         <p>Transcript hidden for this round.</p>
       ) : null}
-      {current && !ended && content.data?.media_url && (
+      {ready && current && !ended && content.data?.media_url && (
         <ShadowRoundPlayer
           key={number}
           number={number}
@@ -82,18 +90,20 @@ export function ShadowRounds({
           startMs={state.data.segment.start_ms}
           endMs={state.data.segment.end_ms}
           onEnded={end}
+          onStatus={reportStatus}
         />
       )}
-      {ended && <p role="status">Playback ended. Feedback unavailable.</p>}
+      {ended && <p>Playback ended. Feedback unavailable.</p>}
       <p>No recording has been saved. Playback alone does not complete Shadow.</p>
       {selectionPending && <p>Save your segment before starting a round.</p>}
       {(!current || ended) && number < 3 && (
         <BusyButton
           type="button"
           className={buttonClass('primary', 'self-start')}
-          busy={change.isPending || state.isFetching || selectionPending}
+          busy={change.isPending || state.isFetching}
+          aria-disabled={selectionPending || !ready || undefined}
           onClick={() => {
-            if (selectionPending) return;
+            if (selectionPending || !ready) return;
             focusRound.current = true;
             change.mutate({ number: number + 1, action: 'start' });
           }}
@@ -108,7 +118,8 @@ export function ShadowRounds({
         <ErrorPanel
           error={change.error}
           onRetry={() => {
-            if (change.variables) change.mutate(change.variables);
+            if (change.variables && (ready || change.variables.action === 'playback-ended'))
+              change.mutate(change.variables);
           }}
         />
       )}

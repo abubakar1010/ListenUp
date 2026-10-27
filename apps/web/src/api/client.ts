@@ -101,6 +101,9 @@ export async function api<T>(
   if (!response.ok) {
     throw new ApiError(await toProblem(response), retryAfter(response.headers.get('Retry-After')));
   }
-  if (response.status === 204) return undefined as T;
+  // Snippet retries return an accepted response without a representation.
+  // Other accepted endpoints supply JSON and still need to be decoded.
+  if (response.status === 204 || (response.status === 202 && !response.headers.has('Content-Type')))
+    return undefined as T;
   return (await response.json()) as T;
 }

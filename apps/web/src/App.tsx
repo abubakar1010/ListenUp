@@ -13,6 +13,8 @@ import { RegisterPage, SignInPage } from './auth/pages';
 // The sign-in and register pages stay in the first bundle, because signed-out
 // visitors land on them.
 const GoogleErrorPage = lazy(() => import('./auth/GoogleErrorPage'));
+const DeckPage = lazy(() => import('./features/cards/DeckPage'));
+const MarksPage = lazy(() => import('./features/review/MarksPage'));
 const LibraryPage = lazy(() => import('./features/library/LibraryPage'));
 const AddClipPage = lazy(() => import('./features/library/AddClipPage'));
 const ContentPage = lazy(() => import('./features/content/ContentPage'));
@@ -99,6 +101,8 @@ export function App() {
 
         <Route element={<RequireAuth />}>
           <Route element={<AppLayout />}>
+            <Route path="/cards" element={<DeckPage />} />
+            <Route path="/marks" element={<MarksPage />} />
             <Route path="/library" element={<LibraryPage />} />
             <Route path="/library/add" element={<AddClipPage />} />
             <Route path="/contents/:contentId" element={<ContentPage />} />

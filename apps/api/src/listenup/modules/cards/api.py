@@ -117,3 +117,30 @@ async def card_audio(
 async def retry_audio(card_id: uuid.UUID, learner: CurrentLearner, db: DbSession) -> Response:
     await service.retry_audio(db, learner, card_id)
     return Response(status_code=202, headers=_NO_STORE)
+
+
+@router.get("/cards/{card_id}/reviews")
+async def review_history(
+    card_id: uuid.UUID, response: Response, learner: CurrentLearner, db: DbSession
+) -> schemas.ReviewHistory:
+    response.headers.update(_NO_STORE)
+    return await service.review_history(db, learner, card_id)
+
+
+@router.post("/cards/{card_id}/reviews", status_code=201, response_model=schemas.CardReview)
+async def record_review(
+    card_id: uuid.UUID,
+    body: schemas.ReviewResult,
+    request: Request,
+    learner: CurrentLearner,
+    db: DbSession,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> JSONResponse:
+    async def save() -> tuple[int, Any]:
+        return 201, (await service.record_review(db, learner, card_id, body)).model_dump(
+            mode="json"
+        )
+
+    result = await run_once(db, learner, idempotency_key, await request_fingerprint(request), save)
+    result.headers.update(_NO_STORE)
+    return result
