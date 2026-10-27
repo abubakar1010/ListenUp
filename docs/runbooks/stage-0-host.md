@@ -138,7 +138,7 @@ On the VM, as `deploy`, with the repository checked out (`git clone` over HTTPS)
 
 1. Open a pull request that fills the table in step 6 and changes ADR 0070's status to **Accepted** (or a new ADR if the fallback was used). Link it to #16 (`Refs #16`).
 2. Close #16 when the acceptance criteria hold: a VM with Docker is reachable by the team and documented here, and the ADR records the host, its limits on the date, and the fallback.
-3. Add Check the Arm follow-ups [#231](https://github.com/abubakar1010/ListenUp/issues/231), [#232](https://github.com/abubakar1010/ListenUp/issues/232), [#233](https://github.com/abubakar1010/ListenUp/issues/233) and [#234](https://github.com/abubakar1010/ListenUp/issues/234) are done or consciously deferred before the live cutover (#112).
+3. Check the Arm follow-ups [#231](https://github.com/abubakar1010/ListenUp/issues/231), [#232](https://github.com/abubakar1010/ListenUp/issues/232), [#233](https://github.com/abubakar1010/ListenUp/issues/233) and [#234](https://github.com/abubakar1010/ListenUp/issues/234) are done or consciously deferred before the live cutover (#112).
 
 ## Troubleshooting
 
