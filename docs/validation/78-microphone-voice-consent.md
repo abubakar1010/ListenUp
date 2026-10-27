@@ -131,3 +131,10 @@ Current-main integration: saved review PR #225 merged as `ee72874` during
 validation. Its conventions and Shadow's conventions are both retained. Saved
 review owns ADR 0068, so Shadow's decision is now ADR 0069. Generated API additions
 merge alongside the voice-consent refusal; no API contract is removed.
+
+A follow-up review of the shared status region caught a stale preparing message
+beside a failed segment read. Red: `pnpm vitest run src/features/shadow/ShadowScreen.test.tsx -t 'failed segment read'`
+failed because the preparing text remained after the error. Preparation is now
+rendered only while no selection/error exists; settled announcements remain in
+the shared region. The isolated 150-second segment-preview browser check passed
+without changing its assertions after the earlier resource-contended local run.

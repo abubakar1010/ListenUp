@@ -32,7 +32,7 @@ export function ShadowScreen({
   const rounds = useRounds(session.id);
   const selection = rounds.data?.current ? rounds.data.segment : segment.data;
   const [selectionPending, setSelectionPending] = useState(false);
-  const [status, setStatus] = useState('Preparing your segment…');
+  const [status, setStatus] = useState('');
   return (
     <PracticeLayout
       heading={`Shadow: ${session.content_title}`}
@@ -44,7 +44,7 @@ export function ShadowScreen({
       workLabel="Shadow segment"
     >
       <p role="status" aria-atomic="true">
-        {status}
+        {!selection && !segment.isError ? 'Preparing your segment…' : status}
       </p>
       {selection ? (
         <SegmentEditor
