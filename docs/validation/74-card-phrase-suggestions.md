@@ -64,4 +64,16 @@ when nothing is suggested, and fallback to the plain list when suggestions fail.
 
 ## Final checks
 
-See the pull request for the final command results.
+| Check | Result |
+| --- | --- |
+| `uv run pytest -m 'not performance' --cov` (`LISTENUP_REQUIRE_DB=1`) | 2343 passed, 12 skipped (S3 storage was not reachable locally, so S3 integration tests skip; CI runs them with `LISTENUP_REQUIRE_S3=1`) |
+| `ruff check`, `ruff format --check`, `mypy`, `lint-imports` | clean |
+| `pnpm lint`, `format:check`, `typecheck`, `test:coverage` | clean; 718 tests passed |
+| `pnpm build`, `pnpm size` | 126.2 kB gzip of 200 kB |
+| `pnpm e2e --project=chromium` | 60 passed |
+| `pnpm e2e:a11y` | 190 passed, 2 skipped by design; allowlist empty |
+
+Not run locally: `uv run pytest -m performance --no-cov` and `alembic check` (no schema
+change; the local database was not migrated). The existing `card` and `skip card dialog`
+axe states and the Transcript keyboard e2e test failed once because their mocks did not
+answer the new request; their mocks now do.
