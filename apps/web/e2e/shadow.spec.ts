@@ -249,6 +249,9 @@ test('three Shadow rounds use keyboard controls at 360 px and original speed', a
   await expect(accept).toBeFocused();
   await accept.press('Enter');
   await expect(page.getByText(/You agreed to this version/)).toBeFocused();
+  await expect(
+    page.getByRole('link', { name: 'Voice recording consent', exact: true }),
+  ).toHaveAttribute('href', '/voice-consent');
   expect(granted).toBe(true);
   for (const number of [1, 2, 3]) {
     const start = page.getByRole('button', { name: `Start round ${number}`, exact: true });
@@ -273,6 +276,7 @@ test('three Shadow rounds use keyboard controls at 360 px and original speed', a
     await expect(
       page.getByRole('status').filter({ hasText: 'playing at original speed' }),
     ).toBeVisible();
+    await expect(page.getByRole('status')).toHaveCount(1);
     await page.locator('audio').evaluate((audio: HTMLAudioElement) => {
       audio.playbackRate = 1.5;
     });

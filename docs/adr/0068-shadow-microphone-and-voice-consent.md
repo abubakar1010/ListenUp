@@ -1,4 +1,4 @@
-# ADR 0065: Shadow microphone check and voice consent
+# ADR 0068: Shadow microphone check and voice consent
 
 - Status: Accepted
 - Related: #78, ADRs 0048, 0050, 0051 and 0063
@@ -24,6 +24,14 @@ recording validation or an assessment of recording quality. A labelled native
 meter provides levels; a polite status announces only state changes. Headphones
 are advised. Missing, denied, busy, silent and unsupported inputs explain recovery
 and point to the existing confirmed Skip Shadow action.
+
+ShadowScreen owns one polite status region for segment changes, microphone
+readiness and round playback (UX-22). Standalone round/readiness/player components
+fall back to their own region; composed children report status to their owner.
+Consent acceptance moves focus to its confirmation instead of adding a live
+region. Clear the checkbox selection after a successful grant so a later
+withdrawal/refusal returns to unchecked acceptance. Link to the canonical notice
+through `DOCUMENTS.voice_recording.path` while embedding the exact versioned text.
 
 Readiness lasts only for this mounted, visible page. After checking, retain the
 live input track to detect disconnection or browser muting, but close the analyser's AudioContext.

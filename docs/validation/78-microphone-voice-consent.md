@@ -4,7 +4,7 @@
 
 The existing #79 round-start boundary was inspected first. #78 reuses it; there
 is no recording, upload, replay, grading, migration or plan-completion change.
-See ADR 0065 for the #81 interface and resource/consent lifecycle.
+See ADR 0068 for the #81 interface and resource/consent lifecycle.
 
 | Requirement | Evidence |
 | --- | --- |
@@ -94,3 +94,35 @@ Screen-reader support is checked through semantic roles, labelled meter,
 state-only live announcements and axe; a manual assistive-technology session was
 not performed. Recording/upload/replay remain excluded and grading stays
 unavailable under ADR 0050.
+
+## Review remediation (2026-10-27)
+
+The independent review was posted on PR #223 at head `2e78ad9`. Current main
+`2f2e9bf` was merged before the fixes; recording/upload/replay and grading remain
+outside this change. ADR 0068 replaces the colliding Shadow ADR 0065; existing
+B5 ADR 0065 is unchanged.
+
+- Red: `pnpm vitest run src/features/shadow/ShadowReadiness.test.tsx -t 'new unchecked|canonical'`
+  failed both examples: the recovered checkbox was checked, and the canonical
+  voice-consent link was absent. Acceptance now clears its local checkbox
+  selection on success, and the notice links through `DOCUMENTS.voice_recording.path`.
+- Red: `pnpm vitest run src/features/shadow/ShadowGate.test.tsx` failed the restored
+  round's single-status-region assertion (two regions instead of one).
+  ShadowScreen now owns segment/microphone/playback announcements; composed
+  children report through `onStatus`. Standalone components retain their region.
+  Consent acceptance keeps its focused confirmation without another live region.
+- Green: `pnpm vitest run src/features/shadow src/features/legal`: 69 passed.
+  Additional late-AudioContext-resume cancellation and failed-grant recovery
+  examples cover the earlier CI-uncovered cleanup and error-rendering branches;
+  these are supplementary coverage, not claimed as new test-first cycles.
+- Original remote Chromium smoke: both new microphone tests failed, including
+  retries, with the generic unavailable state. A direct browser-boundary probe
+  reproduced `getUserMedia` rejecting with `NotSupportedError` in Playwright's
+  Chromium 153 Headless Shell, while full Chromium 153 accepted the same fake
+  microphone request. The smoke project now uses `channel: 'chromium'` to run
+  full Chromium. Permission and recovery assertions are retained.
+
+Final remote checks and the merge outcome are recorded on the PR. Earlier local
+full-suite claims above describe the original implementation; the original CI
+failure is not a passing browser result. Manual assistive-technology testing
+remains unperformed.

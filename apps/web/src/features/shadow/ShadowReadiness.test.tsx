@@ -50,6 +50,59 @@ it('shows the current legal text and requires explicit agreement', async () => {
   await vi.waitFor(() => expect(screen.getByText(/You agreed to this version/)).toHaveFocus());
 });
 
+it('requires a new unchecked agreement after accepting and then losing consent', async () => {
+  const { ShadowRounds } = await import('./ShadowRounds');
+  let held = false;
+  mockRoutes({
+    'GET /sessions/s/shadow/rounds': jsonResponse(200, {
+      segment: { start_ms: 0, end_ms: 60000 },
+      current: null,
+      rounds: [],
+    }),
+    'GET /contents/c': jsonResponse(200, { media_url: '/audio' }),
+    'GET /auth/consent-versions': jsonResponse(200, { voice_recording: 'voice-2026-1' }),
+    'GET /me/consents': () => (held ? activeConsent() : jsonResponse(200, { consents: [] })),
+    'POST /me/consents': () => {
+      held = true;
+      return activeConsent();
+    },
+    'POST /sessions/s/shadow/rounds/1/start': () => {
+      held = false;
+      return jsonResponse(403, { code: 'voice_consent_required', detail: 'Agree again.' });
+    },
+  });
+  media();
+  renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
+  fireEvent.click(await screen.findByRole('checkbox', { name: /I agree/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Agree to voice recording' }));
+  await screen.findByText(/You agreed to this version/);
+  fireEvent.click(screen.getByRole('button', { name: 'Check microphone' }));
+  await screen.findByText('Microphone ready. Sound detected.');
+  await vi.waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Start round 1' })).not.toHaveAttribute(
+      'aria-disabled',
+    ),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Start round 1' }));
+  expect(await screen.findByRole('checkbox', { name: /I agree/ })).not.toBeChecked();
+  expect(screen.getByRole('button', { name: 'Agree to voice recording' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+});
+
+it('links to the canonical voice consent page', async () => {
+  mockRoutes({
+    'GET /auth/consent-versions': jsonResponse(200, { voice_recording: 'voice-2026-1' }),
+    'GET /me/consents': activeConsent(),
+  });
+  renderWithProviders(<ShadowReadiness onReady={vi.fn()} />);
+  expect(await screen.findByRole('link', { name: 'Voice recording consent' })).toHaveAttribute(
+    'href',
+    '/voice-consent',
+  );
+});
+
 function media(amplitude: number | (() => number) = 0.1) {
   const track = new EventTarget() as EventTarget & {
     readyState: string;
@@ -348,4 +401,49 @@ it('resumes the audio context during activation before waiting for permission', 
   expect(ready).not.toHaveBeenCalledWith(true);
   resolve(stream);
   await screen.findByText('Microphone ready. Sound detected.');
+});
+
+it('disposes capture when audio activation resolves after cancellation', async () => {
+  mockRoutes({});
+  const { track, resume, close } = media();
+  let resolve!: () => void;
+  resume.mockReturnValue(
+    new Promise<void>((done) => {
+      resolve = done;
+    }),
+  );
+  const ready = vi.fn();
+  renderWithProviders(<ShadowReadiness onReady={ready} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Check microphone' }));
+  await act(async () => {
+    await Promise.resolve();
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel microphone check' }));
+  await act(async () => {
+    resolve();
+  });
+  expect(track.stop).toHaveBeenCalled();
+  expect(close).toHaveBeenCalled();
+  expect(ready).not.toHaveBeenCalledWith(true);
+  expect(screen.getByText(/Microphone check stopped/)).toBeInTheDocument();
+});
+
+it('shows a refused grant and lets the learner explicitly try acceptance again', async () => {
+  let broken = true;
+  mockRoutes({
+    'GET /auth/consent-versions': jsonResponse(200, { voice_recording: 'voice-2026-1' }),
+    'GET /me/consents': jsonResponse(200, { consents: [] }),
+    'POST /me/consents': () =>
+      broken
+        ? jsonResponse(503, { code: 'unavailable', detail: 'Consent could not be saved.' })
+        : activeConsent(),
+  });
+  renderWithProviders(<ShadowReadiness onReady={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('checkbox', { name: /I agree/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Agree to voice recording' }));
+  await screen.findByText('Consent could not be saved.');
+  expect(screen.queryByText(/You agreed to this version/)).not.toBeInTheDocument();
+  broken = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Agree to voice recording' }));
+  await screen.findByText(/You agreed to this version/);
 });

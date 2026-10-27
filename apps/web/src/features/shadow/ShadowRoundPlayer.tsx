@@ -10,12 +10,14 @@ export function ShadowRoundPlayer({
   endMs,
   number,
   onEnded,
+  onStatus,
 }: {
   src: string;
   startMs: number;
   endMs: number;
   number: number;
   onEnded?: () => void;
+  onStatus?: (message: string) => void;
 }) {
   const audio = useRef<HTMLAudioElement>(null);
   const [ready, setReady] = useState(false);
@@ -153,12 +155,17 @@ export function ShadowRoundPlayer({
                 : ready
                   ? `Round ${number} ready`
                   : 'Loading audio…';
+  useEffect(() => {
+    onStatus?.(message);
+  }, [message, onStatus]);
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <audio ref={audio} src={src} preload="auto" />
-      <p role="status" aria-live="polite" aria-atomic="true">
-        {message}
-      </p>
+      {!onStatus && (
+        <p role="status" aria-live="polite" aria-atomic="true">
+          {message}
+        </p>
+      )}
       <p>Original speed · 1×</p>
       <button
         type="button"

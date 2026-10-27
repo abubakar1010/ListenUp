@@ -11,11 +11,15 @@ export function ShadowRounds({
   sessionId,
   contentId,
   selectionPending = false,
+  onStatus,
 }: {
   sessionId: string;
   contentId: string;
   selectionPending?: boolean;
+  onStatus?: (message: string) => void;
 }) {
+  const [status, setStatus] = useState('Loading rounds…');
+  const reportStatus = onStatus ?? setStatus;
   const [ready, setReady] = useState(false);
   const state = useRounds(sessionId);
   const change = useChangeRound(sessionId);
@@ -38,7 +42,7 @@ export function ShadowRounds({
     return state.isError ? (
       <ErrorPanel error={state.error} onRetry={() => void state.refetch()} />
     ) : (
-      <p role="status">Loading rounds…</p>
+      <p role={onStatus ? undefined : 'status'}>Loading rounds…</p>
     );
   const ended = current?.playback_status === 'ended';
   return (
@@ -65,7 +69,8 @@ export function ShadowRounds({
         Three rounds at original speed, each with a short count-in. Read the transcript in round 1;
         shadow without it in rounds 2 and 3.
       </p>
-      <ShadowReadiness onReady={setReady} />
+      {!onStatus && <p role="status">{status}</p>}
+      <ShadowReadiness onReady={setReady} onStatus={reportStatus} />
       <p>Tab to a control; press Enter or Space to activate it.</p>
       {number === 1 &&
       current?.transcript_shown &&
@@ -85,9 +90,10 @@ export function ShadowRounds({
           startMs={state.data.segment.start_ms}
           endMs={state.data.segment.end_ms}
           onEnded={end}
+          onStatus={reportStatus}
         />
       )}
-      {ended && <p role="status">Playback ended. Feedback unavailable.</p>}
+      {ended && <p>Playback ended. Feedback unavailable.</p>}
       <p>No recording has been saved. Playback alone does not complete Shadow.</p>
       {selectionPending && <p>Save your segment before starting a round.</p>}
       {(!current || ended) && number < 3 && (

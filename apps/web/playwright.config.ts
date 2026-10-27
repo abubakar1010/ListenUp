@@ -21,6 +21,9 @@ export default defineConfig({
       testIgnore: 'a11y.spec.ts',
       use: {
         ...devices['Desktop Chrome'],
+        // Headless Shell's getUserMedia rejects with NotSupportedError even
+        // with a fake device. Full Chromium exercises the real permission path.
+        channel: 'chromium',
         permissions: ['microphone'],
         launchOptions: {
           executablePath,

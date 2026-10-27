@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import { useConsentVersions, useGrantConsents, useMyConsents } from '../../auth/consentApi';
+import {
+  DOCUMENTS,
+  useConsentVersions,
+  useGrantConsents,
+  useMyConsents,
+} from '../../auth/consentApi';
 import { BusyButton } from '../../components/BusyButton';
 import { buttonClass } from '../../components/button';
 import { ErrorPanel } from '../../components/ErrorPanel';
@@ -8,7 +13,13 @@ import { LegalText } from '../legal/LegalText';
 import { TEXTS } from '../legal/texts';
 
 /** Local signal check only: no MediaRecorder, retained samples or network audio. */
-export function ShadowReadiness({ onReady }: { onReady: (ready: boolean) => void }) {
+export function ShadowReadiness({
+  onReady,
+  onStatus,
+}: {
+  onReady: (ready: boolean) => void;
+  onStatus?: (message: string) => void;
+}) {
   const versions = useConsentVersions();
   const consents = useMyConsents();
   const grant = useGrantConsents();
@@ -34,6 +45,10 @@ export function ShadowReadiness({ onReady }: { onReady: (ready: boolean) => void
   const generation = useRef(0);
   const checkButton = useRef<HTMLButtonElement>(null);
   const acceptedNotice = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    onStatus?.(status);
+  }, [status, onStatus]);
 
   useEffect(() => {
     if (consent && grant.isSuccess) acceptedNotice.current?.focus();
@@ -196,26 +211,29 @@ export function ShadowReadiness({ onReady }: { onReady: (ready: boolean) => void
         </button>
       )}
       <meter aria-label="Microphone level" min={0} max={100} value={level} />
-      <p role="status">{status}</p>
+      {!onStatus && <p role="status">{status}</p>}
       <p>
         If you cannot use a microphone or do not agree, use Skip Shadow and confirm your choice.
       </p>
       {versions.isError ? (
         <ErrorPanel error={versions.error} onRetry={() => void versions.refetch()} />
       ) : !version ? (
-        <p role="status">Loading voice consent…</p>
+        <p>Loading voice consent…</p>
       ) : !source ? (
         <p>The current voice consent text is unavailable. Try again later or skip Shadow.</p>
       ) : (
         <>
           <p>Voice recording consent — version {version}</p>
+          <Link to={DOCUMENTS.voice_recording.path} className="text-accent underline">
+            {DOCUMENTS.voice_recording.name}
+          </Link>
           <LegalText source={source} headingOffset={2} />
           {consents.isError ? (
             <ErrorPanel error={consents.error} onRetry={() => void consents.refetch()} />
           ) : consents.isPending ? (
-            <p role="status">Loading your consent…</p>
+            <p>Loading your consent…</p>
           ) : consent ? (
-            <p ref={acceptedNotice} tabIndex={-1} role="status">
+            <p ref={acceptedNotice} tabIndex={-1}>
               You agreed to this version.{' '}
               <Link to="/settings" className="text-accent underline">
                 Manage or withdraw consent
@@ -239,7 +257,9 @@ export function ShadowReadiness({ onReady }: { onReady: (ready: boolean) => void
                 aria-disabled={agreedVersion !== version || undefined}
                 onClick={() => {
                   if (agreedVersion === version)
-                    grant.mutate([{ kind: 'voice_recording', version }]);
+                    grant.mutate([{ kind: 'voice_recording', version }], {
+                      onSuccess: () => setAgreedVersion(undefined),
+                    });
                 }}
               >
                 Agree to voice recording

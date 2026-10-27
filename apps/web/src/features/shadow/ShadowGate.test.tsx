@@ -37,5 +37,6 @@ it('requires a fresh microphone check when resuming an existing round', async ()
   });
   renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
   await screen.findByText(/You agreed to this version/);
+  expect(screen.getAllByRole('status')).toHaveLength(1);
   expect(screen.queryByRole('button', { name: 'Play round 1' })).not.toBeInTheDocument();
 });
