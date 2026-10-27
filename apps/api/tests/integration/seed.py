@@ -57,6 +57,8 @@ class SeededLearner:
     card_id: uuid.UUID | None = None
     mark_id: uuid.UUID | None = None
     """A manual mark on the session open at Transcript (#58)."""
+    shadow_round_id: uuid.UUID | None = None
+    """Round 1 of the Shadow session, with an uploaded recording (#81)."""
 
     def ids(self) -> list[str]:
         """Every id this learner owns, as text: none may appear in another learner's view."""
@@ -74,6 +76,7 @@ class SeededLearner:
                 *([self.export_id] if self.export_id else []),
                 *([self.mark_id] if self.mark_id else []),
                 *([self.card_id] if self.card_id else []),
+                *([self.shadow_round_id] if self.shadow_round_id else []),
             )
         ]
 
@@ -202,6 +205,36 @@ def add_mark(owner_url: str, user_id: uuid.UUID, session_id: uuid.UUID) -> uuid.
     return mark_id
 
 
+def add_shadow_recording(owner_url: str, user_id: uuid.UUID, session_id: uuid.UUID) -> uuid.UUID:
+    """Three played rounds of a session at Shadow; round 1 is recorded and uploaded."""
+    round_id = uuid.uuid4()
+    key = f"users/{user_id}/shadow/{session_id}/round-1-{round_id}.webm"
+    with psycopg.connect(owner_url) as conn:
+        conn.execute(
+            "INSERT INTO practice.shadow_segments (session_id,user_id,span,chosen_by,mark_count) "
+            "VALUES (%s,%s,int4range(0,90000),'system',0)",
+            [session_id, user_id],
+        )
+        # Rounds 2 and 3 follow, so reading the state never shows round 1's transcript text.
+        for number in (1, 2, 3):
+            conn.execute(
+                "INSERT INTO practice.shadow_rounds (id,session_id,user_id,round) "
+                "VALUES (%s,%s,%s,%s)",
+                [round_id if number == 1 else uuid.uuid4(), session_id, user_id, number],
+            )
+            conn.execute(
+                "UPDATE practice.shadow_rounds SET playback_status='ended' "
+                "WHERE session_id=%s AND round=%s",
+                [session_id, number],
+            )
+        conn.execute(
+            "UPDATE practice.shadow_rounds SET recording_key=%s, recording_mime='audio/webm', "
+            "recording_bytes=1000, recorded_at=now(), uploaded_at=now() WHERE id=%s",
+            [key, round_id],
+        )
+    return round_id
+
+
 async def add_sessions(
     owner_url: str, user_id: uuid.UUID, content_id: uuid.UUID
 ) -> dict[str, uuid.UUID]:
@@ -269,6 +302,7 @@ def seed_learner_data(owner_url: str, user_id: uuid.UUID) -> SeededLearner:
             "VALUES (%s,%s,%s,1,'could have','kuduv',%s,%s)",
             [card_id, sessions["card"], user_id, PASSAGE.start_ms, media_id],
         )
+    shadow_round_id = add_shadow_recording(owner_url, user_id, sessions["shadow"])
     add_consents(owner_url, user_id, ("voice_recording",))
     return SeededLearner(
         user_id=user_id,
@@ -285,4 +319,5 @@ def seed_learner_data(owner_url: str, user_id: uuid.UUID) -> SeededLearner:
         export_id=export_id,
         mark_id=mark_id,
         card_id=card_id,
+        shadow_round_id=shadow_round_id,
     )

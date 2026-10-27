@@ -163,6 +163,17 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ("POST", "/api/v1/sessions/{session_id}/shadow/rounds/{number}/playback-ended"): Owned(
         "session_not_found", params=lambda w: {"session_id": w.a.sessions["shadow"], "number": 1}
     ),
+    ("POST", "/api/v1/sessions/{session_id}/shadow/rounds/{number}/recording"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["shadow"], "number": 1},
+        body=lambda w: {"mime": "audio/webm", "size_bytes": 1000},
+    ),
+    ("POST", "/api/v1/shadow/rounds/{round_id}/complete"): Owned(
+        "round_not_found", params=lambda w: {"round_id": w.a.shadow_round_id}
+    ),
+    ("GET", "/api/v1/shadow/rounds/{round_id}/recording"): Owned(
+        "round_not_found", params=lambda w: {"round_id": w.a.shadow_round_id}
+    ),
     ("POST", "/api/v1/grades/{attempt_id}/retry"): Owned(
         "attempt_not_found", params=lambda w: {"attempt_id": w.a.blind_attempt_id}
     ),

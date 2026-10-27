@@ -1,6 +1,7 @@
-"""Shadow segment selection and playback rounds; recording is #81."""
+"""Shadow segment selection, playback rounds and private recordings (#77, #79, #81)."""
 
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +14,7 @@ from listenup.modules.transcript import service as transcript
 from listenup.platform.database import Database
 from listenup.platform.errors import ProblemError
 from listenup.platform.export import ExportPart, learner_rows
+from listenup.platform.storage import Storage
 
 
 def present(row: ShadowSegment) -> schemas.Segment:
@@ -81,10 +83,13 @@ async def round_state(
     rows = await repository.rounds(db, session_id)
     summaries = [
         schemas.Round(
+            id=r.id,
             round=r.round,
             transcript_shown=r.transcript_shown,
             playback_status=r.playback_status,
             recorded_at=r.recorded_at,
+            recording_available=r.uploaded_at is not None,
+            feedback="unavailable" if r.uploaded_at is not None else None,
         )
         for r in rows
     ]
@@ -126,3 +131,99 @@ async def change_round(
     ):
         raise ProblemError(409, "round_order", "Play the three rounds in order.")
     await repository.insert_round(db, session_id, session.user_id, number)
+
+
+RECORDING_TYPES = {"audio/webm": "webm", "audio/mp4": "m4a"}
+RECORDING_MAX_BYTES = 5 * 1024 * 1024
+REPLAY_TTL_SECONDS = 120
+
+
+def _round_not_found() -> ProblemError:
+    return ProblemError(404, "round_not_found", "There is no such Shadow round.")
+
+
+async def start_recording_upload(
+    db: AsyncSession,
+    storage: Storage,
+    session_id: uuid.UUID,
+    number: int,
+    request: schemas.RecordingRequest,
+) -> schemas.RecordingUpload:
+    """A signed URL for this round's recording; asking again re-signs the same key."""
+    await practice.lock_session(db, session_id)
+    session = await practice.require_step(db, session_id, practice.Step.SHADOW)
+    mime = request.mime.split(";", 1)[0].strip().lower()
+    if mime not in RECORDING_TYPES:
+        raise ProblemError(422, "recording_type", "Recordings must be audio/webm or audio/mp4.")
+    if not 1 <= request.size_bytes <= RECORDING_MAX_BYTES:
+        raise ProblemError(422, "recording_size", "A recording must be 1 byte to 5 MB.")
+    row = next((r for r in await repository.rounds(db, session_id) if r.round == number), None)
+    if row is None or row.playback_status != "ended":
+        raise ProblemError(409, "round_order", "Finish playing the round before uploading.")
+    if row.recorded_at is not None:
+        raise ProblemError(409, "recording_exists", "This round already has a recording.")
+    row.recording_key = (
+        f"users/{session.user_id}/shadow/{session_id}/round-{number}-{row.id}."
+        f"{RECORDING_TYPES[mime]}"
+    )
+    row.recording_mime = mime
+    row.recording_bytes = request.size_bytes
+    await db.flush()
+    signed = storage.signed_upload(row.recording_key, mime, content_length=request.size_bytes)
+    return schemas.RecordingUpload(
+        round_id=row.id,
+        upload=schemas.RecordingTarget(
+            url=signed.url,
+            method=signed.method,
+            headers=signed.headers,
+            expires_at=datetime.fromtimestamp(signed.expires_at, UTC),
+        ),
+    )
+
+
+async def complete_recording(db: AsyncSession, storage: Storage, round_id: uuid.UUID) -> None:
+    """Mark the round recorded and done once the object is in storage (ADR 0050 option a).
+
+    No analysis is queued: grading is not built yet, so the learner sees feedback as
+    unavailable. The plan step is completed by #87, not here.
+    """
+    found = await repository.round_by_id(db, round_id)
+    if found is None:
+        raise _round_not_found()
+    await practice.lock_session(db, found.session_id)
+    await practice.require_step(db, found.session_id, practice.Step.SHADOW)
+    row = await repository.round_by_id(db, round_id, lock=True)
+    if row is None:
+        raise _round_not_found()
+    if row.recorded_at is not None:
+        return
+    if row.recording_key is None or row.recording_mime is None:
+        raise ProblemError(409, "round_order", "Ask for an upload URL first.")
+    stored = await storage.head(row.recording_key)
+    if stored is None:
+        raise ProblemError(
+            409, "upload_incomplete", "We have not received the recording yet. Try again."
+        )
+    if stored.size != row.recording_bytes:
+        await storage.delete(row.recording_key)
+        raise ProblemError(
+            409, "upload_size_mismatch", "The recording we received is not the size you sent."
+        )
+    if (stored.content_type or "").split(";", 1)[0].lower() != row.recording_mime:
+        await storage.delete(row.recording_key)
+        raise ProblemError(
+            409, "upload_type_mismatch", "The recording we received is not the type you sent."
+        )
+    now = datetime.now(UTC)
+    row.recorded_at = now
+    row.uploaded_at = now
+    await db.flush()
+
+
+async def recording_url(db: AsyncSession, storage: Storage, round_id: uuid.UUID) -> str:
+    row = await repository.round_by_id(db, round_id)
+    if row is None:
+        raise _round_not_found()
+    if row.uploaded_at is None or row.recording_key is None:
+        raise ProblemError(409, "recording_not_ready", "This round has no saved recording.")
+    return storage.signed_download(row.recording_key, ttl_seconds=REPLAY_TTL_SECONDS).url

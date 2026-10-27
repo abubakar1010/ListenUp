@@ -2203,6 +2203,64 @@
         "title": "QuotaUsage",
         "type": "object"
       },
+      "RecordingRequest": {
+        "properties": {
+          "mime": {
+            "maxLength": 100,
+            "title": "Mime",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": ["mime", "size_bytes"],
+        "title": "RecordingRequest",
+        "type": "object"
+      },
+      "RecordingTarget": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": ["url", "method", "headers", "expires_at"],
+        "title": "RecordingTarget",
+        "type": "object"
+      },
+      "RecordingUpload": {
+        "properties": {
+          "round_id": {
+            "format": "uuid",
+            "title": "Round Id",
+            "type": "string"
+          },
+          "upload": {
+            "$ref": "#/components/schemas/RecordingTarget"
+          }
+        },
+        "required": ["round_id", "upload"],
+        "title": "RecordingUpload",
+        "type": "object"
+      },
       "Registration": {
         "properties": {
           "email": {
@@ -2298,6 +2356,23 @@
       },
       "Round": {
         "properties": {
+          "feedback": {
+            "anyOf": [
+              {
+                "const": "unavailable",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
           "playback_status": {
             "enum": ["ready", "ended"],
             "title": "Playback Status",
@@ -2315,6 +2390,10 @@
             ],
             "title": "Recorded At"
           },
+          "recording_available": {
+            "title": "Recording Available",
+            "type": "boolean"
+          },
           "round": {
             "title": "Round",
             "type": "integer"
@@ -2324,7 +2403,15 @@
             "type": "boolean"
           }
         },
-        "required": ["round", "transcript_shown", "playback_status", "recorded_at"],
+        "required": [
+          "id",
+          "round",
+          "transcript_shown",
+          "playback_status",
+          "recorded_at",
+          "recording_available",
+          "feedback"
+        ],
         "title": "Round",
         "type": "object"
       },
@@ -6406,6 +6493,69 @@
         "tags": ["shadow"]
       }
     },
+    "/api/v1/sessions/{session_id}/shadow/rounds/{number}/recording": {
+      "post": {
+        "description": "Sign an upload of this round's recording; safe to repeat for a failed upload.",
+        "operationId": "start_recording_api_v1_sessions__session_id__shadow_rounds__number__recording_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordingUpload"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "`voice_consent_required`"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`, `round_order` or `recording_exists`"
+          },
+          "422": {
+            "description": "`recording_type` or `recording_size`"
+          }
+        },
+        "summary": "Start Recording",
+        "tags": ["shadow"]
+      }
+    },
     "/api/v1/sessions/{session_id}/shadow/rounds/{number}/start": {
       "post": {
         "operationId": "start_round_api_v1_sessions__session_id__shadow_rounds__number__start_post",
@@ -6741,6 +6891,106 @@
         },
         "summary": "Finish Transcript",
         "tags": ["review"]
+      }
+    },
+    "/api/v1/shadow/rounds/{round_id}/complete": {
+      "post": {
+        "description": "The recording reached storage: the round is recorded and done (no grading yet).",
+        "operationId": "complete_recording_api_v1_shadow_rounds__round_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Round Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`round_not_found`"
+          },
+          "409": {
+            "description": "`upload_incomplete`, `upload_size_mismatch`, `upload_type_mismatch`, `step_locked` or `round_order`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Recording",
+        "tags": ["shadow"]
+      }
+    },
+    "/api/v1/shadow/rounds/{round_id}/recording": {
+      "get": {
+        "description": "Check ownership, then redirect to a signed URL that lasts at most 120 s.",
+        "operationId": "read_recording_api_v1_shadow_rounds__round_id__recording_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Round Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`round_not_found`"
+          },
+          "409": {
+            "description": "`recording_not_ready`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Recording",
+        "tags": ["shadow"]
       }
     },
     "/api/v1/uploads": {
