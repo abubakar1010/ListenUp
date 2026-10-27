@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../../api/client';
+import { CONSENT_VERSIONS_KEY, MY_CONSENTS_KEY } from '../../auth/consentApi';
+import { api, ApiError } from '../../api/client';
 import type { components } from '../../api/schema';
 import { SESSIONS_KEY } from '../session/api';
 
@@ -50,6 +51,14 @@ export function useChangeRound(id: string) {
       });
     },
     onMutate: discardTranscript,
+    onError: async (error) => {
+      if (error instanceof ApiError && error.code === 'voice_consent_required') {
+        await Promise.all([
+          client.resetQueries({ queryKey: MY_CONSENTS_KEY }),
+          client.invalidateQueries({ queryKey: CONSENT_VERSIONS_KEY }),
+        ]);
+      }
+    },
     onSettled: async () => {
       // A focus refetch may have restored round-1 data while the write was pending.
       // Cancel it before clearing, so a late response cannot restore that text.

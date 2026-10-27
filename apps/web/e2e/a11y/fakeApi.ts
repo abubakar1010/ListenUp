@@ -116,7 +116,11 @@ const SIGNED_IN: Answers = {
  * answer covers, so a scan can fail instead of scanning a "not found" screen.
  */
 export async function fakeApi(page: Page, answers: Answers, signedIn: boolean) {
-  const table: Answers = signedIn ? { ...SIGNED_IN, ...answers } : answers;
+  const table: Answers = {
+    '/auth/consent-versions': { json: VERSIONS },
+    ...(signedIn ? SIGNED_IN : {}),
+    ...answers,
+  };
   const unanswered: string[] = [];
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request();
@@ -128,7 +132,6 @@ export async function fakeApi(page: Page, answers: Answers, signedIn: boolean) {
         headers: { 'Set-Cookie': 'listenup_csrf=e2e-token; Path=/; SameSite=Lax' },
       });
     }
-    if (path === '/auth/consent-versions') return route.fulfill({ json: VERSIONS });
     if (path === '/events') return route.abort();
     if (path.startsWith('/media/') && !path.endsWith('/peaks')) return media(route);
     const found = table[`${request.method()} ${path}`] ?? table[path];

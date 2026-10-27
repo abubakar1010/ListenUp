@@ -838,3 +838,76 @@ export const STATES: ScanState[] = [
     ready: (page) => page.getByRole('heading', { name: 'Your Shadow segment' }),
   },
 ];
+
+// #78's recovery and consent states share the existing owned session fixture.
+const shadowReadiness = STATES.find((state) => state.name === 'shadow segment')!;
+STATES.push(
+  {
+    ...shadowReadiness,
+    name: 'shadow microphone denied',
+    owner: undefined,
+    act: async (page) => {
+      await page.evaluate(() => {
+        navigator.mediaDevices.getUserMedia = async () => {
+          throw new DOMException('Permission denied', 'NotAllowedError');
+        };
+      });
+      await page.getByRole('button', { name: 'Check microphone' }).click();
+    },
+    ready: (page) => page.getByText(/Microphone access was denied/),
+  },
+  {
+    ...shadowReadiness,
+    name: 'shadow voice consent accepted',
+    owner: undefined,
+    answers: {
+      ...shadowReadiness.answers,
+      '/me/consents': {
+        json: {
+          current: {
+            terms: 'terms-2026-1',
+            privacy: 'privacy-2026-1',
+            voice_recording: 'voice-2026-1',
+          },
+          consents: [
+            {
+              kind: 'voice_recording',
+              version: 'voice-2026-1',
+              current: true,
+              granted_at: '2026-10-26T10:00:00Z',
+              withdrawn_at: null,
+            },
+          ],
+        } satisfies Schema['Consents'],
+      },
+    },
+    ready: (page) => page.getByText(/You agreed to this version/),
+  },
+  {
+    ...shadowReadiness,
+    name: 'shadow legal text unavailable',
+    owner: undefined,
+    answers: {
+      ...shadowReadiness.answers,
+      '/auth/consent-versions': {
+        json: {
+          terms: 'terms-2026-1',
+          privacy: 'privacy-2026-1',
+          voice_recording: 'voice-future',
+        } satisfies Schema['ConsentVersions'],
+      },
+    },
+    ready: (page) => page.getByText(/current voice consent text is unavailable/),
+  },
+  {
+    ...shadowReadiness,
+    name: 'shadow consent read failed',
+    owner: undefined,
+    alert: true,
+    answers: {
+      ...shadowReadiness.answers,
+      '/me/consents': problem(503, 'unavailable', 'Consent records are temporarily unavailable.'),
+    },
+    ready: (page) => page.getByText('Consent records are temporarily unavailable.'),
+  },
+);

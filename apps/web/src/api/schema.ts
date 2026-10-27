@@ -5763,6 +5763,13 @@ export interface operations {
         };
         content?: never;
       };
+      /** @description `voice_consent_required` */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description `session_not_found` */
       404: {
         headers: {

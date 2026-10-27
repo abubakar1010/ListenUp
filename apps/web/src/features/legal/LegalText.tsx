@@ -6,9 +6,15 @@ import { Link } from 'react-router';
  * use: `#` to `###` headings, paragraphs, `- ` lists, `> ` notes, `**bold**` and
  * `[links](/path or https://…)`. A link to anything else stays plain text.
  */
-export function LegalText({ source }: { source: string }) {
+export function LegalText({
+  source,
+  headingOffset = 0,
+}: {
+  source: string;
+  headingOffset?: 0 | 1 | 2 | 3;
+}) {
   const blocks = source.trim().split(/\n\s*\n/);
-  return <>{blocks.map((block, index) => renderBlock(block.trim(), index))}</>;
+  return <>{blocks.map((block, index) => renderBlock(block.trim(), index, headingOffset))}</>;
 }
 
 const HEADINGS = {
@@ -17,12 +23,12 @@ const HEADINGS = {
   3: 'mt-2 font-bold',
 } as const;
 
-function renderBlock(block: string, key: number): ReactNode {
+function renderBlock(block: string, key: number, headingOffset: number): ReactNode {
   const lines = block.split('\n').map((line) => line.trim());
   const heading = /^(#{1,3}) (.*)$/.exec(block);
   if (heading) {
     const level = heading[1].length as 1 | 2 | 3;
-    const Tag = `h${level}` as const;
+    const Tag = `h${level + headingOffset}` as 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
     return (
       <Tag key={key} className={HEADINGS[level]}>
         {renderInline(heading[2])}

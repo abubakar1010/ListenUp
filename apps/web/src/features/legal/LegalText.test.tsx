@@ -64,3 +64,10 @@ test.each(['//evil.example/x', '/\\evil.example', 'HTTP:x', 'mailto:a@b.c'])(
     expect(screen.getByText('See elsewhere.')).toBeInTheDocument();
   },
 );
+
+test('embeds a consent notice under a section with a matching heading hierarchy', () => {
+  renderWithProviders(<LegalText source={SOURCE} headingOffset={2} />);
+  expect(screen.getByRole('heading', { level: 3, name: 'Privacy Policy' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 4, name: 'What we keep' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
+});
