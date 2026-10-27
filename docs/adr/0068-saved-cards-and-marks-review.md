@@ -1,4 +1,4 @@
-# ADR 0067: Review saved cards and marks across sessions
+# ADR 0068: Review saved cards and marks across sessions
 
 Status: accepted (issue #75 plan approved)
 

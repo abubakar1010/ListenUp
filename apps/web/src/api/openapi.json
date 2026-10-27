@@ -2452,6 +2452,18 @@
             "title": "Status",
             "type": "string"
           },
+          "tag": {
+            "anyOf": [
+              {
+                "enum": ["linking", "reduction", "weak_form", "unknown_word"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag"
+          },
           "word_from": {
             "title": "Word From",
             "type": "integer"
@@ -2470,6 +2482,7 @@
           "note",
           "source",
           "status",
+          "tag",
           "created_at",
           "content_id",
           "source_url"

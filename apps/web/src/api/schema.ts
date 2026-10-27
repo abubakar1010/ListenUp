@@ -2703,6 +2703,8 @@ export interface components {
        * @enum {string}
        */
       status: 'suggested' | 'confirmed';
+      /** Tag */
+      tag: ('linking' | 'reduction' | 'weak_form' | 'unknown_word') | null;
       /** Word From */
       word_from: number;
       /** Word To */

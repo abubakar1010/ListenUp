@@ -96,8 +96,8 @@ prove the named UI states and do not claim live server persistence.
 | API and web coverage inventories + changed-line gates | All runtime files resolve in both reports; 100% changed executable lines covered in each app |
 
 The cross-session timestamp-tie case was strengthened after the full run to
-include cards as well as marks, then rerun by name: 1 passed. No production code
-changed after the final full-suite runs. The skipped real-model profile test
+include cards as well as marks, then rerun by name: 1 passed. No #75 runtime implementation changed after those full-suite runs; integration
+with the newer main is checked below. The skipped real-model profile test
 requires an opt-in LibriSpeech fixture and is outside this story's scope.
 
 The 360 px screenshots were visually inspected: the header navigation wraps,
@@ -105,3 +105,44 @@ forms and results remain inside the card, focus remains visible, and the mark
 list/source links fit without overlap, clipping or horizontal page scrolling.
 Independent review and CI remain separate gates before merge; no merge or deploy
 is part of this task.
+
+
+## PR #225 integration and independent review follow-up
+
+The independent reviewer found no confirmed production correctness/security
+findings and independently passed 21 focused client/deck/marks/account-isolation
+tests. The reviewer requested counterfactual evidence for cases added after the
+initial implementation. This does not change the disclosed test-first chronology.
+
+An isolated shared clone under `work/counterfactual75` was checked out at
+`c7975df`, the pre-#75 main used by the original implementation. Only the new test
+files were copied in; runtime modules and migrations came from that old commit.
+Dependencies were reused without changing the primary checkout.
+
+- In the clone's `apps/api`,
+  `PYTHONPATH=src:. LISTENUP_REQUIRE_DB=1 /workspace/ListenUp/apps/api/.venv/bin/python -m pytest tests/integration/test_saved_review.py -q --no-cov`
+  failed all five cases on absent review/global-marks routes and the absent
+  `practice.card_reviews` table. These were feature-absence failures, not missing
+  infrastructure or skipped tests.
+- In the clone's `apps/web`, the local Vitest executable ran
+  `src/features/cards/DeckPage.test.tsx src/features/review/MarksPage.test.tsx src/api/client.test.ts`.
+  Both page suites detected their absent public component interfaces. The retry
+  contract test failed with the original empty-JSON error; its other two API
+  client cases passed. Missing page interfaces prevent individual UI assertions
+  from executing on that old snapshot; this is not claimed as assertion coverage.
+- For assertion quality, the isolated clone was then checked out at integration
+  commit `fa45120`. Changing mark source links to `/contents/wrong?at_ms=0` made
+  `MarksPage.test.tsx -t 'loads successive pages'` fail its exact href assertion.
+  Removing the audio-status readiness guard made
+  `DeckPage.test.tsx -t 'handles'` fail all three pending/failed/unavailable cases.
+  Both mutations were restored in the isolated clone; the primary source tree
+  was never mutated. Unmodified current-source focused tests pass (21 tests).
+
+Meanwhile main merged the optional mark-tag story. This feature's initial checks
+passed without that merge; review still does not require a tag. The current-main
+integration refreshes the generated SavedMark contract and uses a null tag in the
+schema-typed accessibility fixture. It also renumbers this story's ADR to 0068 to
+avoid the new main's ADR 0067. Post-integration checks: TypeScript passes; the new
+saved-review API cases, complete mark API suite and lifecycle migration regression
+pass together (44 tests), and the focused web suite passes (21 tests). Required
+PR CI validates the final merge result before the owner merges.

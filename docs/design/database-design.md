@@ -484,7 +484,7 @@ CREATE TABLE practice.cards (
   snippet_span    int4range,
   created_at      timestamptz NOT NULL DEFAULT now(),
   UNIQUE (session_id, slot),
-  CONSTRAINT cards_id_user_unique UNIQUE (id, user_id), -- review ownership (ADR 0067)
+  CONSTRAINT cards_id_user_unique UNIQUE (id, user_id), -- review ownership (ADR 0068)
   CONSTRAINT cards_ready_audio CHECK
     (audio_status <> 'ready' OR (snippet_key IS NOT NULL AND snippet_span IS NOT NULL)),
   CONSTRAINT cards_snippet_bounds CHECK
@@ -525,7 +525,7 @@ CREATE TABLE practice.card_reviews (
   FOREIGN KEY (card_id, user_id) REFERENCES practice.cards (id, user_id) ON DELETE CASCADE
 );
 CREATE INDEX card_reviews_card_idx ON practice.card_reviews (card_id, reviewed_at DESC, id DESC);
--- ADR 0067: card_reviews uses learner RLS and SELECT/INSERT-only API grants.
+-- ADR 0068: card_reviews uses learner RLS and SELECT/INSERT-only API grants.
 CREATE INDEX marks_user_created_idx ON practice.marks (user_id, created_at DESC, id DESC);
 
 CREATE TABLE practice.shadow_segments (

@@ -380,7 +380,7 @@ Read the section for the area you are changing before you change it. The rules e
   #78/#81/#87 add microphone/consent, recording/upload and completion respectively.
   No reference-profile readiness check gates playback (ADR 0050).
 
-## Saved review (ADR 0067)
+## Saved review (ADR 0068)
 
 - `/cards` reuses the merged learner-scoped deck list and private audio endpoint.
   Review players use neutral labels until reveal; only a completed snippet unlocks

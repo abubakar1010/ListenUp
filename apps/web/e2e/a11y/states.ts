@@ -406,6 +406,7 @@ export const STATES: ScanState[] = [
               at_ms: 11000,
               source: 'manual',
               status: 'confirmed',
+              tag: null,
               note: 'Listen to the linked sounds',
               created_at: REVIEW_CARD.created_at,
               source_url: REVIEW_CARD.source_url,
