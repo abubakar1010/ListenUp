@@ -41,6 +41,12 @@
 		# api-via-edge resolves on the edge network only: the API trusts forwarded
 		# client addresses from this container's address there and nowhere else.
 		reverse_proxy api-via-edge:8000 {
+			# Retire idle upstream connections before Uvicorn (30 s), with
+			# margin above Blind's 5 s beat. This is HTTP pooling, not TCP
+			# probes or a deadline for active responses (deploy runbook, #216).
+			transport http {
+				keepalive 15s
+			}
 			header_down -Server
 		}
 	}
