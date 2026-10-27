@@ -1305,6 +1305,85 @@ test.each([false, true])(
   },
 );
 
+test.each([null, 'weak_form'] as const)(
+  'reload_before_an_uncertain_tag_put_commits_replays_the_latest_choice_%s',
+  async (originalTag) => {
+    const initial = tagged('m1', 1, originalTag);
+    const { transport, marks } = fakeServer([initial]);
+    const storage = memoryStorage();
+    const first = make(transport, storage, [initial]);
+    let commit!: () => void;
+    const gate = new Promise<void>((resolve) => (commit = resolve));
+    const real = transport.setTag.getMockImplementation()!;
+    transport.setTag.mockImplementationOnce(async (id, tag) => {
+      await gate;
+      await real(id, tag);
+      // The old page is gone, so its PUT never delivers an answer to MarkSync.
+      return new Promise<SavedMark>(() => {});
+    });
+    first.setTag('m1', 'linking');
+    await vi.advanceTimersByTimeAsync(2000);
+    first.setTag('m1', originalTag);
+    closeTab();
+    // The new GET completes before the old PUT's transaction commits.
+    const again = make(transport, storage, [...marks.values()]);
+    expect(again.getSnapshot()).toMatchObject({
+      hasPendingChanges: true,
+      restored: true,
+      marks: [{ tag: originalTag, saved: false }],
+    });
+    expect(storage.items.has(KEY)).toBe(true);
+    // A second reload must preserve uncertainty too, not just the first one.
+    closeTab();
+    const third = make(transport, storage, [...marks.values()]);
+    commit();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(transport.setTag).toHaveBeenLastCalledWith('m1', originalTag);
+    expect(marks.get('m1')!.tag).toBe(originalTag);
+    expect(third.getSnapshot().hasPendingChanges).toBe(false);
+    expect(storage.items.has(KEY)).toBe(false);
+    expect(transport.setNote).not.toHaveBeenCalled();
+  },
+);
+
+test('tag_uncertainty_is_kept_before_the_put_can_leave_the_page', async () => {
+  const { transport } = fakeServer([saved('m1', 1)]);
+  const storage = memoryStorage();
+  let copyAtSend: unknown;
+  transport.setTag.mockImplementationOnce(async () => {
+    copyAtSend = JSON.parse(storage.items.get(KEY)!);
+    return new Promise<SavedMark>(() => {});
+  });
+  const sync = make(transport, storage, [saved('m1', 1)]);
+  sync.setTag('m1', 'linking');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setTag).toHaveBeenCalledTimes(1);
+  expect(copyAtSend).toMatchObject({
+    ops: [{ op: 'update', mark: { tag: 'linking' }, tagUncertain: true }],
+  });
+  expect(sync.getSnapshot().status.kind).toBe('saving');
+});
+
+test('undo_of_an_unsent_removal_retains_an_uncertain_tag_write', async () => {
+  const { transport, marks } = fakeServer([saved('m1', 1)]);
+  const real = transport.setTag.getMockImplementation()!;
+  const sync = make(transport, memoryStorage(), [saved('m1', 1)]);
+  transport.setTag.mockImplementationOnce(async (id, tag) => {
+    sync.setTag(id, null);
+    await real(id, tag);
+    throw new TypeError('Lost answer');
+  });
+  sync.setTag('m1', 'linking');
+  await vi.advanceTimersByTimeAsync(2000);
+  const mark = sync.getSnapshot().marks[0]!;
+  sync.remove('m1');
+  sync.undoRemove(mark);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(transport.remove).not.toHaveBeenCalled();
+  expect(marks.get('m1')!.tag).toBeNull();
+  expect(sync.getSnapshot().hasPendingChanges).toBe(false);
+});
+
 test('a_tag_changed_back_while_the_note_is_on_its_way_is_not_left_on_the_server', async () => {
   const { transport, marks } = fakeServer([saved('m1', 1)]);
   const sync = make(transport, memoryStorage(), [saved('m1', 1)]);
