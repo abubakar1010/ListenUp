@@ -256,10 +256,10 @@ export function ShadowReadiness({
                 busy={grant.isPending}
                 aria-disabled={agreedVersion !== version || undefined}
                 onClick={() => {
-                  if (agreedVersion === version)
-                    grant.mutate([{ kind: 'voice_recording', version }], {
-                      onSuccess: () => setAgreedVersion(undefined),
-                    });
+                  if (agreedVersion === version) {
+                    setAgreedVersion(undefined);
+                    grant.mutate([{ kind: 'voice_recording', version }]);
+                  }
                 }}
               >
                 Agree to voice recording

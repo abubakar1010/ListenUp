@@ -392,7 +392,7 @@ Read the section for the area you are changing before you change it. The rules e
   microphone-ready boolean as proof of recording.
 - ShadowScreen owns the single polite status region (UX-22); segment, readiness
   and playback children report through `onStatus`. Acceptance uses focus and
-  clears the checkbox selection after grant so refusal requires a fresh choice.
+  consumes the checkbox selection on submission so refusal requires a fresh choice.
 - #81 must authorize each capture (including restart) through the start boundary;
   its upload/finalization and recording lifecycle remain separate from playback.
 

@@ -138,3 +138,15 @@ failed because the preparing text remained after the error. Preparation is now
 rendered only while no selection/error exists; settled announcements remain in
 the shared region. The isolated 150-second segment-preview browser check passed
 without changing its assertions after the earlier resource-contended local run.
+
+The consent reset is consumed synchronously when submitting acceptance, rather
+than waiting for the mutation success callback (which awaits an account refresh).
+Red: `pnpm vitest run src/features/shadow/ShadowReadiness.test.tsx -t 'before waiting for the grant'`
+failed because a pending grant retained a checked checkbox. This closes the slow
+refresh/uncertain-response window as well as the completed-grant withdrawal case.
+Failed grant recovery requires the learner to select agreement again explicitly.
+Two existing audible-fixture tests reached their real-timer deadlines under local
+resource contention. Their sampling clocks are now controlled explicitly; the
+same readiness, consent, level and disconnect assertions remain unchanged.
+Green after the synchronous reset and controlled clocks:
+`pnpm vitest run src/features/shadow/ShadowReadiness.test.tsx`: 26 passed.

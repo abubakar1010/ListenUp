@@ -29,8 +29,9 @@ ShadowScreen owns one polite status region for segment changes, microphone
 readiness and round playback (UX-22). Standalone round/readiness/player components
 fall back to their own region; composed children report status to their owner.
 Consent acceptance moves focus to its confirmation instead of adding a live
-region. Clear the checkbox selection after a successful grant so a later
-withdrawal/refusal returns to unchecked acceptance. Link to the canonical notice
+region. Consume the checkbox selection when submitting a grant so a slow account
+refresh, a failed response or a later withdrawal cannot reuse that selection.
+Link to the canonical notice
 through `DOCUMENTS.voice_recording.path` while embedding the exact versioned text.
 
 Readiness lasts only for this mounted, visible page. After checking, retain the

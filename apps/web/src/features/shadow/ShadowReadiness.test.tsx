@@ -1,4 +1,4 @@
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders, jsonResponse } from '../../test-utils';
 import { mockRoutes } from '../session/testApi';
 import { ShadowReadiness } from './ShadowReadiness';
@@ -103,6 +103,25 @@ it('links to the canonical voice consent page', async () => {
   );
 });
 
+it('consumes the explicit agreement before waiting for the grant response', async () => {
+  mockRoutes({
+    'GET /auth/consent-versions': jsonResponse(200, { voice_recording: 'voice-2026-1' }),
+    'GET /me/consents': jsonResponse(200, { consents: [] }),
+    'POST /me/consents': () => new Promise<Response>(() => {}),
+  });
+  renderWithProviders(<ShadowReadiness onReady={vi.fn()} />);
+  const checkbox = await screen.findByRole('checkbox', { name: /I agree/ });
+  fireEvent.click(checkbox);
+  fireEvent.click(screen.getByRole('button', { name: 'Agree to voice recording' }));
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Agree to voice recording' })).toHaveAttribute(
+      'aria-busy',
+      'true',
+    ),
+  );
+  expect(checkbox).not.toBeChecked();
+});
+
 function media(amplitude: number | (() => number) = 0.1) {
   const track = new EventTarget() as EventTarget & {
     readyState: string;
@@ -141,6 +160,15 @@ function activeConsent(version = 'voice-2026-1', withdrawn_at: string | null = n
   return jsonResponse(200, { consents: [{ kind: 'voice_recording', version, withdrawn_at }] });
 }
 
+async function checkAudibleMicrophone() {
+  vi.useFakeTimers();
+  fireEvent.click(screen.getByRole('button', { name: 'Check microphone' }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  vi.useRealTimers();
+}
+
 it('requires audible input and current consent, detects disconnection and releases resources', async () => {
   mockRoutes({
     'GET /auth/consent-versions': jsonResponse(200, { voice_recording: 'voice-2026-1' }),
@@ -151,7 +179,7 @@ it('requires audible input and current consent, detects disconnection and releas
   const view = renderWithProviders(<ShadowReadiness onReady={ready} />);
   await screen.findByText(/You agreed to this version/);
   expect(ready).not.toHaveBeenCalledWith(true);
-  fireEvent.click(screen.getByRole('button', { name: 'Check microphone' }));
+  await checkAudibleMicrophone();
   await screen.findByText('Microphone ready. Sound detected.');
   expect(screen.getByRole('meter', { name: 'Microphone level' })).toHaveAttribute('value', '50');
   expect(ready).toHaveBeenLastCalledWith(true);
@@ -175,7 +203,7 @@ it.each([
   media();
   const ready = vi.fn();
   renderWithProviders(<ShadowReadiness onReady={ready} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Check microphone' }));
+  await checkAudibleMicrophone();
   await screen.findByText('Microphone ready. Sound detected.');
   expect(ready).not.toHaveBeenCalledWith(true);
   expect(screen.getByRole('checkbox')).not.toBeChecked();
@@ -444,6 +472,7 @@ it('shows a refused grant and lets the learner explicitly try acceptance again',
   await screen.findByText('Consent could not be saved.');
   expect(screen.queryByText(/You agreed to this version/)).not.toBeInTheDocument();
   broken = false;
+  fireEvent.click(screen.getByRole('checkbox', { name: /I agree/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Agree to voice recording' }));
   await screen.findByText(/You agreed to this version/);
 });
