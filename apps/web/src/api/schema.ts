@@ -6217,6 +6217,13 @@ export interface operations {
         };
         content?: never;
       };
+      /** @description `voice_consent_required` */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description `round_not_found` */
       404: {
         headers: {

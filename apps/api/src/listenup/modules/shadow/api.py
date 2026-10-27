@@ -10,6 +10,7 @@ from listenup.modules.identity.service import CurrentLearner, require_voice_cons
 from listenup.modules.practice import service as practice
 from listenup.modules.shadow import schemas, service
 from listenup.platform.database import DbSession
+from listenup.platform.errors import ProblemError
 from listenup.platform.idempotency import IdempotencyKeyHeader, request_fingerprint, run_once
 
 router = APIRouter(tags=["shadow"])
@@ -157,7 +158,9 @@ async def start_recording(
     await practice.lock_session(db, session_id)
     await practice.require_step(db, session_id, practice.Step.SHADOW)
     await require_voice_consent(db, learner, request.app.state.settings)
-    return await service.start_recording_upload(db, uploads.storage, session_id, number, body)
+    return await service.start_recording_upload(
+        db, uploads.storage, learner, session_id, number, body
+    )
 
 
 @router.post(
@@ -166,6 +169,7 @@ async def start_recording(
     response_class=Response,
     responses={
         404: {"description": "`round_not_found`"},
+        403: {"description": "`voice_consent_required`"},
         409: {
             "description": "`upload_incomplete`, `upload_size_mismatch`, `upload_type_mismatch`, "
             "`step_locked` or `round_order`"
@@ -181,6 +185,13 @@ async def complete_recording(
     idempotency_key: IdempotencyKeyHeader = None,
 ) -> Response:
     """The recording reached storage: the round is recorded and done (no grading yet)."""
+
+    await service.require_round(db, round_id)
+    try:
+        await require_voice_consent(db, learner, request.app.state.settings)
+    except ProblemError:
+        await service.discard_upload(db, uploads.storage, round_id)
+        raise
 
     async def apply() -> tuple[int, None]:
         await service.complete_recording(db, uploads.storage, round_id)

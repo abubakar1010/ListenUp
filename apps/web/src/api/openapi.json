@@ -6931,6 +6931,9 @@
           "204": {
             "description": "Successful Response"
           },
+          "403": {
+            "description": "`voice_consent_required`"
+          },
           "404": {
             "description": "`round_not_found`"
           },

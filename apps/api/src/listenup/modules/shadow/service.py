@@ -145,13 +145,15 @@ def _round_not_found() -> ProblemError:
 async def start_recording_upload(
     db: AsyncSession,
     storage: Storage,
+    learner: uuid.UUID,
     session_id: uuid.UUID,
     number: int,
     request: schemas.RecordingRequest,
 ) -> schemas.RecordingUpload:
-    """A signed URL for this round's recording; asking again re-signs the same key."""
-    await practice.lock_session(db, session_id)
-    session = await practice.require_step(db, session_id, practice.Step.SHADOW)
+    """A signed URL for this round's recording; asking again re-signs the same key.
+
+    The caller has locked the session and checked the Shadow step and voice consent.
+    """
     mime = request.mime.split(";", 1)[0].strip().lower()
     if mime not in RECORDING_TYPES:
         raise ProblemError(422, "recording_type", "Recordings must be audio/webm or audio/mp4.")
@@ -162,13 +164,15 @@ async def start_recording_upload(
         raise ProblemError(409, "round_order", "Finish playing the round before uploading.")
     if row.recorded_at is not None:
         raise ProblemError(409, "recording_exists", "This round already has a recording.")
+    previous = row.recording_key
     row.recording_key = (
-        f"users/{session.user_id}/shadow/{session_id}/round-{number}-{row.id}."
-        f"{RECORDING_TYPES[mime]}"
+        f"users/{learner}/shadow/{session_id}/round-{number}-{row.id}.{RECORDING_TYPES[mime]}"
     )
     row.recording_mime = mime
     row.recording_bytes = request.size_bytes
     await db.flush()
+    if previous is not None and previous != row.recording_key:
+        await storage.delete(previous)  # another type was asked for: no orphaned voice data
     signed = storage.signed_upload(row.recording_key, mime, content_length=request.size_bytes)
     return schemas.RecordingUpload(
         round_id=row.id,
@@ -227,3 +231,16 @@ async def recording_url(db: AsyncSession, storage: Storage, round_id: uuid.UUID)
     if row.uploaded_at is None or row.recording_key is None:
         raise ProblemError(409, "recording_not_ready", "This round has no saved recording.")
     return storage.signed_download(row.recording_key, ttl_seconds=REPLAY_TTL_SECONDS).url
+
+
+async def require_round(db: AsyncSession, round_id: uuid.UUID) -> None:
+    """404 `round_not_found` unless the round is the signed-in learner's."""
+    if await repository.round_by_id(db, round_id) is None:
+        raise _round_not_found()
+
+
+async def discard_upload(db: AsyncSession, storage: Storage, round_id: uuid.UUID) -> None:
+    """Drop an unfinished upload, as when voice consent was withdrawn before completion."""
+    row = await repository.round_by_id(db, round_id)
+    if row is not None and row.recorded_at is None and row.recording_key is not None:
+        await storage.delete(row.recording_key)

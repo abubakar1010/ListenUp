@@ -243,3 +243,33 @@ def test_unrecorded_round_has_no_replay_and_cannot_complete_without_an_upload_ur
     assert (replay.status_code, replay.json()["code"]) == (409, "recording_not_ready")
     early = complete(client, round_id)
     assert (early.status_code, early.json()["code"]) == (409, "round_order")
+
+
+def test_asking_again_with_another_type_deletes_the_unreferenced_object(
+    client, migrated_url, api_role_url, storage
+):
+    sid = setup(client, migrated_url, api_role_url)
+    start_round(client, sid, 1)
+    end_round(client, sid, 1)
+    first = request_upload(client, sid, 1, "audio/webm").json()
+    old = key_of(first["upload"])
+    storage.arrive(old, 200_000, "audio/webm")
+    second = request_upload(client, sid, 1, "audio/mp4").json()
+    assert key_of(second["upload"]) != old
+    assert old in storage.deleted
+    assert key_of(second["upload"]) not in storage.deleted
+
+
+def test_completion_is_refused_and_the_upload_dropped_after_consent_is_withdrawn(
+    client, migrated_url, api_role_url, storage
+):
+    sid = setup(client, migrated_url, api_role_url)
+    start_round(client, sid, 1)
+    end_round(client, sid, 1)
+    body = request_upload(client, sid, 1).json()
+    storage.arrive(key_of(body["upload"]), 200_000, "audio/webm")
+    client.post("/api/v1/me/consents/withdraw", json={"kind": "voice_recording"})
+    refused = complete(client, body["round_id"])
+    assert (refused.status_code, refused.json()["code"]) == (403, "voice_consent_required")
+    assert key_of(body["upload"]) in storage.deleted
+    assert client.get(base(sid)).json()["rounds"][0]["recorded_at"] is None
