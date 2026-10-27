@@ -282,6 +282,34 @@
         "title": "CardList",
         "type": "object"
       },
+      "CardReview": {
+        "additionalProperties": false,
+        "properties": {
+          "card_id": {
+            "format": "uuid",
+            "title": "Card Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "result": {
+            "enum": ["heard", "unsure", "missed"],
+            "title": "Result",
+            "type": "string"
+          },
+          "reviewed_at": {
+            "format": "date-time",
+            "title": "Reviewed At",
+            "type": "string"
+          }
+        },
+        "required": ["result", "id", "card_id", "reviewed_at"],
+        "title": "CardReview",
+        "type": "object"
+      },
       "ChangeEntry": {
         "properties": {
           "entry": {
@@ -1771,6 +1799,18 @@
             "title": "Status",
             "type": "string"
           },
+          "tag": {
+            "anyOf": [
+              {
+                "enum": ["linking", "reduction", "weak_form", "unknown_word"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag"
+          },
           "word_from": {
             "title": "Word From",
             "type": "integer"
@@ -1789,6 +1829,7 @@
           "note",
           "source",
           "status",
+          "tag",
           "created_at"
         ],
         "title": "Mark",
@@ -1837,6 +1878,26 @@
         },
         "required": ["status"],
         "title": "MarkStatus",
+        "type": "object"
+      },
+      "MarkTagChange": {
+        "description": "FR-TR-4: the mark's optional tag. Checked by the service so a refusal has its code.",
+        "properties": {
+          "tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One of linking, reduction, weak_form, unknown_word, or null for no tag; any other value is refused with `mark_tag_invalid`.",
+            "title": "Tag"
+          }
+        },
+        "required": ["tag"],
+        "title": "MarkTagChange",
         "type": "object"
       },
       "Me": {
@@ -1961,6 +2022,18 @@
               }
             ],
             "title": "Note"
+          },
+          "tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One of linking, reduction, weak_form, unknown_word, or null for no tag; any other value is refused with `mark_tag_invalid`.",
+            "title": "Tag"
           },
           "word_from": {
             "maximum": 2147483647.0,
@@ -2196,6 +2269,33 @@
         "title": "RetriedJob",
         "type": "object"
       },
+      "ReviewHistory": {
+        "properties": {
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/CardReview"
+            },
+            "title": "Reviews",
+            "type": "array"
+          }
+        },
+        "required": ["reviews"],
+        "title": "ReviewHistory",
+        "type": "object"
+      },
+      "ReviewResult": {
+        "additionalProperties": false,
+        "properties": {
+          "result": {
+            "enum": ["heard", "unsure", "missed"],
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": ["result"],
+        "title": "ReviewResult",
+        "type": "object"
+      },
       "Round": {
         "properties": {
           "playback_status": {
@@ -2299,6 +2399,120 @@
         },
         "required": ["draft_version", "updated_at"],
         "title": "SavedDraft",
+        "type": "object"
+      },
+      "SavedMark": {
+        "properties": {
+          "at_ms": {
+            "title": "At Ms",
+            "type": "integer"
+          },
+          "content_id": {
+            "format": "uuid",
+            "title": "Content Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "source": {
+            "enum": ["dictation", "manual"],
+            "title": "Source",
+            "type": "string"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["suggested", "confirmed"],
+            "title": "Status",
+            "type": "string"
+          },
+          "tag": {
+            "anyOf": [
+              {
+                "enum": ["linking", "reduction", "weak_form", "unknown_word"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag"
+          },
+          "word_from": {
+            "title": "Word From",
+            "type": "integer"
+          },
+          "word_to": {
+            "title": "Word To",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "word_from",
+          "word_to",
+          "at_ms",
+          "note",
+          "source",
+          "status",
+          "tag",
+          "created_at",
+          "content_id",
+          "source_url"
+        ],
+        "title": "SavedMark",
+        "type": "object"
+      },
+      "SavedMarkList": {
+        "properties": {
+          "marks": {
+            "items": {
+              "$ref": "#/components/schemas/SavedMark"
+            },
+            "title": "Marks",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["marks", "next_cursor"],
+        "title": "SavedMarkList",
         "type": "object"
       },
       "Segment": {
@@ -3846,6 +4060,114 @@
         "tags": ["cards"]
       }
     },
+    "/api/v1/cards/{card_id}/reviews": {
+      "get": {
+        "operationId": "review_history_api_v1_cards__card_id__reviews_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "card_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Card Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewHistory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review History",
+        "tags": ["cards"]
+      },
+      "post": {
+        "operationId": "record_review_api_v1_cards__card_id__reviews_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "card_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Card Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewResult"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Review",
+        "tags": ["cards"]
+      }
+    },
     "/api/v1/contents": {
       "get": {
         "description": "The learner's content items, newest first, in keyset pages.",
@@ -4618,6 +4940,65 @@
         },
         "summary": "Library Contents",
         "tags": ["library"]
+      }
+    },
+    "/api/v1/marks": {
+      "get": {
+        "operationId": "saved_marks_api_v1_marks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedMarkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Saved Marks",
+        "tags": ["review"]
       }
     },
     "/api/v1/me": {
@@ -5653,7 +6034,7 @@
             "description": "`step_locked`, `transcript_not_ready`, `transcript_failed`, `mark_exists` (with `mark_id`) or `mark_id_taken`"
           },
           "422": {
-            "description": "`mark_out_of_range`, `mark_no_words`, `mark_too_long` or `note_too_long`"
+            "description": "`mark_out_of_range`, `mark_no_words`, `mark_too_long`, `note_too_long` or `mark_tag_invalid`"
           }
         },
         "summary": "Create Mark",
@@ -5847,6 +6228,70 @@
         "tags": ["review"]
       }
     },
+    "/api/v1/sessions/{session_id}/marks/{mark_id}/tag": {
+      "put": {
+        "description": "Set, change or clear (null) the mark's tag (FR-TR-4). The whole tag is sent, so a\nresend answers with the same mark and needs no Idempotency-Key (ADR 0067).",
+        "operationId": "change_mark_tag_api_v1_sessions__session_id__marks__mark_id__tag_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mark_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mark Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkTagChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mark"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "`not_signed_in`"
+          },
+          "404": {
+            "description": "`session_not_found` or `mark_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`"
+          },
+          "422": {
+            "description": "`mark_tag_invalid`"
+          }
+        },
+        "summary": "Change Mark Tag",
+        "tags": ["review"]
+      }
+    },
     "/api/v1/sessions/{session_id}/shadow/rounds": {
       "get": {
         "operationId": "read_rounds_api_v1_sessions__session_id__shadow_rounds_get",
@@ -6006,6 +6451,9 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "403": {
+            "description": "`voice_consent_required`"
           },
           "404": {
             "description": "`session_not_found`"

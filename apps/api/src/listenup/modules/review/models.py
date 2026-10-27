@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
@@ -43,6 +44,7 @@ class Mark(Base):
             ondelete="CASCADE",
         ),
         Index("marks_session_idx", "session_id", "at_ms"),
+        Index("marks_user_created_idx", "user_id", text("created_at DESC"), text("id DESC")),
         {"schema": "practice"},
     )
 

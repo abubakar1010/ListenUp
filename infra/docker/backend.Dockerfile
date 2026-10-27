@@ -35,7 +35,7 @@ FROM base AS api
 USER app
 EXPOSE 8000
 # Open event streams (GET /api/v1/events) would otherwise hold up a shutdown.
-CMD ["uvicorn", "listenup.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "5"]
+CMD ["uvicorn", "listenup.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "5", "--timeout-keep-alive", "30"]
 
 FROM base AS worker
 USER app

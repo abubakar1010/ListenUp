@@ -1,3 +1,10 @@
+import { useEffect } from 'react';
+vi.mock('./ShadowReadiness', () => ({
+  ShadowReadiness: ({ onReady }: { onReady: (ready: boolean) => void }) => {
+    useEffect(() => onReady(true), [onReady]);
+    return null;
+  },
+}));
 import { MemoryRouter } from 'react-router';
 import { focusManager, QueryClientProvider } from '@tanstack/react-query';
 import { createQueryClient } from '../../app/queryClient';

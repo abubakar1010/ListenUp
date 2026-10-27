@@ -32,6 +32,7 @@ export function ShadowScreen({
   const rounds = useRounds(session.id);
   const selection = rounds.data?.current ? rounds.data.segment : segment.data;
   const [selectionPending, setSelectionPending] = useState(false);
+  const [status, setStatus] = useState('');
   return (
     <PracticeLayout
       heading={`Shadow: ${session.content_title}`}
@@ -42,23 +43,27 @@ export function ShadowScreen({
       rule="Three rounds at original speed. Transcript in round 1 only; short count-in before each playback."
       workLabel="Shadow segment"
     >
+      <p role="status" aria-atomic="true">
+        {!selection && !segment.isError ? 'Preparing your segment…' : status}
+      </p>
       {selection ? (
         <SegmentEditor
           key={`${session.id}:${selection.locked_at}`}
           session={session}
           initial={selection}
           onPending={setSelectionPending}
+          onStatus={setStatus}
         />
       ) : segment.isError ? (
         <ErrorPanel error={segment.error} onRetry={() => void segment.refetch()} />
-      ) : (
-        <p role="status">Preparing your segment…</p>
-      )}
+      ) : null}
       {selection && (
         <ShadowRounds
+          key={session.id}
           sessionId={session.id}
           contentId={session.content_id}
           selectionPending={selectionPending}
+          onStatus={setStatus}
         />
       )}
       {skip}
@@ -70,10 +75,12 @@ function SegmentEditor({
   session,
   initial,
   onPending,
+  onStatus,
 }: {
   session: Session;
   initial: Segment;
   onPending: (value: boolean) => void;
+  onStatus: (message: string) => void;
 }) {
   const offset = session.passage.start_ms;
   const duration = session.passage.end_ms - offset;
@@ -82,7 +89,6 @@ function SegmentEditor({
     endMs: initial.end_ms - offset,
   });
   const [dirty, setDirty] = useState(false);
-  const [saved, setSaved] = useState(false);
   const save = useSaveSegment(session.id);
   const clip = useContent(session.content_id);
   const peaks = usePeaks(clip.data?.peaks_url ?? null);
@@ -133,7 +139,7 @@ function SegmentEditor({
             onChange={(next) => {
               if (save.isPending) return;
               setRange(next);
-              setSaved(false);
+              onStatus('Segment selection changed.');
               setDirty(true);
               save.reset();
             }}
@@ -147,8 +153,8 @@ function SegmentEditor({
                 { start_ms: offset + range.startMs, end_ms: offset + range.endMs },
                 {
                   onSuccess: () => {
-                    setSaved(true);
                     setDirty(false);
+                    onStatus('Segment saved.');
                   },
                 },
               )
@@ -158,7 +164,6 @@ function SegmentEditor({
           </button>
         </>
       )}
-      {saved && <p role="status">Segment saved.</p>}
       {save.isError && <ErrorPanel error={save.error} />}
       {clip.isError && <ErrorPanel error={clip.error} onRetry={() => void clip.refetch()} />}
       {!locked && clip.data?.media_url && (

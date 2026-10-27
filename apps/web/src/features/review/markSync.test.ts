@@ -1,3 +1,5 @@
+import type { Mock } from 'vitest';
+
 import { ApiError } from '../../api/client';
 import { MarkSync, type MarkTransport, type SavedMark } from './markSync';
 
@@ -13,6 +15,7 @@ function saved(id: string, word_from: number, note: string | null = null): Saved
     note,
     source: 'manual',
     status: 'confirmed',
+    tag: null,
     created_at: '2026-10-19T10:00:00Z',
   };
 }
@@ -37,14 +40,31 @@ function fakeServer(initial: SavedMark[] = []) {
     // Like the API: a resend of a stored id answers with the stored mark, note and all,
     // and changes nothing (ON CONFLICT DO NOTHING, ADR 0047).
     create: vi.fn(
-      async (mark: { id: string; word_from: number; word_to: number; note: string | null }) => {
+      async (mark: {
+        id: string;
+        word_from: number;
+        word_to: number;
+        note: string | null;
+        tag?: SavedMark['tag'];
+      }) => {
         const existing = marks.get(mark.id);
         if (existing) return existing;
-        const stored = { ...saved(mark.id, mark.word_from, mark.note), word_to: mark.word_to };
+        const stored = {
+          ...saved(mark.id, mark.word_from, mark.note),
+          word_to: mark.word_to,
+          tag: mark.tag ?? null,
+        };
         marks.set(mark.id, stored);
         return stored;
       },
     ),
+    setTag: vi.fn(async (id: string, tag: SavedMark['tag']) => {
+      const mark = marks.get(id);
+      if (!mark) throw refusal(404, 'mark_not_found');
+      const changed = { ...mark, tag };
+      marks.set(id, changed);
+      return changed;
+    }),
     setNote: vi.fn(async (id: string, note: string | null) => {
       const mark = marks.get(id);
       if (!mark) throw refusal(404, 'mark_not_found');
@@ -130,7 +150,13 @@ test('a_new_mark_shows_at_once_is_kept_on_the_device_and_saved_after_the_debounc
   await vi.advanceTimersByTimeAsync(1999);
   expect(transport.create).not.toHaveBeenCalled();
   await vi.advanceTimersByTimeAsync(1);
-  expect(transport.create).toHaveBeenCalledWith({ id: 'm1', word_from: 2, word_to: 3, note: null });
+  expect(transport.create).toHaveBeenCalledWith({
+    id: 'm1',
+    word_from: 2,
+    word_to: 3,
+    note: null,
+    tag: null,
+  });
   expect(marks.has('m1')).toBe(true);
   expect(sync.getSnapshot().marks[0]).toMatchObject({ id: 'm1', saved: true });
   expect(sync.getSnapshot().status.kind).toBe('saved');
@@ -1143,4 +1169,400 @@ test('undo_of_a_refused_inflight_dictation_deletion_keeps_the_note_written_after
   });
   expect(marks.get('d1')).toMatchObject({ note: 'weak form', status: 'suggested' });
   expect(transport.confirm).not.toHaveBeenCalled();
+});
+
+// -- tags (#61, FR-TR-4) -------------------------------------------------------------------
+
+const tagged = (id: string, word_from: number, tag: SavedMark['tag']): SavedMark => ({
+  ...saved(id, word_from),
+  tag,
+});
+
+test('a_tag_shows_at_once_is_kept_on_the_device_and_saved_after_the_debounce', async () => {
+  const { transport, marks } = fakeServer([saved('m1', 1)]);
+  const storage = memoryStorage();
+  const sync = make(transport, storage, [saved('m1', 1)]);
+  sync.setTag('m1', 'linking');
+  expect(sync.getSnapshot().marks).toMatchObject([{ id: 'm1', tag: 'linking', saved: false }]);
+  expect(JSON.parse(storage.items.get(KEY)!)).toMatchObject({
+    ops: [{ op: 'update', mark: { id: 'm1', tag: 'linking' } }],
+  });
+  await vi.advanceTimersByTimeAsync(1999);
+  expect(transport.setTag).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(transport.setTag).toHaveBeenCalledWith('m1', 'linking');
+  expect(transport.setNote).not.toHaveBeenCalled();
+  expect(marks.get('m1')!.tag).toBe('linking');
+  expect(sync.getSnapshot().marks).toMatchObject([{ id: 'm1', tag: 'linking', saved: true }]);
+  expect(storage.items.has(KEY)).toBe(false);
+});
+
+test('changing_the_tag_quickly_sends_only_the_last_one', async () => {
+  const { transport, marks } = fakeServer([saved('m1', 1)]);
+  const sync = make(transport, memoryStorage(), [saved('m1', 1)]);
+  sync.setTag('m1', 'linking');
+  sync.setTag('m1', 'reduction');
+  sync.setTag('m1', 'weak_form');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setTag).toHaveBeenCalledTimes(1);
+  expect(transport.setTag).toHaveBeenCalledWith('m1', 'weak_form');
+  expect(marks.get('m1')!.tag).toBe('weak_form');
+});
+
+test('clearing_a_tag_sends_no_tag', async () => {
+  const { transport, marks } = fakeServer([tagged('m1', 1, 'reduction')]);
+  const sync = make(transport, memoryStorage(), [tagged('m1', 1, 'reduction')]);
+  sync.setTag('m1', null);
+  expect(sync.getSnapshot().marks[0]!.tag).toBeNull();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setTag).toHaveBeenCalledWith('m1', null);
+  expect(marks.get('m1')!.tag).toBeNull();
+});
+
+test('setting_the_tag_a_mark_already_has_sends_nothing', async () => {
+  const { transport } = fakeServer([tagged('m1', 1, 'linking')]);
+  const sync = make(transport, memoryStorage(), [tagged('m1', 1, 'linking')]);
+  sync.setTag('m1', 'linking');
+  sync.setTag('nope', 'linking');
+  expect(sync.getSnapshot().status.kind).toBe('saved');
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(transport.setTag).not.toHaveBeenCalled();
+});
+
+test('changing_a_tag_back_before_the_save_sends_nothing', async () => {
+  const { transport } = fakeServer([tagged('m1', 1, 'linking')]);
+  const sync = make(transport, memoryStorage(), [tagged('m1', 1, 'linking')]);
+  sync.setTag('m1', 'reduction');
+  sync.setTag('m1', 'linking');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setTag).not.toHaveBeenCalled();
+  expect(transport.setNote).not.toHaveBeenCalled();
+  expect(sync.getSnapshot().marks).toMatchObject([{ tag: 'linking', saved: true }]);
+});
+
+/** A transport call that waits until `release` is called, so a change can land meanwhile. */
+function held<V>(call: Mock<(id: string, value: V) => Promise<SavedMark>>) {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const real = call.getMockImplementation()!;
+  call.mockImplementationOnce(async (id, value) => {
+    await gate;
+    return real(id, value);
+  });
+  return () => release();
+}
+
+test('a_tag_changed_back_while_its_save_is_on_its_way_is_sent_again', async () => {
+  const { transport, marks } = fakeServer([saved('m1', 1)]);
+  const sync = make(transport, memoryStorage(), [saved('m1', 1)]);
+  const release = held(transport.setTag);
+  sync.setTag('m1', 'linking');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setTag).toHaveBeenCalledTimes(1);
+  sync.setTag('m1', null);
+  release();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setTag).toHaveBeenLastCalledWith('m1', null);
+  expect(marks.get('m1')!.tag).toBeNull();
+  expect(sync.getSnapshot().marks).toMatchObject([{ tag: null, saved: true }]);
+  expect(sync.getSnapshot().status.kind).toBe('saved');
+});
+
+test.each([false, true])(
+  'a_tag_changed_back_during_a_lost_save_recovers_with_reload_%s',
+  async (reload) => {
+    const { transport, marks } = fakeServer([saved('m1', 1)]);
+    const storage = memoryStorage();
+    const sync = make(transport, storage, [saved('m1', 1)]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const real = transport.setTag.getMockImplementation()!;
+    transport.setTag.mockImplementationOnce(async (id, tag) => {
+      await gate;
+      await real(id, tag);
+      throw new TypeError('lost response');
+    });
+    sync.setTag('m1', 'linking');
+    await vi.advanceTimersByTimeAsync(2000);
+    sync.setTag('m1', null);
+    expect(sync.getSnapshot().hasPendingChanges).toBe(true);
+    expect(sync.getSnapshot().marks).toMatchObject([{ tag: null, saved: false }]);
+    expect(JSON.parse(storage.items.get(KEY)!)).toMatchObject({
+      ops: [{ op: 'update', mark: { tag: null } }],
+    });
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(marks.get('m1')!.tag).toBe('linking');
+    let again = sync;
+    if (reload) {
+      closeTab();
+      again = make(transport, storage, [...marks.values()]);
+    }
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(marks.get('m1')!.tag).toBeNull();
+    expect(again.getSnapshot().hasPendingChanges).toBe(false);
+    expect(storage.items.has(KEY)).toBe(false);
+  },
+);
+
+test.each([null, 'weak_form'] as const)(
+  'reload_before_an_uncertain_tag_put_commits_replays_the_latest_choice_%s',
+  async (originalTag) => {
+    const initial = tagged('m1', 1, originalTag);
+    const { transport, marks } = fakeServer([initial]);
+    const storage = memoryStorage();
+    const first = make(transport, storage, [initial]);
+    let commit!: () => void;
+    const gate = new Promise<void>((resolve) => (commit = resolve));
+    const real = transport.setTag.getMockImplementation()!;
+    transport.setTag.mockImplementationOnce(async (id, tag) => {
+      await gate;
+      await real(id, tag);
+      // The old page is gone, so its PUT never delivers an answer to MarkSync.
+      return new Promise<SavedMark>(() => {});
+    });
+    first.setTag('m1', 'linking');
+    await vi.advanceTimersByTimeAsync(2000);
+    first.setTag('m1', originalTag);
+    closeTab();
+    // The new GET completes before the old PUT's transaction commits.
+    const again = make(transport, storage, [...marks.values()]);
+    expect(again.getSnapshot()).toMatchObject({
+      hasPendingChanges: true,
+      restored: true,
+      marks: [{ tag: originalTag, saved: false }],
+    });
+    expect(storage.items.has(KEY)).toBe(true);
+    // A second reload must preserve uncertainty too, not just the first one.
+    closeTab();
+    const third = make(transport, storage, [...marks.values()]);
+    commit();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(transport.setTag).toHaveBeenLastCalledWith('m1', originalTag);
+    expect(marks.get('m1')!.tag).toBe(originalTag);
+    expect(third.getSnapshot().hasPendingChanges).toBe(false);
+    expect(storage.items.has(KEY)).toBe(false);
+    expect(transport.setNote).not.toHaveBeenCalled();
+  },
+);
+
+test('tag_uncertainty_is_kept_before_the_put_can_leave_the_page', async () => {
+  const { transport } = fakeServer([saved('m1', 1)]);
+  const storage = memoryStorage();
+  let copyAtSend: unknown;
+  transport.setTag.mockImplementationOnce(async () => {
+    copyAtSend = JSON.parse(storage.items.get(KEY)!);
+    return new Promise<SavedMark>(() => {});
+  });
+  const sync = make(transport, storage, [saved('m1', 1)]);
+  sync.setTag('m1', 'linking');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setTag).toHaveBeenCalledTimes(1);
+  expect(copyAtSend).toMatchObject({
+    ops: [{ op: 'update', mark: { tag: 'linking' }, tagUncertain: true }],
+  });
+  expect(sync.getSnapshot().status.kind).toBe('saving');
+});
+
+test('undo_of_an_unsent_removal_retains_an_uncertain_tag_write', async () => {
+  const { transport, marks } = fakeServer([saved('m1', 1)]);
+  const real = transport.setTag.getMockImplementation()!;
+  const sync = make(transport, memoryStorage(), [saved('m1', 1)]);
+  transport.setTag.mockImplementationOnce(async (id, tag) => {
+    sync.setTag(id, null);
+    await real(id, tag);
+    throw new TypeError('Lost answer');
+  });
+  sync.setTag('m1', 'linking');
+  await vi.advanceTimersByTimeAsync(2000);
+  const mark = sync.getSnapshot().marks[0]!;
+  sync.remove('m1');
+  sync.undoRemove(mark);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(transport.remove).not.toHaveBeenCalled();
+  expect(marks.get('m1')!.tag).toBeNull();
+  expect(sync.getSnapshot().hasPendingChanges).toBe(false);
+});
+
+test('a_tag_changed_back_while_the_note_is_on_its_way_is_not_left_on_the_server', async () => {
+  const { transport, marks } = fakeServer([saved('m1', 1)]);
+  const sync = make(transport, memoryStorage(), [saved('m1', 1)]);
+  const release = held(transport.setNote);
+  sync.setNote('m1', 'n');
+  sync.setTag('m1', 'weak_form');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setNote).toHaveBeenCalledTimes(1);
+  sync.setTag('m1', null);
+  release();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(marks.get('m1')).toMatchObject({ note: 'n', tag: null });
+  expect(sync.getSnapshot().marks).toMatchObject([{ note: 'n', tag: null, saved: true }]);
+});
+
+test('a_tag_set_on_an_unsent_mark_travels_with_its_create', async () => {
+  const { transport, marks } = fakeServer();
+  const sync = make(transport);
+  sync.add({ id: 'm1', word_from: 2, word_to: 2, at_ms: 2000, note: null });
+  sync.setTag('m1', 'unknown_word');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.create).toHaveBeenCalledWith(expect.objectContaining({ tag: 'unknown_word' }));
+  expect(transport.setTag).not.toHaveBeenCalled();
+  expect(marks.get('m1')!.tag).toBe('unknown_word');
+});
+
+test('a_tag_on_a_removed_mark_is_ignored', async () => {
+  const { transport } = fakeServer([saved('m1', 1)]);
+  const sync = make(transport, memoryStorage(), [saved('m1', 1)]);
+  sync.remove('m1');
+  sync.setTag('m1', 'linking');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setTag).not.toHaveBeenCalled();
+  expect(transport.remove).toHaveBeenCalledWith('m1');
+});
+
+test('a_note_and_a_tag_on_one_mark_are_both_sent_note_first', async () => {
+  const { transport, marks } = fakeServer([suggested('d1', 1)]);
+  const sync = make(transport, memoryStorage(), [suggested('d1', 1)]);
+  const order: string[] = [];
+  transport.setNote.mockImplementationOnce(async (id, note) => {
+    order.push('note');
+    const changed = { ...marks.get(id)!, note };
+    marks.set(id, changed);
+    return changed;
+  });
+  transport.setTag.mockImplementationOnce(async (id, tag) => {
+    order.push('tag');
+    const changed = { ...marks.get(id)!, tag };
+    marks.set(id, changed);
+    return changed;
+  });
+  sync.setNote('d1', 'two words run together');
+  sync.setTag('d1', 'linking');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(order).toEqual(['note', 'tag']);
+  expect(marks.get('d1')).toMatchObject({ note: 'two words run together', tag: 'linking' });
+  expect(sync.getSnapshot().marks).toMatchObject([{ tag: 'linking', saved: true }]);
+});
+
+test('a_tag_change_that_fails_after_the_note_resends_only_the_tag', async () => {
+  const { transport, marks } = fakeServer([saved('m1', 1)]);
+  const sync = make(transport, memoryStorage(), [saved('m1', 1)]);
+  transport.setTag.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+  sync.setNote('m1', 'n');
+  sync.setTag('m1', 'reduction');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().status.kind).toBe('offline');
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(transport.setNote).toHaveBeenCalledTimes(1);
+  expect(transport.setTag).toHaveBeenCalledTimes(2);
+  expect(marks.get('m1')).toMatchObject({ note: 'n', tag: 'reduction' });
+  expect(sync.getSnapshot().status.kind).toBe('saved');
+});
+
+test('a_refused_tag_change_puts_back_the_saved_tag_and_keeps_the_mark', async () => {
+  const { transport } = fakeServer([tagged('m1', 1, 'linking')]);
+  transport.setTag.mockRejectedValue(refusal(422, 'mark_tag_invalid'));
+  const storage = memoryStorage();
+  const sync = make(transport, storage, [tagged('m1', 1, 'linking')]);
+  sync.setTag('m1', 'reduction');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sync.getSnapshot().marks).toMatchObject([{ id: 'm1', tag: 'linking', saved: true }]);
+  expect(sync.getSnapshot().status).toMatchObject({ kind: 'failed' });
+  expect(storage.items.has(KEY)).toBe(false);
+});
+
+test('a_tag_change_made_offline_survives_a_reload_and_is_sent_when_the_connection_returns', async () => {
+  const { transport, marks } = fakeServer([saved('m1', 1)]);
+  const storage = memoryStorage();
+  online = false;
+  const first = make(transport, storage, [saved('m1', 1)]);
+  first.setTag('m1', 'weak_form');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(first.getSnapshot().status.kind).toBe('offline');
+  expect(transport.setTag).not.toHaveBeenCalled();
+  closeTab();
+  const again = make(transport, storage, [saved('m1', 1)]);
+  expect(again.getSnapshot().restored).toBe(true);
+  expect(again.getSnapshot().marks).toMatchObject([{ id: 'm1', tag: 'weak_form', saved: false }]);
+  online = true;
+  window.dispatchEvent(new Event('online'));
+  await vi.runOnlyPendingTimersAsync();
+  expect(transport.setTag).toHaveBeenCalledWith('m1', 'weak_form');
+  expect(marks.get('m1')!.tag).toBe('weak_form');
+  expect(again.getSnapshot().status.kind).toBe('saved');
+});
+
+test('a_tag_set_after_a_lost_create_answer_follows_the_resend', async () => {
+  const server = fakeServer();
+  lostAnswer(server);
+  const sync = make(server.transport);
+  sync.add({ id: 'm1', word_from: 2, word_to: 2, at_ms: 2000, note: null });
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(server.marks.get('m1')).toMatchObject({ tag: null });
+  sync.setTag('m1', 'linking');
+  await vi.advanceTimersByTimeAsync(60_000);
+  // The resent create answers with the stored mark and no tag: the tag follows.
+  expect(server.transport.setTag).toHaveBeenCalledWith('m1', 'linking');
+  expect(server.marks.get('m1')).toMatchObject({ tag: 'linking' });
+  expect(sync.getSnapshot().marks).toMatchObject([{ id: 'm1', tag: 'linking', saved: true }]);
+});
+
+test('a_copy_kept_before_tags_existed_leaves_the_servers_tag_alone', async () => {
+  const { transport } = fakeServer([tagged('m1', 1, 'linking')]);
+  const storage = memoryStorage();
+  const old = { id: 'm1', word_from: 1, word_to: 1, at_ms: 1000, note: 'kept' };
+  storage.setItem(KEY, JSON.stringify({ ops: [{ op: 'update', mark: old }] }));
+  const sync = make(transport, storage, [tagged('m1', 1, 'linking')]);
+  expect(sync.getSnapshot().marks).toMatchObject([{ note: 'kept', tag: 'linking' }]);
+  await vi.runOnlyPendingTimersAsync();
+  expect(transport.setNote).toHaveBeenCalledWith('m1', 'kept');
+  expect(transport.setTag).not.toHaveBeenCalled();
+});
+
+test('undo_of_an_unsent_removal_keeps_the_tag', async () => {
+  const { transport } = fakeServer([tagged('m1', 1, 'reduction')]);
+  const sync = make(transport, memoryStorage(), [tagged('m1', 1, 'reduction')]);
+  const [mark] = sync.getSnapshot().marks;
+  sync.remove('m1');
+  sync.undoRemove(mark!);
+  expect(sync.getSnapshot().marks).toMatchObject([{ id: 'm1', tag: 'reduction' }]);
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(transport.remove).not.toHaveBeenCalled();
+  expect(transport.setTag).not.toHaveBeenCalled();
+});
+
+test('undo_after_a_sent_removal_makes_the_mark_again_with_its_tag', async () => {
+  const { transport, marks } = fakeServer([tagged('m1', 1, 'reduction')]);
+  const sync = make(transport, memoryStorage(), [tagged('m1', 1, 'reduction')]);
+  const [mark] = sync.getSnapshot().marks;
+  sync.remove('m1');
+  await vi.advanceTimersByTimeAsync(0);
+  expect(marks.has('m1')).toBe(false);
+  sync.undoRemove(mark!);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(marks.get('m1')).toMatchObject({ tag: 'reduction' });
+});
+
+test('undo_of_a_removed_dictation_mark_brings_its_tag_back_after_the_restore', async () => {
+  const { transport, marks } = fakeServer([{ ...suggested('d1', 1), tag: 'linking' }]);
+  const sync = make(transport, memoryStorage(), [{ ...suggested('d1', 1), tag: 'linking' }]);
+  const [mark] = sync.getSnapshot().marks;
+  sync.remove('d1');
+  await vi.advanceTimersByTimeAsync(0);
+  sync.undoRemove(mark!);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.restore).toHaveBeenCalled();
+  expect(transport.setTag).toHaveBeenCalledWith('d1', 'linking');
+  expect(marks.get('d1')).toMatchObject({ source: 'dictation', tag: 'linking' });
+});
+
+test('a_tag_for_a_mark_removed_in_another_tab_drops_the_mark_quietly', async () => {
+  const { transport, marks } = fakeServer([saved('m1', 1)]);
+  const sync = make(transport, memoryStorage(), [saved('m1', 1)]);
+  marks.delete('m1'); // the other tab removed it
+  sync.setTag('m1', 'linking');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(transport.setTag).toHaveBeenCalledWith('m1', 'linking');
+  expect(sync.getSnapshot().marks).toEqual([]);
+  expect(sync.getSnapshot().status.kind).toBe('saved');
 });

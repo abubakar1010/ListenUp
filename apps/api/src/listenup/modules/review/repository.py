@@ -12,6 +12,8 @@ from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.modules.review import schemas
+
 
 @dataclass(frozen=True)
 class MarkRow:
@@ -23,10 +25,11 @@ class MarkRow:
     note: str | None
     source: str
     status: str
+    tag: str | None
     created_at: datetime
 
 
-_COLUMNS = "id, session_id, word_from, word_to, at_ms, note, source, status, created_at"
+_COLUMNS = "id, session_id, word_from, word_to, at_ms, note, source, status, tag, created_at"
 
 
 @dataclass(frozen=True)
@@ -40,6 +43,7 @@ class NewMark:
     note: str | None
     source: str
     status: str = "confirmed"
+    tag: str | None = None
 
 
 async def insert(session: AsyncSession, mark: NewMark) -> MarkRow | None:
@@ -48,9 +52,9 @@ async def insert(session: AsyncSession, mark: NewMark) -> MarkRow | None:
         await session.execute(
             text(f"""
             INSERT INTO practice.marks
-              (id, session_id, user_id, word_from, word_to, at_ms, note, source, status)
+              (id, session_id, user_id, word_from, word_to, at_ms, note, source, status, tag)
             VALUES (:id, :session_id, :user_id, :word_from, :word_to, :at_ms, :note, :source,
-                    :status)
+                    :status, :tag)
             ON CONFLICT DO NOTHING
             RETURNING {_COLUMNS}
             """),
@@ -113,6 +117,22 @@ async def set_note(
     return MarkRow(*row) if row else None
 
 
+async def set_tag(
+    session: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UUID, tag: str | None
+) -> MarkRow | None:
+    row = (
+        await session.execute(
+            text(f"""
+            UPDATE practice.marks SET tag = :tag
+             WHERE id = :id AND session_id = :session_id
+            RETURNING {_COLUMNS}
+            """),
+            {"id": mark_id, "session_id": session_id, "tag": tag},
+        )
+    ).first()
+    return MarkRow(*row) if row else None
+
+
 async def confirm(
     session: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UUID
 ) -> MarkRow | None:
@@ -135,3 +155,35 @@ async def delete(session: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UUI
         {"id": mark_id, "session_id": session_id},
     )
     return deleted.first() is not None
+
+
+async def saved_marks(db: AsyncSession, cursor: str | None, limit: int) -> schemas.SavedMarkList:
+    from listenup.modules.review.domain import cursor as cursors
+    from listenup.platform.errors import ProblemError
+
+    try:
+        after = cursors.decode(cursor) if cursor else None
+    except cursors.InvalidCursor as error:
+        raise ProblemError(422, "invalid_cursor", "Load the marks again.") from error
+    rows = (
+        await db.execute(
+            text("""
+        SELECT m.*,s.content_id,'/contents/' || s.content_id || '?at_ms=' || m.at_ms AS source_url
+        FROM practice.marks m JOIN practice.sessions s ON s.id=m.session_id AND s.user_id=m.user_id
+        WHERE CAST(:time AS timestamptz) IS NULL OR (m.created_at,m.id)<(:time,:id)
+        ORDER BY m.created_at DESC,m.id DESC LIMIT :limit
+    """),
+            {
+                "time": after.created_at if after else None,
+                "id": after.id if after else None,
+                "limit": limit + 1,
+            },
+        )
+    ).all()
+    items = [schemas.SavedMark.model_validate(row, from_attributes=True) for row in rows[:limit]]
+    return schemas.SavedMarkList(
+        marks=items,
+        next_cursor=cursors.encode(cursors.Cursor(items[-1].created_at, items[-1].id))
+        if len(rows) > limit
+        else None,
+    )

@@ -1,3 +1,10 @@
+import { useEffect } from 'react';
+vi.mock('./ShadowReadiness', () => ({
+  ShadowReadiness: ({ onReady }: { onReady: (ready: boolean) => void }) => {
+    useEffect(() => onReady(true), [onReady]);
+    return null;
+  },
+}));
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { jsonResponse, problem, renderWithProviders } from '../../test-utils';
 import { sessionFixture } from '../session/fixtures';
@@ -80,6 +87,7 @@ it('shows a retry on a failed segment read', async () => {
   renderWithProviders(<ShadowScreen session={session} progress={null} />);
   await waitFor(() => expect(screen.getByText('Try again later.')).toBeInTheDocument());
   expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  expect(screen.queryByText('Preparing your segment…')).not.toBeInTheDocument();
 });
 
 it('holds the selected handles while a save is in flight', async () => {

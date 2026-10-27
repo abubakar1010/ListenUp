@@ -53,7 +53,7 @@ test('a signed-in learner starts in the library with their account in the header
   expect(url()).toBe('/library');
   await waitFor(() => expect(document.title).toBe('Library · ListenUp'));
   expect(
-    within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link'),
+    within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', { name: 'Library' }),
   ).toHaveAttribute('aria-current', 'page');
 });
 

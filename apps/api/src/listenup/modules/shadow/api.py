@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, Request, Response
 
-from listenup.modules.identity.service import CurrentLearner
+from listenup.modules.identity.service import CurrentLearner, require_voice_consent
 from listenup.modules.practice import service as practice
 from listenup.modules.shadow import schemas, service
 from listenup.platform.database import DbSession
@@ -78,6 +78,9 @@ async def mutate_round(
     await practice.lock_session(db, session_id)
     await practice.require_step(db, session_id, practice.Step.SHADOW)
 
+    if not ended:
+        await require_voice_consent(db, learner, request.app.state.settings)
+
     async def apply() -> tuple[int, None]:
         await service.change_round(db, session_id, number, ended=ended)
         return 204, None
@@ -93,7 +96,7 @@ async def mutate_round(
     "/sessions/{session_id}/shadow/rounds/{number}/start",
     status_code=204,
     response_class=Response,
-    responses=_ROUND_ERRORS,
+    responses={**_ROUND_ERRORS, 403: {"description": "`voice_consent_required`"}},
 )
 async def start_round(
     session_id: uuid.UUID,

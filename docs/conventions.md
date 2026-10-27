@@ -133,6 +133,14 @@ Read the section for the area you are changing before you change it. The rules e
 - The AI gateway (#64) calls `record_ai_call` and `record_ai_quota`, and grading jobs call `record_grading`; the alert rules already read those metrics. A new alert goes in `infra/observability/alerts.yml` with a case in `alerts.test.yml` (it fires, and stays quiet just below the threshold), a `runbook` entry in `docs/runbooks/alerts.md`, and a row in ADR 0031.
 - Backups are `python -m listenup.ops.backup` (the `backup` image target). A backup is complete only with its `manifest.json`; the restore test is a monthly run recorded in the log at the end of `docs/runbooks/backups.md`. A migration that adds a schema or role must keep a restore into a database with the roles in place working (`tests/integration/test_backup.py`).
 
+## Deployment (ADR 0066)
+
+- Production is `infra/compose/compose.prod.yml` at one immutable tag (`sha-<12 hex>` or `r<n>`), deployed by `infra/deploy/deploy.sh` and described in `docs/runbooks/deploy.md`. A new setting goes into the services that read it as `${NAME:?set in .env}` (or `${NAME:-default}`) and into `infra/deploy/env.example`; never a literal secret, and never into a service that does not use it. `tests/unit/test_compose_prod.py` checks roles, credentials, ports and the media sandbox.
+- Keep the previous release deployable: migrations stay expand-only within a release, and a change to `compose.prod.yml` must also run the previous release's images, because a rollback changes images only.
+  `rollback.sh` refuses a release older than the previous one without `--force`.
+- A new image target is added to the `images` matrix in `.github/workflows/release.yml` and to the compose file; only `edge` publishes ports, and the API is reached only through the `api-via-edge` alias.
+- The media worker reaches the managed database and storage only through `db-relay`; do not attach it to another network or give it another route.
+
 ## Admin (ADR 0045)
 
 - Usage reports (ADR 0052) use `LISTENUP_ADMIN_REPORT_DATABASE_URL`, a separate
@@ -243,6 +251,16 @@ Read the section for the area you are changing before you change it. The rules e
   one second in the panel's single polite region (UX-22). Undo cancels only a
   deletion that was never sent; an attempted deletion may need recreation after
   a lost response. Refused deletions preserve the known saved mark and note.
+- Mark tags (#61, ADR 0067): the four tags live in `review/domain/marks.MARK_TAGS`
+  (the `practice.marks.tag` CHECK holds the same values) and `features/review/tags.ts`.
+  `PUT .../marks/{id}/tag` sends the whole tag (null clears it) and needs no `run_once`;
+  the service refuses any other value with 422 `mark_tag_invalid`. A create may carry
+  the tag. In `MarkSync` the tag joins the note's debounced `update` (note, then tag,
+  then confirmation). Set it with `TagSelect`, a native select, in the mark panel and
+  each list row; show the tag in words in the list and in the word's description.
+  Persist tag-write uncertainty before the PUT starts and recover it even if the
+  initial GET matches the local tag; that GET may predate the old PUT's commit.
+  Undo of an unsent removal must keep an uncertain tag update queued.
 
 ## Media sandbox and scanning (ADR 0049)
 
@@ -364,3 +382,30 @@ Read the section for the area you are changing before you change it. The rules e
   unset, do not emit `record_shadow_round_completed` and do not complete the step.
   #78/#81/#87 add microphone/consent, recording/upload and completion respectively.
   No reference-profile readiness check gates playback (ADR 0050).
+
+## Shadow microphone and consent (ADR 0069)
+
+- Require current voice consent at the owned Shadow round-start boundary before
+  idempotency replay. Use the existing identity service and app settings.
+- Readiness is page-local: check transient sound, release capture on hide/leave,
+  and fail closed on missing legal text or consent-read failure. Do not persist a
+  microphone-ready boolean as proof of recording.
+- ShadowScreen owns the single polite status region (UX-22); segment, readiness
+  and playback children report through `onStatus`. Acceptance uses focus and
+  consumes the checkbox selection on submission so refusal requires a fresh choice.
+- #81 must authorize each capture (including restart) through the start boundary;
+  its upload/finalization and recording lifecycle remain separate from playback.
+
+## Saved review (ADR 0068)
+
+- `/cards` reuses the merged learner-scoped deck list and private audio endpoint.
+  Review players use neutral labels until reveal; only a completed snippet unlocks
+  the written/heard forms. Do not fall back to whole-source audio.
+- `cards` owns append-only `practice.card_reviews`. Save through the idempotent
+  reviews route, with learner RLS and a composite card/learner foreign key. Recent
+  history is bounded to 50 rows; exports contain all rows. Results do not schedule
+  another review or change session progression.
+- `review.service.saved_marks` reads marks across sessions using a newest-first
+  keyset and derives source URLs from the owning session and absolute `at_ms`.
+  This read has no Transcript step gate and exposes no transcript cache content.
+  It has no dependency on tags or suggested phrases.

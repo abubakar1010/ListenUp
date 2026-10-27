@@ -1,9 +1,9 @@
-"""Transcript step HTTP boundary (FR-TR-1, FR-TR-2, FR-TR-3, FR-TX-5)."""
+"""Transcript step HTTP boundary (FR-TR-1 to FR-TR-4, FR-TX-5)."""
 
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from listenup.modules.identity.service import CurrentLearner
@@ -93,8 +93,8 @@ async def list_marks(
             "`mark_exists` (with `mark_id`) or `mark_id_taken`"
         },
         422: {
-            "description": "`mark_out_of_range`, `mark_no_words`, `mark_too_long` or "
-            "`note_too_long`"
+            "description": "`mark_out_of_range`, `mark_no_words`, `mark_too_long`, "
+            "`note_too_long` or `mark_tag_invalid`"
         },
     },
 )
@@ -139,6 +139,29 @@ async def change_mark_note(
 
 
 @router.put(
+    "/sessions/{session_id}/marks/{mark_id}/tag",
+    responses={
+        **_GATE,
+        404: {"description": "`session_not_found` or `mark_not_found`"},
+        422: {"description": "`mark_tag_invalid`"},
+    },
+)
+async def change_mark_tag(
+    session_id: uuid.UUID,
+    mark_id: uuid.UUID,
+    body: schemas.MarkTagChange,
+    response: Response,
+    learner: CurrentLearner,
+    db: DbSession,
+) -> schemas.Mark:
+    """Set, change or clear (null) the mark's tag (FR-TR-4). The whole tag is sent, so a
+    resend answers with the same mark and needs no Idempotency-Key (ADR 0067).
+    """
+    response.headers.update(_NO_STORE)
+    return await service.change_tag(db, session_id, mark_id, body.tag)
+
+
+@router.put(
     "/sessions/{session_id}/marks/{mark_id}/status",
     responses={**_GATE, 404: {"description": "`session_not_found` or `mark_not_found`"}},
 )
@@ -167,3 +190,15 @@ async def remove_mark(
 ) -> None:
     """Remove the mark. A second removal answers 404 `mark_not_found`."""
     await service.remove_mark(db, session_id, mark_id)
+
+
+@router.get("/marks")
+async def saved_marks(
+    response: Response,
+    learner: CurrentLearner,
+    db: DbSession,
+    cursor: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> schemas.SavedMarkList:
+    response.headers.update(_NO_STORE)
+    return await service.saved_marks(db, cursor, limit)
