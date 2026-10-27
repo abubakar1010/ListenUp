@@ -108,6 +108,7 @@ const MARKS: Schema['Mark'][] = [
     note: 'linking',
     source: 'dictation',
     status: 'suggested',
+    tag: 'linking',
     created_at: '2026-10-23T00:00:00Z',
   },
   {
@@ -119,6 +120,7 @@ const MARKS: Schema['Mark'][] = [
     note: null,
     source: 'manual',
     status: 'confirmed',
+    tag: null,
     created_at: '2026-10-23T00:00:00Z',
   },
 ];
