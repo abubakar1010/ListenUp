@@ -38,7 +38,10 @@ Three choices were open: the route, how the browser sends a change, and the cont
   so a failure between them resends only what is left. A refused tag puts back the
   server's tag; offline and signed-out changes stay in localStorage. A copy kept before
   tags has no `tag`, which means no tag change. Changing the tag back before the save
-  sends nothing. The last tag saved wins across tabs, as for notes.
+  sends nothing. Before a tag PUT starts, its uncertainty is kept with the local
+  operation. A reload replays that tag even if its initial GET still matches the
+  learner's choice: the previous page's PUT may not have committed yet. Unsent-removal
+  Undo retains that uncertainty too. The last tag saved wins across tabs, as for notes.
 - **A native select.** The mark panel has "Tag (optional)" and each list row has "Tag for
   mark {phrase}" (the hidden words name the mark; the visible label starts the name,
   WCAG 2.5.3). The options are No tag, Linking, Reduction, Weak form and Unknown word. The

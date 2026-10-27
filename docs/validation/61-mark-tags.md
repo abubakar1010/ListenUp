@@ -109,3 +109,27 @@ Green: markSync.test.ts, 85 passed, including the earlier in-flight regressions.
 Current web checks: lint, format, types, 666 tests with coverage, build and size
 (125.6 kB / 200 kB) passed. Full backend and browser results will be recorded
 in the PR description; earlier results above are historical, not this head.
+
+## Post-merge reload recovery fix (2026-10-27)
+
+The review of #214 found that reloading before an uncertain tag PUT commits can
+discard the local update when the new GET still matches the desired tag. The old
+PUT can then store the intermediate tag with no recovery operation left. The
+follow-up persists `tagUncertain` before the PUT starts, restores it through
+repeated reloads, and retains it through Undo of an unsent removal. It uses the
+existing marks API; candidate-card suggestions (#74) remain out of scope.
+
+Regression evidence, observed before changing production code:
+
+- `pnpm vitest run src/features/review/markSync.test.ts -t 'reload_before_an_uncertain|tag_uncertainty_is_kept|undo_of_an_unsent_removal_retains'`:
+  **4 failed, 85 skipped** (a focused selection). The two reload cases incorrectly
+  reported saved/no pending changes; the pre-PUT copy had no uncertainty marker;
+  Undo left `linking` on the server instead of null.
+- After the fix, `pnpm vitest run src/features/review/markSync.test.ts`:
+  **89 passed**. Reload cases cover changing back to null and to `weak_form`, a GET
+  before the old PUT commits, two consecutive reloads, eventual server state,
+  recovery-copy cleanup and no unnecessary note PATCH.
+
+Final follow-up checks are recorded on its PR; #214's historical results do not
+establish validation of this fix. This is a correction to ADR 0067's recovery
+behavior, with no API, generated-client, database or deployment change (ADR 0066).
