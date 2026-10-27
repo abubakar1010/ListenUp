@@ -31,7 +31,8 @@ import {
 import { currentLine } from './line';
 import { MarkPanel } from './MarkPanel';
 import { MarkList } from './MarkList';
-import type { LocalMark, SavedMark } from './markSync';
+import type { LocalMark, MarkTag, SavedMark } from './markSync';
+import { TAG_LABELS, TAGS } from './tags';
 import {
   extend,
   growFrom,
@@ -346,6 +347,8 @@ const MARKED = 'mark-description-marked';
 const FROM_DICTATION = 'mark-description-dictation';
 const TO_CONFIRM = 'mark-description-suggested';
 const SELECTED = 'mark-description-selected';
+// FR-TR-4: a tagged word names its tag too, so the tag is never shown by colour or list alone.
+const tagDescription = (tag: MarkTag) => `mark-description-tag-${tag}`;
 
 /** How a marked word shows its mark; a word in several marks shows the most pressing. */
 type MarkKind = 'suggested' | 'dictation' | 'manual';
@@ -405,6 +408,16 @@ function useMarking(
       }
     }
     return kinds;
+  }, [sync.marks]);
+  const tagsOf = useMemo(() => {
+    const tags = new Map<number, Set<MarkTag>>();
+    for (const mark of sync.marks) {
+      if (!mark.tag) continue;
+      for (let i = mark.word_from; i <= mark.word_to; i += 1) {
+        tags.set(i, (tags.get(i) ?? new Set()).add(mark.tag));
+      }
+    }
+    return tags;
   }, [sync.marks]);
   const range = selection ? rangeOf(selection) : null;
   const current = markAt(selection, sync.marks);
@@ -506,6 +519,11 @@ function useMarking(
       <span id={SELECTED} hidden>
         Selected
       </span>
+      {TAGS.map((tag) => (
+        <span key={tag} id={tagDescription(tag)} hidden>
+          Tag: {TAG_LABELS[tag]}
+        </span>
+      ))}
       <MarkPanel
         selection={selection}
         phrase={range ? phraseOf(range) : ''}
@@ -522,6 +540,7 @@ function useMarking(
           focusWord(selection.focus);
         }}
         onNote={sync.setNote}
+        onTag={sync.setTag}
         onConfirm={confirmMark}
         onRemove={removeMark}
         onNoteFocused={onNoteFocused}
@@ -548,6 +567,7 @@ function useMarking(
           }}
           onConfirm={(mark) => confirmMark(mark.id)}
           onRemove={(mark) => removeMark(mark.id)}
+          onTag={(mark, tag) => sync.setTag(mark.id, tag)}
         />
         {removed && !sync.marks.some((mark) => mark.id === removed.id) && (
           <div className="flex flex-wrap items-center gap-2">
@@ -581,7 +601,11 @@ function useMarking(
     markList: { marks: sync.marks, take: sync.takeSaved } satisfies OpenMarkList,
     describedBy: (index: number) => {
       const kind = marked.get(index);
-      if (kind) return KIND_DESCRIPTION[kind];
+      if (kind) {
+        const tags = tagsOf.get(index) ?? new Set();
+        const named = TAGS.filter((tag) => tags.has(tag));
+        return [KIND_DESCRIPTION[kind], ...named.map(tagDescription)].join(' ');
+      }
       return range && covers(range, index) ? SELECTED : undefined;
     },
   };

@@ -322,6 +322,11 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         params=lambda w: {"session_id": w.a.sessions["transcript"], "mark_id": w.a.mark_id},
         body=lambda w: {"status": "confirmed"},
     ),
+    ("PUT", "/api/v1/sessions/{session_id}/marks/{mark_id}/tag"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["transcript"], "mark_id": w.a.mark_id},
+        body=lambda w: {"tag": "linking"},
+    ),
     ("DELETE", "/api/v1/sessions/{session_id}/marks/{mark_id}"): Owned(
         "session_not_found",
         params=lambda w: {"session_id": w.a.sessions["transcript"], "mark_id": w.a.mark_id},

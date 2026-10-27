@@ -8,6 +8,11 @@ from the passage words; the browser sends only the range.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
+
+MarkTag = Literal["linking", "reduction", "weak_form", "unknown_word"]
+MARK_TAGS: tuple[MarkTag, ...] = ("linking", "reduction", "weak_form", "unknown_word")
+"""FR-TR-4: the optional type of a mark; the practice.marks.tag CHECK holds the same four."""
 
 MAX_NOTE_LENGTH = 500  # practice.marks.note CHECK
 MAX_MARK_WORDS = 20
@@ -27,6 +32,10 @@ class MarkTooLong(MarkRuleError):
 
 
 class NoteTooLong(MarkRuleError):
+    pass
+
+
+class TagUnknown(MarkRuleError):
     pass
 
 
@@ -67,3 +76,13 @@ def clean_note(note: str | None) -> str | None:
     if len(note) > MAX_NOTE_LENGTH:
         raise NoteTooLong(f"a note holds at most {MAX_NOTE_LENGTH} characters")
     return note
+
+
+def check_tag(tag: str | None) -> MarkTag | None:
+    """The tag as stored: one of the four, or None for no tag (#61, FR-TR-4)."""
+    for known in MARK_TAGS:
+        if tag == known:
+            return known
+    if tag is None:
+        return None
+    raise TagUnknown(f"a tag is one of {', '.join(MARK_TAGS)}")
