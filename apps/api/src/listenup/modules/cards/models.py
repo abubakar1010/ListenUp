@@ -47,6 +47,7 @@ class Card(Base):
             ondelete="CASCADE",
         ),
         UniqueConstraint("session_id", "slot"),
+        UniqueConstraint("id", "user_id", name="cards_id_user_unique"),
         Index("cards_user_idx", "user_id", text("created_at DESC"), "id"),
         {"schema": "practice"},
     )
@@ -94,5 +95,26 @@ class CardSnippetWrite(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("identity.users.id", ondelete="RESTRICT"))
     owner: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+
+
+class CardReview(Base):
+    __tablename__ = "card_reviews"
+    __table_args__ = (
+        CheckConstraint("result IN ('heard','unsure','missed')"),
+        ForeignKeyConstraint(
+            ["card_id", "user_id"],
+            ["practice.cards.id", "practice.cards.user_id"],
+            ondelete="CASCADE",
+        ),
+        Index("card_reviews_card_idx", "card_id", text("reviewed_at DESC"), text("id DESC")),
+        {"schema": "practice"},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    card_id: Mapped[uuid.UUID]
+    user_id: Mapped[uuid.UUID]
+    result: Mapped[str] = mapped_column(Text)
+    reviewed_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )

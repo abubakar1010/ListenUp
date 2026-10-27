@@ -379,3 +379,17 @@ Read the section for the area you are changing before you change it. The rules e
   unset, do not emit `record_shadow_round_completed` and do not complete the step.
   #78/#81/#87 add microphone/consent, recording/upload and completion respectively.
   No reference-profile readiness check gates playback (ADR 0050).
+
+## Saved review (ADR 0068)
+
+- `/cards` reuses the merged learner-scoped deck list and private audio endpoint.
+  Review players use neutral labels until reveal; only a completed snippet unlocks
+  the written/heard forms. Do not fall back to whole-source audio.
+- `cards` owns append-only `practice.card_reviews`. Save through the idempotent
+  reviews route, with learner RLS and a composite card/learner foreign key. Recent
+  history is bounded to 50 rows; exports contain all rows. Results do not schedule
+  another review or change session progression.
+- `review.service.saved_marks` reads marks across sessions using a newest-first
+  keyset and derives source URLs from the owning session and absolute `at_ms`.
+  This read has no Transcript step gate and exposes no transcript cache content.
+  It has no dependency on tags or suggested phrases.
