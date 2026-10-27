@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "id": "teacher-shadow-v1",
+  "kind": "teacher",
+  "suite": "shadow",
+  "source": "Teacher-graded Shadow recordings for #107. Segments, licences and grading guide: ai-evals/shadow/README.md and grading-guide.md. Audio and consent records live outside this repository.",
+  "cases": []
+}

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "id": "teacher-gist-v1",
+  "kind": "teacher",
+  "suite": "gist",
+  "source": "Teacher-graded gists for #106. Passages, licences and grading guide: ai-evals/gists/README.md and grading-guide.md. No consent records or personal data.",
+  "cases": []
+}
