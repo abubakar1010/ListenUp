@@ -380,7 +380,7 @@ Read the section for the area you are changing before you change it. The rules e
   #78/#81/#87 add microphone/consent, recording/upload and completion respectively.
   No reference-profile readiness check gates playback (ADR 0050).
 
-## Shadow microphone and consent (ADR 0068)
+## Shadow microphone and consent (ADR 0069)
 
 - Require current voice consent at the owned Shadow round-start boundary before
   idempotency replay. Use the existing identity service and app settings.
@@ -392,3 +392,17 @@ Read the section for the area you are changing before you change it. The rules e
   clears the checkbox selection after grant so refusal requires a fresh choice.
 - #81 must authorize each capture (including restart) through the start boundary;
   its upload/finalization and recording lifecycle remain separate from playback.
+
+## Saved review (ADR 0068)
+
+- `/cards` reuses the merged learner-scoped deck list and private audio endpoint.
+  Review players use neutral labels until reveal; only a completed snippet unlocks
+  the written/heard forms. Do not fall back to whole-source audio.
+- `cards` owns append-only `practice.card_reviews`. Save through the idempotent
+  reviews route, with learner RLS and a composite card/learner foreign key. Recent
+  history is bounded to 50 rows; exports contain all rows. Results do not schedule
+  another review or change session progression.
+- `review.service.saved_marks` reads marks across sessions using a newest-first
+  keyset and derives source URLs from the owning session and absolute `at_ms`.
+  This read has no Transcript step gate and exposes no transcript cache content.
+  It has no dependency on tags or suggested phrases.

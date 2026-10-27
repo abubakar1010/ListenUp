@@ -402,6 +402,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/cards/{card_id}/reviews': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Review History */
+    get: operations['review_history_api_v1_cards__card_id__reviews_get'];
+    put?: never;
+    /** Record Review */
+    post: operations['record_review_api_v1_cards__card_id__reviews_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/contents': {
     parameters: {
       query?: never;
@@ -687,6 +705,23 @@ export interface paths {
      * @description The learner's library, newest first, 20 per page by default (FR-LB-1).
      */
     get: operations['library_contents_api_v1_library_contents_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/marks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Saved Marks */
+    get: operations['saved_marks_api_v1_marks_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1510,6 +1545,29 @@ export interface components {
       next_cursor: string | null;
       /** Remaining */
       remaining?: number | null;
+    };
+    /** CardReview */
+    CardReview: {
+      /**
+       * Card Id
+       * Format: uuid
+       */
+      card_id: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Result
+       * @enum {string}
+       */
+      result: 'heard' | 'unsure' | 'missed';
+      /**
+       * Reviewed At
+       * Format: date-time
+       */
+      reviewed_at: string;
     };
     /** ChangeEntry */
     ChangeEntry: {
@@ -2545,6 +2603,19 @@ export interface components {
        */
       job_id: number;
     };
+    /** ReviewHistory */
+    ReviewHistory: {
+      /** Reviews */
+      reviews: components['schemas']['CardReview'][];
+    };
+    /** ReviewResult */
+    ReviewResult: {
+      /**
+       * Result
+       * @enum {string}
+       */
+      result: 'heard' | 'unsure' | 'missed';
+    };
     /** Round */
     Round: {
       /**
@@ -2593,6 +2664,58 @@ export interface components {
        * Format: date-time
        */
       updated_at: string;
+    };
+    /** SavedMark */
+    SavedMark: {
+      /** At Ms */
+      at_ms: number;
+      /**
+       * Content Id
+       * Format: uuid
+       */
+      content_id: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Note */
+      note: string | null;
+      /**
+       * Session Id
+       * Format: uuid
+       */
+      session_id: string;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: 'dictation' | 'manual';
+      /** Source Url */
+      source_url: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'suggested' | 'confirmed';
+      /** Tag */
+      tag: ('linking' | 'reduction' | 'weak_form' | 'unknown_word') | null;
+      /** Word From */
+      word_from: number;
+      /** Word To */
+      word_to: number;
+    };
+    /** SavedMarkList */
+    SavedMarkList: {
+      /** Marks */
+      marks: components['schemas']['SavedMark'][];
+      /** Next Cursor */
+      next_cursor: string | null;
     };
     /** Segment */
     Segment: {
@@ -3681,6 +3804,75 @@ export interface operations {
       };
     };
   };
+  review_history_api_v1_cards__card_id__reviews_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        card_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ReviewHistory'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  record_review_api_v1_cards__card_id__reviews_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        card_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReviewResult'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CardReview'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   list_contents_api_v1_contents_get: {
     parameters: {
       query?: {
@@ -4279,6 +4471,38 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  saved_marks_api_v1_marks_get: {
+    parameters: {
+      query?: {
+        cursor?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SavedMarkList'];
+        };
       };
       /** @description Validation Error */
       422: {

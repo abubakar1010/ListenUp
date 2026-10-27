@@ -282,7 +282,142 @@ async function signIn(page: Page, password: string) {
   await page.getByLabel('Password').press('Enter');
 }
 
+const REVIEW_CARD = {
+  id: 'review-card',
+  session_id: 'session-1',
+  slot: 1,
+  mark_id: null,
+  written_form: 'could have',
+  heard_form: 'kuduv',
+  at_ms: 11000,
+  content_id: 'clip-1',
+  source_url: '/contents/clip-1?at_ms=11000',
+  audio_status: 'ready',
+  created_at: '2026-10-26T10:00:00Z',
+} satisfies Schema['Card'];
+const REVIEW_ANSWERS: Answers = {
+  '/cards': {
+    json: { cards: [REVIEW_CARD], next_cursor: null, remaining: null } satisfies Schema['CardList'],
+  },
+  '/cards/review-card/reviews': { json: { reviews: [] } satisfies Schema['ReviewHistory'] },
+};
+
 export const STATES: ScanState[] = [
+  ...(['pending', 'failed', 'unavailable'] as const).map((status): ScanState => ({
+    name: `saved cards audio ${status}`,
+    path: '/cards',
+    signedIn: true,
+    answers: {
+      ...REVIEW_ANSWERS,
+      '/cards': {
+        json: {
+          cards: [{ ...REVIEW_CARD, audio_status: status }],
+          next_cursor: null,
+        } satisfies Schema['CardList'],
+      },
+    },
+    ready: (page) => page.getByRole('button', { name: 'Play snippet' }),
+  })),
+  {
+    name: 'saved cards result stored',
+    path: '/cards',
+    signedIn: true,
+    answers: {
+      ...REVIEW_ANSWERS,
+      'POST /cards/review-card/reviews': {
+        status: 201,
+        json: {
+          id: 'review-1',
+          card_id: REVIEW_CARD.id,
+          result: 'heard',
+          reviewed_at: REVIEW_CARD.created_at,
+        } satisfies Schema['CardReview'],
+      },
+    },
+    act: async (page) => {
+      await page.locator('audio').dispatchEvent('ended');
+      await page.getByRole('button', { name: 'Reveal forms' }).click();
+      await page.getByRole('button', { name: 'Heard', exact: true }).click();
+    },
+    ready: (page) => page.getByText('Saved: heard'),
+  },
+  {
+    name: 'saved cards result failed',
+    path: '/cards',
+    signedIn: true,
+    alert: true,
+    answers: {
+      ...REVIEW_ANSWERS,
+      'POST /cards/review-card/reviews': problem(503, 'unavailable', 'Please try saving again.'),
+    },
+    act: async (page) => {
+      await page.locator('audio').dispatchEvent('ended');
+      await page.getByRole('button', { name: 'Reveal forms' }).click();
+      await page.getByRole('button', { name: 'Heard', exact: true }).click();
+    },
+    ready: (page) => page.getByRole('alert'),
+  },
+  {
+    name: 'saved cards empty',
+    path: '/cards',
+    signedIn: true,
+    answers: { '/cards': { json: { cards: [], next_cursor: null } } },
+    ready: (page) => page.getByText(/No saved cards yet/),
+  },
+  {
+    name: 'saved cards hidden',
+    path: '/cards',
+    signedIn: true,
+    answers: REVIEW_ANSWERS,
+    ready: (page) => page.getByRole('button', { name: 'Reveal forms' }),
+  },
+  {
+    name: 'saved cards revealed',
+    path: '/cards',
+    signedIn: true,
+    answers: REVIEW_ANSWERS,
+    act: async (page) => {
+      await page.locator('audio').dispatchEvent('ended');
+      await page.getByRole('button', { name: 'Reveal forms' }).click();
+    },
+    ready: (page) => page.getByRole('group', { name: 'How did you hear it?' }),
+  },
+  {
+    name: 'saved marks empty',
+    path: '/marks',
+    signedIn: true,
+    answers: { '/marks': { json: { marks: [], next_cursor: null } } },
+    ready: (page) => page.getByText('No saved marks yet.'),
+  },
+  {
+    name: 'saved marks list',
+    path: '/marks',
+    signedIn: true,
+    answers: {
+      '/marks': {
+        json: {
+          marks: [
+            {
+              id: 'mark-1',
+              session_id: 'session-1',
+              content_id: 'clip-1',
+              word_from: 0,
+              word_to: 1,
+              at_ms: 11000,
+              source: 'manual',
+              status: 'confirmed',
+              tag: null,
+              note: 'Listen to the linked sounds',
+              created_at: REVIEW_CARD.created_at,
+              source_url: REVIEW_CARD.source_url,
+            },
+          ],
+          next_cursor: null,
+        } satisfies Schema['SavedMarkList'],
+      },
+    },
+    ready: (page) => page.getByRole('link', { name: 'Open source at 11.0 seconds' }),
+  },
   // Signed out.
   { name: 'sign-in', path: '/sign-in', ready: heading('Sign in') },
   {

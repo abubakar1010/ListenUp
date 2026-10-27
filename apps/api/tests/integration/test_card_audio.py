@@ -701,12 +701,15 @@ def test_uncertain_writer_survives_expiry_and_blocks_cleanup_purge_and_downgrade
         ):
             db.execute("DELETE FROM identity.users WHERE id=%s", [user])
         with pytest.raises(DBAPIError, match="Reconcile snippet writers"):
-            command.downgrade(alembic_config(migrated_url), "-1")
+            command.downgrade(alembic_config(migrated_url), "73_card_audio")
     finally:
         # Simulated operator reconciliation: this controlled writer has stopped,
         # and its storage operation is known complete. Never expire real writers.
         with psycopg.connect(migrated_url) as db:
             db.execute("DELETE FROM practice.card_snippet_writes WHERE user_id=%s", [user])
+        # Later migrations may have been downgraded before the writer barrier
+        # refused removal of 73_audio_lifecycle. Restore the shared test schema.
+        command.upgrade(alembic_config(migrated_url), "head")
     asyncio.run(cleanup())
     assert not any("/cards/" in key for key in storage.data)
 

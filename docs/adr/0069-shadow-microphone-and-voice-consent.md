@@ -1,4 +1,4 @@
-# ADR 0068: Shadow microphone check and voice consent
+# ADR 0069: Shadow microphone check and voice consent
 
 - Status: Accepted
 - Related: #78, ADRs 0048, 0050, 0051 and 0063

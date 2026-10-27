@@ -4,7 +4,7 @@
 
 The existing #79 round-start boundary was inspected first. #78 reuses it; there
 is no recording, upload, replay, grading, migration or plan-completion change.
-See ADR 0068 for the #81 interface and resource/consent lifecycle.
+See ADR 0069 for the #81 interface and resource/consent lifecycle.
 
 | Requirement | Evidence |
 | --- | --- |
@@ -99,7 +99,7 @@ unavailable under ADR 0050.
 
 The independent review was posted on PR #223 at head `2e78ad9`. Current main
 `2f2e9bf` was merged before the fixes; recording/upload/replay and grading remain
-outside this change. ADR 0068 replaces the colliding Shadow ADR 0065; existing
+outside this change. ADR 0069 replaces the colliding Shadow ADR 0065; existing
 B5 ADR 0065 is unchanged.
 
 - Red: `pnpm vitest run src/features/shadow/ShadowReadiness.test.tsx -t 'new unchecked|canonical'`
@@ -126,3 +126,8 @@ Final remote checks and the merge outcome are recorded on the PR. Earlier local
 full-suite claims above describe the original implementation; the original CI
 failure is not a passing browser result. Manual assistive-technology testing
 remains unperformed.
+
+Current-main integration: saved review PR #225 merged as `ee72874` during
+validation. Its conventions and Shadow's conventions are both retained. Saved
+review owns ADR 0068, so Shadow's decision is now ADR 0069. Generated API additions
+merge alongside the voice-consent refusal; no API contract is removed.
