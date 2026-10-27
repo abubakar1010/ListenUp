@@ -32,3 +32,18 @@ class CardList(BaseModel):
     cards: list[Card]
     next_cursor: str | None
     remaining: int | None = None
+
+
+class ReviewResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    result: Literal["heard", "unsure", "missed"]
+
+
+class CardReview(ReviewResult):
+    id: uuid.UUID
+    card_id: uuid.UUID
+    reviewed_at: datetime
+
+
+class ReviewHistory(BaseModel):
+    reviews: list[CardReview]

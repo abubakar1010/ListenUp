@@ -153,6 +153,7 @@ async def export_data(db: AsyncSession, learner: uuid.UUID) -> ExportPart:
     return ExportPart(
         tables=(
             table,
+            await learner_rows(db, "practice.card_reviews", learner, order_by="reviewed_at"),
             await learner_rows(db, "practice.card_snippet_cleanup", learner, order_by="created_at"),
             await learner_rows(
                 db,
@@ -202,3 +203,19 @@ async def retry_audio(db: AsyncSession, learner: uuid.UUID, card_id: uuid.UUID) 
         user_id=str(learner),
         generation_id=str(generation),
     )
+
+
+async def review_history(
+    db: AsyncSession, learner: uuid.UUID, card_id: uuid.UUID
+) -> schemas.ReviewHistory:
+    if await repository.audio_row(db, card_id, learner) is None:
+        raise ProblemError(404, "card_not_found", "There is no such card.")
+    return await repository.reviews(db, card_id)
+
+
+async def record_review(
+    db: AsyncSession, learner: uuid.UUID, card_id: uuid.UUID, body: schemas.ReviewResult
+) -> schemas.CardReview:
+    if await repository.audio_row(db, card_id, learner, lock=True) is None:
+        raise ProblemError(404, "card_not_found", "There is no such card.")
+    return await repository.insert_review(db, learner, card_id, uuid7(), body.result)

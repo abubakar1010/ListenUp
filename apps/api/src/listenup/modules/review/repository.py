@@ -12,6 +12,8 @@ from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.modules.review import schemas
+
 
 @dataclass(frozen=True)
 class MarkRow:
@@ -153,3 +155,35 @@ async def delete(session: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UUI
         {"id": mark_id, "session_id": session_id},
     )
     return deleted.first() is not None
+
+
+async def saved_marks(db: AsyncSession, cursor: str | None, limit: int) -> schemas.SavedMarkList:
+    from listenup.modules.review.domain import cursor as cursors
+    from listenup.platform.errors import ProblemError
+
+    try:
+        after = cursors.decode(cursor) if cursor else None
+    except cursors.InvalidCursor as error:
+        raise ProblemError(422, "invalid_cursor", "Load the marks again.") from error
+    rows = (
+        await db.execute(
+            text("""
+        SELECT m.*,s.content_id,'/contents/' || s.content_id || '?at_ms=' || m.at_ms AS source_url
+        FROM practice.marks m JOIN practice.sessions s ON s.id=m.session_id AND s.user_id=m.user_id
+        WHERE CAST(:time AS timestamptz) IS NULL OR (m.created_at,m.id)<(:time,:id)
+        ORDER BY m.created_at DESC,m.id DESC LIMIT :limit
+    """),
+            {
+                "time": after.created_at if after else None,
+                "id": after.id if after else None,
+                "limit": limit + 1,
+            },
+        )
+    ).all()
+    items = [schemas.SavedMark.model_validate(row, from_attributes=True) for row in rows[:limit]]
+    return schemas.SavedMarkList(
+        marks=items,
+        next_cursor=cursors.encode(cursors.Cursor(items[-1].created_at, items[-1].id))
+        if len(rows) > limit
+        else None,
+    )
