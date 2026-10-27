@@ -48,3 +48,12 @@ ADR 0049 limits the media worker to the database and storage on an internal netw
 - Media and backup buckets need CORS for the site's origin (signed uploads and playback) and must stay private; the bucket check enforces only the second.
 - `LISTENUP_ENVIRONMENT` defaults to `production`; a staging host sets `staging`, which keeps every non-local check (secure cookies, separate backup bucket, real consent versions, analytics key) but allows the fake AI configuration.
 - Not verified until #16 provides a host: the real ACME certificate, DNS, the provider's database and bucket behaviour, the GHCR pull from the VM, SSH from Actions, real speech models and signature downloads at production size, and "live within minutes" end to end. `docs/runbooks/deploy.md` records the local rehearsal and lists these.
+
+## Owner decisions after review (2026-10-27)
+
+The review of #215 raised four questions; the owner took the recommended answer for each.
+
+- **The backup runs as `listenup_owner`.** As the owner it reads every row without `BYPASSRLS`, and its restore test needs `CREATEDB`; a separate backup role would need both rights, giving no less power. Database Design 9.1 now names the backup as the owner role's second use; the API and the worker pools never use it.
+- **A manual release builds only a commit that passed CI.** An empty-tag manual run checks for a successful CI run on a push to `main` for that commit and stops without one.
+- **The Deploy check gates a release.** Every Deploy check run on the commit must have passed (the release waits up to 10 minutes for one still running); a commit its path filter skipped needs none. `ci.yml` stays unchanged.
+- **HSTS covers the site itself only.** `includeSubDomains` (and preload) would bind every service under the domain for a year, and the domain is not chosen yet (#16); widening it is a later, deliberate decision.
