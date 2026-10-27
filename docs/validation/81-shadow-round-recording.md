@@ -37,18 +37,35 @@ Not test-first, stated plainly: the seed/registry additions, the updated asserti
 mock changes, generated OpenAPI/client files and formatting. The two uncovered
 service lines are defensive races (row vanishing between the unlocked and locked read).
 
+## Independent review
+
+`/code-review medium` on the branch found eight issues; six were fixed test-first and
+two declined. Red results before the fixes: API `test_asking_again_with_another_type_deletes_the_unreferenced_object`
+and `test_completion_is_refused_and_the_upload_dropped_after_consent_is_withdrawn` failed;
+web `recording.test.ts` (a microphone still opening started a recorder after the round
+ended) and `treats a round whose completion response was lost as saved on retry`
+(409 `recording_exists` was a permanent error) failed. All pass now. Also fixed without a
+new test: the stale upload-error panel (hidden once recorded), starting the next round
+while an upload is pending (button busy), and the duplicated session lock and step
+check (now only in the route). Consent is checked after the ownership 404 so a second
+learner still gets 404. Declined: a repeated `complete` after a size mismatch reports
+`upload_incomplete`, which is accurate because the object was deleted.
+
 ## Checks run
 
 - API: `uv run pytest -m 'not performance'`: 2338 passed, 12 skipped (S3 storage not
   reachable here, so the real-S3 integration tests skipped; CI requires them), one
   failure (`test_export…`) caused by the new seed, fixed; its file plus the access and
-  recording suites then passed. `ruff check/format`, `mypy` (207 files), `lint-imports`
+  recording suites then passed. After the review fixes the access, recording, rounds and
+  unit suites (1338) passed again; the full API suite was not re-run end to end. `ruff check/format`, `mypy` (207 files), `lint-imports`
   (6 kept), `alembic upgrade head`, `alembic check` and a downgrade/upgrade round trip
   are clean. Changed-code coverage of `modules/shadow`: api 97%, repository 97%,
   service 93% (uncovered: defensive lines above).
-- Web: `pnpm lint`, `format:check`, `typecheck`, `pnpm test:coverage` (718 passed),
+- Web: `pnpm lint`, `format:check`, `typecheck`, `pnpm test:coverage` (720 passed),
   `pnpm build`, `pnpm size` (126.2 kB of 200 kB), `pnpm e2e` (247 passed, 2 skipped as
-  before) all pass.
+  before) all pass. One run of the full web suite after the review fixes failed once in
+  `ShadowRounds.test.tsx` (bounded playback end) and passed on three isolated reruns
+  and a second full run; it is timing-sensitive under load, not changed by this story.
 - Accessibility: the replay controls are native `audio` elements with labels; round
   status stays in the single polite region (UX-22); axe specs for Shadow still pass.
 
