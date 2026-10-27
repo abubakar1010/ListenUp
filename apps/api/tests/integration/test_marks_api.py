@@ -126,6 +126,7 @@ def test_a_mark_stores_its_word_range_audio_time_and_note(client, session_id, mi
         "note": "sounds like 'worl'",
         "source": "manual",
         "status": "confirmed",
+        "tag": None,
         "created_at": mark["created_at"],
     }
     assert response.headers["cache-control"] == "private, no-store"
@@ -261,6 +262,7 @@ def test_marks_wait_for_the_transcript_step(client, clip):
         client.patch(f"{path}/{mark_id}", json={"note": "x"}),
         client.delete(f"{path}/{mark_id}"),
         client.put(f"{path}/{mark_id}/status", json={"status": "confirmed"}),
+        client.put(f"{path}/{mark_id}/tag", json={"tag": "linking"}),
     ):
         assert response.status_code == 409, response.text
         assert response.json()["code"] == "step_locked"
@@ -391,6 +393,7 @@ def test_a_mark_is_reached_only_through_its_own_session(client, clip, session_id
     finish(api_role_url, client, other["id"], Step.DICTATION)
     path = f"{marks_path(str(other['id']))}/{mark['id']}"
     assert client.patch(path, json={"note": "x"}).json()["code"] == "mark_not_found"
+    assert client.put(f"{path}/tag", json={"tag": "linking"}).json()["code"] == "mark_not_found"
     assert client.delete(path).json()["code"] == "mark_not_found"
     assert client.get(marks_path(session_id)).json() == {"marks": [mark]}
 
@@ -403,6 +406,7 @@ def test_another_learner_cannot_reach_the_marks(make_client, worker_url, client,
         other.get(marks_path(session_id)),
         other.post(marks_path(session_id), json=new_mark(word_from=2, word_to=2)),
         other.patch(path, json={"note": "x"}),
+        other.put(f"{path}/tag", json={"tag": "linking"}),
         other.delete(path),
     ):
         assert response.status_code == 404
@@ -443,3 +447,113 @@ def test_a_word_a_correction_removed_cannot_be_marked(client, clip, session_id, 
     # Removed words inside a longer phrase are fine: the phrase still has words.
     ok = client.post(marks_path(session_id), json=new_mark(word_from=0, word_to=1))
     assert ok.status_code == 201
+
+
+# -- tags (#61, FR-TR-4) -------------------------------------------------------------------
+
+
+def stored_tag(url: str, mark_id: str) -> str | None:
+    with psycopg.connect(url) as conn:
+        row = conn.execute("SELECT tag FROM practice.marks WHERE id = %s", [mark_id]).fetchone()
+    assert row is not None
+    return row[0]  # type: ignore[no-any-return]
+
+
+def tag_path(session_id: str, mark_id: str) -> str:
+    return f"{marks_path(session_id)}/{mark_id}/tag"
+
+
+def test_a_tag_can_be_set_changed_and_cleared(client, session_id, migrated_url):
+    mark = client.post(marks_path(session_id), json=new_mark(note="kept")).json()
+    path = tag_path(session_id, mark["id"])
+    for tag in ("linking", "reduction", "weak_form", "unknown_word", None):
+        response = client.put(path, json={"tag": tag})
+        assert response.status_code == 200, response.text
+        assert response.json() == {**mark, "tag": tag}
+        assert response.headers["cache-control"] == "private, no-store"
+        assert stored_tag(migrated_url, mark["id"]) == tag
+    # The note and the rest of the mark are untouched.
+    assert client.get(marks_path(session_id)).json() == {"marks": [mark]}
+
+
+def test_the_same_tag_sent_twice_answers_with_the_same_mark(client, session_id):
+    mark = client.post(marks_path(session_id), json=new_mark()).json()
+    path = tag_path(session_id, mark["id"])
+    first = client.put(path, json={"tag": "weak_form"})
+    again = client.put(path, json={"tag": "weak_form"})
+    assert (first.status_code, again.status_code) == (200, 200)
+    assert again.json() == first.json() == {**mark, "tag": "weak_form"}
+
+
+def test_a_new_mark_can_carry_its_tag(client, session_id, migrated_url):
+    body = new_mark(tag="reduction")
+    first = client.post(marks_path(session_id), json=body)
+    assert first.status_code == 201, first.text
+    assert first.json()["tag"] == "reduction"
+    assert stored_tag(migrated_url, body["id"]) == "reduction"
+    # A resend answers with the mark as stored, and a mark without a tag has none.
+    assert client.post(marks_path(session_id), json=body).json() == first.json()
+    untagged = client.post(marks_path(session_id), json=new_mark(word_from=2, word_to=2))
+    assert untagged.json()["tag"] is None
+
+
+@pytest.mark.parametrize("tag", ["accent", "", "Linking", "weak form"])
+def test_a_tag_outside_the_four_is_refused_and_nothing_changes(
+    client, session_id, migrated_url, tag
+):
+    mark = client.post(marks_path(session_id), json=new_mark()).json()
+    client.put(tag_path(session_id, mark["id"]), json={"tag": "linking"})
+    refused = client.put(tag_path(session_id, mark["id"]), json={"tag": tag})
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["code"] == "mark_tag_invalid"
+    assert stored_tag(migrated_url, mark["id"]) == "linking"
+    body = new_mark(word_from=2, word_to=2, tag=tag)
+    on_create = client.post(marks_path(session_id), json=body)
+    assert (on_create.status_code, on_create.json()["code"]) == (422, "mark_tag_invalid")
+    with psycopg.connect(migrated_url) as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM practice.marks WHERE id = %s", [body["id"]]
+        ).fetchone() == (0,)
+
+
+def test_the_tag_body_must_name_the_tag(client, session_id):
+    mark = client.post(marks_path(session_id), json=new_mark()).json()
+    for body in ({}, {"tag": 3}, {"tag": ["linking"]}):
+        assert client.put(tag_path(session_id, mark["id"]), json=body).status_code == 422
+
+
+def test_the_database_refuses_a_tag_the_api_would_refuse(client, session_id, api_role_url):
+    # Below the API: the practice.marks CHECK refuses the same values for the API role.
+    mark = client.post(marks_path(session_id), json=new_mark()).json()
+    with psycopg.connect(api_role_url) as conn:
+        conn.execute("SELECT set_config('app.user_id', %s, true)", [learner_id(client)])
+        conn.execute("UPDATE practice.marks SET tag = 'weak_form' WHERE id = %s", [mark["id"]])
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute("UPDATE practice.marks SET tag = 'accent' WHERE id = %s", [mark["id"]])
+
+
+def test_tagging_an_unknown_mark_is_refused(client, session_id):
+    response = client.put(tag_path(session_id, str(uuid.uuid4())), json={"tag": "linking"})
+    assert (response.status_code, response.json()["code"]) == (404, "mark_not_found")
+
+
+def test_tagging_needs_the_csrf_header(client, session_id, migrated_url):
+    mark = client.post(marks_path(session_id), json=new_mark()).json()
+    del client.headers["X-CSRF-Token"]
+    response = client.put(tag_path(session_id, mark["id"]), json={"tag": "linking"})
+    assert (response.status_code, response.json()["code"]) == (403, "csrf_failed")
+    assert stored_tag(migrated_url, mark["id"]) is None
+
+
+def test_a_dictation_mark_can_be_tagged_and_keeps_its_source(client, session_id, migrated_url):
+    with psycopg.connect(migrated_url) as conn:
+        conn.execute(
+            "UPDATE practice.marks SET source = 'dictation', status = 'suggested' WHERE id = %s",
+            [client.post(marks_path(session_id), json=(body := new_mark())).json()["id"]],
+        )
+    tagged = client.put(tag_path(session_id, body["id"]), json={"tag": "unknown_word"}).json()
+    assert (tagged["source"], tagged["status"], tagged["tag"]) == (
+        "dictation",
+        "suggested",
+        "unknown_word",
+    )

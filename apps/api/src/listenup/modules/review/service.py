@@ -1,10 +1,12 @@
 """The Transcript experience composes public module services, never cache queries.
 
 Marks (#58, FR-TR-2, ADR 0047) are this module's own rows in `practice.marks`. Every
-mark route passes the Transcript gate (`practice.require_reached`) first. A new mark
+session mark route passes the Transcript gate (`practice.require_reached`) first. A new mark
 is named by the browser and saved with one INSERT; its audio time and phrase come
 from the passage words, never from the browser. Later stories add to these
 functions: tags (#61), the mark list and count (#60), Dictation pre-fill (#59).
+A tag (FR-TR-4) is one of `domain.MARK_TAGS` or none; the practice.marks CHECK holds the
+same four, so a value the service lets through by mistake is still refused.
 
 Marks added from the Dictation diff (#55, FR-DI-6) come through `add_dictation_marks`:
 the dictation module places them from its stored diff and checks its own attempt, so
@@ -27,7 +29,9 @@ from listenup.modules.review.domain import (
     MarkRuleError,
     MarkTooLong,
     MarkWithoutWords,
+    TagUnknown,
     check_length,
+    check_tag,
     clean_note,
     place_mark,
 )
@@ -95,12 +99,23 @@ def _refused(error: MarkRuleError) -> ProblemError:
         return ProblemError(422, "mark_no_words", "Removed words cannot be marked.")
     if isinstance(error, MarkTooLong):
         return ProblemError(422, "mark_too_long", "Mark a word or a short phrase.")
+    if isinstance(error, TagUnknown):
+        return ProblemError(
+            422, "mark_tag_invalid", "A tag is linking, reduction, weak form or unknown word."
+        )
     return ProblemError(422, "note_too_long", "A note can be at most 500 characters.")
 
 
 def _note(note: str | None) -> str | None:
     try:
         return clean_note(note)
+    except MarkRuleError as error:
+        raise _refused(error) from error
+
+
+def _tag(tag: str | None) -> str | None:
+    try:
+        return check_tag(tag)
     except MarkRuleError as error:
         raise _refused(error) from error
 
@@ -132,9 +147,10 @@ async def create_mark(
 
     Refusals: 409 `mark_exists` (these words are already marked; names that mark) and
     `mark_id_taken` (the id belongs to a different mark), 422 `mark_out_of_range`,
-    `mark_too_long` and `note_too_long`.
+    `mark_too_long`, `note_too_long` and `mark_tag_invalid`.
     """
     note = _note(new.note)
+    tag = _tag(new.tag)
     await practice.require_reached(db, session_id, practice.Step.TRANSCRIPT)
     passage = await transcript.read_passage(db, worker_database, learner, session_id)
     try:
@@ -152,6 +168,7 @@ async def create_mark(
             at_ms=place.at_ms,
             note=note,
             source="manual",
+            tag=tag,
         ),
     )
     if row is not None:
@@ -260,6 +277,21 @@ async def change_note(
     return _mark(row)
 
 
+async def change_tag(
+    db: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UUID, tag: str | None
+) -> schemas.Mark:
+    """FR-TR-4: set, change or clear (None) the mark's tag; the same tag again is harmless.
+
+    Refusals: 422 `mark_tag_invalid`, 404 `mark_not_found`.
+    """
+    checked = _tag(tag)
+    await practice.require_reached(db, session_id, practice.Step.TRANSCRIPT)
+    row = await repository.set_tag(db, session_id, mark_id, checked)
+    if row is None:
+        raise _mark_not_found()
+    return _mark(row)
+
+
 async def confirm_mark(db: AsyncSession, session_id: uuid.UUID, mark_id: uuid.UUID) -> schemas.Mark:
     """FR-TR-3: the learner confirms a suggested Dictation mark; a confirmed one stays so."""
     await practice.require_reached(db, session_id, practice.Step.TRANSCRIPT)
@@ -282,3 +314,7 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
     return ExportPart(
         tables=(await learner_rows(session, "practice.marks", learner, order_by="created_at"),)
     )
+
+
+async def saved_marks(db: AsyncSession, cursor: str | None, limit: int) -> schemas.SavedMarkList:
+    return await repository.saved_marks(db, cursor, limit)

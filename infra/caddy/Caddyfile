@@ -20,7 +20,9 @@
 	encode @compressible zstd gzip
 
 	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# This site only: includeSubDomains (and preload) would also bind every other
+		# service under the domain, so they wait for a deliberate decision.
+		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"

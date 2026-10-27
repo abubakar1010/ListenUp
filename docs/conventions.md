@@ -251,6 +251,13 @@ Read the section for the area you are changing before you change it. The rules e
   one second in the panel's single polite region (UX-22). Undo cancels only a
   deletion that was never sent; an attempted deletion may need recreation after
   a lost response. Refused deletions preserve the known saved mark and note.
+- Mark tags (#61, ADR 0067): the four tags live in `review/domain/marks.MARK_TAGS`
+  (the `practice.marks.tag` CHECK holds the same values) and `features/review/tags.ts`.
+  `PUT .../marks/{id}/tag` sends the whole tag (null clears it) and needs no `run_once`;
+  the service refuses any other value with 422 `mark_tag_invalid`. A create may carry
+  the tag. In `MarkSync` the tag joins the note's debounced `update` (note, then tag,
+  then confirmation). Set it with `TagSelect`, a native select, in the mark panel and
+  each list row; show the tag in words in the list and in the word's description.
 
 ## Media sandbox and scanning (ADR 0049)
 
@@ -372,3 +379,17 @@ Read the section for the area you are changing before you change it. The rules e
   unset, do not emit `record_shadow_round_completed` and do not complete the step.
   #78/#81/#87 add microphone/consent, recording/upload and completion respectively.
   No reference-profile readiness check gates playback (ADR 0050).
+
+## Saved review (ADR 0068)
+
+- `/cards` reuses the merged learner-scoped deck list and private audio endpoint.
+  Review players use neutral labels until reveal; only a completed snippet unlocks
+  the written/heard forms. Do not fall back to whole-source audio.
+- `cards` owns append-only `practice.card_reviews`. Save through the idempotent
+  reviews route, with learner RLS and a composite card/learner foreign key. Recent
+  history is bounded to 50 rows; exports contain all rows. Results do not schedule
+  another review or change session progression.
+- `review.service.saved_marks` reads marks across sessions using a newest-first
+  keyset and derives source URLs from the owning session and absolute `at_ms`.
+  This read has no Transcript step gate and exposes no transcript cache content.
+  It has no dependency on tags or suggested phrases.

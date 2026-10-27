@@ -2,14 +2,16 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 
 import { buttonClass } from '../../components/button';
 import { SaveStatus, saveStatusText } from '../../lib/autosave';
-import type { LocalMark, MarkSyncStatus } from './markSync';
+import type { LocalMark, MarkSyncStatus, MarkTag } from './markSync';
+import { TagSelect } from './TagSelect';
 import { STICKY_HEADER_CLEARANCE } from '../session/PracticeLayout';
 import { MAX_MARK_WORDS, rangeOf, type Range, type Selection } from './selection';
 
 /**
  * What the learner selected and what they can do with it (#58, FR-TR-2): mark it in one
  * click or tap, grow it a word at a time on a touch screen, or write the note of the mark
- * it already is. The transcript words do the selecting (`TranscriptScreen`).
+ * it already is, and give it a tag (#61, FR-TR-4). The transcript words do the selecting
+ * (`TranscriptScreen`).
  */
 export function MarkPanel({
   selection,
@@ -23,6 +25,7 @@ export function MarkPanel({
   onSelect,
   onMark,
   onNote,
+  onTag,
   onConfirm,
   onRemove,
   onNoteFocused,
@@ -40,6 +43,7 @@ export function MarkPanel({
   onSelect: (selection: Selection) => void;
   onMark: () => void;
   onNote: (id: string, note: string | null) => void;
+  onTag: (id: string, tag: MarkTag | null) => void;
   onConfirm: (id: string) => void;
   onRemove: (id: string) => void;
   onNoteFocused: () => void;
@@ -114,6 +118,7 @@ export function MarkPanel({
               focus={focusNote}
               onFocused={onNoteFocused}
               onSave={(note) => onNote(mark.id, note)}
+              onTag={(tag) => onTag(mark.id, tag)}
               onConfirm={() => onConfirm(mark.id)}
               onRemove={() => onRemove(mark.id)}
             />
@@ -135,6 +140,7 @@ function NoteEditor({
   focus,
   onFocused,
   onSave,
+  onTag,
   onConfirm,
   onRemove,
 }: {
@@ -142,6 +148,7 @@ function NoteEditor({
   focus: boolean;
   onFocused: () => void;
   onSave: (note: string | null) => void;
+  onTag: (tag: MarkTag | null) => void;
   onConfirm: () => void;
   onRemove: () => void;
 }) {
@@ -161,6 +168,12 @@ function NoteEditor({
           {mark.status === 'suggested' ? 'From Dictation, not confirmed yet.' : 'From Dictation.'}
         </p>
       )}
+      <TagSelect
+        id={`mark-tag-${mark.id}`}
+        label="Tag (optional)"
+        value={mark.tag}
+        onChange={onTag}
+      />
       <label htmlFor={id} className="font-bold">
         Note (optional)
       </label>
