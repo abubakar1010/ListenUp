@@ -967,7 +967,7 @@ Four database roles separate who can change the schema, who serves learners and 
 
 | Role | Used by | Rights |
 | --- | --- | --- |
-| `listenup_owner` | Migrations only | Owns all schemas and tables; never used by running services |
+| `listenup_owner` | Migrations, and the nightly backup ([ADR 0032](../adr/0032-nightly-pg-dump-with-manifest-and-restore-tests.md)) | Owns all schemas and tables, so a dump reads every row without `BYPASSRLS`; `CREATEDB` for the backup's scratch restore test. Never used by the API or the worker pools |
 | `listenup_api` | API processes | Read and write learner tables, **subject to row-level security**; read-only on `ai.calls` |
 | `listenup_worker` | Worker processes | Read and write all application tables with `BYPASSRLS` (jobs act for many learners); no DDL |
 | `listenup_readonly` | Admin reports, debugging | `SELECT` only, with row-level security, on non-personal tables and on aggregates |

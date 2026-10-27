@@ -7,7 +7,8 @@
 # is skipped otherwise). Images are still built and pushed for every green main.
 #
 # Manual runs (Actions → Release → Run workflow):
-#   action=deploy,   tag empty     build the current main and deploy it
+#   action=deploy,   tag empty     build the current main and deploy it, once CI has
+#                                  passed on that commit
 #   action=deploy,   tag=r41       redeploy existing images (migrations run)
 #   action=rollback, tag empty     back to the host's previous release (no migrations)
 #   action=rollback, tag=r39       back to a named release; one older than the previous
@@ -57,6 +58,7 @@ jobs:
       || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       packages: read
     outputs:
@@ -97,6 +99,38 @@ jobs:
             echo "registry=ghcr.io/${OWNER,,}"
           } >> "$GITHUB_OUTPUT"
           echo "Release r$RUN_NUMBER of $sha; build=$build; deploy tag: ${deploy_tag:-previous}" >> "$GITHUB_STEP_SUMMARY"
+      # A new build needs the commit's checks green: CI on a push to main (the trigger
+      # proves it for an automatic run; a manual run must find it), and the Deploy check
+      # wherever its path filter ran it, waiting up to 10 minutes for one still running.
+      - name: Require green checks on the commit
+        if: steps.tag.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ steps.tag.outputs.sha }}
+        run: |
+          set -euo pipefail
+          runs() {
+            gh api "repos/$REPO/actions/workflows/$1/runs?head_sha=$SHA&branch=main&event=push&per_page=50" --jq "$2"
+          }
+          if [[ "$EVENT" == workflow_dispatch ]]; then
+            passed="$(runs ci.yml '[.workflow_runs[] | select(.conclusion == "success")] | length')"
+            if [[ "$passed" == 0 ]]; then
+              echo "::error::CI has not passed on $SHA; deploy a tag that passed, or wait for CI"
+              exit 1
+            fi
+          fi
+          for _ in $(seq 60); do
+            running="$(runs deploy-check.yml '[.workflow_runs[] | select(.status != "completed")] | length')"
+            [[ "$running" == 0 ]] && break
+            sleep 10
+          done
+          failed="$(runs deploy-check.yml '[.workflow_runs[] | select(.status != "completed" or .conclusion != "success")] | length')"
+          if [[ "$failed" != 0 ]]; then
+            echo "::error::the Deploy check did not pass on $SHA"
+            exit 1
+          fi
       # A redeploy of a named tag must copy that release's own compose file and scripts.
       - name: Find the commit a named release was built from
         id: revision
