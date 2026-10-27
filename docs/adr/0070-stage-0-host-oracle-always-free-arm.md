@@ -57,10 +57,10 @@ Checked against PyPI, the PyTorch CPU index and the repository today. No arm64 m
 
 These are code changes outside a documentation spike. Without the first, the Arm host cannot run a release.
 
-1. **Multi-arch release images**: build `linux/arm64` (native `ubuntu-24.04-arm` runner or QEMU, whichever is available for this repository) for all six images and publish one manifest per tag, keeping the existing `sha-` and `r<n>` tags. Amd64 stays so the same images run in CI and locally.
-2. **Parselmouth on arm64**: add a build stage with a C++ toolchain and CMake for `worker-media` (or ship a wheel we build), and confirm `import parselmouth` and the acoustics tests pass on arm64.
-3. **Re-measure on the host**: B1 to B4, with wav2vec2 int8 checked against fp32 on Arm; amend ADR 0034's "indicative" numbers.
-4. **Update the design documents by pull request** (4 cores and 150 learners become the measured stage 0 figures; the source of truth is `docs/design/`), `docs/runbooks/deploy.md` step 1, and this ADR's status once the VM exists.
+1. **Multi-arch release images** ([#231](https://github.com/abubakar1010/ListenUp/issues/231)): build `linux/arm64` (native `ubuntu-24.04-arm` runner or QEMU, whichever is available for this repository) for all six images and publish one manifest per tag, keeping the existing `sha-` and `r<n>` tags. Amd64 stays so the same images run in CI and locally.
+2. **Parselmouth on arm64** ([#232](https://github.com/abubakar1010/ListenUp/issues/232)): add a build stage with a C++ toolchain and CMake for `worker-media` (or ship a wheel we build), and confirm `import parselmouth` and the acoustics tests pass on arm64.
+3. **Re-measure on the host** ([#233](https://github.com/abubakar1010/ListenUp/issues/233)): B1 to B4, with wav2vec2 int8 checked against fp32 on Arm; amend ADR 0034's "indicative" numbers.
+4. **Update the design documents by pull request** ([#234](https://github.com/abubakar1010/ListenUp/issues/234)) (4 cores and 150 learners become the measured stage 0 figures; the source of truth is `docs/design/`), `docs/runbooks/deploy.md` step 1, and this ADR's status once the VM exists.
 
 ## Consequences
 

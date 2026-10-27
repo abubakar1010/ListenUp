@@ -123,7 +123,7 @@ Settings → Environments → **production** (create it; optionally add yourself
 | Secret | `DEPLOY_SSH_KNOWN_HOSTS` | the output of `ssh-keyscan -t ed25519 <public ip>`. First check its fingerprint (`ssh-keygen -lf` on that line) equals `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` run on the VM over your own login |
 | Variable | `LISTENUP_PUBLIC_URL` | `https://<domain>` once DNS exists |
 
-Do **not** set `LISTENUP_DEPLOY_ENABLED` to `true` yet: the images are amd64 only (ADR 0070, follow-up 1) and the database, storage, SMTP and DNS steps of [deploy.md](deploy.md) come first. Test the SSH access by hand with the release key (step 5's check) and delete the private key from your machine once it is in GitHub, or keep it in a password manager. Rotation: deploy.md, "Secrets and their rotation".
+Do **not** set `LISTENUP_DEPLOY_ENABLED` to `true` yet: the images are amd64 only (ADR 0070 follow-up 1, [#231](https://github.com/abubakar1010/ListenUp/issues/231)) and the database, storage, SMTP and DNS steps of [deploy.md](deploy.md) come first. Test the SSH access by hand with the release key (step 5's check) and delete the private key from your machine once it is in GitHub, or keep it in a password manager. Rotation: deploy.md, "Secrets and their rotation".
 
 ## 8. Run the benchmarks on this VM (outside this runbook's 30 minutes)
 
@@ -138,7 +138,7 @@ On the VM, as `deploy`, with the repository checked out (`git clone` over HTTPS)
 
 1. Open a pull request that fills the table in step 6 and changes ADR 0070's status to **Accepted** (or a new ADR if the fallback was used). Link it to #16 (`Refs #16`).
 2. Close #16 when the acceptance criteria hold: a VM with Docker is reachable by the team and documented here, and the ADR records the host, its limits on the date, and the fallback.
-3. Add the Arm follow-ups from ADR 0070 as stories before the live cutover (#112).
+3. Add Check the Arm follow-ups [#231](https://github.com/abubakar1010/ListenUp/issues/231), [#232](https://github.com/abubakar1010/ListenUp/issues/232), [#233](https://github.com/abubakar1010/ListenUp/issues/233) and [#234](https://github.com/abubakar1010/ListenUp/issues/234) are done or consciously deferred before the live cutover (#112).
 
 ## Troubleshooting
 
@@ -147,5 +147,5 @@ On the VM, as `deploy`, with the repository checked out (`git clone` over HTTPS)
 | "Out of host capacity" | Try another availability domain; retry later; see ADR 0070 fallback 1. |
 | SSH works, ports 80/443 time out | The security list (step 3) or host iptables (`sudo iptables -S INPUT`) is missing the rule. |
 | `permission denied` for `docker` | You are not in the `docker` group yet: log out and in, or use the `deploy` user. |
-| `exec format error` on a pulled image | The image is amd64 only: ADR 0070 follow-up 1. |
+| `exec format error` on a pulled image | The image is amd64 only: ADR 0070 follow-up 1 ([#231](https://github.com/abubakar1010/ListenUp/issues/231)). |
 | The instance was stopped by Oracle | Idle or over-limit reclaim; check that total A1 is 2 OCPUs and 12 GB and read ADR 0070. |
