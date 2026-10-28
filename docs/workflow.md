@@ -42,6 +42,13 @@ Owner decisions of 2026-10-28 (backlog index #119):
 
 Run two or three sessions at once on stories that touch different areas. Each has its own branch and pull request, so nothing needs merging by hand.
 
+For #80, owner exception E2 (approved 2026-10-28) permits the speech assessment
+port, output schema, `ai.yaml` registration and a fake second provider (AT-22)
+without #21 or #22. The real-model local provider and B3 budget criterion still
+wait for both. #82–#86 may be built against the fake provider only after the port
+is merged; other dependencies still apply. This does not close #80. See
+[ADR 0074](adr/0074-speech-assessment-contract-split.md).
+
 Each cloud task already has an isolated checkout; use it without creating a
 worktree unless the owner asks. Start a new story from current `main` on one
 unused branch, or use the owner's named branch. At the start of every session,
