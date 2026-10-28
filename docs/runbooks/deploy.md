@@ -1,6 +1,6 @@
 # Deploy and rollback runbook
 
-Production is one Docker-capable VM running `compose.prod.yml` behind Caddy, with managed PostgreSQL 16, S3-compatible storage and an SMTP provider (Architecture 11). Design and reasons: [ADR 0066](../adr/0066-host-neutral-compose-deploy-with-a-media-relay.md). Nothing here names a provider: the host is chosen in #16. Times are UTC.
+Production is one Docker-capable VM running `compose.prod.yml` behind Caddy, with managed PostgreSQL 16, S3-compatible storage and an SMTP provider (Architecture 11). Design and reasons: [ADR 0066](../adr/0066-host-neutral-compose-deploy-with-a-media-relay.md). Nothing here names a provider: the host is proposed in [ADR 0070](../adr/0070-stage-0-host-oracle-always-free-arm.md) (#16) and provisioned with [stage-0-host.md](stage-0-host.md). Times are UTC.
 
 | What | Where |
 | --- | --- |
@@ -102,7 +102,7 @@ The compose file in `/opt/listenup` stays the newer release's; compose changes f
 
 Do these once per host, in order. Each step says what it proves.
 
-1. **VM.** Any Linux VM with at least 4 cores and 16 GB of memory for the speech models (Architecture 11; the media worker is capped at 2 cores and 18 GB including swap), 40 GB of disk, a public IPv4 address, and outbound HTTPS. Install Docker Engine 28 or later and the Compose plugin 2.24 or later (ADR 0049's isolated bridge needs both): `docker version`, `docker compose version`.
+1. **VM.** (The stage 0 host: [stage-0-host.md](stage-0-host.md), which also covers what an Arm host needs.) Any Linux VM with at least 4 cores and 16 GB of memory for the speech models (Architecture 11; the media worker is capped at 2 cores and 18 GB including swap), 40 GB of disk, a public IPv4 address, and outbound HTTPS. Install Docker Engine 28 or later and the Compose plugin 2.24 or later (ADR 0049's isolated bridge needs both): `docker version`, `docker compose version`.
 2. **Firewall.** Inbound: 22 (SSH, restricted to the owner's addresses where the provider allows it), 80 and 443 TCP, and 443 UDP (HTTP/3). Nothing else; only the `edge` container publishes ports.
 3. **Deploy user.** Create `deploy`, add it to the `docker` group, put the release workflow's public key in `~deploy/.ssh/authorized_keys`, disable password login. Record the host key for GitHub: `ssh-keyscan -t ed25519 <host>`, or `ssh-keyscan -p <port> -t ed25519 <host>` when SSH listens on another port (the line then starts `[<host>]:<port>`, which is what the deploy job looks up). Compare its fingerprint with the provider's console.
 4. **DNS.** An `A` (and `AAAA` if IPv6) record from the domain to the VM. Caddy needs it before the first deploy to get the certificate.
