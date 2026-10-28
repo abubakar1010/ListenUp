@@ -19,6 +19,12 @@ on:
   schedule:
     - cron: "17 2 * * *"
   workflow_dispatch:
+  # TEMPORARY (#99): lets the matrix run on the PR before the workflow is on main, where
+  # a manual run becomes possible. Remove this trigger before merging.
+  pull_request:
+    paths:
+      - .github/workflows/cross-browser.yml
+      - apps/web/**
 
 permissions:
   contents: read
