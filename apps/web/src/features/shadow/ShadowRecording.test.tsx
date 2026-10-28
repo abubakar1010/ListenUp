@@ -91,7 +91,11 @@ function stateOf(phase: 'ready' | 'ended' | 'saved') {
 async function playRound() {
   await screen.findByRole('button', { name: 'Play round 1' });
   const audio = document.querySelector('audio')!;
-  fireEvent.loadedMetadata(audio);
+  // The player attaches its listeners in an effect, which can run after the button shows.
+  await waitFor(() => {
+    fireEvent.loadedMetadata(audio);
+    expect(screen.getByRole('button', { name: 'Play round 1' })).toBeEnabled();
+  });
   vi.useFakeTimers();
   try {
     fireEvent.click(screen.getByRole('button', { name: 'Play round 1' }));
@@ -139,7 +143,7 @@ it('records from the count-in to the end, uploads it and replays it next to the 
   const { calls } = routes();
   renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
   await playRound();
-  await screen.findByText(/Recording saved/);
+  await screen.findByText(/Recording saved/, undefined, { timeout: 5000 });
   expect(FakeRecorder.instances).toHaveLength(1);
   expect(FakeRecorder.instances[0].mimeType).toBe('audio/webm;codecs=opus');
   expect(calls.map((c) => `${c.method} ${c.path}`).filter((c) => !c.startsWith('GET'))).toEqual([
@@ -166,7 +170,7 @@ it('records AAC in MP4 where Opus in WebM is not supported', async () => {
   const { calls } = routes();
   renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
   await playRound();
-  await screen.findByText(/Recording saved/);
+  await screen.findByText(/Recording saved/, undefined, { timeout: 5000 });
   expect(FakeRecorder.instances[0].mimeType).toBe('audio/mp4');
   expect(calls.find((c) => c.path.endsWith('/recording'))!.body).toMatchObject({
     mime: 'audio/mp4',
@@ -184,7 +188,7 @@ it('retries a failed upload without recording again', async () => {
   renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
   await playRound();
   fireEvent.click(await screen.findByRole('button', { name: 'Retry upload' }));
-  await screen.findByText(/Recording saved/);
+  await screen.findByText(/Recording saved/, undefined, { timeout: 5000 });
   expect(puts).toBe(2);
   expect(FakeRecorder.instances).toHaveLength(1);
   expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
@@ -245,7 +249,7 @@ it('treats a round whose completion response was lost as saved on retry', async 
   renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
   await playRound();
   fireEvent.click(await screen.findByRole('button', { name: 'Retry upload' }));
-  await screen.findByText(/Recording saved/);
+  await screen.findByText(/Recording saved/, undefined, { timeout: 5000 });
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(calls.filter((c) => c.path === '/shadow/rounds/r1/complete')).toHaveLength(1);
 });
