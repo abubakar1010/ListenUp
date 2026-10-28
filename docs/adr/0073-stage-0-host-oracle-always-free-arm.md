@@ -1,4 +1,4 @@
-# ADR 0070: Stage 0 host: Oracle Cloud Always Free Arm VM, with a trial-credit VM for the 4-core measurements
+# ADR 0073: Stage 0 host: Oracle Cloud Always Free Arm VM, with a trial-credit VM for the 4-core measurements
 
 - Status: Proposed (becomes Accepted when the owner has provisioned the VM and recorded its facts, see the runbook)
 - Date: 2026-10-27
