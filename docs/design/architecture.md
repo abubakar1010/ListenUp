@@ -237,6 +237,14 @@ Configuration is versioned at `listenup/ai/ai.yaml`, with an ordered provider li
 
 The deterministic fakes are model-free and selectable by configuration. Adapter contract tests replay recorded engine outputs through the schema mapping; the initial recordings are synthetic, so they validate mapping rather than real speech-model accuracy and must be replaced after the model spikes ([ADR 0028](../adr/0028-ai-ports-gateway-and-self-hosted-speech-adapters.md)).
 
+Owner exception E2 (approved 2026-10-28) splits #80: the speech assessment port,
+output schema, `ai.yaml` registration and a second synthetic provider for AT-22
+may proceed without #21/#22. The `fake-assessment` entry is disabled by default;
+production rejects enabled fake entries. The real-model local provider and B3
+criterion still wait for #21 and #22, and #80 remains open. #82–#86 may use only
+the fake provider after the port is merged
+([ADR 0074](../adr/0074-speech-assessment-contract-split.md)).
+
 ADR 0041 completes the gateway with atomic persistent minute/day/month admission, per-task order, fail-closed eligibility, schema/range validation and content-free monthly call logs. Existing port signatures remain unchanged; gateway calls accept optional content-free context and results may report usage. Each retry reserves capacity independently; uncertain failures retain their reservation. Grading owns templates, caller jobs own durable retries, and hosted adapters/prompts remain #66 work. Quota-saving starts on under ADR 0037 and signals at 75% consumption when disabled. See [ADR 0041](../adr/0041-ai-gateway-admission-and-fallback.md) for accounting, privacy and integration details.
 
 ### 7.3 Prompts and outputs

@@ -33,6 +33,14 @@ Read the section for the area you are changing before you change it. The rules e
 
 ## AI layer (ADRs 0028, 0037, 0041)
 
+- Speech assessment E2 (#80, ADR 0074): `fake-assessment` is a second synthetic
+  provider with nonempty sound/pause/filler/pitch signals; it never reads audio.
+  The packaged `ai.yaml` registers it disabled. Enable only in non-production;
+  production rejects enabled entries for either fake. Configure `local: true`,
+  `trains_on_inputs: false`, `accepted: true` for synthetic contract calls.
+  #82–#86 must wait for the port merge and use fakes only until #21/#22 unblock
+  the real-model provider. Synthetic results establish neither model quality nor B3.
+
 - Evaluations (ADR 0052): `ai-evals` uses `listenup.ai.evals`; dataset/report format
   version 1 and commands are documented in `ai-evals/README.md`. Keep threshold
   values in configuration and synthetic limits scoped to synthetic data. Every AI

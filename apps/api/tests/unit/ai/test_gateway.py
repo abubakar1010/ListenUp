@@ -187,7 +187,7 @@ async def test_preload_loads_only_providers_marked_preload() -> None:
 
 @pytest.mark.anyio
 async def test_a_role_without_providers_is_unavailable() -> None:
-    gateway = AIGateway(load_config(DEFAULT_CONFIG))
+    gateway = AIGateway(parse_config("version: 1\nroles: {}\n"))
     with pytest.raises(AIUnavailable, match="no provider configured"):
         await gateway.assess(AUDIO, "hello", AUDIO)
 
