@@ -97,8 +97,6 @@ it('retries a refused start using the same action and idempotency key', async ()
 it.each(['before effects', 'after effects'])(
   'reports a bounded playback end to the API and updates numbered round status (%s metadata)',
   async (metadataTiming) => {
-    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
-    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     let ended = false;
     const segment = {
       session_id: 's',
@@ -142,11 +140,14 @@ it.each(['before effects', 'after effects'])(
         metadataLoaded(mounted);
       }
     });
-    if (metadataTiming === 'before effects') {
-      observer.observe(document.body, { childList: true, subtree: true });
-    }
-    const view = renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
+    let view: ReturnType<typeof renderWithProviders> | undefined;
     try {
+      vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+      vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+      if (metadataTiming === 'before effects') {
+        observer.observe(document.body, { childList: true, subtree: true });
+      }
+      view = renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
       await screen.findByRole('button', { name: 'Play round 1' });
       const audio = document.querySelector('audio')!;
       if (metadataTiming === 'after effects') metadataLoaded(audio);
@@ -156,8 +157,14 @@ it.each(['before effects', 'after effects'])(
       vi.useFakeTimers();
       try {
         fireEvent.click(screen.getByRole('button', { name: 'Play round 1' }));
+        // Three-second count-in (ADR 0063): no playback until it has fully elapsed.
+        expect(screen.getByRole('status')).toHaveTextContent('Round 1 starts in 3');
         await act(async () => {
-          vi.advanceTimersByTime(3000);
+          vi.advanceTimersByTime(2999);
+        });
+        expect(audio.play).not.toHaveBeenCalled();
+        await act(async () => {
+          vi.advanceTimersByTime(1);
         });
         expect(audio.play).toHaveBeenCalledTimes(1);
         expect(screen.getByRole('status')).toHaveTextContent('playing at original speed');
@@ -178,7 +185,7 @@ it.each(['before effects', 'after effects'])(
       ]);
     } finally {
       observer.disconnect();
-      view.unmount();
+      view?.unmount();
       vi.useRealTimers();
       vi.restoreAllMocks();
     }
