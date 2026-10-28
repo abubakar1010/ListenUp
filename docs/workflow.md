@@ -26,6 +26,20 @@ merged implementation, while #48 remains open for NFR-USE-1 validation under #11
 usability criterion passed, waive it, or extend the actual-server performance
 deferral to usability. Other unresolved dependencies retain the Ready rule above.
 
+Owner decisions of 2026-10-28 (backlog index #119):
+
+- #113 depends on #102 (the OQ-6 legal review). That dependency is treated as
+  satisfied for the build, as for #95 and #57 above. #102 and #103 are assumed
+  cleared for the build; the #103 texts are drafts on `main` and need no new
+  session. Nothing in the build waits on them.
+- The assumption does not clear the launch gates. Written legal advice is still
+  needed before the beta (#115), before launch, and before `youtube_intake_enabled`
+  is switched on in production (see `docs/legal/README.md`). YouTube intake stays
+  in scope for launch behind that flag (D10) and the repository default stays off.
+- Other open dependencies keep the Ready rule above. In particular the YouTube
+  chain runs in order (#17, #37, #38, then #46 and the YouTube halves of #93 and #105, then #40 and #113), and Shadow grading
+  (#80, then #82 to #86) waits on #21 and #22, which need the Arm host (#16).
+
 Run two or three sessions at once on stories that touch different areas. Each has its own branch and pull request, so nothing needs merging by hand.
 
 Each cloud task already has an isolated checkout; use it without creating a
