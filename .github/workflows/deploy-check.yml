@@ -39,7 +39,7 @@ jobs:
             --env-file infra/deploy/env.example -f infra/compose/compose.prod.yml \
             --profile ops config --quiet
       - name: Deploy scripts pass shellcheck
-        run: shellcheck infra/deploy/deploy.sh infra/deploy/rollback.sh
+        run: shellcheck infra/deploy/deploy.sh infra/deploy/rollback.sh infra/deploy/provision-host.sh infra/deploy/host-facts.sh
       - name: Workflows pass actionlint
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 \
