@@ -113,6 +113,10 @@ class Settings(BaseSettings):
     # Where media workers write source and converted files while a job runs; the
     # system's temporary directory when unset. Each job removes its own files.
     media_scratch_dir: str | None = None
+    # Retention sweeps (#93): days a Shadow recording is kept after it was recorded
+    # (D7, FR-SH-17), and the age after which leftover worker scratch files go.
+    shadow_recording_retention_days: int = Field(default=90, ge=1)
+    scratch_max_age_seconds: int = Field(default=3600, ge=60)
     media_job_memory_mb: int = Field(default=8192, ge=128)
     media_job_cpu_seconds: int = Field(default=600, ge=1)
 

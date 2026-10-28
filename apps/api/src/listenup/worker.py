@@ -52,6 +52,7 @@ JOB_MODULES: list[str] = [
     "listenup.modules.blind.jobs",
     "listenup.modules.dictation.jobs",
     "listenup.modules.export.jobs",
+    "listenup.ops.retention",
 ]
 
 
