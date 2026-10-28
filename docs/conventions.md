@@ -409,3 +409,22 @@ Read the section for the area you are changing before you change it. The rules e
   keyset and derives source URLs from the owning session and absolute `at_ms`.
   This read has no Transcript step gate and exposes no transcript cache content.
   It has no dependency on tags or suggested phrases.
+
+## Shadow plan completion (ADR 0050 option a, ADR 0021)
+
+- Recording finalization takes the client's session `version`; new writes refuse
+  stale versions with `session_changed`. A recorded round is a no-op on repeat,
+  including after completion. Ownership and voice consent still apply.
+- After all three rounds have both `recorded_at` and `uploaded_at`, call
+  `practice.service.complete_step` in the same transaction. Playback alone never
+  completes Shadow; no grading job, profile or provider gates this transition.
+- Completed (done) Shadow sessions retain read-only segment/round state and replay.
+  Skipped sessions retain the existing step refusal. The web refreshes session
+  queries after upload finalization and shows unavailable feedback on completion.
+- Signing an upload for a round of a done Shadow answers 409 `recording_exists`, so a
+  lost final response is retried safely. The web's completion key includes the session
+  version it sends, because the body (and so the idempotency fingerprint) changes once
+  completion bumps the version.
+- A round that was played but never saved cannot be recorded again in the UI (the blob
+  lives in memory, ADR 0070); Shadow then completes only by skipping. Owner decision on
+  #242 review: accepted, and the round-3 copy says so.

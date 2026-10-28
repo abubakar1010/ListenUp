@@ -2246,6 +2246,18 @@
         "title": "QuotaUsage",
         "type": "object"
       },
+      "RecordingCompletion": {
+        "properties": {
+          "version": {
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": ["version"],
+        "title": "RecordingCompletion",
+        "type": "object"
+      },
       "RecordingRequest": {
         "properties": {
           "mime": {
@@ -6637,7 +6649,7 @@
             "description": "`session_not_found`"
           },
           "409": {
-            "description": "`step_locked`, `round_order` or `recording_exists`"
+            "description": "`step_locked`, `session_closed`, `round_order` or `recording_exists`"
           },
           "422": {
             "description": "`recording_type` or `recording_size`"
@@ -7018,6 +7030,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordingCompletion"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "204": {
             "description": "Successful Response"
@@ -7029,7 +7051,7 @@
             "description": "`round_not_found`"
           },
           "409": {
-            "description": "`upload_incomplete`, `upload_size_mismatch`, `upload_type_mismatch`, `step_locked` or `round_order`"
+            "description": "`upload_incomplete`, `upload_size_mismatch`, `upload_type_mismatch`, `step_locked`, `session_changed`, `session_closed` or `round_order`"
           },
           "422": {
             "content": {

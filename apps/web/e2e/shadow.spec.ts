@@ -205,7 +205,13 @@ test('three Shadow rounds use keyboard controls at 360 px and original speed', a
           consents_required: [],
         },
       });
-    if (path === `/sessions/${session.id}`) return route.fulfill({ json: session });
+    if (path === `/sessions/${session.id}`)
+      return route.fulfill({
+        json:
+          rounds.length === 3 && rounds.every((r) => r.recording_available)
+            ? sessionFixture({ done: 4, passage: session.passage })
+            : session,
+      });
     if (path === `/sessions/${session.id}/shadow/segment`) return route.fulfill({ json: segment });
     if (path === root)
       return route.fulfill({
@@ -237,6 +243,7 @@ test('three Shadow rounds use keyboard controls at 360 px and original speed', a
     }
     const complete = /^\/shadow\/rounds\/(round-\d)\/complete$/.exec(path);
     if (complete && request.method() === 'POST') {
+      expect(request.postDataJSON()).toEqual({ version: 3 });
       const round = rounds.find((r) => r.id === complete[1])!;
       round.recorded_at = '2026-10-27T10:00:00Z';
       round.recording_available = true;
@@ -344,10 +351,12 @@ test('three Shadow rounds use keyboard controls at 360 px and original speed', a
       audio.currentTime = 55.1;
       audio.dispatchEvent(new Event('timeupdate'));
     });
-    await expect(page.getByText('Playback ended.', { exact: true })).toBeVisible();
-    await expect(page.getByRole('list', { name: 'Round status' })).toContainText(
-      `Round ${number}: recorded`,
-    );
+    if (number < 3) {
+      await expect(page.getByText('Playback ended.', { exact: true })).toBeVisible();
+      await expect(page.getByRole('list', { name: 'Round status' })).toContainText(
+        `Round ${number}: recorded`,
+      );
+    } else await expect(page.getByText('All 4 steps finished')).toBeVisible();
     expect(uploads.at(-1)).toMatchObject({ number });
     expect(uploads.at(-1)!.bytes).toBeGreaterThan(0);
     expect(uploads.at(-1)!.type).toMatch(/^audio\/(webm|mp4)$/);
@@ -357,10 +366,12 @@ test('three Shadow rounds use keyboard controls at 360 px and original speed', a
     const replay = page.getByRole('region', { name: `Round ${number} replay` });
     await expect(replay.getByLabel(`Your recording of round ${number}`)).toBeVisible();
     await expect(replay.getByLabel(`Original, round ${number} segment`)).toBeVisible();
-    await expect(replay.getByText('Feedback unavailable.')).toBeVisible();
   }
   await expect(page.getByRole('button', { name: 'Start round 4' })).toHaveCount(0);
-  await expect(page.getByText(/All three rounds are done/)).toBeVisible();
+  await expect(page.getByText('Feedback unavailable.')).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('All 4 steps finished')).toBeVisible();
+  await expect(page.getByLabel('Your recording of round 3')).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

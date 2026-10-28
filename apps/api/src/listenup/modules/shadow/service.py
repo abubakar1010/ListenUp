@@ -29,11 +29,29 @@ def present(row: ShadowSegment) -> schemas.Segment:
     )
 
 
+async def require_open_or_done(db: AsyncSession, session_id: uuid.UUID) -> practice.PracticeSession:
+    """The session while Shadow is open or done; a skipped or unreached Shadow is refused.
+
+    A done Shadow keeps its segment, rounds and recordings readable (SR-6, FR-SH-8).
+    """
+    session = await practice.require_reached(db, session_id, practice.Step.SHADOW)
+    if not any(
+        state.step is practice.Step.SHADOW and state.status is practice.StepStatus.DONE
+        for state in session.plan.steps
+    ):
+        return await practice.require_step(db, session_id, practice.Step.SHADOW)
+    return session
+
+
 async def segment(
     db: AsyncSession, session_id: uuid.UUID, choice: schemas.SegmentChoice | None = None
 ) -> schemas.Segment:
     await practice.lock_session(db, session_id)
-    session = await practice.require_step(db, session_id, practice.Step.SHADOW)
+    session = await (
+        require_open_or_done(db, session_id)
+        if choice is None
+        else practice.require_step(db, session_id, practice.Step.SHADOW)
+    )
     row = await repository.get(db, session_id)
     if choice is None and row is not None:
         return present(row)
@@ -185,22 +203,26 @@ async def start_recording_upload(
     )
 
 
-async def complete_recording(db: AsyncSession, storage: Storage, round_id: uuid.UUID) -> None:
+async def complete_recording(
+    db: AsyncSession, storage: Storage, round_id: uuid.UUID, version: int
+) -> None:
     """Mark the round recorded and done once the object is in storage (ADR 0050 option a).
 
     No analysis is queued: grading is not built yet, so the learner sees feedback as
-    unavailable. The plan step is completed by #87, not here.
+    unavailable. Three uploaded recordings complete the plan (FR-SH-6, SR-6).
     """
     found = await repository.round_by_id(db, round_id)
     if found is None:
         raise _round_not_found()
     await practice.lock_session(db, found.session_id)
-    await practice.require_step(db, found.session_id, practice.Step.SHADOW)
+    session = await practice.require_reached(db, found.session_id, practice.Step.SHADOW)
     row = await repository.round_by_id(db, round_id, lock=True)
     if row is None:
         raise _round_not_found()
     if row.recorded_at is not None:
         return
+    practice.require_version(session, version)
+    session = await practice.require_step(db, found.session_id, practice.Step.SHADOW)
     if row.recording_key is None or row.recording_mime is None:
         raise ProblemError(409, "round_order", "Ask for an upload URL first.")
     stored = await storage.head(row.recording_key)
@@ -222,6 +244,11 @@ async def complete_recording(db: AsyncSession, storage: Storage, round_id: uuid.
     row.recorded_at = now
     row.uploaded_at = now
     await db.flush()
+    rounds = await repository.rounds(db, row.session_id)
+    if len(rounds) == 3 and all(
+        r.recorded_at is not None and r.uploaded_at is not None for r in rounds
+    ):
+        await practice.complete_step(db, session, practice.Step.SHADOW)
 
 
 async def recording_url(db: AsyncSession, storage: Storage, round_id: uuid.UUID) -> str:
