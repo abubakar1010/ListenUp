@@ -62,8 +62,8 @@ jobs:
 
   # The release publishes arm64 images too (ADR 0070, #231), built under QEMU on an x86
   # runner. Build them here on a native Arm runner, which is quick, so a change that
-  # breaks arm64 fails the pull request. worker-media is left out until
-  # praat-parselmouth builds on arm64 (#232).
+  # breaks arm64 fails the pull request. worker-media compiles praat-parselmouth here
+  # (#232); its cache scope is what lets the release reuse that compile.
   arm64-images:
     name: Arm64 image (${{ matrix.image }})
     runs-on: ubuntu-24.04-arm
@@ -73,6 +73,7 @@ jobs:
         include:
           - {image: api, file: infra/docker/backend.Dockerfile, target: api}
           - {image: worker, file: infra/docker/backend.Dockerfile, target: worker}
+          - {image: worker-media, file: infra/docker/backend.Dockerfile, target: worker-media}
           - {image: backup, file: infra/docker/backend.Dockerfile, target: backup}
           - {image: signature-update, file: infra/docker/backend.Dockerfile, target: signature-update}
           - {image: edge, file: infra/docker/web.Dockerfile, target: edge}
@@ -86,5 +87,14 @@ jobs:
           target: ${{ matrix.target }}
           platforms: linux/arm64
           push: false
+          load: ${{ matrix.image == 'worker-media' }}
+          tags: listenup-${{ matrix.image }}:arm64-check
           cache-from: type=gha,scope=arm64-${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=arm64-${{ matrix.image }}
+      # Building is not enough: the arm64 speech libraries (a compiled Praat, int8
+      # wav2vec2) must give the results amd64 gives. The script holds the amd64 figures.
+      - name: Speech runtime check (arm64)
+        if: matrix.image == 'worker-media'
+        run: |
+          docker run --rm -v "$PWD/infra/scripts:/checks:ro" -e TORCH_HOME=/tmp/torch \
+            listenup-worker-media:arm64-check python /checks/check-speech-runtime.py

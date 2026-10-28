@@ -18,9 +18,9 @@ DEPLOY_CHECK = yaml.safe_load((REPO / ".github/workflows/deploy-check.yml").read
 IMAGES: list[dict[str, Any]] = RELEASE["jobs"]["images"]["strategy"]["matrix"]["include"]
 STEPS: list[dict[str, Any]] = RELEASE["jobs"]["images"]["steps"]
 
-# worker-media stays amd64 until praat-parselmouth builds on arm64 (#232): the sdist
-# needs a C++ toolchain the base image lacks. Remove it from here when that story lands.
-AMD64_ONLY = {"worker-media"}
+# Images published for amd64 only. Empty since praat-parselmouth builds on arm64 in a
+# throwaway stage (#232); add an image here only with a reason and an issue.
+AMD64_ONLY: set[str] = set()
 
 
 def platforms(entry: dict[str, Any]) -> set[str]:
@@ -74,3 +74,26 @@ def test_the_deploy_check_builds_every_arm64_release_image_on_a_native_arm_runne
     built = {e["image"] for e in job["strategy"]["matrix"]["include"]}
     released = {e["image"] for e in IMAGES if "linux/arm64" in platforms(e)}
     assert built == released
+
+
+def test_the_release_reuses_the_arm64_layers_the_deploy_check_caches() -> None:
+    """Compiling praat-parselmouth under QEMU would otherwise run on every release."""
+    build = next(s for s in STEPS if s.get("uses", "").startswith("docker/build-push-action@"))
+    steps = DEPLOY_CHECK["jobs"]["arm64-images"]["steps"]
+    built = next(s for s in steps if s.get("uses", "").startswith("docker/build-push-action@"))
+    written = built["with"]["cache-to"]
+    scope = re.search(r"scope=(.+)$", written)
+    assert scope and scope.group(1) == "arm64-${{ matrix.image }}"
+    assert f"type=gha,scope={scope.group(1)}" in build["with"]["cache-from"].splitlines()
+
+
+def test_the_native_arm_job_runs_the_speech_runtime_check_on_worker_media() -> None:
+    """Compiling Praat is not enough: the arm64 libraries must also behave like amd64."""
+    steps = DEPLOY_CHECK["jobs"]["arm64-images"]["steps"]
+    build = next(s for s in steps if s.get("uses", "").startswith("docker/build-push-action@"))
+    assert build["with"]["load"] == "${{ matrix.image == 'worker-media' }}"
+    smoke = next(s for s in steps if "check-speech-runtime.py" in s.get("run", ""))
+    assert smoke["if"] == "matrix.image == 'worker-media'"
+    assert (REPO / "infra/scripts/check-speech-runtime.py").is_file()
+    assert build["with"]["tags"] == "listenup-${{ matrix.image }}:arm64-check"
+    assert "listenup-worker-media:arm64-check" in smoke["run"]  # the image just loaded

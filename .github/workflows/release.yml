@@ -163,12 +163,11 @@ jobs:
       matrix:
         include:
           # Every image is published for amd64 (CI, local runs) and arm64 (the stage 0 host
-          # may be an Arm VM, ADR 0070). worker-media is amd64 only until
-          # praat-parselmouth builds on arm64 (#232); then add linux/arm64 here and
-          # remove it from AMD64_ONLY in tests/unit/test_release_workflow.py.
+          # may be an Arm VM, ADR 0070). worker-media compiles praat-parselmouth on arm64
+          # in its own stage (#232).
           - {image: api, file: infra/docker/backend.Dockerfile, target: api, cache: api, platforms: "linux/amd64,linux/arm64"}
           - {image: worker, file: infra/docker/backend.Dockerfile, target: worker, cache: worker, platforms: "linux/amd64,linux/arm64"}
-          - {image: worker-media, file: infra/docker/backend.Dockerfile, target: worker-media, cache: worker-media, platforms: "linux/amd64"}
+          - {image: worker-media, file: infra/docker/backend.Dockerfile, target: worker-media, cache: worker-media, platforms: "linux/amd64,linux/arm64"}
           - {image: backup, file: infra/docker/backend.Dockerfile, target: backup, cache: backup, platforms: "linux/amd64,linux/arm64"}
           - {image: signature-update, file: infra/docker/backend.Dockerfile, target: signature-update, cache: media-runtime, platforms: "linux/amd64,linux/arm64"}
           - {image: edge, file: infra/docker/web.Dockerfile, target: edge, cache: edge, platforms: "linux/amd64,linux/arm64"}
@@ -228,8 +227,13 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.release.outputs.sha }}
             org.opencontainers.image.version=${{ needs.release.outputs.release-tag }}
-          # CI and the deploy check write these scopes; a release only reads them.
-          cache-from: type=gha,scope=${{ matrix.cache }}
+          # CI and the deploy check write these scopes; a release only reads them. The
+          # arm64 scope holds the layers the Deploy check built natively, including the
+          # compiled praat-parselmouth wheel, which would be very slow to rebuild here
+          # under QEMU.
+          cache-from: |
+            type=gha,scope=${{ matrix.cache }}
+            type=gha,scope=arm64-${{ matrix.image }}
 
   deploy:
     name: Deploy to production

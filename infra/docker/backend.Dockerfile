@@ -64,19 +64,36 @@ COPY --chmod=0644 infra/docker/freshclam.conf /etc/clamav/listenup-freshclam.con
 CMD ["freshclam", "--config-file=/etc/clamav/listenup-freshclam.conf", "--daemon", "--foreground", "--stdout"]
 HEALTHCHECK --interval=30s --start-period=300s CMD find /signatures -maxdepth 1 -name 'daily.c?d' -mtime -7 | grep -q .
 
+# praat-parselmouth has no Linux arm64 wheel, so on arm64 this stage compiles it (on
+# amd64 pip just downloads the published wheel). The compiler stays here: worker-media
+# installs the wheel from this stage and never contains a toolchain (#232, ADR 0070).
+# Keep the version equal to uv.lock; tests/unit/test_backend_dockerfile.py checks it.
+FROM base AS parselmouth-wheel
+ARG PARSELMOUTH_VERSION=0.4.7
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential cmake \
+    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then export PIP_CERT=/run/secrets/proxy_ca SSL_CERT_FILE=/run/secrets/proxy_ca; fi; \
+    CMAKE_BUILD_PARALLEL_LEVEL="$(nproc)" \
+    pip wheel --no-deps --wheel-dir /wheels "praat-parselmouth==${PARSELMOUTH_VERSION}"
+
 FROM media-runtime AS worker-media
 USER root
 # Media tools for download, conversion and snippet cutting, and the self-hosted speech
 # libraries (ADR 0028), which stay out of the other images. `uv sync` adds the locked
 # `speech` extra first, because it removes packages the lock does not list; torch and
 # torchaudio then come from the PyTorch CPU index (the PyPI wheels bundle CUDA).
+# praat-parselmouth is skipped by `uv sync` and installed from the wheel stage above.
 # The media-models service provisions /models; jobs mount it read-only.
 ENV OMP_NUM_THREADS=2 \
     HF_HOME=/models/huggingface \
     TORCH_HOME=/models/torch
 RUN --mount=type=secret,id=proxy_ca \
+    --mount=type=bind,from=parselmouth-wheel,source=/wheels,target=/wheels \
     if [ -f /run/secrets/proxy_ca ]; then export SSL_CERT_FILE=/run/secrets/proxy_ca; fi; \
-    uv sync --frozen --no-dev --extra speech \
+    uv sync --frozen --no-dev --extra speech --no-install-package praat-parselmouth \
+    && uv pip install --python /opt/venv/bin/python --no-deps /wheels/*.whl \
     && uv pip install --python /opt/venv/bin/python \
         --index-url https://download.pytorch.org/whl/cpu "torch>=2.4,<2.9" "torchaudio>=2.4,<2.9" \
     && uv pip install --python /opt/venv/bin/python yt-dlp \
