@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 from listenup.ai.config import ProviderEntry
 from listenup.ai.ports import AlignmentPort, SpeechAssessmentPort, TextAIPort, TranscriptionPort
-from listenup.ai.providers import fake
+from listenup.ai.providers import fake, fake_assessment
 from listenup.ai.providers.faster_whisper import FasterWhisperTranscription
 from listenup.ai.providers.faster_whisper import version_for as whisper_version
 from listenup.ai.providers.openai_compatible import OpenAICompatibleTextAI
@@ -40,6 +40,7 @@ class Registry:
 DEFAULT_REGISTRY = Registry(
     versions={
         fake.PROVIDER: lambda _: fake.VERSION,
+        fake_assessment.PROVIDER: lambda _: fake_assessment.VERSION,
         "faster-whisper": whisper_version,
         "wav2vec2-ctc": alignment_version,
         **dict.fromkeys(OPENAI_COMPATIBLE, text_version),
@@ -52,7 +53,10 @@ DEFAULT_REGISTRY = Registry(
         fake.PROVIDER: fake.FakeAlignment,
         "wav2vec2-ctc": Wav2Vec2CtcAlignment,
     },
-    speech_assessment={fake.PROVIDER: fake.FakeSpeechAssessment},
+    speech_assessment={
+        fake.PROVIDER: fake.FakeSpeechAssessment,
+        fake_assessment.PROVIDER: fake_assessment.FakeAssessment,
+    },
     text_ai={
         fake.PROVIDER: fake.FakeTextAI,
         **dict.fromkeys(OPENAI_COMPATIBLE, OpenAICompatibleTextAI),

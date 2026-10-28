@@ -28,7 +28,7 @@ from listenup.ai.ports import (
     Transcript,
     Usage,
 )
-from listenup.ai.providers import fake
+from listenup.ai.providers import fake, fake_assessment
 from listenup.ai.registry import DEFAULT_REGISTRY, Registry
 from listenup.ai.validation import (
     revalidate,
@@ -93,7 +93,11 @@ class AIGateway:
                         f"no {role.value} adapter named {entry.provider!r}; "
                         f"known: {', '.join(sorted(known))}"
                     )
-                if entry.provider == fake.PROVIDER and environment == "production":
+                if (
+                    entry.provider in (fake.PROVIDER, fake_assessment.PROVIDER)
+                    and entry.enabled
+                    and environment == "production"
+                ):
                     raise AIConfigError(
                         f"the fake {role.value} provider is not allowed in production"
                     )
