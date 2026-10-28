@@ -249,13 +249,12 @@ async def record_review(
 
 
 async def content_deletion_objects(
-    db: AsyncSession, learner: uuid.UUID, sessions: list[uuid.UUID]
+    db: AsyncSession,
+    learner: uuid.UUID,
+    sessions: list[uuid.UUID],
+    manifest_prefixes: list[str],
 ) -> tuple[list[str], list[str]]:
     """Card writers must drain before the first content storage sweep."""
-    from datetime import UTC, datetime, timedelta
-
-    from listenup.platform.jobs import Reschedule
-
     rows = (
         await db.execute(
             text(
@@ -265,13 +264,31 @@ async def content_deletion_objects(
             {"user": learner, "sessions": sessions},
         )
     ).all()
-    ids = [row.id for row in rows]
+    # A deleted card can still have an uncertain writer. Its durable manifest,
+    # rather than the surviving parent rows, defines the cleanup responsibility.
+    ids = sorted(
+        {row.id for row in rows}
+        | {uuid.UUID(prefix.rstrip("/").rsplit("/", 1)[-1]) for prefix in manifest_prefixes}
+    )
+    await _require_no_content_writes(db, learner, ids)
+    return [f"users/{learner}/cards/{card}/" for card in ids], []
+
+
+async def _require_no_content_writes(
+    db: AsyncSession, learner: uuid.UUID, ids: list[uuid.UUID]
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from listenup.platform.jobs import Reschedule
+
     if ids and await db.scalar(
-        text("SELECT EXISTS(SELECT 1 FROM practice.card_snippet_writes WHERE card_id=ANY(:ids))"),
-        {"ids": ids},
+        text(
+            "SELECT EXISTS(SELECT 1 FROM practice.card_snippet_writes "
+            "WHERE user_id=:user AND card_id=ANY(:ids))"
+        ),
+        {"user": learner, "ids": ids},
     ):
         raise Reschedule(datetime.now(UTC) + timedelta(minutes=1))
-    return [f"users/{learner}/cards/{card}/" for card in ids], []
 
 
 async def settle_content_deletion(
@@ -279,6 +296,7 @@ async def settle_content_deletion(
 ) -> None:
     """Remove cascade tombstones only after their objects have been deleted."""
     ids = [uuid.UUID(prefix.rstrip("/").rsplit("/", 1)[-1]) for prefix in prefixes]
+    await _require_no_content_writes(db, learner, ids)
     if ids:
         await db.execute(
             text(

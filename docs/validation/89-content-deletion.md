@@ -141,3 +141,26 @@ The real-profile skip requires `LISTENUP_REAL_PROFILE_FIXTURE`; this story chang
 no speech model or provider behavior. The #93 sweep remains outside scope under
 owner approval. Independent fresh-session review and required CI remain pending
 merge gates. All TDD/process deviations above remain explicitly disclosed.
+
+## Independent-review remediation
+
+The independent review found that removing a card after the request snapshot
+bypassed the snippet-writer barrier: cleanup completed and cleared the tombstone
+while an uncertain writer remained registered. Cleanup now checks both live cards
+and the durable manifest's card ids, including on later reconciliation, and
+rechecks registrations before clearing tombstones and committing completion.
+
+- Red: `LISTENUP_REQUIRE_DB=1 uv run --project apps/api pytest apps/api/tests/integration/test_content_deletion.py -k card_writer_defers -q`
+  produced one pass and one failure: the deleted-card case did not raise
+  `Reschedule`. This was observed before the production fix.
+- Green: the same command passed both cases. Supplemental assertions verify
+  playback/snippet objects and the deleted card's tombstone remain while blocked,
+  the audit stays pending, and cleanup completes and removes objects/tombstones
+  after explicit writer reconciliation; both cases passed again.
+- Required-service deletion/schema/real-S3/export selection: 49 passed.
+- Backend formatting, lint, strict mypy and all six import contracts passed for
+  the production fix. The full required-service coverage suite and final CI are
+  running; their outcomes must be checked before merge.
+
+The earlier chronology disclosures remain unchanged. This fix does not expand
+into #90, #93 or the remaining #228 work.

@@ -37,7 +37,9 @@ async def delete_content(deps: JobDeps, request_id: str) -> dict[str, Any] | Non
         # to a possibly unfinished object and must not be discarded on timeout.
         await content.require_no_media_writes(db, learner, media)
         sessions = await practice.content_deletion_sessions(db, learner, target)
-        card_prefixes, _ = await cards.content_deletion_objects(db, learner, sessions)
+        card_prefixes, _ = await cards.content_deletion_objects(
+            db, learner, sessions, report["card_prefixes"]
+        )
         prefixes = sorted(
             set(state["storage_prefixes"])
             | set(card_prefixes)

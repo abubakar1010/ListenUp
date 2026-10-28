@@ -628,8 +628,9 @@ def test_scheduler_recovers_failed_cleanup_without_duplicate_jobs(make_client, m
     run_delete(migrated_url, request)
 
 
+@pytest.mark.parametrize("remove_card", [False, True])
 def test_card_writer_defers_content_cleanup_before_any_storage_delete(
-    make_client, migrated_url, storage
+    make_client, migrated_url, storage, remove_card
 ):
     from listenup.platform.jobs import Reschedule
 
@@ -637,7 +638,9 @@ def test_card_writer_defers_content_cleanup_before_any_storage_delete(
     world = seed_learner_data(migrated_url, uuid.UUID(learner_id(a)))
     writer = uuid.uuid4()
     key = f"users/{world.user_id}/media/{world.media_id}/playback.mp4"
+    snippet = f"users/{world.user_id}/cards/{world.card_id}/snippet.m4a"
     storage.arrive(key, 10)
+    storage.arrive(snippet, 10)
     with psycopg.connect(migrated_url) as db:
         db.execute(
             "INSERT INTO practice.card_snippet_writes(id,card_id,user_id,owner) "
@@ -646,19 +649,45 @@ def test_card_writer_defers_content_cleanup_before_any_storage_delete(
         )
     response = delete(a, world.content_id)
     assert response.status_code == 202, response.text
+    if remove_card:
+        with psycopg.connect(migrated_url) as db:
+            db.execute("DELETE FROM practice.cards WHERE id=%s", [world.card_id])
     try:
         with pytest.raises(Reschedule):
             run_delete(migrated_url, response.json()["request_id"])
         assert key in storage.objects
+        assert snippet in storage.objects
         with psycopg.connect(migrated_url) as db:
             assert db.execute(
                 "SELECT id FROM content.contents WHERE id=%s", [world.content_id]
             ).fetchone() == (world.content_id,)
+            assert db.execute(
+                "SELECT status FROM ops.deletion_requests WHERE id=%s",
+                [response.json()["request_id"]],
+            ).fetchone() == ("pending",)
+            if remove_card:
+                assert db.execute(
+                    "SELECT card_id FROM practice.card_snippet_cleanup WHERE card_id=%s",
+                    [world.card_id],
+                ).fetchone() == (world.card_id,)
     finally:
         with psycopg.connect(migrated_url) as db:
             db.execute("DELETE FROM practice.card_snippet_writes WHERE id=%s", [writer])
     run_delete(migrated_url, response.json()["request_id"])
     assert key not in storage.objects
+    assert snippet not in storage.objects
+    with psycopg.connect(migrated_url) as db:
+        assert db.execute(
+            "SELECT status FROM ops.deletion_requests WHERE id=%s",
+            [response.json()["request_id"]],
+        ).fetchone() == ("completed",)
+        assert (
+            db.execute(
+                "SELECT card_id FROM practice.card_snippet_cleanup WHERE card_id=%s",
+                [world.card_id],
+            ).fetchone()
+            is None
+        )
 
 
 @pytest.mark.anyio
