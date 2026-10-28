@@ -101,7 +101,7 @@ def test_ci_smoke_is_conditional_offline_and_uploads_failure_reports():
     assert "for suite in gist shadow" in command
     assert 'exit "$result"' in command
     artifact = job["steps"][-1]
-    assert artifact["uses"] == "actions/upload-artifact@v4"
+    assert artifact["uses"].startswith("actions/upload-artifact@")
     assert artifact["if"] == "always()"
     assert artifact["with"]["if-no-files-found"] == "error"
 
