@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prepare a fresh Ubuntu 24.04 VM (arm64 or amd64) as the ListenUp host (ADR 0070).
+# Prepare a fresh Ubuntu 24.04 VM (arm64 or amd64) as the ListenUp host (ADR 0073).
 # Run once as root, or paste into the cloud-init "user data" field. Safe to run again.
 #
 #   LISTENUP_DEPLOY_PUBKEY='ssh-ed25519 AAAA... release-workflow' sudo -E bash provision-host.sh

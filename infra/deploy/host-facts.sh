@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Print the host facts the stage 0 record needs (ADR 0070, docs/runbooks/stage-0-host.md).
+# Print the host facts the stage 0 record needs (ADR 0073, docs/runbooks/stage-0-host.md).
 # Read-only and secret-free: safe to paste into an issue or the runbook's record.
 set -euo pipefail
 

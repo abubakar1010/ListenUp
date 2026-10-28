@@ -1,15 +1,15 @@
 # Stage 0 host: provision and record (spike #16)
 
-For the owner. About 30 minutes if Oracle has capacity. Choice and limits: [ADR 0070](../adr/0070-stage-0-host-oracle-always-free-arm.md) (Proposed until step 9 is done). What runs on the host afterwards: [deploy.md](deploy.md). Nothing secret goes into the repository: private keys stay on your machine and in GitHub's secret store; only public keys and host facts are pasted anywhere.
+For the owner. About 30 minutes if Oracle has capacity. Choice and limits: [ADR 0073](../adr/0073-stage-0-host-oracle-always-free-arm.md) (Proposed until step 9 is done). What runs on the host afterwards: [deploy.md](deploy.md). Nothing secret goes into the repository: private keys stay on your machine and in GitHub's secret store; only public keys and host facts are pasted anywhere.
 
-**Read first.** Oracle's free Arm allowance is now **2 OCPUs and 12 GB** (checked 2026-10-27), not the 4 cores and 16 GB the design assumed. The release workflow also builds **amd64 images only**, so this VM cannot run a release until the follow-ups in ADR 0070 are done. The VM is still the right place to run benchmarks B1 to B4 now (build the media image on the VM, step 8).
+**Read first.** Oracle's free Arm allowance is now **2 OCPUs and 12 GB** (checked 2026-10-27), not the 4 cores and 16 GB the design assumed. The release workflow also builds **amd64 images only**, so this VM cannot run a release until the follow-ups in ADR 0073 are done. The VM is still the right place to run benchmarks B1 to B4 now (build the media image on the VM, step 8).
 
 ## 1. Account (10 minutes)
 
 1. Sign up at [oracle.com/cloud/free](https://www.oracle.com/cloud/free/) with a card (identity check; Always Free resources are not billed). Use one email you control for recovery.
 2. **Choose the home region carefully.** It cannot be changed, and Always Free VMs and volumes can only be created there. Pick a region you can reach with low latency; for a US audience a region other than the busiest ones is more likely to have Arm capacity (capacity is not guaranteed anywhere). Do not pick South Korea North (Chuncheon): no free A1 there.
 3. Turn on multi-factor sign-in for the account.
-4. In **Billing → Cost analysis**, check the account shows no paid resources. Do not upgrade to pay as you go unless step 4's capacity problem needs it (ADR 0070, fallback 1).
+4. In **Billing → Cost analysis**, check the account shows no paid resources. Do not upgrade to pay as you go unless step 4's capacity problem needs it (ADR 0073, fallback 1).
 
 ## 2. SSH keys (3 minutes, on your machine)
 
@@ -62,7 +62,7 @@ runcmd:
 
 The clone works only while the repository is public. If it is private, leave cloud-init empty and copy `infra/deploy/provision-host.sh` over in step 5.
 
-If creation fails with "out of host capacity" for every availability domain over a few days, stop and see ADR 0070 (fallback). A third-party retry script exists but is not reviewed or endorsed here.
+If creation fails with "out of host capacity" for every availability domain over a few days, stop and see ADR 0073 (fallback). A third-party retry script exists but is not reviewed or endorsed here.
 
 ## 5. First login and provisioning (5 minutes)
 
@@ -123,20 +123,20 @@ Settings → Environments → **production** (create it; optionally add yourself
 | Secret | `DEPLOY_SSH_KNOWN_HOSTS` | the output of `ssh-keyscan -t ed25519 <public ip>`. First check its fingerprint (`ssh-keygen -lf` on that line) equals `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` run on the VM over your own login |
 | Variable | `LISTENUP_PUBLIC_URL` | `https://<domain>` once DNS exists |
 
-Do **not** set `LISTENUP_DEPLOY_ENABLED` to `true` yet: the images are amd64 only (ADR 0070 follow-up 1, [#231](https://github.com/abubakar1010/ListenUp/issues/231)) and the database, storage, SMTP and DNS steps of [deploy.md](deploy.md) come first. Test the SSH access by hand with the release key (step 5's check) and delete the private key from your machine once it is in GitHub, or keep it in a password manager. Rotation: deploy.md, "Secrets and their rotation".
+Do **not** set `LISTENUP_DEPLOY_ENABLED` to `true` yet: the images are amd64 only (ADR 0073 follow-up 1, [#231](https://github.com/abubakar1010/ListenUp/issues/231)) and the database, storage, SMTP and DNS steps of [deploy.md](deploy.md) come first. Test the SSH access by hand with the release key (step 5's check) and delete the private key from your machine once it is in GitHub, or keep it in a password manager. Rotation: deploy.md, "Secrets and their rotation".
 
 ## 8. Run the benchmarks on this VM (outside this runbook's 30 minutes)
 
 On the VM, as `deploy`, with the repository checked out (`git clone` over HTTPS):
 
-1. Build the media image natively for arm64: `docker build -f infra/docker/backend.Dockerfile --target worker-media -t listenup-worker-media:arm64-test .`. **Expect the `praat-parselmouth` step to compile from source** (no Arm wheel exists); if it fails because CMake or a C++ compiler is missing, that confirms ADR 0070 follow-up 2, and the build output goes in the record. Report how long it took.
+1. Build the media image natively for arm64: `docker build -f infra/docker/backend.Dockerfile --target worker-media -t listenup-worker-media:arm64-test .`. **Expect the `praat-parselmouth` step to compile from source** (no Arm wheel exists); if it fails because CMake or a C++ compiler is missing, that confirms ADR 0073 follow-up 2, and the build output goes in the record. Report how long it took.
 2. Use a `compose.host.yml`-style override of `mem_limit: 7g` and `memswap_limit: 9g` for `worker-media` (the file's 18g is more than the VM has) and run one media process of 2 threads. Record the peak resident memory (`docker stats`).
-3. Run B1 to B4 per `docs/spikes/` and compare per-core-second numbers with ADR 0034's. Run B5 on a 4-vCPU trial-credit VM instead (ADR 0070, decision 3).
+3. Run B1 to B4 per `docs/spikes/` and compare per-core-second numbers with ADR 0034's. Run B5 on a 4-vCPU trial-credit VM instead (ADR 0073, decision 3).
 4. Weekly: `docker stats --no-stream` and `uptime`. Oracle may reclaim a VM whose CPU (95th percentile), network and memory are **all** below 20% for 7 days (checked 2026-10-27); a loaded speech model keeps memory above 20% but CPU is idle between runs. If you see a reclaim notice, tell the team; do not add a fake load generator.
 
 ## 9. Finish the spike
 
-1. Open a pull request that fills the table in step 6 and changes ADR 0070's status to **Accepted** (or a new ADR if the fallback was used). Link it to #16 (`Refs #16`).
+1. Open a pull request that fills the table in step 6 and changes ADR 0073's status to **Accepted** (or a new ADR if the fallback was used). Link it to #16 (`Refs #16`).
 2. Close #16 when the acceptance criteria hold: a VM with Docker is reachable by the team and documented here, and the ADR records the host, its limits on the date, and the fallback.
 3. Check the Arm follow-ups [#231](https://github.com/abubakar1010/ListenUp/issues/231), [#232](https://github.com/abubakar1010/ListenUp/issues/232), [#233](https://github.com/abubakar1010/ListenUp/issues/233) and [#234](https://github.com/abubakar1010/ListenUp/issues/234) are done or consciously deferred before the live cutover (#112).
 
@@ -144,8 +144,8 @@ On the VM, as `deploy`, with the repository checked out (`git clone` over HTTPS)
 
 | Symptom | Cause and fix |
 | --- | --- |
-| "Out of host capacity" | Try another availability domain; retry later; see ADR 0070 fallback 1. |
+| "Out of host capacity" | Try another availability domain; retry later; see ADR 0073 fallback 1. |
 | SSH works, ports 80/443 time out | The security list (step 3) or host iptables (`sudo iptables -S INPUT`) is missing the rule. |
 | `permission denied` for `docker` | You are not in the `docker` group yet: log out and in, or use the `deploy` user. |
-| `exec format error` on a pulled image | The image is amd64 only: ADR 0070 follow-up 1 ([#231](https://github.com/abubakar1010/ListenUp/issues/231)). |
-| The instance was stopped by Oracle | Idle or over-limit reclaim; check that total A1 is 2 OCPUs and 12 GB and read ADR 0070. |
+| `exec format error` on a pulled image | The image is amd64 only: ADR 0073 follow-up 1 ([#231](https://github.com/abubakar1010/ListenUp/issues/231)). |
+| The instance was stopped by Oracle | Idle or over-limit reclaim; check that total A1 is 2 OCPUs and 12 GB and read ADR 0073. |

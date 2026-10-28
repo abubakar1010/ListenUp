@@ -3,11 +3,11 @@
 - Status: Accepted
 - Date: 2026-10-28
 - Story: [#231](https://github.com/abubakar1010/ListenUp/issues/231)
-- Requirements: CI-A, NFR-REL-4; ADR 0066 (deploy pipeline), ADR 0070 (Arm stage 0 host, Proposed)
+- Requirements: CI-A, NFR-REL-4; ADR 0066 (deploy pipeline), ADR 0073 (Arm stage 0 host, Proposed)
 
 ## Context
 
-ADR 0070 proposes an Arm VM as the stage 0 host. The Release workflow built every image once on an x86_64 runner with no `platforms` setting, so the images were amd64 only and would not start on an Arm host (`exec format error`). The release rules from ADR 0066 must not change: a commit is built once, `sha-<12 hex>` and `r<run number>` name the same digest, nothing is tagged `latest`, and a re-run or manual deploy of a built commit only adds an `r<n>` tag.
+ADR 0073 proposes an Arm VM as the stage 0 host. The Release workflow built every image once on an x86_64 runner with no `platforms` setting, so the images were amd64 only and would not start on an Arm host (`exec format error`). The release rules from ADR 0066 must not change: a commit is built once, `sha-<12 hex>` and `r<run number>` name the same digest, nothing is tagged `latest`, and a re-run or manual deploy of a built commit only adds an `r<n>` tag.
 
 ## Decision
 

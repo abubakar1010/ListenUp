@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-28
 - Story: [#232](https://github.com/abubakar1010/ListenUp/issues/232)
-- Requirements: NFR-AI-3, NFR-SEC-1; ADR 0028 (speech libraries only in the media image), ADR 0049 (media sandbox), ADR 0070 (Arm stage 0 host), ADR 0071 (multi-arch images)
+- Requirements: NFR-AI-3, NFR-SEC-1; ADR 0028 (speech libraries only in the media image), ADR 0049 (media sandbox), ADR 0073 (Arm stage 0 host), ADR 0071 (multi-arch images)
 
 ## Context
 
