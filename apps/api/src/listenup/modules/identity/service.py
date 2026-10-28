@@ -41,7 +41,7 @@ from listenup.platform.config import Settings, get_settings
 from listenup.platform.database import Database, DbSession, set_learner
 from listenup.platform.errors import ProblemError
 from listenup.platform.events import EventType, publish
-from listenup.platform.export import ExportPart, learner_rows
+from listenup.platform.export import ExportPart, ExportTable, learner_rows
 from listenup.platform.ids import uuid7
 from listenup.platform.rate_limit import Limit, RateLimiter, ip_key
 
@@ -684,7 +684,7 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
             ),
             # Earlier deletions the learner cancelled by restoring the account (#120).
             # The storage prefix is an internal key, like the media keys.
-            await learner_rows(
+            await _deletion_export_rows(
                 session,
                 "ops.deletion_requests",
                 learner,
@@ -779,3 +779,34 @@ async def content_deletions_to_reconcile(db: AsyncSession) -> list[uuid.UUID]:
 async def fail_content_deletion(db: AsyncSession, request_id: uuid.UUID) -> None:
     if await content_deletion_state(db, request_id) is not None:
         await repository.mark_deletion_failed(db, request_id)
+
+
+async def _deletion_export_rows(
+    session: AsyncSession,
+    table: str,
+    learner: uuid.UUID,
+    *,
+    column: str,
+    omit: tuple[str, ...],
+    order_by: str,
+) -> ExportTable:
+    """Export useful audit counts without exposing private cleanup manifests."""
+    result = await learner_rows(
+        session, table, learner, column=column, omit=omit, order_by=order_by
+    )
+    for row in result.rows:
+        report = row.get("report")
+        if isinstance(report, dict):
+            # An allowlist keeps future internal manifest fields private too.
+            row["report"] = {
+                key: report[key]
+                for key in (
+                    "objects_removed",
+                    "sessions_removed",
+                    "rows_removed",
+                    "rows_total",
+                    "replay_responses_removed",
+                )
+                if key in report
+            }
+    return result

@@ -107,3 +107,37 @@ expired by age. Fresh-session independent review and required CI remain merge ga
   narrow-only plan-sheet state in desktop/dark projects. All new deletion states
   passed at every applicable width/theme. No browser test establishes live API
   persistence; that is covered by the separate API/database/S3 tests.
+
+## Final verification against main 67d1e76
+
+Main's #87 Shadow completion changes were merged as `b951fa6`. The OpenAPI JSON
+and TypeScript client were regenerated from the merged code and matched exactly.
+The interrupted environment run is not counted as passing evidence.
+
+- Full required-service backend command: 2,548 passed, one opt-in real-profile
+  fixture skipped, one performance test deselected. No PostgreSQL/S3 tests skipped.
+- Separate `uv run pytest -m performance --no-cov`: one passed.
+- Final export review found internal manifest fields in exported audit reports.
+  `LISTENUP_REQUIRE_DB=1 uv run pytest tests/integration/test_content_deletion.py -k export_redacts -q`
+  failed on the exposed `keys` field before the fix, then passed after a count-only
+  export projection. Canceled audit rows with NULL reports remain supported.
+- After that final fix, the full export suite plus deletion/schema/real-S3 suites
+  ran with `--cov --cov-append`: 48 passed. The allowlisted report counts survive;
+  internal keys, prefixes and resource-affinity lists do not reach the export.
+- Backend runtime-file inventory passed. Changed-line coverage: 257/258 executable
+  lines, 99.6% (diff-cover displays 99%). The sole uncovered line is the defensive
+  return when an audit request is removed out of band during storage cleanup;
+  ordinary account/content deletion retains these manifests.
+- Frontend lint, formatting, types and build passed after the merge. Coverage:
+  737 passed in 68 files; changed lines 17/17, 100%. Runtime-file inventory passed.
+  Initial gzip JavaScript: 126.7 kB against the 200 kB budget.
+- Full Playwright after the merge: 260 passed, two intentional narrow-only state
+  skips in desktop/dark projects. All new deletion states were scanned.
+- Backend formatting, lint, strict mypy and all six import contracts passed.
+  Migration upgrade/check/downgrade/upgrade passed; the final head is only
+  `89_content_deletion`.
+
+The real-profile skip requires `LISTENUP_REAL_PROFILE_FIXTURE`; this story changes
+no speech model or provider behavior. The #93 sweep remains outside scope under
+owner approval. Independent fresh-session review and required CI remain pending
+merge gates. All TDD/process deviations above remain explicitly disclosed.

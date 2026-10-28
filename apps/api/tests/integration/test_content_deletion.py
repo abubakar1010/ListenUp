@@ -895,3 +895,38 @@ async def test_content_deleted_after_registration_cannot_reach_conversion_put(
             ).fetchone() == (0,)
     finally:
         await database.dispose()
+
+
+@pytest.mark.anyio
+async def test_deletion_export_redacts_manifest_but_keeps_counts(make_client, migrated_url):
+    from listenup.modules.identity import service as identity
+
+    a = make_client()
+    world = await asyncio.to_thread(seed_learner_data, migrated_url, uuid.UUID(learner_id(a)))
+    response = delete(a, world.content_id)
+    assert response.status_code == 202, response.text
+    request = response.json()["request_id"]
+    await asyncio.to_thread(run_delete, migrated_url, request)
+    prior = uuid.uuid4()
+    with psycopg.connect(migrated_url) as owner:
+        owner.execute(
+            "INSERT INTO ops.deletion_requests(id,subject_user_id,scope,status,cancelled_at) "
+            "VALUES (%s,%s,'account','cancelled',now())",
+            [prior, world.user_id],
+        )
+    database = Database(conninfo_to_url(migrated_url))
+    try:
+        async with database.transaction() as db:
+            part = await identity.export_data(db, world.user_id)
+        audit = next(t for t in part.tables if t.name == "ops.deletion_requests")
+        row = next(row for row in audit.rows if str(row["id"]) == request)
+        assert next(row for row in audit.rows if row["id"] == prior)["report"] is None
+        assert "storage_prefixes" not in row
+        report = row["report"]
+        assert "keys" not in report
+        assert "card_prefixes" not in report
+        assert "resource_ids" not in report
+        assert report["sessions_removed"] == len(world.sessions)
+        assert report["objects_removed"] == 0  # fake storage is empty
+    finally:
+        await database.dispose()

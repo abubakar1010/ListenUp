@@ -58,7 +58,7 @@ items remain separate work.
 The minute `library.reconcile_content_deletions` schedule queues due manifests,
 including exhausted failures, using the same unique key and execution lock as the
 initial job. Each processed manifest rotates its next recovery check one hour
-forward so a batch of 1,000 does not permanently starve later requests.
+forward so completed manifests do not always occupy the front of the batch.
 
 Completed manifests are deliberately retained and reconciled too. A browser PUT
 signed before deletion can arrive later; the retained exact upload key and private
@@ -79,3 +79,6 @@ Deleting one learner's YouTube content preserves other learners' sessions,
 corrections, objects and shared caches. The last reference reaches `ref_count=0`
 with its updated orphan timestamp. #93 owns removal after seven days, including
 transcripts, profiles and key points; #89 does not implement that sweep.
+
+Learner exports retain deletion audit counts, but omit internal cleanup prefixes,
+keys and resource-affinity lists from the audit report.
