@@ -22,8 +22,13 @@ contract and caller plumbing only, never speech accuracy or model acceptance.
 The packaged `ai.yaml` registers the second fake disabled. Non-production callers
 may enable it or select either fake through `LISTENUP_AI_CONFIG`; they keep the
 ordinary gateway eligibility, validation, quota and provenance checks. Production
-rejects enabled entries for either fake at gateway construction, even if ineligible
-for another reason. Disabled fake entries cannot receive calls. `accepted: true`
+rejects every `fake` entry, enabled or not, and any enabled `fake-assessment` entry,
+at gateway construction, even if ineligible for another reason. The packaged disabled
+`fake-assessment` entry is the only synthetic registration production accepts. A
+disabled entry cannot receive calls, and `AIGateway.entry` and
+`deployment_provenance` skip disabled entries, so production reports no assessment
+provider. The evaluation runner treats every synthetic provider (`fake`,
+`fake-assessment`) as non-evidence. `accepted: true`
 on a synthetic entry permits contract testing only. The existing `ai.fake.yaml`
 remains compatible with the offline evaluation CLI's exclusively `fake` policy.
 

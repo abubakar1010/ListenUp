@@ -48,7 +48,7 @@ Read the section for the area you are changing before you change it. The rules e
 - Speech assessment E2 (#80, ADR 0074): `fake-assessment` is a second synthetic
   provider with nonempty sound/pause/filler/pitch signals; it never reads audio.
   The packaged `ai.yaml` registers it disabled. Enable only in non-production;
-  production rejects enabled entries for either fake. Configure `local: true`,
+  production rejects every `fake` entry and any enabled `fake-assessment` entry. Configure `local: true`,
   `trains_on_inputs: false`, `accepted: true` for synthetic contract calls.
   #82–#86 must wait for the port merge and use fakes only until #21/#22 unblock
   the real-model provider. Synthetic results establish neither model quality nor B3.

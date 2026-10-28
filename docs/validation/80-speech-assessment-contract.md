@@ -39,14 +39,21 @@ and sounds outside their word. Existing contract adapter tests still pass.
 Commands ran from `apps/api` with `UV_CACHE_DIR=/workspace/.cache/uv`.
 
 - Red: `uv run --no-sync pytest tests/unit/ai/test_assessment_contract.py -q`
-  before implementation: **7 failed, 1 passed**. Failures showed the missing
-  second adapter/registration and missing default entry. The original fake's
-  production refusal was existing behavior (the passing characterization case).
-- Green: the same focused file after implementation: **8 passed**. Additional
-  eligibility/fallback cases characterize the existing gateway using the new
-  adapter; they did not introduce a new gateway policy.
+  before implementation: **7 failed, 1 passed** on the first 8-case version of the
+  file. Failures showed the missing second adapter/registration and missing default
+  entry. The original fake's production refusal was existing behavior (the passing
+  characterization case). Run later against the base commit, the final 12-case file
+  gives **11 failed, 1 passed**. The eligibility and fallback cases fail there only
+  because the adapter is missing; they characterize existing gateway policy and are
+  not independent red evidence.
+- Green: the same focused file after implementation passed in full.
+- Review follow-up (independent review of `ffd29f2`), red first: four new tests
+  (disabled `fake` refused in production for every role; a disabled default entry
+  gives no `entry()` or `deployment_provenance`; `entry()` skips a disabled first
+  provider; both synthetic providers are recognised by the evaluation runner)
+  produced **6 failed** (4 role cases, 2 others) before the fixes and pass after.
 - Refactor/regression: `uv run --no-sync pytest tests/unit/ai tests/contract/test_ai_adapters.py -q`:
-  **591 passed**, including the expanded **12** assessment-contract cases.
+  **602 passed** after the review follow-up, including **19** assessment-contract cases.
 - The port/schema existed before this task. Its documentation changes need no
   invented Red cycle. ADR/workflow/design edits are documentation-only.
 

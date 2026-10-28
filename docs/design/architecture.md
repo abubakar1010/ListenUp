@@ -240,7 +240,7 @@ The deterministic fakes are model-free and selectable by configuration. Adapter 
 Owner exception E2 (approved 2026-10-28) splits #80: the speech assessment port,
 output schema, `ai.yaml` registration and a second synthetic provider for AT-22
 may proceed without #21/#22. The `fake-assessment` entry is disabled by default;
-production rejects enabled fake entries. The real-model local provider and B3
+production rejects every `fake` entry and any enabled `fake-assessment` entry. The real-model local provider and B3
 criterion still wait for #21 and #22, and #80 remains open. #82–#86 may use only
 the fake provider after the port is merged
 ([ADR 0074](../adr/0074-speech-assessment-contract-split.md)).
