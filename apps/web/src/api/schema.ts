@@ -1051,6 +1051,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sessions/{session_id}/cards/suggestions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Card Suggestions
+     * @description Marked phrases, likely connected speech first. Only a suggestion: no card is made.
+     */
+    get: operations['card_suggestions_api_v1_sessions__session_id__cards_suggestions_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sessions/{session_id}/dictation/attempt': {
     parameters: {
       query?: never;
@@ -1246,6 +1266,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sessions/{session_id}/shadow/rounds/{number}/recording': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Start Recording
+     * @description Sign an upload of this round's recording; safe to repeat for a failed upload.
+     */
+    post: operations['start_recording_api_v1_sessions__session_id__shadow_rounds__number__recording_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sessions/{session_id}/shadow/rounds/{number}/start': {
     parameters: {
       query?: never;
@@ -1339,6 +1379,46 @@ export interface paths {
      *     An Idempotency-Key replays completion without advancing the next step.
      */
     post: operations['finish_transcript_api_v1_sessions__session_id__transcript_complete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/shadow/rounds/{round_id}/complete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Complete Recording
+     * @description The recording reached storage: the round is recorded and done (no grading yet).
+     */
+    post: operations['complete_recording_api_v1_shadow_rounds__round_id__complete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/shadow/rounds/{round_id}/recording': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Recording
+     * @description Check ownership, then redirect to a signed URL that lasts at most 120 s.
+     */
+    get: operations['read_recording_api_v1_shadow_rounds__round_id__recording_get'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1568,6 +1648,28 @@ export interface components {
        * Format: date-time
        */
       reviewed_at: string;
+    };
+    /** CardSuggestion */
+    CardSuggestion: {
+      /**
+       * Mark Id
+       * Format: uuid
+       */
+      mark_id: string;
+      /** Phrase */
+      phrase: string;
+      /** Reasons */
+      reasons: ('multi_word' | 'linking' | 'reduction' | 'weak_form' | 'earlier_session')[];
+      /** Suggested */
+      suggested: boolean;
+    };
+    /**
+     * CardSuggestions
+     * @description The session's marks in the order the Card step offers them (FR-CA-4).
+     */
+    CardSuggestions: {
+      /** Suggestions */
+      suggestions: components['schemas']['CardSuggestion'][];
     };
     /** ChangeEntry */
     ChangeEntry: {
@@ -2573,6 +2675,38 @@ export interface components {
        */
       tokens: number;
     };
+    /** RecordingRequest */
+    RecordingRequest: {
+      /** Mime */
+      mime: string;
+      /** Size Bytes */
+      size_bytes: number;
+    };
+    /** RecordingTarget */
+    RecordingTarget: {
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Headers */
+      headers: {
+        [key: string]: string;
+      };
+      /** Method */
+      method: string;
+      /** Url */
+      url: string;
+    };
+    /** RecordingUpload */
+    RecordingUpload: {
+      /**
+       * Round Id
+       * Format: uuid
+       */
+      round_id: string;
+      upload: components['schemas']['RecordingTarget'];
+    };
     /** Registration */
     Registration: {
       /** Email */
@@ -2618,6 +2752,13 @@ export interface components {
     };
     /** Round */
     Round: {
+      /** Feedback */
+      feedback: 'unavailable' | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
       /**
        * Playback Status
        * @enum {string}
@@ -2625,6 +2766,8 @@ export interface components {
       playback_status: 'ready' | 'ended';
       /** Recorded At */
       recorded_at: string | null;
+      /** Recording Available */
+      recording_available: boolean;
       /** Round */
       round: number;
       /** Transcript Shown */
@@ -5175,6 +5318,51 @@ export interface operations {
       };
     };
   };
+  card_suggestions_api_v1_sessions__session_id__cards_suggestions_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CardSuggestions'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   get_session_attempt_api_v1_sessions__session_id__dictation_attempt_get: {
     parameters: {
       query?: never;
@@ -5741,6 +5929,61 @@ export interface operations {
       };
     };
   };
+  start_recording_api_v1_sessions__session_id__shadow_rounds__number__recording_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+        number: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecordingRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RecordingUpload'];
+        };
+      };
+      /** @description `voice_consent_required` */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked`, `round_order` or `recording_exists` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `recording_type` or `recording_size` */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   start_round_api_v1_sessions__session_id__shadow_rounds__number__start_post: {
     parameters: {
       query?: never;
@@ -6023,6 +6266,102 @@ export interface operations {
         content?: never;
       };
       /** @description `step_locked` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  complete_recording_api_v1_shadow_rounds__round_id__complete_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path: {
+        round_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `voice_consent_required` */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `round_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `upload_incomplete`, `upload_size_mismatch`, `upload_type_mismatch`, `step_locked` or `round_order` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  read_recording_api_v1_shadow_rounds__round_id__recording_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        round_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `round_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `recording_not_ready` */
       409: {
         headers: {
           [name: string]: unknown;

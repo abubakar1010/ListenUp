@@ -13,6 +13,7 @@ the dictation module places them from its stored diff and checks its own attempt
 they need neither the Transcript gate nor the passage read.
 """
 
+import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -33,6 +34,7 @@ from listenup.modules.review.domain import (
     check_length,
     check_tag,
     clean_note,
+    mark_phrase,
     place_mark,
 )
 from listenup.modules.transcript import service as transcript
@@ -42,6 +44,8 @@ from listenup.platform.export import ExportPart, learner_rows
 
 Mark = schemas.Mark
 """A stored mark as the API shows it; other modules name the type through this service."""
+
+logger = logging.getLogger(__name__)
 
 
 async def read_transcript(
@@ -263,6 +267,56 @@ async def session_marks(db: AsyncSession, session_id: uuid.UUID) -> list[schemas
     The Dictation diff uses it to show which words are already added (#55).
     """
     return [_mark(row) for row in await repository.list_for_session(db, session_id)]
+
+
+EARLIER_MARKS = 100
+EARLIER_SESSIONS = 5
+
+
+async def mark_phrases(
+    db: AsyncSession,
+    worker_database: Database,
+    learner: uuid.UUID,
+    session_id: uuid.UUID,
+    marks: Sequence[schemas.Mark],
+) -> dict[uuid.UUID, str]:
+    """Each mark's words in this session's passage, by mark id (FR-CA-4)."""
+    passage = await transcript.read_passage(db, worker_database, learner, session_id)
+    return {mark.id: mark_phrase(passage.words, mark.word_from, mark.word_to) for mark in marks}
+
+
+async def earlier_phrases(
+    db: AsyncSession, worker_database: Database, learner: uuid.UUID, session_id: uuid.UUID
+) -> list[str]:
+    """Phrases the learner marked in sessions started before this one (FR-CA-4).
+
+    Bounded: the newest EARLIER_MARKS marks, read from at most EARLIER_SESSIONS
+    sessions whose passage could be read. A session that cannot be read adds nothing
+    and does not use up a slot; suggestions never fail because of an older session.
+    """
+    by_session: dict[uuid.UUID, list[tuple[int, int]]] = {}
+    for other, word_from, word_to in await repository.other_session_ranges(
+        db, learner, session_id, EARLIER_MARKS
+    ):
+        by_session.setdefault(other, []).append((word_from, word_to))
+    phrases: list[str] = []
+    read = 0
+    for other, ranges in by_session.items():
+        if read == EARLIER_SESSIONS:
+            break
+        try:
+            async with db.begin_nested():
+                passage = await transcript.read_passage(db, worker_database, learner, other)
+        except ProblemError:
+            continue
+        except Exception:
+            logger.warning("earlier marked phrases skipped for a session", exc_info=True)
+            continue
+        read += 1
+        phrases.extend(
+            mark_phrase(passage.words, word_from, word_to) for word_from, word_to in ranges
+        )
+    return phrases
 
 
 async def change_note(

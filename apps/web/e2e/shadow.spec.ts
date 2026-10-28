@@ -108,17 +108,25 @@ for (const duration of [45_000, 150_000]) {
       await page.getByRole('slider', { name: 'Seek', exact: true }).fill('50000');
       await page.getByRole('button', { name: 'Replay selected segment' }).click();
       await expect
-        .poll(() => page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.currentTime))
+        .poll(() =>
+          page
+            .locator('audio:not([controls])')
+            .evaluate((audio: HTMLAudioElement) => audio.currentTime),
+        )
         .toBeGreaterThanOrEqual(40);
       expect(
-        await page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.currentTime),
+        await page
+          .locator('audio:not([controls])')
+          .evaluate((audio: HTMLAudioElement) => audio.currentTime),
       ).toBeLessThan(42);
-      await page.locator('audio').evaluate((audio: HTMLAudioElement) => {
+      await page.locator('audio:not([controls])').evaluate((audio: HTMLAudioElement) => {
         audio.currentTime = 130.1;
         audio.dispatchEvent(new Event('timeupdate'));
       });
       await expect
-        .poll(() => page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.paused))
+        .poll(() =>
+          page.locator('audio:not([controls])').evaluate((audio: HTMLAudioElement) => audio.paused),
+        )
         .toBe(true);
     }
     expect(
@@ -141,12 +149,25 @@ test('three Shadow rounds use keyboard controls at 360 px and original speed', a
   };
   let granted = false;
   const rounds: {
+    id: string;
     round: number;
     transcript_shown: boolean;
     playback_status: string;
-    recorded_at: null;
+    recorded_at: string | null;
+    recording_available: boolean;
+    feedback: 'unavailable' | null;
   }[] = [];
+  const uploads: { number: number; bytes: number; type: string | undefined }[] = [];
   const root = `/sessions/${session.id}/shadow/rounds`;
+  await page.route('**/storage-e2e/**', async (route) => {
+    const request = route.request();
+    uploads.push({
+      number: Number(request.url().split('/').at(-1)),
+      bytes: request.postDataBuffer()?.length ?? 0,
+      type: request.headers()['content-type'],
+    });
+    return route.fulfill({ status: 200 });
+  });
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace('/api/v1', '');
@@ -197,10 +218,40 @@ test('three Shadow rounds use keyboard controls at 360 px and original speed', a
             : {}),
         },
       });
+    if (path.endsWith('/recording') && request.method() === 'POST' && path.startsWith(root)) {
+      const number = Number(path.split('/').at(-2));
+      const body = request.postDataJSON() as { mime: string; size_bytes: number };
+      expect(body.mime).toMatch(/^audio\/(webm|mp4)$/);
+      expect(body.size_bytes).toBeGreaterThan(0);
+      return route.fulfill({
+        json: {
+          round_id: rounds[number - 1].id,
+          upload: {
+            url: `/storage-e2e/${number}`,
+            method: 'PUT',
+            headers: { 'Content-Type': body.mime },
+            expires_at: '2026-10-27T10:05:00Z',
+          },
+        },
+      });
+    }
+    const complete = /^\/shadow\/rounds\/(round-\d)\/complete$/.exec(path);
+    if (complete && request.method() === 'POST') {
+      const round = rounds.find((r) => r.id === complete[1])!;
+      round.recorded_at = '2026-10-27T10:00:00Z';
+      round.recording_available = true;
+      round.feedback = 'unavailable';
+      return route.fulfill({ status: 204 });
+    }
+    if (/^\/shadow\/rounds\/round-\d\/recording$/.test(path))
+      return route.fulfill({ contentType: 'audio/wav', body: wav() });
     if (path.startsWith(root + '/') && request.method() === 'POST') {
       const number = Number(path.split('/').at(-2));
       if (path.endsWith('/start')) {
         rounds.push({
+          id: `round-${number}`,
+          recording_available: false,
+          feedback: null,
           round: number,
           transcript_shown: number === 1,
           playback_status: 'ready',
@@ -261,7 +312,7 @@ test('three Shadow rounds use keyboard controls at 360 px and original speed', a
     const transcript = page.getByText('Only the first round reveals these words.');
     if (number === 1) await expect(transcript).toBeVisible();
     else await expect(transcript).toHaveCount(0);
-    await expect(page.locator('audio')).toHaveCount(1);
+    await expect(page.locator('audio:not([controls])')).toHaveCount(1);
     const play = page.getByRole('button', { name: `Play round ${number}`, exact: true });
     await expect(play).toBeEnabled();
     await play.focus();
@@ -271,27 +322,45 @@ test('three Shadow rounds use keyboard controls at 360 px and original speed', a
       page.getByRole('status').filter({ hasText: `Round ${number} starts in 3` }),
     ).toBeVisible();
     await expect
-      .poll(() => page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.paused))
+      .poll(() =>
+        page.locator('audio:not([controls])').evaluate((audio: HTMLAudioElement) => audio.paused),
+      )
       .toBe(true);
     await expect(
       page.getByRole('status').filter({ hasText: 'playing at original speed' }),
     ).toBeVisible();
     await expect(page.getByRole('status')).toHaveCount(1);
-    await page.locator('audio').evaluate((audio: HTMLAudioElement) => {
+    await page.locator('audio:not([controls])').evaluate((audio: HTMLAudioElement) => {
       audio.playbackRate = 1.5;
     });
     await expect
-      .poll(() => page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.playbackRate))
+      .poll(() =>
+        page
+          .locator('audio:not([controls])')
+          .evaluate((audio: HTMLAudioElement) => audio.playbackRate),
+      )
       .toBe(1);
-    await page.locator('audio').evaluate((audio: HTMLAudioElement) => {
+    await page.locator('audio:not([controls])').evaluate((audio: HTMLAudioElement) => {
       audio.currentTime = 55.1;
       audio.dispatchEvent(new Event('timeupdate'));
     });
-    await expect(page.getByText('Playback ended. Feedback unavailable.')).toBeVisible();
-    expect(rounds[number - 1].recorded_at).toBeNull();
+    await expect(page.getByText('Playback ended.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Round status' })).toContainText(
+      `Round ${number}: recorded`,
+    );
+    expect(uploads.at(-1)).toMatchObject({ number });
+    expect(uploads.at(-1)!.bytes).toBeGreaterThan(0);
+    expect(uploads.at(-1)!.type).toMatch(/^audio\/(webm|mp4)$/);
+  }
+  expect(uploads.map((u) => u.number)).toEqual([1, 2, 3]);
+  for (const number of [1, 2, 3]) {
+    const replay = page.getByRole('region', { name: `Round ${number} replay` });
+    await expect(replay.getByLabel(`Your recording of round ${number}`)).toBeVisible();
+    await expect(replay.getByLabel(`Original, round ${number} segment`)).toBeVisible();
+    await expect(replay.getByText('Feedback unavailable.')).toBeVisible();
   }
   await expect(page.getByRole('button', { name: 'Start round 4' })).toHaveCount(0);
-  await expect(page.getByText(/No recording has been saved/)).toBeVisible();
+  await expect(page.getByText(/All three rounds are done/)).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

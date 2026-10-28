@@ -52,3 +52,10 @@ async def insert_round(
 ) -> None:
     db.add(ShadowRound(id=uuid7(), session_id=session_id, user_id=user_id, round=number))
     await db.flush()
+
+
+async def round_by_id(
+    db: AsyncSession, round_id: uuid.UUID, *, lock: bool = False
+) -> ShadowRound | None:
+    query = select(ShadowRound).where(ShadowRound.id == round_id)
+    return await db.scalar(query.with_for_update() if lock else query)

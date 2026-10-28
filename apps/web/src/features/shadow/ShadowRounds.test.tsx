@@ -14,7 +14,7 @@ import { jsonResponse, renderWithProviders } from '../../test-utils';
 import { mockRoutes } from '../session/testApi';
 import { ShadowRounds } from './ShadowRounds';
 
-it('discloses round 1 text only, advances explicitly, and never claims recording completion', async () => {
+it('discloses round 1 text only, advances explicitly, and never completes a round without an upload', async () => {
   let number = 1;
   const segment = {
     session_id: 's',
@@ -56,7 +56,7 @@ it('discloses round 1 text only, advances explicitly, and never claims recording
   fireEvent.click(screen.getByRole('button', { name: 'Start round 3' }));
   await screen.findByText('Round 3 of 3');
   expect(screen.queryByRole('button', { name: 'Start round 4' })).not.toBeInTheDocument();
-  expect(screen.getByText(/No recording has been saved/)).toBeInTheDocument();
+  expect(screen.getByText(/Playback alone does not complete Shadow/)).toBeInTheDocument();
   await waitFor(() => expect(calls.filter((c) => c.method === 'POST')).toHaveLength(2));
   expect(calls.every((c) => !c.path.includes('/complete'))).toBe(true);
 });

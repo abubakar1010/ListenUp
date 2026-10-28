@@ -3,13 +3,15 @@ import { buttonClass } from '../../components/button';
 
 type Phase = 'ready' | 'counting' | 'playing' | 'interrupted' | 'blocked' | 'ended' | 'error';
 
-/** Playback only. Recording hooks will attach to count-in/start/end in #81. */
+/** Plays the segment; `onCountIn` and `onStopped` let the caller record the same span. */
 export function ShadowRoundPlayer({
   src,
   startMs,
   endMs,
   number,
   onEnded,
+  onCountIn,
+  onStopped,
   onStatus,
 }: {
   src: string;
@@ -17,6 +19,8 @@ export function ShadowRoundPlayer({
   endMs: number;
   number: number;
   onEnded?: () => void;
+  onCountIn?: () => void;
+  onStopped?: () => void;
   onStatus?: (message: string) => void;
 }) {
   const audio = useRef<HTMLAudioElement>(null);
@@ -39,7 +43,8 @@ export function ShadowRoundPlayer({
     clearInterval(timer.current);
     transition('interrupted');
     audio.current?.pause();
-  }, [transition, cancelPendingPlay]);
+    onStopped?.();
+  }, [transition, cancelPendingPlay, onStopped]);
   const play = useCallback(async () => {
     const element = audio.current;
     if (!element) return;
@@ -58,6 +63,7 @@ export function ShadowRoundPlayer({
     if (audio.current) audio.current.currentTime = startMs / 1000;
     transition('counting');
     setCount(3);
+    onCountIn?.();
     let remaining = 3;
     clearInterval(timer.current);
     timer.current = setInterval(() => {

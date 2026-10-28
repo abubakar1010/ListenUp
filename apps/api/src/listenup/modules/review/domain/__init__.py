@@ -15,6 +15,7 @@ from listenup.modules.review.domain.marks import (
     check_length,
     check_tag,
     clean_note,
+    mark_phrase,
     place_mark,
 )
 
@@ -33,5 +34,6 @@ __all__ = [
     "check_length",
     "check_tag",
     "clean_note",
+    "mark_phrase",
     "place_mark",
 ]

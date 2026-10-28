@@ -1,6 +1,6 @@
 # Deploy and rollback runbook
 
-Production is one Docker-capable VM running `compose.prod.yml` behind Caddy, with managed PostgreSQL 16, S3-compatible storage and an SMTP provider (Architecture 11). Design and reasons: [ADR 0066](../adr/0066-host-neutral-compose-deploy-with-a-media-relay.md). Nothing here names a provider: the host is chosen in #16. Times are UTC.
+Production is one Docker-capable VM running `compose.prod.yml` behind Caddy, with managed PostgreSQL 16, S3-compatible storage and an SMTP provider (Architecture 11). Design and reasons: [ADR 0066](../adr/0066-host-neutral-compose-deploy-with-a-media-relay.md). Nothing here names a provider: the host is proposed in [ADR 0070](../adr/0070-stage-0-host-oracle-always-free-arm.md) (#16) and provisioned with [stage-0-host.md](stage-0-host.md). Times are UTC.
 
 | What | Where |
 | --- | --- |
@@ -14,7 +14,7 @@ Production is one Docker-capable VM running `compose.prod.yml` behind Caddy, wit
 
 ## How a release reaches production
 
-1. A push to `main` runs CI (and the Deploy check when deployment files changed). When CI succeeds, and the Deploy check passed wherever it ran on that commit, the **Release** workflow builds the six images from that exact commit and pushes them with two tags: `sha-<first 12 of the commit>` and `r<run number>`. Nothing is tagged `latest`, and a tag is never reused: a commit is built once, and a re-run or a later manual deploy of the same commit only adds a new `r<n>` tag to the existing images.
+1. A push to `main` runs CI (and the Deploy check when deployment files changed). When CI succeeds, and the Deploy check passed wherever it ran on that commit, the **Release** workflow builds the six images from that exact commit and pushes them with two tags (each tag is a multi-platform manifest: `linux/amd64` and `linux/arm64` for five images, `linux/amd64` only for `worker-media` until [#232](https://github.com/abubakar1010/ListenUp/issues/232); the arm64 layers are built under QEMU, and the Deploy check builds them natively on every change): `sha-<first 12 of the commit>` and `r<run number>`. Nothing is tagged `latest`, and a tag is never reused: a commit is built once, and a re-run or a later manual deploy of the same commit only adds a new `r<n>` tag to the existing images.
 2. If `LISTENUP_DEPLOY_ENABLED` is `true`, the deploy job (environment `production`) copies `compose.prod.yml` and the scripts to the host over SSH and runs `deploy.sh sha-<…>`:
    1. pull every image (a missing image fails before anything changes);
    2. `storage-check`: a public or unreadable media or backup bucket stops the deploy;
@@ -102,7 +102,7 @@ The compose file in `/opt/listenup` stays the newer release's; compose changes f
 
 Do these once per host, in order. Each step says what it proves.
 
-1. **VM.** Any Linux VM with at least 4 cores and 16 GB of memory for the speech models (Architecture 11; the media worker is capped at 2 cores and 18 GB including swap), 40 GB of disk, a public IPv4 address, and outbound HTTPS. Install Docker Engine 28 or later and the Compose plugin 2.24 or later (ADR 0049's isolated bridge needs both): `docker version`, `docker compose version`.
+1. **VM.** (The stage 0 host: [stage-0-host.md](stage-0-host.md), which also covers what an Arm host needs.) Any Linux VM with at least 4 cores and 16 GB of memory for the speech models (Architecture 11; the media worker is capped at 2 cores and 18 GB including swap), 40 GB of disk, a public IPv4 address, and outbound HTTPS. Install Docker Engine 28 or later and the Compose plugin 2.24 or later (ADR 0049's isolated bridge needs both): `docker version`, `docker compose version`.
 2. **Firewall.** Inbound: 22 (SSH, restricted to the owner's addresses where the provider allows it), 80 and 443 TCP, and 443 UDP (HTTP/3). Nothing else; only the `edge` container publishes ports.
 3. **Deploy user.** Create `deploy`, add it to the `docker` group, put the release workflow's public key in `~deploy/.ssh/authorized_keys`, disable password login. Record the host key for GitHub: `ssh-keyscan -t ed25519 <host>`, or `ssh-keyscan -p <port> -t ed25519 <host>` when SSH listens on another port (the line then starts `[<host>]:<port>`, which is what the deploy job looks up). Compare its fingerprint with the provider's console.
 4. **DNS.** An `A` (and `AAAA` if IPv6) record from the domain to the VM. Caddy needs it before the first deploy to get the certificate.

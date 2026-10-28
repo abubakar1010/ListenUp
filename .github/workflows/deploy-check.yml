@@ -39,7 +39,7 @@ jobs:
             --env-file infra/deploy/env.example -f infra/compose/compose.prod.yml \
             --profile ops config --quiet
       - name: Deploy scripts pass shellcheck
-        run: shellcheck infra/deploy/deploy.sh infra/deploy/rollback.sh
+        run: shellcheck infra/deploy/deploy.sh infra/deploy/rollback.sh infra/deploy/provision-host.sh infra/deploy/host-facts.sh
       - name: Workflows pass actionlint
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 \
@@ -52,10 +52,39 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       # The image build runs `caddy validate` on the Caddyfile.
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/docker/web.Dockerfile
           push: false
           cache-from: type=gha,scope=edge
           cache-to: type=gha,mode=max,scope=edge
+
+  # The release publishes arm64 images too (ADR 0070, #231), built under QEMU on an x86
+  # runner. Build them here on a native Arm runner, which is quick, so a change that
+  # breaks arm64 fails the pull request. worker-media is left out until
+  # praat-parselmouth builds on arm64 (#232).
+  arm64-images:
+    name: Arm64 image (${{ matrix.image }})
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {image: api, file: infra/docker/backend.Dockerfile, target: api}
+          - {image: worker, file: infra/docker/backend.Dockerfile, target: worker}
+          - {image: backup, file: infra/docker/backend.Dockerfile, target: backup}
+          - {image: signature-update, file: infra/docker/backend.Dockerfile, target: signature-update}
+          - {image: edge, file: infra/docker/web.Dockerfile, target: edge}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          platforms: linux/arm64
+          push: false
+          cache-from: type=gha,scope=arm64-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=arm64-${{ matrix.image }}

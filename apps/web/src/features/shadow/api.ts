@@ -70,3 +70,45 @@ export function useChangeRound(id: string) {
     },
   });
 }
+
+export const RECORDING_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Ask for a signed URL, send the blob straight to storage, then mark the round
+ * recorded. Every step can be repeated with the same blob (FR-SH-8).
+ */
+export function useUploadRecording(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      number,
+      recording,
+    }: {
+      number: number;
+      recording: { blob: Blob; mime: string };
+    }) => {
+      let started;
+      try {
+        started = await api<components['schemas']['RecordingUpload']>(
+          `/sessions/${encodeURIComponent(id)}/shadow/rounds/${number}/recording`,
+          { method: 'POST', body: { mime: recording.mime, size_bytes: recording.blob.size } },
+        );
+      } catch (error) {
+        // A lost response to `complete` leaves the round saved: nothing more to send.
+        if (error instanceof ApiError && error.code === 'recording_exists') return;
+        throw error;
+      }
+      const sent = await fetch(started.upload.url, {
+        method: started.upload.method,
+        headers: started.upload.headers,
+        body: recording.blob,
+      });
+      if (!sent.ok) throw new Error('The recording did not reach storage.');
+      await api(`/shadow/rounds/${encodeURIComponent(started.round_id)}/complete`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': `shadow-recording-${started.round_id}` },
+      });
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: roundsKey(id) }),
+  });
+}
