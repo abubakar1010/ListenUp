@@ -6649,7 +6649,7 @@
             "description": "`session_not_found`"
           },
           "409": {
-            "description": "`step_locked`, `round_order` or `recording_exists`"
+            "description": "`step_locked`, `session_closed`, `round_order` or `recording_exists`"
           },
           "422": {
             "description": "`recording_type` or `recording_size`"

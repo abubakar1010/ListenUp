@@ -421,3 +421,10 @@ Read the section for the area you are changing before you change it. The rules e
 - Completed (done) Shadow sessions retain read-only segment/round state and replay.
   Skipped sessions retain the existing step refusal. The web refreshes session
   queries after upload finalization and shows unavailable feedback on completion.
+- Signing an upload for a round of a done Shadow answers 409 `recording_exists`, so a
+  lost final response is retried safely. The web's completion key includes the session
+  version it sends, because the body (and so the idempotency fingerprint) changes once
+  completion bumps the version.
+- A round that was played but never saved cannot be recorded again in the UI (the blob
+  lives in memory, ADR 0070); Shadow then completes only by skipping. Owner decision on
+  #242 review: accepted, and the round-3 copy says so.

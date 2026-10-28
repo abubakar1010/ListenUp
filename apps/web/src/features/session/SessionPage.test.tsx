@@ -149,3 +149,14 @@ test('completion remains visible when replay data cannot load and offers retry',
     fireEvent.click(button);
   await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
 });
+
+test('a finished plan with Shadow skipped has no player placeholder or replay', async () => {
+  const { calls } = mockRoutes({
+    'GET /sessions/session-1': jsonResponse(200, sessionFixture({ done: 4, skipped: ['shadow'] })),
+  });
+  renderSession();
+  expect(await screen.findByText('All 4 steps finished')).toBeInTheDocument();
+  expect(screen.queryByText("The clip's player will show here.")).not.toBeInTheDocument();
+  expect(screen.queryByText('Feedback unavailable.')).not.toBeInTheDocument();
+  expect(calls.some((c) => c.path.includes('/shadow/'))).toBe(false);
+});

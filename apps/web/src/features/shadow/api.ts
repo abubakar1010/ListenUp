@@ -109,10 +109,11 @@ export function useUploadRecording(id: string) {
       if (!sent.ok) throw new Error('The recording did not reach storage.');
       await api(`/shadow/rounds/${encodeURIComponent(started.round_id)}/complete`, {
         method: 'POST',
-        headers: { 'Idempotency-Key': `shadow-recording-${started.round_id}` },
+        // The version is in the key: a retry after the session moved on is a new request.
+        headers: { 'Idempotency-Key': `shadow-recording-${started.round_id}-${session.version}` },
         body: { version: session.version },
       });
     },
-    onSettled: () => Promise.all([client.invalidateQueries({ queryKey: SESSIONS_KEY })]),
+    onSettled: () => client.invalidateQueries({ queryKey: SESSIONS_KEY }),
   });
 }

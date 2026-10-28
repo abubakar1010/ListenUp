@@ -417,3 +417,17 @@ def test_concurrent_finalization_with_distinct_keys_is_idempotent(
     session = client.get(f"/api/v1/sessions/{sid}").json()
     assert session["status"] == "completed"
     assert session["version"] == 4
+
+
+def test_signing_again_after_completion_reports_the_recording_exists(
+    client, migrated_url, api_role_url, storage
+):
+    sid = setup(client, migrated_url, api_role_url)
+    bodies = [record_round(client, storage, sid, n) for n in (1, 2, 3)]
+    assert client.get(f"/api/v1/sessions/{sid}").json()["status"] == "completed"
+    before = client.get(f"/api/v1/sessions/{sid}").json()
+    response = request_upload(client, sid, 3)
+    assert (response.status_code, response.json()["code"]) == (409, "recording_exists")
+    # A lost final response is retried with the version the learner now sees.
+    assert complete(client, bodies[2]["round_id"], version=before["version"]).status_code == 204
+    assert client.get(f"/api/v1/sessions/{sid}").json() == before

@@ -5973,7 +5973,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description `step_locked`, `round_order` or `recording_exists` */
+      /** @description `step_locked`, `session_closed`, `round_order` or `recording_exists` */
       409: {
         headers: {
           [name: string]: unknown;

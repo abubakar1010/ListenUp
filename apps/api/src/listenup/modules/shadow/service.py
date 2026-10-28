@@ -29,20 +29,29 @@ def present(row: ShadowSegment) -> schemas.Segment:
     )
 
 
+async def require_open_or_done(db: AsyncSession, session_id: uuid.UUID) -> practice.PracticeSession:
+    """The session while Shadow is open or done; a skipped or unreached Shadow is refused.
+
+    A done Shadow keeps its segment, rounds and recordings readable (SR-6, FR-SH-8).
+    """
+    session = await practice.require_reached(db, session_id, practice.Step.SHADOW)
+    if not any(
+        state.step is practice.Step.SHADOW and state.status is practice.StepStatus.DONE
+        for state in session.plan.steps
+    ):
+        return await practice.require_step(db, session_id, practice.Step.SHADOW)
+    return session
+
+
 async def segment(
     db: AsyncSession, session_id: uuid.UUID, choice: schemas.SegmentChoice | None = None
 ) -> schemas.Segment:
     await practice.lock_session(db, session_id)
     session = await (
-        practice.require_reached(db, session_id, practice.Step.SHADOW)
+        require_open_or_done(db, session_id)
         if choice is None
         else practice.require_step(db, session_id, practice.Step.SHADOW)
     )
-    if choice is None and not any(
-        state.step is practice.Step.SHADOW and state.status is practice.StepStatus.DONE
-        for state in session.plan.steps
-    ):
-        await practice.require_step(db, session_id, practice.Step.SHADOW)
     row = await repository.get(db, session_id)
     if choice is None and row is not None:
         return present(row)

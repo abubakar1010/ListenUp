@@ -107,3 +107,19 @@ explicit scope and ADR 0050. Recordings remain replayable; no pretend grading
 retry is offered. This does not satisfy the launch gate for Shadow grading.
 A fresh-session independent review remains required before merge; no reviewer
 agent was spawned because delegation was not authorized. The owner merges.
+
+## Review remediation (PR #242 review)
+
+- Retry after completion: Red `LISTENUP_REQUIRE_DB=1 uv run pytest tests/integration/test_shadow_recording.py -k signing_again`
+  failed (`session_closed`, expected `recording_exists`); green after `require_open_or_done`
+  was used by the signing route. Web `signs each completion attempt with the session
+  version it sends` failed (one idempotency key, expected two); green after the key
+  includes the version.
+- Retrospective: the skipped-Shadow finished-view test passed on first run
+  (characterization); the round-3 skip-copy test was written alongside the copy and was
+  then shown to fail against the old copy.
+- Owner decisions: a played-but-unrecorded round stays skip-only (ADR 0070, no
+  re-recording); the PR uses `Refs #87` because the retry and 120 s criteria need #82.
+- Review point withdrawn: the empty Player region on the finished page matches Card and
+  Transcript (`player={null}`); every open step has its own screen, so the placeholder
+  was unreachable except on finished plans.

@@ -196,7 +196,11 @@ export function ShadowRounds({
         </BusyButton>
       )}
       {number === 3 && ended && (
-        <p>Three playbacks ended. Shadow completes when all three recordings are saved.</p>
+        <p>
+          Three playbacks ended. Shadow completes when all three recordings are saved. A round that
+          was played but not saved cannot be recorded again, so Shadow does not complete until all
+          three recordings are saved; you can skip Shadow to finish the plan.
+        </p>
       )}
       {change.isError && (
         <ErrorPanel
