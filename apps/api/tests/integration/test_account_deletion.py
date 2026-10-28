@@ -682,7 +682,7 @@ def test_a_grace_period_that_ends_during_password_verification_is_refused(
     monkeypatch: pytest.MonkeyPatch,
     restore: bool | None,
 ) -> None:
-    """ADR 0094: the deadline is checked again after the slow password check."""
+    """ADR 0086: the deadline is checked again after the slow password check."""
     email = unique_email()
     user_id = register(client, email)
     delete_me(client)
@@ -706,7 +706,7 @@ def test_a_grace_period_that_ends_during_password_verification_is_refused(
 def test_a_grace_period_that_ends_before_the_restore_locks_the_account_is_refused(
     client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ADR 0094: an explicit restore checks the deadline after taking the user-row lock."""
+    """ADR 0086: an explicit restore checks the deadline after taking the user-row lock."""
     email = unique_email()
     user_id = register(client, email)
     delete_me(client)
@@ -725,6 +725,47 @@ def test_a_grace_period_that_ends_before_the_restore_locks_the_account_is_refuse
     assert user_row(migrated_url, user_id)[0] == "pending_deletion"  # type: ignore[index]
     assert deletion_request(migrated_url, user_id)["status"] == "pending"
     assert client.get("/api/v1/me").status_code == 401
+
+
+def test_a_restore_that_waits_for_the_row_lock_is_refused_when_the_period_ends_meanwhile(
+    client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0086: the deadline is read after the wait for the user row, not before it."""
+    email = unique_email()
+    user_id = register(client, email)
+    delete_me(client)
+    real_cancel = identity_repository.cancel_deletion_requests
+    holders: list[threading.Timer] = []
+
+    async def cancel_then_hold_the_row(session: Any, learner: uuid.UUID) -> int:
+        cancelled = await real_cancel(session, learner)
+        # Another transaction holds the user row (as the purge does) and ends the period
+        # just before it lets go, so the restore is already waiting when the deadline passes.
+        holder = psycopg.connect(migrated_url)
+        holder.execute("SELECT 1 FROM identity.users WHERE id = %s FOR UPDATE", [user_id])
+
+        def expire_and_release() -> None:
+            holder.execute(
+                "UPDATE identity.users SET deletion_scheduled_at = clock_timestamp() WHERE id = %s",
+                [user_id],
+            )
+            holder.commit()
+            holder.close()
+
+        timer = threading.Timer(0.5, expire_and_release)
+        holders.append(timer)
+        timer.start()
+        return cancelled
+
+    monkeypatch.setattr(identity_repository, "cancel_deletion_requests", cancel_then_hold_the_row)
+
+    response = login(client, email, restore=True)
+    for timer in holders:
+        timer.join()
+
+    assert (response.status_code, response.json()["code"]) == (401, "invalid_credentials")
+    assert user_row(migrated_url, user_id)[0] == "pending_deletion"  # type: ignore[index]
+    assert deletion_request(migrated_url, user_id)["status"] == "pending"
 
 
 def test_a_password_reset_during_the_grace_period_still_needs_the_restore(

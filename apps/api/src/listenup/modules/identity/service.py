@@ -342,7 +342,7 @@ class Accounts:
         if account.waiting_for_deletion:
             assert account.deletion_scheduled_at is not None
             # The lookup is older than the password check; the period may have ended
-            # since (ADR 0094). Same answer as for an unknown account.
+            # since (ADR 0086). Same answer as for an unknown account.
             if await repository.grace_period_ended(session, account.id):
                 raise _invalid_credentials()
             if not restore:

@@ -122,7 +122,7 @@ async def schedule_deletion(
 
 
 async def grace_period_ended(session: AsyncSession, user_id: uuid.UUID) -> bool:
-    """Whether the account is gone as of this moment (ADR 0094).
+    """Whether the account is gone as of this moment (ADR 0086).
 
     `now()` is the start of the request's transaction, so it cannot see a grace period
     that ended while the password was being checked; `clock_timestamp()` can.
@@ -143,12 +143,10 @@ async def restore_account(session: AsyncSession, user_id: uuid.UUID) -> bool:
 
     False when there is nothing to restore: the grace period ended, or the purge job
     already took the account (it sets 'deleting' first, under the same row lock).
-    The deadline is read after the row lock is held, from the clock rather than the
-    transaction start (ADR 0094).
+    The deadline is read from the clock rather than the transaction start. When another
+    transaction holds the row, the UPDATE waits for it and then evaluates the deadline
+    again on the committed row, so the check is made after the wait (ADR 0086).
     """
-    await session.execute(
-        text("SELECT 1 FROM identity.users WHERE id = :id FOR UPDATE"), {"id": user_id}
-    )
     restored = await session.scalar(
         text("""
         UPDATE identity.users SET status = 'active', deletion_scheduled_at = NULL
