@@ -132,6 +132,7 @@ Read the section for the area you are changing before you change it. The rules e
 - `enqueue` stores the request id and the W3C trace context in the job's arguments (`_request_id`, `_trace`); the `@job` wrapper pops both before the handler runs, so handlers never see them. A new job needs nothing for tracing or job metrics.
 - The AI gateway (#64) calls `record_ai_call` and `record_ai_quota`, and grading jobs call `record_grading`; the alert rules already read those metrics. A new alert goes in `infra/observability/alerts.yml` with a case in `alerts.test.yml` (it fires, and stays quiet just below the threshold), a `runbook` entry in `docs/runbooks/alerts.md`, and a row in ADR 0031.
 - Backups are `python -m listenup.ops.backup` (the `backup` image target). A backup is complete only with its `manifest.json`; the restore test is a monthly run recorded in the log at the end of `docs/runbooks/backups.md`. A migration that adds a schema or role must keep a restore into a database with the roles in place working (`tests/integration/test_backup.py`).
+- Retention sweeps live in `listenup/ops/retention.py` (ADR 0074): scheduled jobs that delete in batches of 1,000 with `FOR UPDATE SKIP LOCKED`, one transaction per batch, and return a count. A new sweep follows that shape, is registered in `tests/unit/test_worker_modules.py`, and states whether it runs on the pool that owns the data (scratch files: intake lane, media pool). Shadow recording retention is `LISTENUP_SHADOW_RECORDING_RETENTION_DAYS`.
 
 ## Deployment (ADR 0066)
 
