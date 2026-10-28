@@ -59,3 +59,32 @@ jobs:
           push: false
           cache-from: type=gha,scope=edge
           cache-to: type=gha,mode=max,scope=edge
+
+  # The release publishes arm64 images too (ADR 0070, #231), built under QEMU on an x86
+  # runner. Build them here on a native Arm runner, which is quick, so a change that
+  # breaks arm64 fails the pull request. worker-media is left out until
+  # praat-parselmouth builds on arm64 (#232).
+  arm64-images:
+    name: Arm64 image (${{ matrix.image }})
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {image: api, file: infra/docker/backend.Dockerfile, target: api}
+          - {image: worker, file: infra/docker/backend.Dockerfile, target: worker}
+          - {image: backup, file: infra/docker/backend.Dockerfile, target: backup}
+          - {image: signature-update, file: infra/docker/backend.Dockerfile, target: signature-update}
+          - {image: edge, file: infra/docker/web.Dockerfile, target: edge}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          platforms: linux/arm64
+          push: false
+          cache-from: type=gha,scope=arm64-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=arm64-${{ matrix.image }}
