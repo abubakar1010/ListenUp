@@ -22,3 +22,11 @@ test-results/
 !.env.example
 *.log
 .DS_Store
+
+# Golden-set audio stays outside the public repository (#106, #107)
+ai-evals/**/external/
+ai-evals/**/*.wav
+ai-evals/**/*.mp3
+ai-evals/**/*.m4a
+ai-evals/**/*.ogg
+ai-evals/**/*.flac

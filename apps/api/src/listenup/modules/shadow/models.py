@@ -8,10 +8,12 @@ from sqlalchemy import (
     CheckConstraint,
     Computed,
     ForeignKeyConstraint,
+    Index,
     SmallInteger,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import INT4RANGE, TIMESTAMP, Range
 from sqlalchemy.orm import Mapped, mapped_column
@@ -52,6 +54,27 @@ class ShadowRound(Base):
         CheckConstraint("round BETWEEN 1 AND 3"),
         CheckConstraint("playback_status IN ('ready','ended')"),
         UniqueConstraint("session_id", "round"),
+        CheckConstraint(
+            "recording_key IS NULL OR (char_length(recording_key) <= 300 "
+            "AND recording_key LIKE 'users/' || user_id::text || '/shadow/%' "
+            "AND recording_mime IN ('audio/webm','audio/mp4') "
+            "AND recording_bytes BETWEEN 1 AND 5242880)",
+            name="shadow_rounds_recording_private",
+        ),
+        CheckConstraint(
+            "(recording_key IS NULL) = (recording_mime IS NULL) "
+            "AND (recording_key IS NULL) = (recording_bytes IS NULL)",
+            name="shadow_rounds_recording_all_or_none",
+        ),
+        CheckConstraint(
+            "uploaded_at IS NULL OR (recording_key IS NOT NULL AND recorded_at IS NOT NULL)",
+            name="shadow_rounds_uploaded",
+        ),
+        Index(
+            "shadow_rounds_expiry_idx",
+            "recorded_at",
+            postgresql_where=text("recording_key IS NOT NULL"),
+        ),
         ForeignKeyConstraint(
             ["session_id", "user_id"],
             ["practice.shadow_segments.session_id", "practice.shadow_segments.user_id"],
@@ -70,3 +93,7 @@ class ShadowRound(Base):
         TIMESTAMP(timezone=True), server_default=func.now()
     )
     recorded_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    recording_key: Mapped[str | None] = mapped_column(Text)
+    recording_mime: Mapped[str | None] = mapped_column(Text)
+    recording_bytes: Mapped[int | None]
+    uploaded_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
