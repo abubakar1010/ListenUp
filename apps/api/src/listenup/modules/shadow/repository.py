@@ -58,4 +58,8 @@ async def round_by_id(
     db: AsyncSession, round_id: uuid.UUID, *, lock: bool = False
 ) -> ShadowRound | None:
     query = select(ShadowRound).where(ShadowRound.id == round_id)
-    return await db.scalar(query.with_for_update() if lock else query)
+    # A caller may have read this row before waiting for the parent session lock.
+    # Refresh its identity-map entry so a concurrent completed recording is visible.
+    return await db.scalar(
+        query.with_for_update().execution_options(populate_existing=True) if lock else query
+    )

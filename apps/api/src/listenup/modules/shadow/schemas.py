@@ -52,3 +52,7 @@ class RecordingTarget(BaseModel):
 class RecordingUpload(BaseModel):
     round_id: uuid.UUID
     upload: RecordingTarget
+
+
+class RecordingCompletion(BaseModel):
+    version: int = Field(strict=True, ge=0)

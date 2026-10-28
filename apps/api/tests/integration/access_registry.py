@@ -169,7 +169,9 @@ REGISTRY: dict[tuple[str, str], Entry] = {
         body=lambda w: {"mime": "audio/webm", "size_bytes": 1000},
     ),
     ("POST", "/api/v1/shadow/rounds/{round_id}/complete"): Owned(
-        "round_not_found", params=lambda w: {"round_id": w.a.shadow_round_id}
+        "round_not_found",
+        params=lambda w: {"round_id": w.a.shadow_round_id},
+        body=lambda w: {"version": 3},
     ),
     ("GET", "/api/v1/shadow/rounds/{round_id}/recording"): Owned(
         "round_not_found", params=lambda w: {"round_id": w.a.shadow_round_id}
