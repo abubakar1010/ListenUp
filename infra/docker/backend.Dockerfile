@@ -66,7 +66,7 @@ HEALTHCHECK --interval=30s --start-period=300s CMD find /signatures -maxdepth 1 
 
 # praat-parselmouth has no Linux arm64 wheel, so on arm64 this stage compiles it (on
 # amd64 pip just downloads the published wheel). The compiler stays here: worker-media
-# installs the wheel from this stage and never contains a toolchain (#232, ADR 0070).
+# installs the wheel from this stage and never contains a toolchain (#232, ADR 0073).
 # Keep the version equal to uv.lock; tests/unit/test_backend_dockerfile.py checks it.
 FROM base AS parselmouth-wheel
 ARG PARSELMOUTH_VERSION=0.4.7

@@ -1,4 +1,4 @@
-"""The speech image builds on arm64 without a compiler in the runtime image (#232; ADR 0070).
+"""The speech image builds on arm64 without a compiler in the runtime image (#232; ADR 0073).
 
 praat-parselmouth 0.4.7 has no Linux arm64 wheel, so a build there compiles it. The
 compiler lives in a throwaway stage that makes a wheel; the worker-media image installs

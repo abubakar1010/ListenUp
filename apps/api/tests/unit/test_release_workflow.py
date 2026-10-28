@@ -1,4 +1,4 @@
-"""The release workflow publishes multi-arch images (#231; ADR 0070 and 0066).
+"""The release workflow publishes multi-arch images (#231; ADR 0073 and 0066).
 
 The stage 0 host may be an Arm VM, and an amd64-only image fails there with
 `exec format error`. These read the workflows as data, so they run anywhere; the real

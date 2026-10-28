@@ -5,7 +5,7 @@
 # Its build context is filtered by web.Dockerfile.dockerignore, not the root .dockerignore.
 
 # The web build is plain static files, so it always runs on the builder's own
-# architecture, even when the edge image is built for arm64 (ADR 0070).
+# architecture, even when the edge image is built for arm64 (ADR 0073).
 FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 # Optional session CA for managed builders; ordinary CI uses system trust.
 RUN --mount=type=secret,id=proxy_ca \
