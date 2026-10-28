@@ -27,7 +27,7 @@ Use the cheapest reliable level for each behavior; add another level when it cov
 | Storage, email and AI adapters | Deterministic boundary fakes for caller logic and integration/contract tests for the real adapter boundary. Changes to prompts, models or grading also need the applicable evaluation cases; a fake cannot establish model quality. |
 | Operations, migrations and configuration | Validate the affected behavior with the appropriate tool or integration test: alert firing and quiet cases, migration/restore checks, or configuration validation. Custom scripts and rules follow the same red/green cycle as application code. |
 
-The current Playwright suite mocks API responses. It proves browser behavior against those responses; API/database integration tests must independently prove server behavior. Do not report it as a full live-stack test.
+The current Playwright suite mocks API responses. It runs on Chromium for every push and on Chromium, Edge, Firefox and WebKit nightly and before a release ([ADR 0080](adr/0080-cross-browser-end-to-end-matrix.md), [runbook](runbooks/cross-browser.md)). It proves browser behavior against those responses; API/database integration tests must independently prove server behavior. Do not report it as a full live-stack test.
 
 Tests assert externally meaningful outcomes, not the implementation's own calculation repeated in the test. Mock external boundaries rather than the rule under test. Prefer explicit examples and assertions over broad snapshots. Control clocks, randomness and network responses; use events or bounded waits instead of arbitrary sleeps. A retry that hides an intermittent failure is not a fix.
 
