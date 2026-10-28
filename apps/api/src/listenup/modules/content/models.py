@@ -93,6 +93,26 @@ class Content(Base):
     keep_video: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+    deleting_at: Mapped[datetime | None] = mapped_column(Timestamp)
+
+
+class MediaWrite(Base):
+    """Durable conversion upload registration; uncertain writes need reconciliation."""
+
+    __tablename__ = "media_writes"
+    __table_args__ = (
+        Index("media_writes_media_idx", "media_object_id"),
+        Index("media_writes_user_idx", "user_id"),
+        {"schema": "content"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    media_object_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("content.media_objects.id", ondelete="RESTRICT")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("identity.users.id", ondelete="RESTRICT"))
+    owner: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
 
 
 class Upload(Base):
