@@ -283,7 +283,10 @@ test('the draft saves itself and comes back after a reload', async ({ page }) =>
   await expect(text).toHaveAttribute('autocapitalize', 'off');
   await expect(text).toHaveAttribute('autocomplete', 'off');
 
-  await text.press('End');
+  // End scrolls instead of moving the caret on macOS, so place the caret directly.
+  await text.evaluate((el: HTMLTextAreaElement) =>
+    el.setSelectionRange(el.value.length, el.value.length),
+  );
   await text.pressSequentially(' you notice is the shade');
   await expect.poll(() => server.puts.length, { timeout: 5000 }).toBe(1);
   expect(server.puts[0]).toEqual({

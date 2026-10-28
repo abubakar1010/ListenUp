@@ -383,7 +383,8 @@ for (const variant of ['browser default', 'WebM refused (older Safari)'] as cons
         );
       } else await expect(page.getByText('All 4 steps finished')).toBeVisible();
       expect(uploads.at(-1)).toMatchObject({ number });
-      expect(uploads.at(-1)!.bytes).toBeGreaterThan(0);
+      // WebKit gives the test no request body; the declared size_bytes is checked above.
+      if (browserName !== 'webkit') expect(uploads.at(-1)!.bytes).toBeGreaterThan(0);
       expect(uploads.at(-1)!.type).toMatch(/^audio\/(webm|mp4)$/);
     }
     expect(uploads.map((u) => u.number)).toEqual([1, 2, 3]);

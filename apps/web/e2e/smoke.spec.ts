@@ -187,7 +187,9 @@ test('a refused sign-in keeps focus on Sign in, which says it is busy while wait
   await page.getByLabel('Password').fill('wrong horse');
 
   const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
-  await signIn.click();
+  // From the keyboard: Safari does not focus a button on a mouse click.
+  await signIn.focus();
+  await signIn.press('Enter');
   const busy = page.getByRole('button', { name: 'Please wait…' });
   await expect(busy).toHaveAttribute('aria-busy', 'true');
   await expect(busy).toBeFocused();

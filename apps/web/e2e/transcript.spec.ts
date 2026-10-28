@@ -1,5 +1,5 @@
 import { type BrowserContext, type Page } from '@playwright/test';
-import { expect, test } from './test';
+import { SAFARI_SELECT, expect, isMacWebKit, test } from './test';
 
 const PASSAGE = { start_ms: 0, end_ms: 30000 };
 const SESSION = {
@@ -211,7 +211,8 @@ test('AT-8: a second browser signs in and resumes Transcript with saved marks', 
   }
 });
 
-test('transcript_keyboard_controls_at_360px', async ({ page }) => {
+test('transcript_keyboard_controls_at_360px', async ({ page, browserName }) => {
+  test.skip(isMacWebKit(browserName), SAFARI_SELECT);
   await page.setViewportSize({ width: 360, height: 800 });
   const marks: Record<string, unknown>[] = [];
   let session = SESSION;

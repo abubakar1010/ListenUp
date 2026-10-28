@@ -87,3 +87,12 @@ export async function skipWithoutMediaRecorder(page: Page) {
   const present = await page.evaluate(() => typeof MediaRecorder !== 'undefined');
   test.skip(!present, 'this browser build has no MediaRecorder, so no recording can be made');
 }
+
+/**
+ * Safari opens a native <select> menu on the arrow keys instead of changing the value,
+ * and so does WebKit on macOS. The selects' keyboard use there is a manual check.
+ */
+export const SAFARI_SELECT =
+  'Safari opens a native select on ArrowDown instead of changing its value';
+export const isMacWebKit = (browserName: string) =>
+  browserName === 'webkit' && process.platform === 'darwin';
