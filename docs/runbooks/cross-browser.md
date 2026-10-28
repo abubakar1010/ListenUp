@@ -22,6 +22,12 @@ E2E_BROWSERS=chromium,firefox,webkit pnpm e2e
 - On Linux, WebKit needs `playwright install-deps webkit`; it has no `MediaRecorder`, so the Shadow recording tests skip. They run in the macOS job.
 - Where Chromium cannot be installed, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE`.
 
+## Known differences
+
+- macOS WebKit (Safari's engine): Tab skips buttons and links, so the fixture presses Option+Tab; a mouse click does not focus a button; the arrow keys open a native select instead of changing it (two specs skip on macOS WebKit for this); request headers and Blob bodies are not visible to the test. See ADR 0080.
+- Firefox starts audio about 2 s late behind a null sink, so "Hear start" (stopped by a 3 s wall-clock timer) plays about 1 s; its test accepts that on Firefox only and records a `finding` annotation.
+- The admin "retry a failed job" test is occasionally flaky on WebKit (it also fails about 1 in 10 on the original spec); CI retries once.
+
 ## Manual checks (the owner's)
 
 Per release, on real devices at 360 px and a desktop width: sign in, run a Blind listen, a Dictation, a Card and one Shadow round (the recording replays), and sign in on a second device to find the same sessions, marks and cards.

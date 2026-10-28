@@ -18,6 +18,8 @@ Accounts exist so a learner can move between browsers (NFR-COM-1: current Chrome
 - **WebKit runs on macOS.** Playwright's Linux WebKit has no `MediaRecorder` and cannot fulfil a redirect response from a mock (three tests skip with a stated reason, `WEBKIT_NO_REDIRECT_MOCK`), and its request bodies are unreadable. The macOS build is the one that records.
 - **Firefox needs an audio sink.** On a machine without a sound card, Firefox fails to start playback (`OnMediaSinkAudioError`), which breaks Blind. The job starts PulseAudio with a null sink. That job only: with PulseAudio present, Chromium's fake microphone check never hears a sound.
 
+- **Safari's keyboard and focus rules are followed on macOS WebKit.** Tab skips buttons and links there unless Full Keyboard Access is on, so the shared fixture presses Option+Tab in its place (macOS WebKit only). A mouse click does not focus a button, so the specs that need a focused opener open it from the keyboard. A native `<select>` opens its menu on the arrow keys, so the two specs that change a select by arrow key skip on macOS WebKit (a manual check). Request headers and Blob bodies are not visible to a test there, so those assertions are skipped on it only; the client and API tests cover them.
+
 ## Consequences
 
 - This is not Safari. Real Safari on macOS and iOS and Chrome on Android stay manual checks listed in the pull request.
