@@ -4,7 +4,9 @@
 # Build from the repository root: docker build -f infra/docker/web.Dockerfile .
 # Its build context is filtered by web.Dockerfile.dockerignore, not the root .dockerignore.
 
-FROM node:22-alpine AS build
+# The web build is plain static files, so it always runs on the builder's own
+# architecture, even when the edge image is built for arm64 (ADR 0070).
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 # Optional session CA for managed builders; ordinary CI uses system trust.
 RUN --mount=type=secret,id=proxy_ca \
     if [ -f /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi; \
