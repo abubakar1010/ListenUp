@@ -22,6 +22,18 @@ Read the section for the area you are changing before you change it. The rules e
 - Intake admission (ADR 0027): new audio counts per UTC day in `ops.rate_counters` (`intake:user:<id>`), at most 15 minutes a clip, added when the conversion job makes the clip playable; clips still being prepared reserve 15 minutes each. `POST /uploads` and `POST /contents` refuse with 429 `daily_audio_limit`. At most `LISTENUP_INTAKE_RUNNING_LIMIT` of a learner's conversions are on the intake lane; the rest wait with `content.uploads.queued_at` NULL until one ends. The conversion job records `media_objects.stage` and publishes `job.progress`; a removed duplicate answers 410 `duplicate_upload`. The storage cap counts `playback_bytes` once a clip is playable.
 - List endpoints page by keyset: an opaque `cursor` (`content/domain/cursor.py`) and `next_cursor` in the response, never OFFSET.
 
+- Content deletion (#89, ADR 0085) is orchestrated by `library` through module services.
+  A confirmed DELETE marks the parent and transactionally records an exact private
+  manifest plus `library.delete_content`. Snapshot without child locks in the API:
+  mode writes lock session before content. The worker drains conversion/card
+  registrations, removes storage, then cascades rows. Completed manifests remain
+  pointers for hourly late-upload reconciliation; analytics and shared YouTube
+  caches survive. The seven-day orphan sweep belongs to #93.
+- Conversion PUTs use `content.writes.registered_write` and `store`: register under
+  account/content locks, drain cancellation, and retain uncertain registrations.
+  Do not infer remote completion from registry age or queue status. Stop and settle
+  old media workers before migrating; see [the runbook](runbooks/content-deletion.md).
+
 ## Plans and modes (ADR 0021, 0023 to 0025)
 
 - Session writes carry the version the client last saw: `PATCH /sessions/{id}/entry` and `POST /sessions/{id}/steps/{step}/skip` take `version` in the body (409 `session_changed`). Plans start only on playable clips through `practice.service.start_plan` (409 `content_not_ready`, ADR 0023).

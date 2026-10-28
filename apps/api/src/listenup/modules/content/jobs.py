@@ -8,7 +8,7 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from listenup.modules.content import ffmpeg, repository, scanner
+from listenup.modules.content import ffmpeg, repository, scanner, writes
 from listenup.modules.content.domain import admission, media
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database
@@ -173,29 +173,34 @@ async def _convert(
         await _progress(database, media_id, "saving")
         playback = media.playback_key(state.learner, media_id)
         peaks = media.peaks_key(state.learner, media_id)
-        await storage.put_file(playback, target, "video/mp4" if video else "audio/mp4")
-        await storage.put(peaks, media.peaks_json(converted.peaks), "application/json")
-        size = target.stat().st_size
-
-    async with database.transaction() as session:
-        stored = await repository.mark_media_playable(
-            session,
-            media_id,
-            duration_ms=probe.duration_ms,
-            has_video=video,
-            playback_key=playback,
-            peaks_key=peaks,
-            playback_bytes=size,
-        )
-        if stored:
-            await _announce(session, media_id)
-            await add_to_window(
-                session,
-                daily_audio_key(state.learner),
-                admission.DAY,
-                admission.counted_seconds(probe.duration_ms),
+        async with writes.registered_write(
+            database, state.learner, media_id, state.content_id
+        ) as session:
+            await writes.store(
+                storage.put_file(playback, target, "video/mp4" if video else "audio/mp4")
             )
-        await _conversion_ended(session, state.learner)
+            await writes.store(
+                storage.put(peaks, media.peaks_json(converted.peaks), "application/json")
+            )
+            size = target.stat().st_size
+            stored = await repository.mark_media_playable(
+                session,
+                media_id,
+                duration_ms=probe.duration_ms,
+                has_video=video,
+                playback_key=playback,
+                peaks_key=peaks,
+                playback_bytes=size,
+            )
+            if stored:
+                await _announce(session, media_id)
+                await add_to_window(
+                    session,
+                    daily_audio_key(state.learner),
+                    admission.DAY,
+                    admission.counted_seconds(probe.duration_ms),
+                )
+            await _conversion_ended(session, state.learner)
     if not stored:
         # The learner deleted the item while it converted; nothing refers to the files.
         await storage.delete_prefix(media.media_prefix(state.learner, media_id))

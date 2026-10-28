@@ -1,7 +1,7 @@
 """HTTP routes of the library module (Architecture 4.1, 9.2: Library).
 
-The library owns no tables: it is read-only views over other modules, reached only
-through their service.py.
+The library owns no tables: views and deletion orchestration reach owning modules
+only through their service.py.
 """
 
 import hashlib
@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from listenup.modules.content import service as content
 from listenup.modules.identity.service import CurrentLearner
+from listenup.modules.library import service as library
 from listenup.modules.practice import service as practice
 from listenup.platform.database import DbSession
 
@@ -96,3 +97,19 @@ def _etags(header: str | None) -> set[str]:
     if not header:
         return set()
     return {tag.strip() for tag in header.split(",")}
+
+
+class DeleteConfirmation(BaseModel):
+    confirm: Literal[True]
+
+
+class DeletionAccepted(BaseModel):
+    request_id: uuid.UUID
+
+
+@router.delete("/contents/{content_id}", status_code=202)
+async def delete_content(
+    content_id: uuid.UUID, body: DeleteConfirmation, learner: CurrentLearner, session: DbSession
+) -> DeletionAccepted:
+    """Confirm irreversible deletion of a clip and its derived data (FR-CI-7)."""
+    return DeletionAccepted(request_id=await library.delete_content(session, learner, content_id))

@@ -189,7 +189,7 @@ def _plan(entry: str, status: str, steps: list[repository.StepRow]) -> Plan:
 async def get_session(db: AsyncSession, session_id: uuid.UUID) -> PracticeSession:
     """The learner's session, or 404 `session_not_found` (also for another learner's)."""
     found = await repository.find_session(db, session_id)
-    if found is None:
+    if found is None or await content.find_content(db, found[0].content_id) is None:
         raise _not_found()
     return _snapshot(*found)
 
@@ -221,6 +221,7 @@ async def start_session(
     404 `content_not_found` when the learner has no such content item. Whether the
     content is ready and the passage fits the clip is the caller's check (#48).
     """
+    await content.retain_content(db, learner, content_id)
     plan = Plan.start(entry)
     session_id = uuid7()
     created = await repository.insert_session(
@@ -626,4 +627,42 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
             await learner_rows(session, "practice.session_steps", learner, order_by="session_id"),
             await learner_rows(session, "practice.attempts", learner, order_by="started_at"),
         )
+    )
+
+
+async def content_deletion_sessions(
+    db: AsyncSession, learner: uuid.UUID, content_id: uuid.UUID, *, lock: bool = True
+) -> list[uuid.UUID]:
+    """Freeze the sessions before the deletion job inventories private objects."""
+    from sqlalchemy import text
+
+    return list(
+        (
+            await db.scalars(
+                text(
+                    "SELECT id FROM practice.sessions WHERE content_id=:content AND "
+                    "user_id=:user ORDER BY id" + (" FOR UPDATE" if lock else "")
+                ),
+                {"content": content_id, "user": learner},
+            )
+        ).all()
+    )
+
+
+async def content_deletion_resource_ids(
+    db: AsyncSession, learner: uuid.UUID, sessions: list[uuid.UUID]
+) -> list[uuid.UUID]:
+    """Attempt ids are needed to remove their cached submitted-text responses."""
+    from sqlalchemy import text
+
+    return sessions + list(
+        (
+            await db.scalars(
+                text(
+                    "SELECT id FROM practice.attempts WHERE user_id=:user "
+                    "AND session_id=ANY(:sessions)"
+                ),
+                {"user": learner, "sessions": sessions},
+            )
+        ).all()
     )

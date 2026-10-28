@@ -31,7 +31,10 @@ function renderLibrary() {
 }
 
 test('an empty library leads to adding the first clip', async () => {
-  mockApi({ '/library/contents': jsonResponse(200, { items: [], next_cursor: null }) });
+  mockApi({
+    '/sessions': jsonResponse(200, { items: [], next_cursor: null }),
+    '/library/contents': jsonResponse(200, { items: [], next_cursor: null }),
+  });
   renderLibrary();
 
   expect(
@@ -45,6 +48,7 @@ test('an empty library leads to adding the first clip', async () => {
 
 test('clips show title, source, length and status', async () => {
   mockApi({
+    '/sessions': jsonResponse(200, { items: [], next_cursor: null }),
     '/library/contents': jsonResponse(200, {
       items: [
         item(1, { title: 'Why cities plant street trees', status: 'pending', duration_ms: null }),
@@ -79,6 +83,7 @@ test('clips show title, source, length and status', async () => {
 
 test('"Load more" fetches the next page with the cursor', async () => {
   const fetchMock = mockApi({
+    '/sessions': jsonResponse(200, { items: [], next_cursor: null }),
     '/library/contents': jsonResponse(200, {
       items: Array.from({ length: 20 }, (_, n) => item(30 - n)),
       next_cursor: 'cursor/20=',
@@ -105,6 +110,7 @@ test('"Load more" fetches the next page with the cursor', async () => {
 test('a library that cannot load says why and offers a retry', async () => {
   let calls = 0;
   mockApi({
+    '/sessions': jsonResponse(200, { items: [], next_cursor: null }),
     '/library/contents': () => {
       calls += 1;
       return calls === 1
@@ -123,11 +129,11 @@ test('a library that cannot load says why and offers a retry', async () => {
 
 test('a ready clip offers "Start a plan" without adding it again (FR-LB-2)', async () => {
   mockApi({
+    '/sessions': jsonResponse(200, { items: [], next_cursor: null }),
     '/library/contents': jsonResponse(200, {
       items: [item(1, { title: 'Street trees' }), item(2, { status: 'pending' })],
       next_cursor: null,
     }),
-    '/sessions': jsonResponse(200, { items: [], next_cursor: null }),
   });
   renderLibrary();
 
@@ -138,6 +144,7 @@ test('a ready clip offers "Start a plan" without adding it again (FR-LB-2)', asy
 
 test('clips being prepared show their queue place or stage', async () => {
   mockApi({
+    '/sessions': jsonResponse(200, { items: [], next_cursor: null }),
     '/library/contents': jsonResponse(200, {
       items: [
         item(1, { status: 'pending', stage: 'queued', queue_position: 2, duration_ms: null }),
@@ -154,4 +161,70 @@ test('clips being prepared show their queue place or stage', async () => {
   expect(rows[1]).toHaveTextContent('Converting');
   expect(rows[2]).toHaveTextContent('Waiting to start');
   expect(screen.queryByRole('link', { name: /Start a plan/ })).not.toBeInTheDocument();
+});
+
+test('deleting a clip requires confirmation and cancel keeps the clip', async () => {
+  const fetchMock = mockApi({
+    '/sessions': jsonResponse(200, { items: [], next_cursor: null }),
+    '/library/contents': jsonResponse(200, { items: [item(1)], next_cursor: null }),
+  });
+  renderLibrary();
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete Clip 1' }));
+  const dialog = screen.getByRole('dialog', { name: 'Delete Clip 1?' });
+  expect(within(dialog).getByRole('button', { name: 'Keep clip' })).toHaveFocus();
+  expect(dialog).toHaveTextContent('sessions, marks, cards and recordings');
+  fireEvent.keyDown(dialog, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Clip 1' })).toBeVisible();
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
+});
+
+test('confirmed deletion hides the clip and announces background cleanup', async () => {
+  let removed = false;
+  const fetchMock = mockApi({
+    '/sessions': jsonResponse(200, { items: [], next_cursor: null }),
+    '/library/contents': () =>
+      jsonResponse(200, { items: removed ? [] : [item(1)], next_cursor: null }),
+    '/contents/item-1': () => {
+      removed = true;
+      return jsonResponse(202, { request_id: 'delete-1' });
+    },
+  });
+  renderLibrary();
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete Clip 1' }));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete clip' }));
+  expect(
+    await screen.findByText(
+      'Clip deletion requested. Its files and learning data are being removed.',
+    ),
+  ).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Add your first clip' })).toBeVisible();
+  const call = fetchMock.mock.calls.find(([, init]) => init?.method === 'DELETE');
+  expect(call?.[0]).toBe('/api/v1/contents/item-1');
+  expect(JSON.parse(String(call?.[1]?.body))).toEqual({ confirm: true });
+});
+
+test('failed deletion stays in the dialog and can be retried', async () => {
+  let calls = 0;
+  mockApi({
+    '/sessions': jsonResponse(200, { items: [], next_cursor: null }),
+    '/library/contents': jsonResponse(200, { items: [item(1)], next_cursor: null }),
+    '/contents/item-1': () =>
+      ++calls === 1
+        ? problem(503, 'unavailable', 'Please try again.')
+        : jsonResponse(202, { request_id: 'delete-1' }),
+  });
+  renderLibrary();
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete Clip 1' }));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete clip' }));
+  expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent(
+    'Please try again.',
+  );
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete clip' }));
+  expect(
+    await screen.findByText(
+      'Clip deletion requested. Its files and learning data are being removed.',
+    ),
+  ).toBeVisible();
+  expect(calls).toBe(2);
 });
