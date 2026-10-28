@@ -453,3 +453,9 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ("GET", "/api/v1/admin/jobs"): Admin(),
     ("POST", "/api/v1/admin/jobs/{job_id}/retry"): Admin(params=lambda w: {"job_id": 1}),
 }
+
+REGISTRY[("DELETE", "/api/v1/contents/{content_id}")] = Owned(
+    "content_not_found",
+    params=lambda w: {"content_id": w.a.content_id},
+    body=lambda w: {"confirm": True},
+)

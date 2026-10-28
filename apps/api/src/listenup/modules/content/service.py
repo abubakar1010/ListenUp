@@ -575,6 +575,13 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
             media,
             await learner_rows(session, "content.uploads", learner, order_by="created_at"),
             await learner_rows(
+                session,
+                "content.media_writes",
+                learner,
+                omit=("id", "owner"),
+                order_by="created_at",
+            ),
+            await learner_rows(
                 session, "content.duplicate_uploads", learner, order_by="created_at"
             ),
         ),
@@ -638,3 +645,85 @@ async def profile_source_for_worker(
         )
     ).first()
     return TranscriptionSource(media_id, row[0], row[1]) if row is not None else None
+
+
+async def mark_for_deletion(
+    db: AsyncSession, learner: uuid.UUID, content_id: uuid.UUID
+) -> tuple[uuid.UUID, str]:
+    """Serialize deletion against correction and conversion-writer admission (DR-2)."""
+    row = (
+        await db.execute(
+            text(
+                "SELECT c.media_object_id,m.source FROM content.contents c "
+                "JOIN content.media_objects m ON m.id=c.media_object_id "
+                "WHERE c.id=:id AND c.user_id=:user FOR UPDATE OF c"
+            ),
+            {"id": content_id, "user": learner},
+        )
+    ).first()
+    if row is None:
+        raise ProblemError(404, "content_not_found", "This clip is not in your library.")
+    await db.execute(
+        text("UPDATE content.contents SET deleting_at=coalesce(deleting_at,now()) WHERE id=:id"),
+        {"id": content_id},
+    )
+    return row[0], row[1]
+
+
+async def deletion_objects(
+    db: AsyncSession, learner: uuid.UUID, content_id: uuid.UUID, media_id: uuid.UUID, source: str
+) -> tuple[list[str], list[str]]:
+    prefixes: list[str] = []
+    keys: list[str] = []
+    if source == "upload":
+        prefixes.append(f"users/{learner}/media/{media_id}/")
+        keys = list(
+            (
+                await db.scalars(
+                    text(
+                        "SELECT storage_key FROM content.uploads WHERE content_id=:id AND "
+                        "user_id=:user"
+                    ),
+                    {"id": content_id, "user": learner},
+                )
+            ).all()
+        )
+    return prefixes, keys
+
+
+async def require_no_media_writes(
+    db: AsyncSession, learner: uuid.UUID, media_id: uuid.UUID | None = None
+) -> None:
+    """Never infer writer death from time or queue state (ADR 0085)."""
+    from datetime import UTC, datetime, timedelta
+
+    from listenup.platform.jobs import Reschedule
+
+    if await db.scalar(
+        text(
+            "SELECT EXISTS(SELECT 1 FROM content.media_writes WHERE user_id=:user "
+            "AND (CAST(:media AS uuid) IS NULL OR media_object_id=:media))"
+        ),
+        {"user": learner, "media": media_id},
+    ):
+        raise Reschedule(datetime.now(UTC) + timedelta(minutes=1))
+
+
+async def remove_deleted_content(
+    db: AsyncSession, learner: uuid.UUID, content_id: uuid.UUID, media_id: uuid.UUID, source: str
+) -> None:
+    await db.execute(
+        text(
+            "DELETE FROM content.contents WHERE id=:id AND user_id=:user AND "
+            "deleting_at IS NOT NULL"
+        ),
+        {"id": content_id, "user": learner},
+    )
+    if source == "upload":
+        await db.execute(
+            text(
+                "DELETE FROM content.media_objects WHERE id=:media AND uploaded_by=:user "
+                "AND ref_count=0"
+            ),
+            {"media": media_id, "user": learner},
+        )

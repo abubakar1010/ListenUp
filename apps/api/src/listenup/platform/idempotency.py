@@ -119,3 +119,59 @@ async def _replay(
     return JSONResponse(
         row.response, status_code=row.status_code, headers={REPLAYED_HEADER: "true"}
     )
+
+
+def _references_resource(value: Any, resources: set[str]) -> bool:
+    """Match structured resource references, never arbitrary learner text."""
+    if isinstance(value, dict):
+        reference_fields = {
+            "id",
+            "content_id",
+            "session_id",
+            "attempt_id",
+            "card_id",
+            "round_id",
+            "mark_id",
+            "media_object_id",
+            "resource_id",
+            "subject_id",
+        }
+        return any(
+            (key in reference_fields and isinstance(child, str) and child in resources)
+            or _references_resource(child, resources)
+            for key, child in value.items()
+        )
+    if isinstance(value, list):
+        return any(_references_resource(child, resources) for child in value)
+    return False
+
+
+async def forget_resource_responses(
+    session: AsyncSession, learner: uuid.UUID, resources: set[str]
+) -> int:
+    """Remove cached learner text about deleted resources (DR-2).
+
+    Call before acquiring deletion's parent locks, and again after its cascade in
+    the same transaction. Lock existing keys first, in the same order as run_once:
+    expired-key retries must never hold a key while deletion holds their session.
+    The second pass catches new keys committed by requests the cascade waited for.
+    Unrelated responses and every other learner's keys remain unchanged.
+    """
+    rows = (
+        await session.execute(
+            text(
+                "SELECT key,response FROM ops.idempotency_keys WHERE user_id=:user "
+                "ORDER BY key FOR UPDATE"
+            ),
+            {"user": learner},
+        )
+    ).all()
+    removed = 0
+    for key, response in rows:
+        if _references_resource(response, resources):
+            await session.execute(
+                text("DELETE FROM ops.idempotency_keys WHERE user_id=:user AND key=:key"),
+                {"user": learner, "key": key},
+            )
+            removed += 1
+    return removed

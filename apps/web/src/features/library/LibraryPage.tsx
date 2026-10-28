@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Link } from 'react-router';
 
 import { usePageTitle } from '../../app/usePageTitle';
@@ -8,7 +10,7 @@ import { AlertIcon } from '../../components/icons';
 import { stageLabel } from '../content/intakeStatus';
 import { SessionsSection } from '../session/SessionsSection';
 import { ACCEPTED_NAMES } from './files';
-import { useLibraryContents, type LibraryItem } from './useLibrary';
+import { useDeleteContent, useLibraryContents, type LibraryItem } from './useLibrary';
 import { BusyButton } from '../../components/BusyButton';
 
 const STEPS = [
@@ -36,6 +38,19 @@ const PAGE_CLASS =
 export default function LibraryPage() {
   usePageTitle('Library');
   const contents = useLibraryContents();
+  const deletion = useDeleteContent();
+  const [selected, setSelected] = useState<LibraryItem | null>(null);
+  const [notice, setNotice] = useState('');
+  function confirmDelete() {
+    if (selected)
+      deletion.mutate(selected.id, {
+        onSuccess: () => {
+          setSelected(null);
+          setNotice('Clip deletion requested. Its files and learning data are being removed.');
+        },
+      });
+  }
+
   const items = contents.data?.pages.flatMap((page) => page.items) ?? [];
 
   if (contents.isPending) {
@@ -58,7 +73,7 @@ export default function LibraryPage() {
     );
   }
 
-  if (items.length === 0) return <EmptyLibrary />;
+  if (items.length === 0) return <EmptyLibrary notice={notice} />;
 
   return (
     <main className={PAGE_CLASS}>
@@ -68,6 +83,28 @@ export default function LibraryPage() {
           Add a clip
         </Link>
       </div>
+      {notice && <p role="status">{notice}</p>}
+      {selected && (
+        <ConfirmDialog
+          title={`Delete ${selected.title}?`}
+          confirmLabel="Delete clip"
+          cancelLabel="Keep clip"
+          onConfirm={confirmDelete}
+          onCancel={() => setSelected(null)}
+          busy={deletion.isPending}
+          busyLabel="Requesting deletion…"
+          footer={
+            deletion.isError ? (
+              <ErrorPanel error={deletion.error} onRetry={confirmDelete} />
+            ) : undefined
+          }
+        >
+          <p>
+            This permanently removes this clip and its sessions, marks, cards and recordings. This
+            cannot be undone.
+          </p>
+        </ConfirmDialog>
+      )}
       <SessionsSection />
       <section aria-labelledby="library-clips" className="flex flex-col gap-3">
         <h2 id="library-clips" className="font-display text-heading-compact md:text-heading">
@@ -75,7 +112,14 @@ export default function LibraryPage() {
         </h2>
         <ul className="flex flex-col gap-3">
           {items.map((item) => (
-            <ClipRow key={item.id} item={item} />
+            <ClipRow
+              key={item.id}
+              item={item}
+              onDelete={() => {
+                deletion.reset();
+                setSelected(item);
+              }}
+            />
           ))}
         </ul>
         {contents.isFetchNextPageError && (
@@ -95,9 +139,10 @@ export default function LibraryPage() {
   );
 }
 
-function EmptyLibrary() {
+function EmptyLibrary({ notice = '' }: { notice?: string }) {
   return (
     <main className={PAGE_CLASS}>
+      {notice && <p role="status">{notice}</p>}
       <section
         aria-labelledby="library-empty"
         className="grid justify-items-center gap-4 rounded-md border-2 border-dashed border-line-strong bg-surface-raised px-4 py-8 text-center md:gap-6 md:py-16"
@@ -146,7 +191,7 @@ const SESSION_LABEL: Record<NonNullable<LibraryItem['last_session_status']>, str
   abandoned: 'Stopped',
 };
 
-function ClipRow({ item }: { item: LibraryItem }) {
+function ClipRow({ item, onDelete }: { item: LibraryItem; onDelete: () => void }) {
   return (
     <li className="flex flex-col gap-2 rounded-md border border-line bg-surface-raised p-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 flex-col gap-1">
@@ -166,6 +211,14 @@ function ClipRow({ item }: { item: LibraryItem }) {
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={onDelete}
+          className={buttonClass('secondary')}
+          aria-label={`Delete ${item.title}`}
+        >
+          Delete
+        </button>
         <StatusBadge item={item} />
         {item.last_session_status && (
           <span className={BADGE}>Last session: {SESSION_LABEL[item.last_session_status]}</span>
