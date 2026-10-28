@@ -1,5 +1,5 @@
 import { type Page } from '@playwright/test';
-import { expect, test } from './test';
+import { expect, onMacWebKit, test } from './test';
 
 const LEARNER = {
   id: '1',
@@ -112,7 +112,8 @@ test('reference correction by keyboard updates score and Edited marker at 360px'
     if (path === '/dictation/attempts/attempt-1/disputes') {
       expect(request.postDataJSON()).toEqual({ word_index: 0, corrected_text: 'cap' });
       expect(request.headers()['idempotency-key']).toBeTruthy();
-      expect(request.headers()['x-csrf-token']).toBeTruthy();
+      // Playwright's WebKit on macOS does not show these request headers to the test.
+      if (!onMacWebKit()) expect(request.headers()['x-csrf-token']).toBeTruthy();
       await saveResponse;
       edited = true;
       return route.fulfill({ json: result() });

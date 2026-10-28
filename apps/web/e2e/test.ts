@@ -96,3 +96,7 @@ export const SAFARI_SELECT =
   'Safari opens a native select on ArrowDown instead of changing its value';
 export const isMacWebKit = (browserName: string) =>
   browserName === 'webkit' && process.platform === 'darwin';
+
+/** The same check from inside a helper that has no `browserName`; call it during a test. */
+export const onMacWebKit = () =>
+  test.info().project.name === 'webkit' && process.platform === 'darwin';
