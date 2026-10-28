@@ -25,6 +25,7 @@ from starlette.responses import Response as StarletteResponse
 
 from listenup.main import create_app
 from listenup.modules.identity import jobs as identity_jobs
+from listenup.modules.identity import passwords as identity_passwords
 from listenup.modules.identity import repository as identity_repository
 from listenup.modules.identity.domain.tokens import new_token, token_hash
 from listenup.modules.identity.service import build_accounts
@@ -662,6 +663,68 @@ def test_after_the_grace_period_sign_in_fails_as_for_an_unknown_account(
     deliver(migrated_url)
     assert outbox.sent == []  # no reset email for an account past its grace period
     assert user_row(migrated_url, user_id)[0] == "pending_deletion"  # type: ignore[index]
+
+
+def expire_grace_period(migrated_url: str, user_id: uuid.UUID) -> None:
+    """End the grace period now, from another connection, while a request is running."""
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE identity.users SET deletion_scheduled_at = clock_timestamp() "
+            "WHERE id = %s AND status = 'pending_deletion'",
+            [user_id],
+        )
+
+
+@pytest.mark.parametrize("restore", [None, True])
+def test_a_grace_period_that_ends_during_password_verification_is_refused(
+    client: TestClient,
+    migrated_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    restore: bool | None,
+) -> None:
+    """ADR 0094: the deadline is checked again after the slow password check."""
+    email = unique_email()
+    user_id = register(client, email)
+    delete_me(client)
+    real_verify = identity_passwords.verify_password
+
+    async def verify_then_expire(password_hash: str | None, password: str) -> bool:
+        valid = await real_verify(password_hash, password)
+        expire_grace_period(migrated_url, user_id)
+        return valid
+
+    monkeypatch.setattr(identity_passwords, "verify_password", verify_then_expire)
+
+    response = login(client, email, restore=restore)
+
+    assert (response.status_code, response.json()["code"]) == (401, "invalid_credentials")
+    assert "deletion_scheduled_at" not in response.json()
+    assert user_row(migrated_url, user_id)[0] == "pending_deletion"  # type: ignore[index]
+    assert client.get("/api/v1/me").status_code == 401
+
+
+def test_a_grace_period_that_ends_before_the_restore_locks_the_account_is_refused(
+    client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0094: an explicit restore checks the deadline after taking the user-row lock."""
+    email = unique_email()
+    user_id = register(client, email)
+    delete_me(client)
+    real_cancel = identity_repository.cancel_deletion_requests
+
+    async def cancel_then_expire(session: Any, learner: uuid.UUID) -> int:
+        cancelled = await real_cancel(session, learner)
+        expire_grace_period(migrated_url, user_id)
+        return cancelled
+
+    monkeypatch.setattr(identity_repository, "cancel_deletion_requests", cancel_then_expire)
+
+    response = login(client, email, restore=True)
+
+    assert (response.status_code, response.json()["code"]) == (401, "invalid_credentials")
+    assert user_row(migrated_url, user_id)[0] == "pending_deletion"  # type: ignore[index]
+    assert deletion_request(migrated_url, user_id)["status"] == "pending"
+    assert client.get("/api/v1/me").status_code == 401
 
 
 def test_a_password_reset_during_the_grace_period_still_needs_the_restore(

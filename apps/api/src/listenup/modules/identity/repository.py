@@ -121,16 +121,39 @@ async def schedule_deletion(
     return result
 
 
+async def grace_period_ended(session: AsyncSession, user_id: uuid.UUID) -> bool:
+    """Whether the account is gone as of this moment (ADR 0094).
+
+    `now()` is the start of the request's transaction, so it cannot see a grace period
+    that ended while the password was being checked; `clock_timestamp()` can.
+    """
+    gone = await session.scalar(
+        text("""
+        SELECT status = 'deleting'
+               OR (status = 'pending_deletion' AND deletion_scheduled_at <= clock_timestamp())
+          FROM identity.users WHERE id = :id
+        """),
+        {"id": user_id},
+    )
+    return gone is not False
+
+
 async def restore_account(session: AsyncSession, user_id: uuid.UUID) -> bool:
     """Reactivate an account whose grace period has not ended (#120).
 
     False when there is nothing to restore: the grace period ended, or the purge job
     already took the account (it sets 'deleting' first, under the same row lock).
+    The deadline is read after the row lock is held, from the clock rather than the
+    transaction start (ADR 0094).
     """
+    await session.execute(
+        text("SELECT 1 FROM identity.users WHERE id = :id FOR UPDATE"), {"id": user_id}
+    )
     restored = await session.scalar(
         text("""
         UPDATE identity.users SET status = 'active', deletion_scheduled_at = NULL
-         WHERE id = :id AND status = 'pending_deletion' AND deletion_scheduled_at > now()
+         WHERE id = :id AND status = 'pending_deletion'
+           AND deletion_scheduled_at > clock_timestamp()
         RETURNING id
         """),
         {"id": user_id},
