@@ -3,7 +3,7 @@
 from alembic import op
 
 revision = "93_shadow_retention"
-down_revision = "81_shadow_recordings"
+down_revision = "89_content_deletion"
 branch_labels = None
 depends_on = None
 

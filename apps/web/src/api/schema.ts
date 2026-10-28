@@ -465,7 +465,11 @@ export interface paths {
     get: operations['get_content_api_v1_contents__content_id__get'];
     put?: never;
     post?: never;
-    delete?: never;
+    /**
+     * Delete Content
+     * @description Confirm irreversible deletion of a clip and its derived data (FR-CI-7).
+     */
+    delete: operations['delete_content_api_v1_contents__content_id__delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -1987,6 +1991,22 @@ export interface components {
        * @default
        */
       password: string;
+    };
+    /** DeleteConfirmation */
+    DeleteConfirmation: {
+      /**
+       * Confirm
+       * @constant
+       */
+      confirm: true;
+    };
+    /** DeletionAccepted */
+    DeletionAccepted: {
+      /**
+       * Request Id
+       * Format: uuid
+       */
+      request_id: string;
     };
     /** DeletionScheduled */
     DeletionScheduled: {
@@ -4131,6 +4151,41 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  delete_content_api_v1_contents__content_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        content_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DeleteConfirmation'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeletionAccepted'];
+        };
       };
       /** @description Validation Error */
       422: {

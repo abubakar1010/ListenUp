@@ -17,6 +17,7 @@ def test_every_job_module_imports_and_registers_its_jobs() -> None:
     assert "identity.send_password_reset" in jobs._registry
     assert jobs._registry["cards.generate_snippet"].lane is jobs.Lane.INTAKE
     assert jobs._registry["cards.cleanup_snippets"].lane is jobs.Lane.BACKGROUND
+    assert jobs._registry["library.delete_content"].lane is jobs.Lane.BACKGROUND
 
 
 def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
@@ -30,6 +31,7 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
 
     importlib.import_module("listenup.ai.jobs")
     importlib.import_module("listenup.ops.retention")
+    importlib.import_module("listenup.modules.library.jobs")
 
     installed: list[tuple[str, str]] = []
 
@@ -53,6 +55,7 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
         "ops.sweep_one_time_tokens",
         "ops.sweep_idempotency_keys",
         "ops.sweep_rate_counters",
+        "library.reconcile_content_deletions",
     ]
 
     # Scratch files live on the media pool's disk, so its intake lane sweeps them (#93).
@@ -69,10 +72,11 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
         (retention.TOKENS_SCHEDULE, "ops.sweep_one_time_tokens"),
         (retention.IDEMPOTENCY_SCHEDULE, "ops.sweep_idempotency_keys"),
         (retention.RATE_SCHEDULE, "ops.sweep_rate_counters"),
+        ("* * * * *", "library.reconcile_content_deletions"),
     }
     # Installing again (a second worker of the pool) registers nothing twice.
     assert set(jobs.install_schedules(default)) == set(scheduled)
-    assert len(installed) == 10
+    assert len(installed) == 11
 
 
 @pytest.mark.anyio
