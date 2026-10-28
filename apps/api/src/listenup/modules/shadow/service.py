@@ -245,9 +245,9 @@ async def complete_recording(
     row.uploaded_at = now
     await db.flush()
     rounds = await repository.rounds(db, row.session_id)
-    if len(rounds) == 3 and all(
-        r.recorded_at is not None and r.uploaded_at is not None for r in rounds
-    ):
+    # `recorded_at` stays after retention clears an old recording (FR-SH-17), so it, not
+    # `uploaded_at`, says that a round was recorded.
+    if len(rounds) == 3 and all(r.recorded_at is not None for r in rounds):
         await practice.complete_step(db, session, practice.Step.SHADOW)
 
 

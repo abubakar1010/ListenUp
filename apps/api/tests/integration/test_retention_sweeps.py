@@ -174,7 +174,7 @@ def test_recording_sweep_works_in_batches(
     migrated_url: str, storage: FakeStorage, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ids = [recorded_round(migrated_url, 100) for _ in range(3)]
-    monkeypatch.setattr(retention, "BATCH", 2)
+    monkeypatch.setattr(retention, "SHADOW_BATCH", 2)
 
     run(migrated_url, retention.sweep_shadow_recordings)
 
@@ -198,6 +198,55 @@ def test_shadow_trigger_still_fixes_other_recording_changes(
                 "UPDATE practice.shadow_rounds SET recording_key = NULL WHERE id = %s",
                 [round_id],
             )
+
+
+def test_shadow_trigger_refuses_a_clear_that_also_moves_recorded_at(
+    migrated_url: str,
+) -> None:
+    round_id, _ = recorded_round(migrated_url, 1)
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute(
+                "UPDATE practice.shadow_rounds SET recording_key = NULL, recording_mime = NULL, "
+                "recording_bytes = NULL, uploaded_at = NULL, recorded_at = now() WHERE id = %s",
+                [round_id],
+            )
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute(
+                "UPDATE practice.shadow_rounds SET playback_status = 'ready' WHERE id = %s",
+                [round_id],
+            )
+
+
+def test_one_failing_delete_does_not_block_newer_recordings(
+    migrated_url: str, storage: FakeStorage
+) -> None:
+    """A storage error on the oldest key must not stop the others from expiring; the
+    failed row keeps its key so the next run retries, and the run reports the failure."""
+    old_id, old_key = recorded_round(migrated_url, 200)
+    new_id, new_key = recorded_round(migrated_url, 100)
+    real_delete = storage.delete
+
+    async def delete(key: str) -> None:
+        if key == old_key:
+            raise OSError("storage unavailable")
+        await real_delete(key)
+
+    storage.delete = delete  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError):
+        run(migrated_url, retention.sweep_shadow_recordings)
+
+    assert new_key in storage.deleted
+    keys = {
+        row_id: one(
+            migrated_url,
+            "SELECT recording_key FROM practice.shadow_rounds WHERE id = %s",
+            row_id,
+        )
+        for row_id in (old_id, new_id)
+    }
+    assert keys == {old_id: old_key, new_id: None}
 
 
 # --- Short-lived data -------------------------------------------------------------
@@ -344,6 +393,66 @@ def test_scratch_older_than_an_hour_is_removed(
     assert not stale.exists() and not stale_file.exists()
     assert fresh.exists()
     assert foreign.exists()  # only directories and files our jobs create
+
+
+def test_every_scratch_prefix_our_jobs_use_is_swept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        retention, "get_settings", lambda: Settings(media_scratch_dir=str(tmp_path))
+    )
+    for prefix in ("card-", "transcript-", "profile-", "listenup-convert-", "media-job-"):
+        entry = tmp_path / f"{prefix}abc"
+        entry.mkdir()
+        age(entry, 7200)
+
+    removed = asyncio.run(retention.sweep_scratch_files(JobDeps(None, None, 1)))  # type: ignore[arg-type]
+
+    assert removed == 5
+
+
+def test_dangling_symlink_inside_a_stale_directory_does_not_keep_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        retention, "get_settings", lambda: Settings(media_scratch_dir=str(tmp_path))
+    )
+    stale = tmp_path / "transcript-dangling"
+    stale.mkdir()
+    (stale / "gone").symlink_to(tmp_path / "missing-target")
+    then = time.time() - 7200
+    os.utime(stale / "gone", (then, then), follow_symlinks=False)
+    age(stale, 7200)
+
+    removed = asyncio.run(retention.sweep_scratch_files(JobDeps(None, None, 1)))  # type: ignore[arg-type]
+
+    assert removed == 1
+    assert not stale.exists()
+
+
+def test_an_entry_that_cannot_be_removed_does_not_stop_the_sweep(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        retention, "get_settings", lambda: Settings(media_scratch_dir=str(tmp_path))
+    )
+    stuck, other = tmp_path / "transcript-stuck", tmp_path / "profile-other"
+    for entry in (stuck, other):
+        entry.mkdir()
+        age(entry, 7200)
+    real_rmtree = retention.shutil.rmtree
+
+    def rmtree(path: Path, *args: Any, **kwargs: Any) -> None:
+        if Path(path) == stuck:
+            raise PermissionError("busy")
+        real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(retention.shutil, "rmtree", rmtree)
+
+    removed = asyncio.run(retention.sweep_scratch_files(JobDeps(None, None, 1)))  # type: ignore[arg-type]
+
+    assert removed == 1
+    assert stuck.exists() and not other.exists()
 
 
 def test_directory_with_a_recent_file_inside_is_kept(

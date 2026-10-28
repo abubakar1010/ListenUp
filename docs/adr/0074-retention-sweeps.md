@@ -28,10 +28,21 @@ second run, so it is safe to repeat and to run beside normal traffic.
   clearing `recording_key`, `recording_mime`, `recording_bytes` and `uploaded_at`
   together while `recorded_at` is unchanged. The round keeps `recorded_at`, so its
   grades and word labels stay, and the round reports no recording.
+- **Batches and failures.** Recording deletes are serial storage calls made while the
+  batch's row locks are held, and the worker role ends a transaction idle for 30 s, so
+  this sweep uses batches of 50 (`SHADOW_BATCH`), not 1,000. A storage error on one key is
+  logged and that row keeps its key; the other rows in the batch are cleared, the run
+  skips the failed rows, and it ends by raising so the job retries them. Shadow
+  completion counts a round as recorded by `recorded_at`, which retention leaves in
+  place, so a session whose early round expired before the learner finished can still
+  complete.
 - **Scratch files** sit on the media pool's disk, so the sweep is on the intake lane,
   which that pool serves. It touches only entries named with the prefixes our jobs
   use, skips a directory with a file written inside the age limit, and does nothing
   when `LISTENUP_MEDIA_SCRATCH_DIR` is unset (the system temporary directory is shared).
+  The directory must be set for the media pool; export archives are built in the default
+  pool, so their `listenup-export-` scratch is swept only where both pools share that
+  directory. One entry that cannot be removed is logged and does not stop the pass.
 - **AI call log partitions** are already created ahead and dropped after 90 days by
   `ai.maintain` (#64, every five minutes), so no new job is added.
 - **Not built here:** expired YouTube playback files and unreferenced YouTube media

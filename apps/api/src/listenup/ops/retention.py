@@ -16,6 +16,7 @@ import asyncio
 import logging
 import shutil
 import time
+import uuid
 from pathlib import Path
 
 from sqlalchemy import text
@@ -27,6 +28,9 @@ from listenup.platform.storage import get_storage
 logger = logging.getLogger(__name__)
 
 BATCH = 1000
+# Recording deletes are serial storage calls made while the batch's row locks are held,
+# and the worker role drops a transaction idle for 30 s: keep that batch small.
+SHADOW_BATCH = 50
 
 # Daily sweeps run in the quiet hours (UTC); minutes are spread so they do not start
 # together.
@@ -40,6 +44,7 @@ SCRATCH_SCHEDULE = "*/15 * * * *"
 # Every directory or file the worker jobs create in LISTENUP_MEDIA_SCRATCH_DIR. Only
 # these are swept, so a directory shared with other programs is left alone.
 SCRATCH_PREFIXES = (
+    "card-",
     "transcript-",
     "profile-",
     "listenup-export-",
@@ -79,6 +84,7 @@ async def sweep_shadow_recordings(deps: JobDeps, timestamp: int | None = None) -
     days = get_settings().shadow_recording_retention_days
     storage = get_storage()
     total = 0
+    failed: list[uuid.UUID] = []
     while True:
         async with deps.database.transaction() as session:
             rows = (
@@ -87,27 +93,37 @@ async def sweep_shadow_recordings(deps: JobDeps, timestamp: int | None = None) -
                         "SELECT id, recording_key FROM practice.shadow_rounds "
                         "WHERE recording_key IS NOT NULL "
                         "AND recorded_at < now() - make_interval(days => :days) "
+                        "AND id <> ALL(:failed) "
                         "ORDER BY recorded_at LIMIT :batch FOR UPDATE SKIP LOCKED"
                     ),
-                    {"days": days, "batch": BATCH},
+                    {"days": days, "batch": SHADOW_BATCH, "failed": failed},
                 )
             ).all()
-            for _, key in rows:
-                await storage.delete(key)
-            if rows:
+            deleted: list[uuid.UUID] = []
+            for round_id, key in rows:
+                try:
+                    await storage.delete(key)
+                except Exception:  # one bad key must not hold back the rest
+                    logger.exception("shadow recording not deleted", extra={"round_id": round_id})
+                    failed.append(round_id)
+                else:
+                    deleted.append(round_id)
+            if deleted:
                 await session.execute(
                     text(
                         "UPDATE practice.shadow_rounds SET recording_key = NULL, "
                         "recording_mime = NULL, recording_bytes = NULL, uploaded_at = NULL "
                         "WHERE id = ANY(:ids)"
                     ),
-                    {"ids": [row[0] for row in rows]},
+                    {"ids": deleted},
                 )
-        total += len(rows)
-        if len(rows) < BATCH:
+        total += len(deleted)
+        if len(rows) < SHADOW_BATCH:
             break
     if total:
         logger.info("shadow recordings expired", extra={"count": total})
+    if failed:  # progress is kept; the job retries the failed rows
+        raise RuntimeError(f"{len(failed)} Shadow recordings could not be deleted")
     return total
 
 
@@ -123,8 +139,7 @@ async def sweep_one_time_tokens(deps: JobDeps, timestamp: int | None = None) -> 
     return await _delete_in_batches(
         deps,
         "identity.one_time_tokens",
-        "coalesce(used_at, expires_at) < now() - interval '7 days' "
-        "OR expires_at < now() - interval '7 days'",
+        "coalesce(used_at, expires_at) < now() - interval '7 days'",
     )
 
 
@@ -144,6 +159,14 @@ async def sweep_rate_counters(deps: JobDeps, timestamp: int | None = None) -> in
     )
 
 
+def _mtime(path: Path) -> float:
+    """Modification time of the entry itself; a dangling symlink has one too."""
+    try:
+        return path.lstat().st_mtime
+    except FileNotFoundError:
+        return 0.0
+
+
 def _sweep_scratch(root: Path, max_age_seconds: int) -> int:
     """Remove our entries under `root` that nothing wrote to for `max_age_seconds`."""
     cutoff = time.time() - max_age_seconds
@@ -152,9 +175,9 @@ def _sweep_scratch(root: Path, max_age_seconds: int) -> int:
         if not entry.name.startswith(SCRATCH_PREFIXES):
             continue
         try:
-            newest = entry.stat().st_mtime
+            newest = entry.lstat().st_mtime
             if entry.is_dir() and not entry.is_symlink():
-                newest = max([newest, *(p.stat().st_mtime for p in entry.rglob("*"))])
+                newest = max([newest, *(_mtime(p) for p in entry.rglob("*"))])
             if newest >= cutoff:
                 continue  # a job may still be using it
             if entry.is_dir() and not entry.is_symlink():
@@ -164,6 +187,8 @@ def _sweep_scratch(root: Path, max_age_seconds: int) -> int:
             removed += 1
         except FileNotFoundError:
             continue  # the owning job cleaned up meanwhile
+        except OSError:
+            logger.exception("scratch entry not removed", extra={"path": str(entry)})
     return removed
 
 
