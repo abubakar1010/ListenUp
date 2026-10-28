@@ -163,7 +163,7 @@ jobs:
       matrix:
         include:
           # Every image is published for amd64 (CI, local runs) and arm64 (the stage 0 host
-          # may be an Arm VM, ADR 0070). worker-media compiles praat-parselmouth on arm64
+          # may be an Arm VM, ADR 0073). worker-media compiles praat-parselmouth on arm64
           # in its own stage (#232).
           - {image: api, file: infra/docker/backend.Dockerfile, target: api, cache: api, platforms: "linux/amd64,linux/arm64"}
           - {image: worker, file: infra/docker/backend.Dockerfile, target: worker, cache: worker, platforms: "linux/amd64,linux/arm64"}
