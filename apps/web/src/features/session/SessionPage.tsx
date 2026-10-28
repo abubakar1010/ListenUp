@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { PageLoading } from '../../app/PageLoading';
@@ -12,6 +12,7 @@ import { DictationResultPanel } from '../dictation/DictationResultPanel';
 import { CardScreen } from '../cards/CardScreen';
 import { DictationScreen } from '../dictation/DictationScreen';
 import { TranscriptScreen } from '../review/TranscriptScreen';
+import { ShadowCompletion } from '../shadow/ShadowCompletion';
 import { ShadowScreen } from '../shadow/ShadowScreen';
 import { useSession, useSkipStep, type Session } from './api';
 import { ChangeEntryPanel } from './ChangeEntryPanel';
@@ -19,16 +20,6 @@ import { PracticeLayout } from './PracticeLayout';
 import { STEP_DESCRIPTIONS, STEP_NAMES, STEP_RULES } from './plan';
 import { StepProgress } from './StepProgress';
 import { formatClock } from './time';
-
-/** Marks an empty slot until the story that fills it lands. */
-function Slot({ name, children }: { name: string; children: ReactNode }) {
-  return (
-    <div className="flex min-h-16 flex-col justify-center gap-1 rounded-md border-2 border-dashed border-line-strong bg-surface-raised p-4">
-      <p className="text-label text-ink-muted uppercase">{name}</p>
-      <p className="text-body-s text-ink-muted">{children}</p>
-    </div>
-  );
-}
 
 /**
  * A practice session (`/sessions/:sessionId`): the plan's progress and the open step
@@ -81,7 +72,7 @@ function SessionView({ session }: { session: Session }) {
       clipMeta={passage}
       back={{ to: '/library', label: 'Library' }}
       progress={<Progress session={session} />}
-      player={<Slot name="Player">The clip's player will show here.</Slot>}
+      player={null}
       rule={open ? STEP_RULES[open] : 'Plan complete.'}
       workLabel={open ? STEP_NAMES[open] : 'Plan complete'}
     >
@@ -213,6 +204,10 @@ function Finished({ session }: { session: Session }) {
         <CheckIcon className="size-5 text-success" />
         {session.status === 'completed' ? 'Plan complete' : 'This plan has stopped'}
       </p>
+      {session.status === 'completed' &&
+        session.steps.some((s) => s.step === 'shadow' && s.status === 'done') && (
+          <ShadowCompletion session={session} />
+        )}
       {skipped.length > 0 && <p>Skipped: {skipped.join(' and ')}.</p>}
       <Link to={`/contents/${session.content_id}/plan`} className={buttonClass('primary')}>
         Start another plan on this clip

@@ -2675,6 +2675,11 @@ export interface components {
        */
       tokens: number;
     };
+    /** RecordingCompletion */
+    RecordingCompletion: {
+      /** Version */
+      version: number;
+    };
     /** RecordingRequest */
     RecordingRequest: {
       /** Mime */
@@ -6295,7 +6300,11 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecordingCompletion'];
+      };
+    };
     responses: {
       /** @description Successful Response */
       204: {
@@ -6318,7 +6327,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description `upload_incomplete`, `upload_size_mismatch`, `upload_type_mismatch`, `step_locked` or `round_order` */
+      /** @description `upload_incomplete`, `upload_size_mismatch`, `upload_type_mismatch`, `step_locked`, `session_changed`, `session_closed` or `round_order` */
       409: {
         headers: {
           [name: string]: unknown;

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CONSENT_VERSIONS_KEY, MY_CONSENTS_KEY } from '../../auth/consentApi';
 import { api, ApiError } from '../../api/client';
 import type { components } from '../../api/schema';
-import { SESSIONS_KEY } from '../session/api';
+import { sessionKey, type Session, SESSIONS_KEY } from '../session/api';
 
 export type Segment = components['schemas']['Segment'];
 const key = (id: string) => [...SESSIONS_KEY, id, 'shadow', 'segment'];
@@ -87,6 +87,9 @@ export function useUploadRecording(id: string) {
       number: number;
       recording: { blob: Blob; mime: string };
     }) => {
+      const session =
+        client.getQueryData<Session>(sessionKey(id)) ??
+        (await api<Session>(`/sessions/${encodeURIComponent(id)}`));
       let started;
       try {
         started = await api<components['schemas']['RecordingUpload']>(
@@ -107,8 +110,9 @@ export function useUploadRecording(id: string) {
       await api(`/shadow/rounds/${encodeURIComponent(started.round_id)}/complete`, {
         method: 'POST',
         headers: { 'Idempotency-Key': `shadow-recording-${started.round_id}` },
+        body: { version: session.version },
       });
     },
-    onSettled: () => client.invalidateQueries({ queryKey: roundsKey(id) }),
+    onSettled: () => Promise.all([client.invalidateQueries({ queryKey: SESSIONS_KEY })]),
   });
 }

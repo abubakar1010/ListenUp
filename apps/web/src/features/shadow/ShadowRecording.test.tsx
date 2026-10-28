@@ -134,6 +134,7 @@ function routes(extra: Parameters<typeof mockRoutes>[0] = {}) {
       phase = 'saved';
       return new Response(null, { status: 204 });
     },
+    'GET /sessions/s': jsonResponse(200, { version: 3 }),
     'GET /contents/c': jsonResponse(200, { media_url: '/audio' }),
     ...extra,
   });
@@ -156,6 +157,7 @@ it('records from the count-in to the end, uploads it and replays it next to the 
     mime: 'audio/webm',
     size_bytes: 2000,
   });
+  expect(calls.find((c) => c.path === '/shadow/rounds/r1/complete')!.body).toEqual({ version: 3 });
   expect(track.stop).toHaveBeenCalled();
   expect(screen.getByText(/Feedback unavailable/)).toBeInTheDocument();
   const mine = screen.getByLabelText('Your recording of round 1');
@@ -244,6 +246,7 @@ it('treats a round whose completion response was lost as saved on retry', async 
         : jsonResponse(409, { code: 'recording_exists', detail: 'Already recorded.' }),
     'PUT https://storage.test/put': new Response(null, { status: 200 }),
     'POST /shadow/rounds/r1/complete': new Response(null, { status: 503 }),
+    'GET /sessions/s': jsonResponse(200, { version: 3 }),
     'GET /contents/c': jsonResponse(200, { media_url: '/audio' }),
   });
   renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);

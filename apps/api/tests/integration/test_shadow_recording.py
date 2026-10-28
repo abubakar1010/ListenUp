@@ -38,9 +38,10 @@ def request_upload(client, sid, number, mime="audio/webm", size=200_000):
     return client.post(recording_path(sid, number), json={"mime": mime, "size_bytes": size})
 
 
-def complete(client, round_id, key=None):
+def complete(client, round_id, key=None, version=3):
     return client.post(
         f"/api/v1/shadow/rounds/{round_id}/complete",
+        json={"version": version},
         headers={"Idempotency-Key": key or str(uuid.uuid4())},
     )
 
@@ -89,7 +90,10 @@ def test_three_rounds_produce_three_replayable_recordings(
         assert replay.headers["cache-control"] == "private, no-store"
     assert all(ttl is not None and ttl <= 120 for _, ttl in storage.downloads)
     session = client.get(f"/api/v1/sessions/{sid}").json()
-    assert session["open_step"] == "shadow" and session["completed_at"] is None
+    assert session["open_step"] is None
+    assert session["status"] == "completed"
+    assert session["completed_at"] is not None
+    assert session["steps"][-1]["status"] == "done"
     with psycopg.connect(migrated_url) as db:
         assert (
             db.execute(
@@ -111,7 +115,11 @@ def test_other_learner_gets_404_on_recording(make, migrated_url, api_role_url, s
         ("POST", f"/api/v1/shadow/rounds/{body['round_id']}/complete"),
     ):
         response = other.request(
-            method, url, headers={"Idempotency-Key": str(uuid.uuid4())}, follow_redirects=False
+            method,
+            url,
+            json={"version": 3} if method == "POST" else None,
+            headers={"Idempotency-Key": str(uuid.uuid4())},
+            follow_redirects=False,
         )
         assert response.status_code == 404, response.text
         assert response.json()["code"] == "round_not_found"
@@ -273,3 +281,139 @@ def test_completion_is_refused_and_the_upload_dropped_after_consent_is_withdrawn
     assert (refused.status_code, refused.json()["code"]) == (403, "voice_consent_required")
     assert key_of(body["upload"]) in storage.deleted
     assert client.get(base(sid)).json()["rounds"][0]["recorded_at"] is None
+
+
+def test_two_recorded_rounds_do_not_complete(client, migrated_url, api_role_url, storage):
+    sid = setup(client, migrated_url, api_role_url)
+    for number in (1, 2):
+        record_round(client, storage, sid, number)
+    assert start_round(client, sid, 3).status_code == 204
+    assert end_round(client, sid, 3).status_code == 204
+    session = client.get(f"/api/v1/sessions/{sid}").json()
+    assert session["open_step"] == "shadow"
+    assert session["status"] == "active"
+    assert session["completed_at"] is None
+
+
+def test_repeat_recording_completion_is_idempotent(client, migrated_url, api_role_url, storage):
+    sid = setup(client, migrated_url, api_role_url)
+    bodies = [record_round(client, storage, sid, n) for n in (1, 2, 3)]
+    before = client.get(f"/api/v1/sessions/{sid}").json()
+    for body in bodies:
+        key = str(uuid.uuid4())
+        for retry_key in (key, key, None):
+            response = complete(client, body["round_id"], retry_key)
+            assert response.status_code == 204, response.text
+    assert client.get(f"/api/v1/sessions/{sid}").json() == before
+    assert len(client.get(base(sid)).json()["rounds"]) == 3
+
+
+def test_stale_session_version_refuses_recording_without_side_effects(
+    client, migrated_url, api_role_url, storage
+):
+    sid = setup(client, migrated_url, api_role_url)
+    for n in (1, 2):
+        record_round(client, storage, sid, n)
+    start_round(client, sid, 3)
+    end_round(client, sid, 3)
+    body = request_upload(client, sid, 3).json()
+    storage.arrive(key_of(body["upload"]), 200_000, "audio/webm")
+    before = client.get(f"/api/v1/sessions/{sid}").json()
+    response = complete(client, body["round_id"], version=before["version"] - 1)
+    assert (response.status_code, response.json()["code"]) == (409, "session_changed")
+    assert client.get(f"/api/v1/sessions/{sid}").json() == before
+    assert client.get(base(sid)).json()["current"]["recorded_at"] is None
+    assert key_of(body["upload"]) not in storage.deleted
+    assert complete(client, body["round_id"], version=before["version"]).status_code == 204
+
+
+def test_completion_rolls_back_atomically(client, migrated_url, api_role_url, storage, monkeypatch):
+    from listenup.modules.practice import service as practice
+    from listenup.platform.errors import ProblemError
+
+    sid = setup(client, migrated_url, api_role_url)
+    for n in (1, 2):
+        record_round(client, storage, sid, n)
+    start_round(client, sid, 3)
+    end_round(client, sid, 3)
+    body = request_upload(client, sid, 3).json()
+    storage.arrive(key_of(body["upload"]), 200_000, "audio/webm")
+    original = practice.complete_step
+
+    async def conflict(*args):
+        # Fail after the step write as well: the entire request must roll back.
+        await original(*args)
+        raise ProblemError(409, "session_changed", "Concurrent session write.")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(practice, "complete_step", conflict)
+        response = complete(client, body["round_id"], "atomic-completion")
+    assert response.status_code == 409
+    assert response.json()["code"] == "session_changed"
+    state = client.get(base(sid)).json()
+    assert state["current"]["recorded_at"] is None
+    assert state["current"]["recording_available"] is False
+    session = client.get(f"/api/v1/sessions/{sid}").json()
+    assert session["open_step"] == "shadow" and session["version"] == 3
+    assert complete(client, body["round_id"], "atomic-completion").status_code == 204
+    assert client.get(f"/api/v1/sessions/{sid}").json()["status"] == "completed"
+
+
+def test_finalization_refused_after_shadow_skipped(client, migrated_url, api_role_url, storage):
+    sid = setup(client, migrated_url, api_role_url)
+    start_round(client, sid, 1)
+    end_round(client, sid, 1)
+    body = request_upload(client, sid, 1).json()
+    storage.arrive(key_of(body["upload"]), 200_000, "audio/webm")
+    response = client.post(
+        f"/api/v1/sessions/{sid}/steps/shadow/skip", json={"version": 3, "confirmed": True}
+    )
+    assert response.status_code == 200
+    response = complete(client, body["round_id"], version=4)
+    assert response.status_code == 409
+    assert response.json()["code"] == "session_closed"
+    with psycopg.connect(migrated_url) as db:
+        assert (
+            db.execute(
+                "SELECT recorded_at FROM practice.shadow_rounds WHERE id=%s", [body["round_id"]]
+            ).fetchone()[0]
+            is None
+        )
+
+
+def test_concurrent_finalization_with_distinct_keys_is_idempotent(
+    client, migrated_url, api_role_url, storage, monkeypatch
+):
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    from listenup.modules.practice import service as practice
+
+    sid = setup(client, migrated_url, api_role_url)
+    for n in (1, 2):
+        record_round(client, storage, sid, n)
+    start_round(client, sid, 3)
+    end_round(client, sid, 3)
+    body = request_upload(client, sid, 3).json()
+    storage.arrive(key_of(body["upload"]), 200_000, "audio/webm")
+    original = practice.lock_session
+    arrived = 0
+    gate = None
+
+    async def synchronize(db, session_id):
+        nonlocal arrived, gate
+        if gate is None:
+            gate = asyncio.Event()
+        arrived += 1
+        if arrived == 2:
+            gate.set()
+        await asyncio.wait_for(gate.wait(), timeout=10)
+        await original(db, session_id)
+
+    with monkeypatch.context() as patch, ThreadPoolExecutor(max_workers=2) as pool:
+        patch.setattr(practice, "lock_session", synchronize)
+        responses = list(pool.map(lambda _: complete(client, body["round_id"]), range(2)))
+    assert [response.status_code for response in responses] == [204, 204]
+    session = client.get(f"/api/v1/sessions/{sid}").json()
+    assert session["status"] == "completed"
+    assert session["version"] == 4

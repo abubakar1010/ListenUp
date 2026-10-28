@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router';
 
 import { jsonResponse, problem, renderWithProviders } from '../../test-utils';
@@ -95,4 +95,57 @@ test("another learner's or a missing session shows a clear error", async () => {
   const alert = await screen.findByRole('alert');
   expect(alert).toHaveTextContent('There is no such session.');
   expect(within(alert).getByRole('link', { name: 'Go to your library' })).toBeInTheDocument();
+});
+
+test('a recorded Shadow completion shows unavailable feedback after reload', async () => {
+  mockRoutes({
+    'GET /sessions/session-1': jsonResponse(200, sessionFixture({ done: 4 })),
+    'GET /contents/clip-1': jsonResponse(200, { media_url: '/original' }),
+    'GET /sessions/session-1/shadow/rounds': jsonResponse(200, {
+      segment: { start_ms: 10000, end_ms: 70000 },
+      rounds: [1, 2, 3].map((round) => ({
+        id: `round-${round}`,
+        round,
+        recording_available: true,
+      })),
+    }),
+  });
+  renderSession();
+  expect(await screen.findByText('All 4 steps finished')).toBeInTheDocument();
+  expect(screen.getByText('Feedback unavailable.')).toBeInTheDocument();
+  expect(screen.queryByText("The clip's player will show here.")).not.toBeInTheDocument();
+  for (const round of [1, 2, 3]) {
+    expect(await screen.findByLabelText(`Your recording of round ${round}`)).toHaveAttribute(
+      'src',
+      `/api/v1/shadow/rounds/round-${round}/recording`,
+    );
+    expect(screen.getByLabelText(`Original, round ${round} segment`)).toHaveAttribute(
+      'src',
+      '/original#t=10,70',
+    );
+  }
+  expect(screen.queryByRole('button', { name: /Start round/ })).not.toBeInTheDocument();
+});
+
+test('completion remains visible when replay data cannot load and offers retry', async () => {
+  let failed = true;
+  mockRoutes({
+    'GET /sessions/session-1': jsonResponse(200, sessionFixture({ done: 4 })),
+    'GET /contents/clip-1': () =>
+      failed
+        ? problem(503, 'unavailable', 'Original unavailable.')
+        : jsonResponse(200, { media_url: '/original' }),
+    'GET /sessions/session-1/shadow/rounds': () =>
+      failed
+        ? problem(503, 'unavailable', 'Recordings unavailable.')
+        : jsonResponse(200, { segment: { start_ms: 0, end_ms: 60000 }, rounds: [] }),
+  });
+  renderSession();
+  expect(await screen.findByText('Recordings unavailable.')).toBeInTheDocument();
+  expect(screen.getByText('Original unavailable.')).toBeInTheDocument();
+  expect(screen.getByText('All 4 steps finished')).toBeInTheDocument();
+  failed = false;
+  for (const button of screen.getAllByRole('button', { name: /Try again/i }))
+    fireEvent.click(button);
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
 });

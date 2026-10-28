@@ -196,7 +196,7 @@ export function ShadowRounds({
         </BusyButton>
       )}
       {number === 3 && ended && (
-        <p>All three rounds are done. Finishing Shadow is not available yet.</p>
+        <p>Three playbacks ended. Shadow completes when all three recordings are saved.</p>
       )}
       {change.isError && (
         <ErrorPanel

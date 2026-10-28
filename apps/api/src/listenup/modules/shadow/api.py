@@ -172,12 +172,13 @@ async def start_recording(
         403: {"description": "`voice_consent_required`"},
         409: {
             "description": "`upload_incomplete`, `upload_size_mismatch`, `upload_type_mismatch`, "
-            "`step_locked` or `round_order`"
+            "`step_locked`, `session_changed`, `session_closed` or `round_order`"
         },
     },
 )
 async def complete_recording(
     round_id: uuid.UUID,
+    body: schemas.RecordingCompletion,
     request: Request,
     learner: CurrentLearner,
     db: DbSession,
@@ -194,7 +195,7 @@ async def complete_recording(
         raise
 
     async def apply() -> tuple[int, None]:
-        await service.complete_recording(db, uploads.storage, round_id)
+        await service.complete_recording(db, uploads.storage, round_id, body.version)
         return 204, None
 
     result = await run_once(db, learner, idempotency_key, await request_fingerprint(request), apply)
