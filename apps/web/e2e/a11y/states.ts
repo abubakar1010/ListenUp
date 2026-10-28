@@ -75,6 +75,27 @@ const PEAKS = {
 };
 
 const PASSAGE = { start_ms: 0, end_ms: 30_000 };
+const RECORDED_ROUNDS: Schema['Round'][] = [1, 2, 3].map((round) => ({
+  id: `round-${round}`,
+  round,
+  transcript_shown: round === 1,
+  playback_status: 'ended',
+  recorded_at: '2026-10-28T10:00:00Z',
+  recording_available: true,
+  feedback: 'unavailable',
+}));
+const COMPLETED_SHADOW: Schema['Rounds'] = {
+  segment: {
+    session_id: 'session-1',
+    ...PASSAGE,
+    chosen_by: 'system',
+    mark_count: 2,
+    locked_at: '2026-10-28T09:00:00Z',
+  },
+  current: RECORDED_ROUNDS[2],
+  rounds: RECORDED_ROUNDS,
+};
+
 const TRANSCRIPT = {
   session_id: 'session-1',
   passage: PASSAGE,
@@ -759,7 +780,12 @@ export const STATES: ScanState[] = [
     name: 'plan finished',
     path: '/sessions/session-1',
     signedIn: true,
-    answers: session('dictation', 4, {}, {}),
+    answers: session(
+      'dictation',
+      4,
+      { '/sessions/session-1/shadow/rounds': { json: COMPLETED_SHADOW } },
+      {},
+    ),
     ready: (page) => page.getByText(/All 4 steps finished/),
   },
 

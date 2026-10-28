@@ -25,8 +25,9 @@ analysis job on lane 1 belongs to #80/#82; completing the Shadow plan step is #8
   length, and a GET of at most 120 s behind an ownership-checked 307.
 - **API.** `POST /sessions/{id}/shadow/rounds/{number}/recording` (type and size
   validated, voice consent re-checked, playback must have ended, repeatable to
-  re-sign the same key); `POST /shadow/rounds/{id}/complete` (Idempotency-Key; checks
-  the stored object's size and type, deleting a mismatching object);
+  re-sign the same key); `POST /shadow/rounds/{id}/complete` (Idempotency-Key and the client's session
+  `version`, #87; checks the stored object's size and type, deleting a mismatching
+  object, and completes Shadow with the third recording);
   `GET /shadow/rounds/{id}/recording`. Another learner gets 404 `round_not_found`.
 - **Never blocks the learner.** Playback-ended is independent of the upload, so a
   failed upload or an unsupported browser does not hold the rounds. The browser keeps

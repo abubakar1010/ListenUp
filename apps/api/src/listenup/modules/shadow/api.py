@@ -139,7 +139,9 @@ _NO_STORE = {"Cache-Control": "private, no-store"}
     responses={
         **_ROUND_ERRORS,
         403: {"description": "`voice_consent_required`"},
-        409: {"description": "`step_locked`, `round_order` or `recording_exists`"},
+        409: {
+            "description": "`step_locked`, `session_closed`, `round_order` or `recording_exists`"
+        },
         422: {"description": "`recording_type` or `recording_size`"},
     },
 )
@@ -156,7 +158,8 @@ async def start_recording(
     """Sign an upload of this round's recording; safe to repeat for a failed upload."""
     response.headers.update(_NO_STORE)
     await practice.lock_session(db, session_id)
-    await practice.require_step(db, session_id, practice.Step.SHADOW)
+    # A done Shadow answers `recording_exists`, so a retry after completion is harmless.
+    await service.require_open_or_done(db, session_id)
     await require_voice_consent(db, learner, request.app.state.settings)
     return await service.start_recording_upload(
         db, uploads.storage, learner, session_id, number, body
@@ -172,12 +175,13 @@ async def start_recording(
         403: {"description": "`voice_consent_required`"},
         409: {
             "description": "`upload_incomplete`, `upload_size_mismatch`, `upload_type_mismatch`, "
-            "`step_locked` or `round_order`"
+            "`step_locked`, `session_changed`, `session_closed` or `round_order`"
         },
     },
 )
 async def complete_recording(
     round_id: uuid.UUID,
+    body: schemas.RecordingCompletion,
     request: Request,
     learner: CurrentLearner,
     db: DbSession,
@@ -194,7 +198,7 @@ async def complete_recording(
         raise
 
     async def apply() -> tuple[int, None]:
-        await service.complete_recording(db, uploads.storage, round_id)
+        await service.complete_recording(db, uploads.storage, round_id, body.version)
         return 204, None
 
     result = await run_once(db, learner, idempotency_key, await request_fingerprint(request), apply)

@@ -134,6 +134,7 @@ function routes(extra: Parameters<typeof mockRoutes>[0] = {}) {
       phase = 'saved';
       return new Response(null, { status: 204 });
     },
+    'GET /sessions/s': jsonResponse(200, { version: 3 }),
     'GET /contents/c': jsonResponse(200, { media_url: '/audio' }),
     ...extra,
   });
@@ -156,6 +157,7 @@ it('records from the count-in to the end, uploads it and replays it next to the 
     mime: 'audio/webm',
     size_bytes: 2000,
   });
+  expect(calls.find((c) => c.path === '/shadow/rounds/r1/complete')!.body).toEqual({ version: 3 });
   expect(track.stop).toHaveBeenCalled();
   expect(screen.getByText(/Feedback unavailable/)).toBeInTheDocument();
   const mine = screen.getByLabelText('Your recording of round 1');
@@ -244,6 +246,7 @@ it('treats a round whose completion response was lost as saved on retry', async 
         : jsonResponse(409, { code: 'recording_exists', detail: 'Already recorded.' }),
     'PUT https://storage.test/put': new Response(null, { status: 200 }),
     'POST /shadow/rounds/r1/complete': new Response(null, { status: 503 }),
+    'GET /sessions/s': jsonResponse(200, { version: 3 }),
     'GET /contents/c': jsonResponse(200, { media_url: '/audio' }),
   });
   renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
@@ -252,4 +255,53 @@ it('treats a round whose completion response was lost as saved on retry', async 
   await screen.findByText(/Recording saved/, undefined, { timeout: 5000 });
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(calls.filter((c) => c.path === '/shadow/rounds/r1/complete')).toHaveLength(1);
+});
+
+it('signs each completion attempt with the session version it sends', async () => {
+  let attempts = 0;
+  let ended = false;
+  const { calls } = routes({
+    'GET /sessions/s/shadow/rounds': () => jsonResponse(200, stateOf(ended ? 'ended' : 'ready')),
+    'POST /sessions/s/shadow/rounds/1/playback-ended': () => {
+      ended = true;
+      return new Response(null, { status: 204 });
+    },
+    // The first completion lands but its response is lost; the session moved on.
+    'POST /shadow/rounds/r1/complete': () =>
+      ++attempts === 1 ? new Response(null, { status: 503 }) : new Response(null, { status: 204 }),
+    'GET /sessions/s': () => jsonResponse(200, { version: attempts === 0 ? 3 : 4 }),
+  });
+  renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
+  await playRound();
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry upload' }));
+  await screen.findByText(/Recording saved/, undefined, { timeout: 5000 });
+  const sent = calls.filter((c) => c.path === '/shadow/rounds/r1/complete');
+  expect(sent.map((c) => c.body)).toEqual([{ version: 3 }, { version: 4 }]);
+  expect(new Set(sent.map((c) => c.headers['Idempotency-Key'])).size).toBe(2);
+});
+
+it('says Shadow can be skipped when a played round was never recorded (ADR 0070)', async () => {
+  const round = (n: number, saved: boolean) => ({
+    id: `r${n}`,
+    round: n,
+    transcript_shown: n === 1,
+    playback_status: 'ended',
+    recorded_at: saved ? '2026-10-27T10:00:00Z' : null,
+    recording_available: saved,
+    feedback: saved ? 'unavailable' : null,
+  });
+  const rounds = [round(1, false), round(2, true), round(3, true)];
+  mockRoutes({
+    'GET /sessions/s/shadow/rounds': jsonResponse(200, {
+      segment,
+      current: rounds[2],
+      rounds,
+    }),
+    'GET /contents/c': jsonResponse(200, { media_url: '/audio' }),
+  });
+  renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
+  expect(await screen.findByText(/Round 1: playback ended/)).toBeInTheDocument();
+  expect(
+    screen.getByText(/does not complete until all three recordings are saved/),
+  ).toHaveTextContent(/skip Shadow/i);
 });
