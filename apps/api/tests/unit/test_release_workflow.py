@@ -18,9 +18,9 @@ DEPLOY_CHECK = yaml.safe_load((REPO / ".github/workflows/deploy-check.yml").read
 IMAGES: list[dict[str, Any]] = RELEASE["jobs"]["images"]["strategy"]["matrix"]["include"]
 STEPS: list[dict[str, Any]] = RELEASE["jobs"]["images"]["steps"]
 
-# worker-media stays amd64 until praat-parselmouth builds on arm64 (#232): the sdist
-# needs a C++ toolchain the base image lacks. Remove it from here when that story lands.
-AMD64_ONLY = {"worker-media"}
+# Images published for amd64 only. Empty since praat-parselmouth builds on arm64 in a
+# throwaway stage (#232); add an image here only with a reason and an issue.
+AMD64_ONLY: set[str] = set()
 
 
 def platforms(entry: dict[str, Any]) -> set[str]:
@@ -74,3 +74,12 @@ def test_the_deploy_check_builds_every_arm64_release_image_on_a_native_arm_runne
     built = {e["image"] for e in job["strategy"]["matrix"]["include"]}
     released = {e["image"] for e in IMAGES if "linux/arm64" in platforms(e)}
     assert built == released
+
+
+def test_the_release_reuses_the_arm64_layers_the_deploy_check_caches() -> None:
+    """Compiling praat-parselmouth under QEMU would otherwise run on every release."""
+    build = next(s for s in STEPS if s.get("uses", "").startswith("docker/build-push-action@"))
+    written = DEPLOY_CHECK["jobs"]["arm64-images"]["steps"][-1]["with"]["cache-to"]
+    scope = re.search(r"scope=(.+)$", written)
+    assert scope and scope.group(1) == "arm64-${{ matrix.image }}"
+    assert f"type=gha,scope={scope.group(1)}" in build["with"]["cache-from"].splitlines()
