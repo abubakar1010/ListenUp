@@ -276,6 +276,12 @@ REGISTRY: dict[tuple[str, str], Entry] = {
             "heard_form": "kuduv",
         },
     ),
+    ("GET", "/api/v1/sessions/{session_id}/cards/suggestions"): Owned(
+        "session_not_found",
+        params=lambda w: {"session_id": w.a.sessions["dictation"]},
+        owner_status=409,
+        owner_code="step_locked",
+    ),
     ("POST", "/api/v1/sessions/{session_id}/cards/complete"): Owned(
         "session_not_found",
         params=lambda w: {"session_id": w.a.sessions["card"]},

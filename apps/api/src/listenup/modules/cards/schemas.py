@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from listenup.modules.cards.domain.suggestions import Reason
+
 
 class NewCard(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -47,3 +49,16 @@ class CardReview(ReviewResult):
 
 class ReviewHistory(BaseModel):
     reviews: list[CardReview]
+
+
+class CardSuggestion(BaseModel):
+    mark_id: uuid.UUID
+    phrase: str
+    suggested: bool
+    reasons: list[Reason]
+
+
+class CardSuggestions(BaseModel):
+    """The session's marks in the order the Card step offers them (FR-CA-4)."""
+
+    suggestions: list[CardSuggestion]
