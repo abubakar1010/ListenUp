@@ -87,5 +87,14 @@ jobs:
           target: ${{ matrix.target }}
           platforms: linux/arm64
           push: false
+          load: ${{ matrix.image == 'worker-media' }}
+          tags: listenup-${{ matrix.image }}:arm64-check
           cache-from: type=gha,scope=arm64-${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=arm64-${{ matrix.image }}
+      # Building is not enough: the arm64 speech libraries (a compiled Praat, int8
+      # wav2vec2) must give the results amd64 gives. The script holds the amd64 figures.
+      - name: Speech runtime check (arm64)
+        if: matrix.image == 'worker-media'
+        run: |
+          docker run --rm -v "$PWD/infra/scripts:/checks:ro" -e TORCH_HOME=/tmp/torch \
+            listenup-worker-media:arm64-check python /checks/check-speech-runtime.py
