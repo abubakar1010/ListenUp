@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "e2e": "playwright test",
+    "e2e:cross": "E2E_BROWSERS=chromium,msedge,firefox,webkit playwright test",
     "e2e:a11y": "playwright test --project=a11y-desktop --project=a11y-360 --project=a11y-dark",
     "api:generate": "openapi-typescript src/api/openapi.json -o src/api/schema.ts && prettier --write src/api/schema.ts src/api/openapi.json"
   },

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { WEBKIT_NO_REDIRECT_MOCK, expect, test } from './test';
 
 // Mocked browser navigation complements the API's signed-token tests.
 test('keyboard Google navigation reloads into the authenticated account', async ({ page }) => {
@@ -50,7 +50,9 @@ test('keyboard Google navigation reloads into the authenticated account', async 
 for (const intent of ['login', 'reauth'] as const) {
   test(`${intent} callback failure reloads safely and keyboard retry starts a new flow`, async ({
     page,
+    browserName,
   }) => {
+    test.skip(browserName === 'webkit', WEBKIT_NO_REDIRECT_MOCK);
     let callbacks = 0;
     let starts = 0;
     const reason = intent === 'reauth' ? 'fresh_auth' : 'failed';
