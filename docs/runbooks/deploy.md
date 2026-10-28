@@ -14,7 +14,7 @@ Production is one Docker-capable VM running `compose.prod.yml` behind Caddy, wit
 
 ## How a release reaches production
 
-1. A push to `main` runs CI (and the Deploy check when deployment files changed). When CI succeeds, and the Deploy check passed wherever it ran on that commit, the **Release** workflow builds the six images from that exact commit and pushes them with two tags: `sha-<first 12 of the commit>` and `r<run number>`. Nothing is tagged `latest`, and a tag is never reused: a commit is built once, and a re-run or a later manual deploy of the same commit only adds a new `r<n>` tag to the existing images.
+1. A push to `main` runs CI (and the Deploy check when deployment files changed). When CI succeeds, and the Deploy check passed wherever it ran on that commit, the **Release** workflow builds the six images from that exact commit and pushes them with two tags (each tag is a multi-platform manifest: `linux/amd64` and `linux/arm64` for five images, `linux/amd64` only for `worker-media` until [#232](https://github.com/abubakar1010/ListenUp/issues/232); the arm64 layers are built under QEMU, and the Deploy check builds them natively on every change): `sha-<first 12 of the commit>` and `r<run number>`. Nothing is tagged `latest`, and a tag is never reused: a commit is built once, and a re-run or a later manual deploy of the same commit only adds a new `r<n>` tag to the existing images.
 2. If `LISTENUP_DEPLOY_ENABLED` is `true`, the deploy job (environment `production`) copies `compose.prod.yml` and the scripts to the host over SSH and runs `deploy.sh sha-<…>`:
    1. pull every image (a missing image fails before anything changes);
    2. `storage-check`: a public or unreadable media or backup bucket stops the deploy;
