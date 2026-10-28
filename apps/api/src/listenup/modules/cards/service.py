@@ -35,6 +35,7 @@ async def create(
     mark = next((mark for mark in marks if mark.id == new.mark_id), None)
     if mark is None:
         raise ProblemError(404, "mark_not_found", "There is no such mark in this session.")
+    await content.retain_content(db, learner, session.content_id)
     item = await content.get_content(db, learner, session.content_id)
     transcript = await review.read_transcript(db, worker_database, learner, session_id)
     words = [
@@ -245,3 +246,54 @@ async def record_review(
     if await repository.audio_row(db, card_id, learner, lock=True) is None:
         raise ProblemError(404, "card_not_found", "There is no such card.")
     return await repository.insert_review(db, learner, card_id, uuid7(), body.result)
+
+
+async def content_deletion_objects(
+    db: AsyncSession, learner: uuid.UUID, sessions: list[uuid.UUID]
+) -> tuple[list[str], list[str]]:
+    """Card writers must drain before the first content storage sweep."""
+    from datetime import UTC, datetime, timedelta
+
+    from listenup.platform.jobs import Reschedule
+
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id FROM practice.cards WHERE user_id=:user AND "
+                "session_id=ANY(:sessions) ORDER BY id FOR UPDATE"
+            ),
+            {"user": learner, "sessions": sessions},
+        )
+    ).all()
+    ids = [row.id for row in rows]
+    if ids and await db.scalar(
+        text("SELECT EXISTS(SELECT 1 FROM practice.card_snippet_writes WHERE card_id=ANY(:ids))"),
+        {"ids": ids},
+    ):
+        raise Reschedule(datetime.now(UTC) + timedelta(minutes=1))
+    return [f"users/{learner}/cards/{card}/" for card in ids], []
+
+
+async def settle_content_deletion(
+    db: AsyncSession, learner: uuid.UUID, prefixes: list[str]
+) -> None:
+    """Remove cascade tombstones only after their objects have been deleted."""
+    ids = [uuid.UUID(prefix.rstrip("/").rsplit("/", 1)[-1]) for prefix in prefixes]
+    if ids:
+        await db.execute(
+            text(
+                "DELETE FROM practice.card_snippet_cleanup WHERE user_id=:user AND "
+                "card_id=ANY(:ids)"
+            ),
+            {"user": learner, "ids": ids},
+        )
+
+
+async def content_deletion_snapshot(
+    db: AsyncSession, learner: uuid.UUID, sessions: list[uuid.UUID]
+) -> list[str]:
+    rows = await db.scalars(
+        text("SELECT id FROM practice.cards WHERE user_id=:user AND session_id=ANY(:sessions)"),
+        {"user": learner, "sessions": sessions},
+    )
+    return [f"users/{learner}/cards/{card}/" for card in rows]

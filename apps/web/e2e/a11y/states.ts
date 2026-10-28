@@ -513,6 +513,28 @@ export const STATES: ScanState[] = [
     },
     ready: (page) => page.getByRole('region', { name: 'Your plans' }),
   },
+  ...(['confirmation', 'pending', 'error'] as const).map((state): ScanState => ({
+    name: `content deletion ${state}`,
+    path: '/library',
+    signedIn: true,
+    answers: {
+      '/library/contents': { json: { items: [CLIP], next_cursor: null } },
+      'DELETE /contents/clip-1':
+        state === 'pending'
+          ? { hang: true }
+          : problem(503, 'unavailable', 'Please retry deletion.'),
+    },
+    act: async (page) => {
+      await page.getByRole('button', { name: `Delete ${CLIP.title}` }).click();
+      if (state !== 'confirmation') {
+        await page.getByRole('dialog').getByRole('button', { name: 'Delete clip' }).click();
+        if (state === 'error') await page.getByRole('dialog').getByRole('alert').waitFor();
+        else await page.getByRole('button', { name: 'Requesting deletion…' }).waitFor();
+      }
+    },
+    ready: (page) => page.getByRole('dialog'),
+    ...(state === 'error' ? { alert: true as const } : {}),
+  })),
   { name: 'add clip', path: '/library/add', signedIn: true, ready: heading('Add a clip') },
   {
     name: 'add clip daily limit reached',

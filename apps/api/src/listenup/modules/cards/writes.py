@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.cards import repository
+from listenup.modules.content import service as content
 from listenup.modules.identity import service as identity
 from listenup.platform.cancellation import finish_on_cancel
 from listenup.platform.database import Database
@@ -28,6 +29,8 @@ async def registered_write(
             if not await identity.hold_active_account(db, learner):
                 raise PermanentError("The account is no longer active.")
             row = await repository.audio_row(db, card, learner, lock=True)
+            if row is not None:
+                await content.retain_content(db, learner, row.content_id)
             if not row or row.audio_status != "pending" or row.audio_generation != generation:
                 # Still yield a transaction; the caller rechecks the card before writing.
                 pass
@@ -50,6 +53,9 @@ async def registered_write(
             await db.execute(text("SET LOCAL idle_in_transaction_session_timeout = '11min'"))
             if not await identity.hold_active_account(db, learner):
                 raise PermanentError("The account is no longer active.")
+            row = await repository.audio_row(db, card, learner)
+            if row is not None:
+                await content.retain_content(db, learner, row.content_id)
             try:
                 yield db
             except BaseException as error:

@@ -244,3 +244,8 @@ async def discard_upload(db: AsyncSession, storage: Storage, round_id: uuid.UUID
     row = await repository.round_by_id(db, round_id)
     if row is not None and row.recorded_at is None and row.recording_key is not None:
         await storage.delete(row.recording_key)
+
+
+async def content_deletion_prefixes(learner: uuid.UUID, sessions: list[uuid.UUID]) -> list[str]:
+    """A session prefix covers pending recordings and every offered MIME type."""
+    return [f"users/{learner}/shadow/{session}/" for session in sessions]

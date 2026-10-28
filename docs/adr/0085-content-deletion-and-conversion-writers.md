@@ -30,3 +30,11 @@ Signed browser uploads can outlive a request. Cleanup retains its durable manife
 and reconciles late objects; completion must not erase the only record of a key.
 Writer registrations must never be expired automatically. The implementation and
 validation record document the remaining operator and signed-upload boundaries.
+
+Stored idempotency responses can also contain submitted text. Delete only the
+selected learner's responses with structured references to the content, media,
+sessions, attempts or cards. Arbitrary learner text containing a UUID is not a
+reference. Acquire existing key locks before parent deletion, matching `run_once`'s
+key-before-session order, and repeat after cascades to cover in-flight commits.
+Unrelated keys and every other learner's cache remain untouched. Retries of a
+removed response must pass the ordinary parent lookup, which refuses deleted data.

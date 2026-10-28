@@ -916,6 +916,30 @@
         "title": "DeleteAccount",
         "type": "object"
       },
+      "DeleteConfirmation": {
+        "properties": {
+          "confirm": {
+            "const": true,
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "required": ["confirm"],
+        "title": "DeleteConfirmation",
+        "type": "object"
+      },
+      "DeletionAccepted": {
+        "properties": {
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": ["request_id"],
+        "title": "DeletionAccepted",
+        "type": "object"
+      },
       "DeletionScheduled": {
         "properties": {
           "deletion_scheduled_at": {
@@ -4428,6 +4452,56 @@
       }
     },
     "/api/v1/contents/{content_id}": {
+      "delete": {
+        "description": "Confirm irreversible deletion of a clip and its derived data (FR-CI-7).",
+        "operationId": "delete_content_api_v1_contents__content_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "content_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Content Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteConfirmation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Content",
+        "tags": ["library"]
+      },
       "get": {
         "description": "One of the learner's items: its processing status, or why it failed, and where\nto play it once it is playable.",
         "operationId": "get_content_api_v1_contents__content_id__get",
