@@ -27,11 +27,13 @@ set below exists and passes `check_golden_sets.py --require-complete`.
   itself is not stored here.
 - **Gists:** written by B1 to C1 learners who listened to a passage once, Blind-style, and
   typed what they understood. A few, marked in the matrix, are written on purpose by the
-  team or a teacher (unrelated, misspelled, prompt-injection), and are labelled as such
-  to the learner and in the tags. Do not present authored examples as learner work.
-- **Key points:** three to six per passage, labelled `kp1` to `kp6`, with one `main`. Write
-  them once per passage and reuse them for every gist of that passage. They follow the
-  same shape the key-point extraction produces (`text` up to 300 characters).
+  team or a teacher (unrelated, misspelled, prompt-injection) and tagged `kind:authored`.
+  The PR and the set's `source` must say that some are authored. Do not present authored
+  examples as learner work.
+- **Key points:** three to six per passage, labelled `kp1`, `kp2`, ... in order, with
+  exactly one `main`. Write them once per passage and reuse them, with the same transcript,
+  for every gist of that passage. They follow the same shape the key-point extraction
+  produces (`text` up to 300 characters). The checker enforces all of this.
 - **Grades:** teacher grades only. Nobody invents, estimates or model-generates a grade.
   If a grade is missing, the case is missing.
 
@@ -46,23 +48,31 @@ set below exists and passes `check_golden_sets.py --require-complete`.
   each gist and remove or generalise such details **with the learner's agreement** before
   it enters `dataset.json`. Do not alter the meaning or the language errors.
 - Learners appear only as a case id (`g01` to `g50`). Teachers appear only as `T1`, `T2`.
-  The mapping from codes to people is kept outside the repository.
-- `check_golden_sets.py` scans for emails, phone numbers and signed URLs as a safety net.
-  It cannot find names. The reviewer of the PR reads every gist.
+  The mapping from codes to people is kept outside the repository. The checker enforces
+  both code shapes.
+- `check_golden_sets.py` scans every JSON file here, templates included, for emails, phone
+  numbers and signed URLs as a safety net, and fails if an audio file or an `external/`
+  folder appears in the folder. It cannot find names. The reviewer of the PR reads every
+  gist.
 - A learner may withdraw at any time. Delete the case from `dataset.json`, its grades and
   its tags in a new commit and tell the owner that earlier history still holds the text.
   Use this promise in the consent form only if the owner accepts it, otherwise change the
-  form.
+  form. If the withdrawn case was one of an AT-12 pair, or took a level or tag below its
+  minimum, collect a replacement before the set is declared complete.
 
 ## Files to create when collecting
 
 1. `dataset.json`: runner format, `kind: "teacher"`, `suite: "gist"`. Each case has
    `id`, `tags` (see the matrix), `input` (`transcript`, `gist`, `key_points`) and
-   `expected` (the final grade: `scores`, `overall`, `level`).
+   `expected` (the final grade: `scores`, `overall`, `level`). Add a `context` with
+   `consent`, `region` and `population` only if a candidate hosted provider's terms and
+   the consent form allow it: the runner never bypasses provider eligibility, and an
+   absent context makes hosted providers ineligible.
 2. `teacher-grades.json`: one entry per teacher per case with that teacher's own grade and
    `covered_points`. When two teachers graded a case, `expected` in `dataset.json` is the
    agreed grade after they discuss; if they cannot agree, use the more experienced
-   teacher's grade and note it in `source`.
+   teacher's grade and note it in `source`. With a single teacher, `expected` must equal
+   that teacher's grade (the checker enforces it).
 3. `passages.json`: the catalogue, one entry per passage used.
 
 ## Check it
@@ -76,8 +86,11 @@ uv run python scripts/check_golden_sets.py --suite gist --agreement        # two
 ```
 
 `--agreement` reports, for cases graded by two or more teachers, the share of pairs that
-gave the same level and the mean absolute difference per dimension and overall. Put that
+gave the same level and the mean absolute difference per dimension and overall. Every
+pair counts, so a case with three teachers weighs three times a case with two. Put that
 output in the PR that commits the set (#106 acceptance: "agreement is reported").
+It exits 1 if `teacher-grades.json` is missing or invalid, and cannot be combined with
+`--require-complete`.
 
 ## Definition of done for #106
 

@@ -20,20 +20,25 @@ not a test of you: we are testing our software.
 
 - **Your voice recordings** and the **grades and word marks** a teacher gives them.
 - Your **first language or region** (you choose a coarse option below), used only to check
-  that our software is fair across accents. Not your name, age, email or location.
+  that our software is fair across accents. We do not ask for your age, email or location.
+  Your name appears only on this signed form, which stays private.
 - **Teachers** will listen to the recordings. They do not know your name.
 - Recordings are stored in **private storage that only [named team members] can open**.
-  They are **never** published, put in a public repository, or sent to any service that
-  keeps or trains on them. Only the grades, word marks and a speaker code (such as `S12`)
-  are written in the public project files.
-- If we test AI services with your recordings, we use only services that agree **not to train
-  on them** or run models on our own servers.
-- Recordings are **not** used to train any AI model.
+  They are **never** published or put in a public repository. If we test AI services with
+  them, we use only services that agree **not to train on them**, or we run models on our
+  own servers.
+- The **public project files** will hold the grades and word marks for your recordings, a
+  speaker code (such as `s12`) and the **accent group** you choose below, together. Anyone
+  can read them. They hold no audio and no name.
+- Recordings are **not** used to train any AI model. They and the teachers' grades may be
+  used to measure and calibrate (set limits for) our scoring software.
 - Your **signed form and the link between you and your code** are kept privately by
   [owner name] and never published.
 - We will **delete your recordings** on [date, for example when the evaluation work is
   finished, and no later than [N] months from today], or sooner if you ask. Grades and word
-  marks that do not identify you may be kept. [Owner: confirm this retention.]
+  marks that do not identify you may be kept. [Owner: confirm this retention. The app itself
+  deletes learners' recordings after 90 days (FR-SH-17). State here the longer period you
+  need for this evaluation set, or use 90 days.]
 
 ## Your choices
 
@@ -57,7 +62,7 @@ Please tick:
 My first language or region (choose the nearest; this is shared only as a group label):
 [ ] [group 1]  [ ] [group 2]  [ ] [group 3]  [ ] [group 4]  [ ] [group 5]
 [ ] Other: ______  [ ] I prefer not to say (your recordings may then be left out of the
-accent check).
+accent check). The group you choose is published with your speaker code, as described above.
 
 Name: ____________________  Signature: ____________________  Date: ____________
 

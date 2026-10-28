@@ -175,6 +175,7 @@ Its PostgreSQL service is for gateway quota/accounting, not networked AI.
 
 [`gists/`](gists/README.md) and [`shadow/`](shadow/README.md) hold the kit for collecting the
 two golden sets: README, teacher grading guide, consent form template, selection checklist,
-coverage matrix and empty templates in the format above. **They hold no data yet.** Check
+coverage matrix and empty templates shaped like the format above (a loadable dataset needs at
+least one case, so the templates themselves cannot be run). **They hold no data yet.** Check
 them from `apps/api` with `uv run python scripts/check_golden_sets.py` (add
 `--require-complete` to enforce the matrix once real data exists).

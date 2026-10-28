@@ -16,16 +16,17 @@ and grammar mistakes will not count against anything.
 
 ## What we will keep and who sees it
 
-- The **text you typed**, and nothing else about you. We will not keep your name, email,
-  voice, or any account.
+- The **text you typed**. The published project files contain that text, the teachers'
+  grades and a case number such as `g17`, and nothing else about you: no name, email,
+  voice or account.
 - A teacher will read it and give it a grade. Teachers do not know who you are.
-- The typed text, with the grades, will be stored in a **public** project repository under
-  a number such as `g17`, so anyone can read it. Before it is published we will remove
-  any detail that could identify you (a name, place, employer or school) and show you the
-  final text if you ask.
-- Your **signed form and the link between you and your number** are kept privately by
-  [owner name], are never published, and are deleted on [date, for example when the
-  project ends].
+- The typed text, with the grades, will be stored in a **public** project repository, so
+  anyone can read it. Before it is published we will remove any detail that could identify
+  you (a name, place, employer or school) and **show you the final text. It is published
+  only if you agree.**
+- Your **signed form (which has your name) and the link between you and your number** are
+  kept privately by [owner name], are never published, and are deleted on [date, for
+  example when the project ends].
 - The text may be used to test AI services that grade gists. It will **not** be used to
   train AI models, and we will only send it to services that agree not to train on it.
 

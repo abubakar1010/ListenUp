@@ -19,7 +19,9 @@ these segments are covered by the [matrix](coverage-matrix.md) and the
 ## Fit for Shadow (FR-SH-1)
 
 - [ ] The segment is **60 to 90 seconds**, or a whole passage of **30 to 60 seconds**.
-  Record `duration_seconds`; each recording case sets `context.audio_seconds` the same.
+  Record `duration_seconds`; each recording case sets `context.audio_seconds` the same
+  (within one second, enforced). That a 30 to 60 s clip is the whole passage is checked by
+  hand.
 - [ ] One clear speaker, at natural speed, with little music or noise; no leakage-prone
   effects.
 - [ ] The text is checked against the audio by a person and has normal punctuation.
@@ -29,11 +31,11 @@ these segments are covered by the [matrix](coverage-matrix.md) and the
 
 ## Variety across the set
 
-- [ ] **Topics:** no two segments share a topic.
-- [ ] **Reference speakers:** at least three women and three men, at least four different
-  accents, and no one accent in more than three segments.
+- [ ] **Topics** (script): no two segments share a topic.
+- [ ] **Reference speakers:** at least three women and three men (manual), at least four
+  different accents, and no one accent in more than three segments (script).
 - [ ] **Difficulty:** a mix of slow and fast, simple and dense, so scores spread out.
-- [ ] **Speaker use:** every segment is shadowed by at least three different speakers, in
+- [ ] **Speaker use** (manual): every segment is shadowed by at least three different speakers, in
   different accent groups, so a score difference is not just a segment effect.
 - [ ] Two segments are reserved for the **clear vs mumbled** pairs (AT-17); more if
   possible.
@@ -43,7 +45,8 @@ these segments are covered by the [matrix](coverage-matrix.md) and the
 - [ ] Headphones, a quiet room, the same kind of microphone if possible (laptop or phone).
 - [ ] Each speaker has signed the [consent form](consent-form-template.md) **before** being
   recorded.
-- [ ] Files are named `rec-<n>.wav` (and `ref-<segment id>.wav`) and stored in private storage.
+- [ ] Files are named `rec-<n>.wav` (and `ref-<segment id>.wav`; the checker enforces both
+  shapes) and stored in private storage.
   Nothing is stored in this repository.
 
 ## Catalogue entry (shape only)

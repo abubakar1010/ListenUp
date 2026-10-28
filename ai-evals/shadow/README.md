@@ -51,17 +51,24 @@ The repository is public. A voice recording identifies a person and so is person
 - **Consent records** (signed forms, the register linking speaker codes to people, contact
   details) are kept outside the repository in the same private storage and are never
   committed or photographed into the repo.
-- Speakers appear only as `speaker:<code>` tags, teachers only as `T1`, `T2`. The mapping
-  stays outside.
-- `check_golden_sets.py` rejects absolute or URL audio paths and scans for emails, phone
-  numbers and signed URLs. It cannot read audio. Before the PR, confirm that no audio file
-  or consent record is in the diff.
+- Speakers appear only as `speaker:<code>` tags (a code such as `speaker:s12`), teachers
+  only as `T1`, `T2`. The mapping stays outside.
+- `check_golden_sets.py`, with or without `--require-complete`, rejects any audio reference
+  that is not `external/rec-<n>.wav` (recordings) or `external/ref-<segment>.wav` (reference
+  audio): no absolute path, URL, drive letter, `..` or personal file name. It also fails if
+  an audio file or an `external/` folder appears in the suite's folder, and scans every JSON
+  file, templates included, for emails, phone numbers and signed URLs. It cannot read audio
+  or find names. Before the PR, confirm that no audio file or consent record is in the diff.
+  The repository's `.gitignore` also blocks audio files and `external/` folders.
 - Delete a speaker's recordings, labels and grades when they withdraw. The consent form says
-  what can and cannot be undone in a public repository.
+  what can and cannot be undone in a public repository. If the withdrawn speaker supplied
+  half of an AT-17 pair, or left an accent group below its minimum, collect a replacement
+  before the set is declared complete.
 
 ## Accent groups (for #111)
 
-Each speaker has an `accent:<group>` tag. The group is the speaker's **self-reported** first
+Each speaker has an `accent:<group>` tag (kebab-case, one group per speaker, which the
+checker enforces). The group is the speaker's **self-reported** first
 language or region on the consent form, mapped by the owner to a coarse label agreed with the
 teacher **before** collection (a proposed starting list is in the
 [matrix](coverage-matrix.md)). Teachers do not assign it, and it is never graded: it
@@ -70,15 +77,21 @@ need several speakers each.
 
 ## Files to create when collecting
 
-1. `dataset.json`: runner format, `kind: "teacher"`, `suite: "shadow"`. Each case has `id`,
-   `tags`, `context.audio_seconds`, `input` (`recording`, `reference_audio`, `reference_text`)
-   and `expected` (`scores` for the seven measures, `overall`, `filler_count`). `overall` is
-   the teacher's own impression; the production overall excludes accent (FR-SH-9), so grade
-   it the same way.
-2. `teacher-grades.json`: each teacher's own grade per case. When two teachers graded,
-   `expected` is the agreed grade after discussion; keep both originals.
-3. `word-labels.json`: for every case, each word of the segment as `good`, `needs_work` or
-   `missed`, in order.
+1. `dataset.json`: runner format, `kind: "teacher"`, `suite: "shadow"`. Each case has `id`
+   (`r01`, `r02`, ...), `tags`, `context.audio_seconds` (the segment's duration, within one
+   second of `duration_seconds` in `passages.json`), `input` (`recording`, `reference_audio`,
+   `reference_text`) and `expected` (`scores` for the seven measures, `overall`,
+   `filler_count`). `overall` is the teacher's own impression without accent. The product
+   overall is the equal-weight mean of the six measures other than accent (FR-SH-9);
+   `--agreement` reports how far the teachers' `overall` values are from that mean. Add a
+   `context` with `consent`, `region` and `population` only if a hosted candidate's terms and
+   the consent form allow it: the runner never bypasses provider eligibility.
+2. `teacher-grades.json`: each teacher's own grade per case, with all seven measures and a
+   `filler_count`. With one teacher, `expected` must equal that grade; when two teachers
+   graded, `expected` is the agreed grade after discussion; keep both originals.
+3. `word-labels.json`: for every case, each word of the reference text as `good`,
+   `needs_work` or `missed`, in order and word for word (the checker compares the words
+   with `reference_text`, ignoring case and punctuation).
 4. `passages.json`: the segment catalogue.
 
 ## Check it
@@ -90,6 +103,10 @@ uv run python scripts/check_golden_sets.py --suite shadow                    # f
 uv run python scripts/check_golden_sets.py --suite shadow --require-complete # the matrix
 uv run python scripts/check_golden_sets.py --suite shadow --agreement        # two teachers
 ```
+
+`--agreement` counts every pair of teachers, so a recording with three teachers weighs three
+times one with two, and exits 1 if `teacher-grades.json` is missing or invalid. It cannot be
+combined with `--require-complete`.
 
 ## Definition of done for #107
 

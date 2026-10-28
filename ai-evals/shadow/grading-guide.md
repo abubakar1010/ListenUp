@@ -38,7 +38,9 @@ are the best and worst you will hear, set 90+ and 20 or below for those, and kee
 for all 50.
 
 `overall` is your impression of the round **without accent**. It is not an average you must
-compute.
+compute: the product's overall is the equal-weight mean of the six measures other than
+accent (FR-SH-9), and `--agreement` reports how far your `overall` is from that mean. Give
+your own impression first and do not adjust it to match.
 
 ## Count the fillers
 

@@ -27,11 +27,11 @@ Tick every box for every passage; a passage that fails one is replaced.
 
 ## Variety across the set (see the [matrix](coverage-matrix.md))
 
-- [ ] **Topics:** no two passages share a topic (for example science, health, travel, work,
+- [ ] **Topics** (script): no two passages share a topic (for example science, health, travel, work,
   daily life, culture, technology, history, money, environment).
-- [ ] **Speakers:** at least three passages with a woman, three with a man, and a mix of
-  ages where known.
-- [ ] **Accents:** at least four different speaker accents across the set (for example
+- [ ] **Speakers** (manual, not recorded in `passages.json`): at least three passages with a
+  woman, three with a man, and a mix of ages where known.
+- [ ] **Accents** (script): at least four different speaker accents across the set (for example
   North American, British, Australian or New Zealand, Indian, and any non-native English
   speaker), with no one accent in more than three passages.
 - [ ] **Style:** include both a talk-style monologue and some conversational speech.
