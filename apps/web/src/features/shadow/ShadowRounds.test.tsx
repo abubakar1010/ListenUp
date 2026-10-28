@@ -94,62 +94,96 @@ it('retries a refused start using the same action and idempotency key', async ()
   expect(writes[0].headers['Idempotency-Key']).toBe(writes[1].headers['Idempotency-Key']);
 });
 
-it('reports a bounded playback end to the API and updates numbered round status', async () => {
-  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
-  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
-  let ended = false;
-  const segment = {
-    session_id: 's',
-    start_ms: 10000,
-    end_ms: 70000,
-    chosen_by: 'system',
-    mark_count: 0,
-    locked_at: 'now',
-  };
-  const { calls } = mockRoutes({
-    'GET /sessions/s/shadow/rounds': () => {
-      const current = {
-        round: 1,
-        transcript_shown: true,
-        playback_status: ended ? 'ended' : 'ready',
-        recorded_at: null,
-      };
-      return jsonResponse(200, { segment, current, rounds: [current], text: 'First-round words.' });
-    },
-    'POST /sessions/s/shadow/rounds/1/playback-ended': () => {
-      ended = true;
-      return new Response(null, { status: 204 });
-    },
-    'GET /contents/c': jsonResponse(200, { media_url: '/audio' }),
-  });
-  const view = renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
-  await screen.findByRole('button', { name: 'Play round 1' });
-  const audio = document.querySelector('audio')!;
-  fireEvent.loadedMetadata(audio);
-  vi.useFakeTimers();
-  try {
-    fireEvent.click(screen.getByRole('button', { name: 'Play round 1' }));
-    await act(async () => {
-      vi.advanceTimersByTime(3000);
+it.each(['before effects', 'after effects'])(
+  'reports a bounded playback end to the API and updates numbered round status (%s metadata)',
+  async (metadataTiming) => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    let ended = false;
+    const segment = {
+      session_id: 's',
+      start_ms: 10000,
+      end_ms: 70000,
+      chosen_by: 'system',
+      mark_count: 0,
+      locked_at: 'now',
+    };
+    const { calls } = mockRoutes({
+      'GET /sessions/s/shadow/rounds': () => {
+        const current = {
+          round: 1,
+          transcript_shown: true,
+          playback_status: ended ? 'ended' : 'ready',
+          recorded_at: null,
+        };
+        return jsonResponse(200, {
+          segment,
+          current,
+          rounds: [current],
+          text: 'First-round words.',
+        });
+      },
+      'POST /sessions/s/shadow/rounds/1/playback-ended': () => {
+        ended = true;
+        return new Response(null, { status: 204 });
+      },
+      'GET /contents/c': jsonResponse(200, { media_url: '/audio' }),
     });
-    audio.currentTime = 70.5;
-    fireEvent.timeUpdate(audio);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
+    // JSDOM does not load media: model both the state change and its notification.
+    // A browser retains HAVE_METADATA even if the event precedes effect attachment.
+    const metadataLoaded = (element: HTMLMediaElement) => {
+      vi.spyOn(element, 'readyState', 'get').mockReturnValue(HTMLMediaElement.HAVE_METADATA);
+      fireEvent.loadedMetadata(element);
+    };
+    const observer = new MutationObserver(() => {
+      const mounted = document.querySelector('audio');
+      if (mounted) {
+        observer.disconnect();
+        metadataLoaded(mounted);
+      }
     });
-  } finally {
-    vi.useRealTimers();
-  }
-  await screen.findByRole('button', { name: 'Start round 2' });
-  expect(screen.getByRole('list', { name: 'Round status' })).toHaveTextContent(
-    'Round 1: playback ended',
-  );
-  expect(calls.filter((c) => c.method === 'POST').map((c) => c.path)).toEqual([
-    '/sessions/s/shadow/rounds/1/playback-ended',
-  ]);
-  view.unmount();
-  vi.restoreAllMocks();
-});
+    if (metadataTiming === 'before effects') {
+      observer.observe(document.body, { childList: true, subtree: true });
+    }
+    const view = renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
+    try {
+      await screen.findByRole('button', { name: 'Play round 1' });
+      const audio = document.querySelector('audio')!;
+      if (metadataTiming === 'after effects') metadataLoaded(audio);
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Play round 1' })).toBeEnabled(),
+      );
+      vi.useFakeTimers();
+      try {
+        fireEvent.click(screen.getByRole('button', { name: 'Play round 1' }));
+        await act(async () => {
+          vi.advanceTimersByTime(3000);
+        });
+        expect(audio.play).toHaveBeenCalledTimes(1);
+        expect(screen.getByRole('status')).toHaveTextContent('playing at original speed');
+        audio.currentTime = 70.5;
+        fireEvent.timeUpdate(audio);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1);
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+      await screen.findByRole('button', { name: 'Start round 2' });
+      expect(screen.getByRole('list', { name: 'Round status' })).toHaveTextContent(
+        'Round 1: playback ended',
+      );
+      expect(calls.filter((c) => c.method === 'POST').map((c) => c.path)).toEqual([
+        '/sessions/s/shadow/rounds/1/playback-ended',
+      ]);
+    } finally {
+      observer.disconnect();
+      view.unmount();
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  },
+);
 
 it.each(['before settlement', 'after settlement'])(
   'keeps transcript hidden when a focus refetch resolves %s and advancement refresh fails',
