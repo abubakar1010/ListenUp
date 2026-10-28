@@ -544,3 +544,31 @@ test('when suggestions are unavailable the marks are listed as before', async ()
   expect(screen.queryByRole('group')).not.toBeInTheDocument();
   expect(screen.queryByText(/Suggestions are only a nudge/)).not.toBeInTheDocument();
 });
+
+test('when every mark is suggested no empty Other marks group is shown', async () => {
+  setup([], suggestionRoutes([reduction, { ...plain, suggested: true, reasons: ['linking'] }]));
+  await screen.findByRole('group', { name: 'Suggested phrases' });
+  expect(screen.queryByRole('group', { name: 'Other marks' })).not.toBeInTheDocument();
+});
+
+test('marks wait for the suggestions answer instead of regrouping under the learner', async () => {
+  let answer: (response: Response) => void = () => {};
+  setup([], {
+    ...suggestionRoutes([]),
+    [suggestionsPath]: () => new Promise<Response>((resolve) => (answer = resolve)),
+  });
+  await waitFor(() => expect(screen.getByRole('option', { name: 'Loading marks…' })).toBeVisible());
+  expect(screen.queryByRole('option', { name: /cats/ })).not.toBeInTheDocument();
+  answer(jsonResponse(200, { suggestions: [reduction, plain] }));
+  const suggested = await screen.findByRole('group', { name: 'Suggested phrases' });
+  expect(within(suggested).getByRole('option', { name: /a lot of/ })).toBeInTheDocument();
+});
+
+test('suggested phrases show even when the transcript cannot be read', async () => {
+  setup([], {
+    ...suggestionRoutes([reduction, plain]),
+    [`GET /sessions/${session.id}/transcript`]: problem(503, 'unavailable', 'Unavailable'),
+  });
+  const suggested = await screen.findByRole('group', { name: 'Suggested phrases' });
+  expect(within(suggested).getByRole('option', { name: /^a lot of · / })).toBeInTheDocument();
+});

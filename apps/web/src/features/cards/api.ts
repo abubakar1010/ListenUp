@@ -24,6 +24,8 @@ export function useCardSuggestions(id: string) {
   return useQuery({
     queryKey: suggestionsKey(id),
     retry: false,
+    // Marks are fixed once Transcript is done and earlier sessions are older still.
+    staleTime: 5 * 60_000,
     queryFn: () =>
       api<components['schemas']['CardSuggestions']>(
         `/sessions/${encodeURIComponent(id)}/cards/suggestions`,

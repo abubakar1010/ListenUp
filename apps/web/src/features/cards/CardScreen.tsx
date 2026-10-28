@@ -80,11 +80,15 @@ export function CardScreen({ session, progress }: { session: Session; progress: 
   const chosenReasons = bySuggestion.get(selected)?.suggested
     ? bySuggestion.get(selected)!.reasons.map((reason) => REASON_TEXT[reason])
     : [];
-  function phraseOf(mark: { word_from: number; word_to: number }) {
-    return words
-      .filter((word) => word.index >= mark.word_from && word.index <= mark.word_to)
-      .map((word) => word.text)
-      .join(' ');
+  // The server's phrase first; the transcript's words only when suggestions failed.
+  function phraseOf(mark: { id: string; word_from: number; word_to: number }) {
+    return (
+      bySuggestion.get(mark.id)?.phrase ||
+      words
+        .filter((word) => word.index >= mark.word_from && word.index <= mark.word_to)
+        .map((word) => word.text)
+        .join(' ')
+    );
   }
   function option(mark: (typeof markList)[number]) {
     return (
@@ -150,10 +154,17 @@ export function CardScreen({ session, progress }: { session: Session; progress: 
             required
           >
             <option value="">Choose a mark</option>
-            {suggestedMarks.length > 0 ? (
+            {/* Wait for suggestions (or their failure) so options never regroup when open. */}
+            {suggestions.isPending && markList.length > 0 ? (
+              <option value="loading" disabled>
+                Loading marks…
+              </option>
+            ) : suggestedMarks.length > 0 ? (
               <>
                 <optgroup label="Suggested phrases">{suggestedMarks.map(option)}</optgroup>
-                <optgroup label="Other marks">{otherMarks.map(option)}</optgroup>
+                {otherMarks.length > 0 && (
+                  <optgroup label="Other marks">{otherMarks.map(option)}</optgroup>
+                )}
               </>
             ) : (
               ordered.map(option)
