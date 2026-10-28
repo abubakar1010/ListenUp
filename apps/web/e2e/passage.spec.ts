@@ -1,4 +1,5 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { type Page, type Route } from '@playwright/test';
+import { expect, test } from './test';
 
 // The passage picker (#42) against a mocked API. Peaks and audio are generated here, so no
 // binary fixture is committed.

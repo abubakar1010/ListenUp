@@ -1,4 +1,5 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { type BrowserContext, type Page } from '@playwright/test';
+import { expect, test } from './test';
 
 const PASSAGE = { start_ms: 0, end_ms: 30000 };
 const SESSION = {

@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { sessionFixture } from '../src/features/session/fixtures';
 
 /** Hold a real SSE reply until the learner has edited the current step. */

@@ -38,9 +38,20 @@ function blockedMicrophone() {
     Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
 }
 
+/**
+ * Safari's Tab skips buttons and links unless Full Keyboard Access is on; Option+Tab
+ * reaches them. WebKit on macOS behaves the same, so the keyboard specs, which Tab
+ * between buttons, press Option+Tab there. Every other browser is untouched.
+ */
+const SAFARI_TAB: Record<string, string> = { Tab: 'Alt+Tab', 'Shift+Tab': 'Alt+Shift+Tab' };
+
 export const test = base.extend({
   page: async ({ page, browserName }, provide) => {
     if (browserName === 'webkit') await page.addInitScript(fakeMicrophone);
+    if (browserName === 'webkit' && process.platform === 'darwin') {
+      const press = page.keyboard.press.bind(page.keyboard);
+      page.keyboard.press = (key, options) => press(SAFARI_TAB[key] ?? key, options);
+    }
     await provide(page);
   },
 });
