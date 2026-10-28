@@ -4,10 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from listenup.ai.config import DEFAULT_CONFIG, FAKE_CONFIG, load_config
+from listenup.ai.config import DEFAULT_CONFIG, FAKE_CONFIG, load_config, parse_config
 from listenup.ai.errors import AIConfigError, AIUnavailable
+from listenup.ai.evals.runner import uses_synthetic_provider
 from listenup.ai.gateway import AIGateway, get_gateway
 from listenup.ai.ports import Role, SpeechAssessment, SpeechAssessmentPort
+from listenup.ai.providers.fake_assessment import SYNTHETIC_PROVIDERS
 from listenup.ai.registry import DEFAULT_REGISTRY
 from listenup.ai.validation import validate_assessment
 from listenup.platform.config import get_settings
@@ -79,6 +81,44 @@ def test_enabled_assessment_fakes_are_refused_in_production(provider):
     config = config.model_copy(update={"roles": {Role.SPEECH_ASSESSMENT: (entry,)}})
     with pytest.raises(AIConfigError, match="not allowed in production"):
         AIGateway(config, environment="production")
+
+
+@pytest.mark.parametrize("role", [role.value for role in Role])
+def test_disabled_fake_is_still_refused_in_production(role):
+    config = parse_config(
+        f"version: 1\nroles:\n  {role}:\n    - provider: fake\n      enabled: false\n"
+    )
+    with pytest.raises(AIConfigError, match="not allowed in production"):
+        AIGateway(config, environment="production")
+
+
+def test_disabled_default_has_no_deployment_provenance_in_production():
+    gateway = AIGateway(load_config(DEFAULT_CONFIG), environment="production")
+    with pytest.raises(AIUnavailable):
+        gateway.entry(Role.SPEECH_ASSESSMENT)
+    with pytest.raises(AIUnavailable):
+        gateway.deployment_provenance(Role.SPEECH_ASSESSMENT)
+
+
+def test_entry_skips_a_disabled_first_provider():
+    config = load_config(FAKE_CONFIG)
+    disabled = (
+        load_config(DEFAULT_CONFIG)
+        .providers(Role.SPEECH_ASSESSMENT)[0]
+        .model_copy(update={"enabled": False})
+    )
+    enabled = config.providers(Role.SPEECH_ASSESSMENT)[0]
+    config = config.model_copy(update={"roles": {Role.SPEECH_ASSESSMENT: (disabled, enabled)}})
+    assert AIGateway(config).entry(Role.SPEECH_ASSESSMENT).provider == "fake"
+
+
+def test_every_synthetic_provider_is_recognised_as_synthetic():
+    assert {"fake", "fake-assessment"} == SYNTHETIC_PROVIDERS
+    for name in SYNTHETIC_PROVIDERS:
+        assert uses_synthetic_provider({name})
+        assert uses_synthetic_provider({name, "faster-whisper"})
+    assert not uses_synthetic_provider({"faster-whisper"})
+    assert not uses_synthetic_provider(set())
 
 
 @pytest.mark.anyio

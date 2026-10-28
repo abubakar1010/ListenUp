@@ -18,9 +18,12 @@ from listenup.ai.ports import (
     SpeechAssessment,
     WordScore,
 )
+from listenup.ai.providers import fake
 
 PROVIDER = "fake-assessment"
 VERSION = "1"
+# Every provider whose output is synthetic and must never count as model evidence.
+SYNTHETIC_PROVIDERS = frozenset({fake.PROVIDER, PROVIDER})
 
 
 class FakeAssessment:
