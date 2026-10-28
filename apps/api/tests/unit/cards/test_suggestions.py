@@ -59,3 +59,9 @@ def test_blank_phrase_is_not_a_multi_word_suggestion():
 
 def test_empty_input_gives_empty_order():
     assert rank([], frozenset()) == []
+
+
+def test_earlier_phrase_match_treats_a_curly_apostrophe_as_straight():
+    # Same folding as analytics.domain.events.mark_pattern: phone keyboards type a curly one.
+    marks = [candidate("cat"), candidate("don\u2019t")]
+    assert order(marks, frozenset({"don't"})) == ["don\u2019t", "cat"]

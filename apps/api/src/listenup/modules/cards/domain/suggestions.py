@@ -36,8 +36,12 @@ class Suggestion:
 
 
 def normalize(phrase: str) -> str:
-    """The phrase compared across sessions: lower case, one space, no edge punctuation."""
-    words = (_EDGE_PUNCTUATION.sub("", word) for word in phrase.lower().split())
+    """The phrase compared across sessions: lower case, one space, no edge punctuation.
+
+    A curly apostrophe counts as a straight one, as in analytics' mark patterns.
+    """
+    folded = phrase.lower().replace("\u2019", "'")
+    words = (_EDGE_PUNCTUATION.sub("", word) for word in folded.split())
     return " ".join(word for word in words if word)
 
 
