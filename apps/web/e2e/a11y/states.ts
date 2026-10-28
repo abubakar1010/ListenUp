@@ -198,6 +198,9 @@ function session(
     '/sessions/session-1/dictation/attempt': problem(404, 'attempt_not_found', 'No attempt.'),
     '/contents/clip-1': { json: DETAIL },
     '/cards': { json: { cards: [], remaining: 2, next_cursor: null } },
+    '/sessions/session-1/cards/suggestions': {
+      json: { suggestions: [] } satisfies Schema['CardSuggestions'],
+    },
     ...answers,
   };
 }
@@ -802,6 +805,25 @@ export const STATES: ScanState[] = [
     signedIn: true,
     answers: session('blind', 2),
     ready: (page) => page.getByRole('button', { name: 'Skip Card' }),
+  },
+  {
+    name: 'card suggested phrases',
+    path: '/sessions/session-1',
+    signedIn: true,
+    answers: session('blind', 2, {
+      '/sessions/session-1/cards/suggestions': {
+        json: {
+          suggestions: [
+            { mark_id: 'm-1', phrase: 'plant', suggested: true, reasons: ['linking'] },
+            { mark_id: 'm-2', phrase: 'trees', suggested: false, reasons: [] },
+          ],
+        } satisfies Schema['CardSuggestions'],
+      },
+    }),
+    act: async (page) => {
+      await page.getByRole('combobox', { name: 'Marked phrase' }).selectOption('m-1');
+    },
+    ready: (page) => page.getByText('Suggested: tagged linking.'),
   },
   {
     name: 'shadow segment',

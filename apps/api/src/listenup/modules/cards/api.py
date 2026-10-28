@@ -48,6 +48,25 @@ async def create_card(
     return result
 
 
+@router.get(
+    "/sessions/{session_id}/cards/suggestions",
+    responses={
+        404: {"description": "`session_not_found`"},
+        409: {"description": "`step_locked`"},
+    },
+)
+async def card_suggestions(
+    session_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    learner: CurrentLearner,
+    db: DbSession,
+) -> schemas.CardSuggestions:
+    """Marked phrases, likely connected speech first. Only a suggestion: no card is made."""
+    response.headers.update(_NO_STORE)
+    return await service.suggestions(db, learner, session_id, request.app.state.transcript_database)
+
+
 @router.get("/cards")
 async def list_cards(
     response: Response,

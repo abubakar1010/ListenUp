@@ -13,6 +13,7 @@ from listenup.modules.review.domain import (
     TagUnknown,
     check_tag,
     clean_note,
+    mark_phrase,
     place_mark,
 )
 
@@ -83,3 +84,8 @@ def test_a_known_tag_or_no_tag_is_kept(tag):
 def test_any_other_tag_is_refused(tag):
     with pytest.raises(TagUnknown):
         check_tag(tag)
+
+
+def test_a_phrase_skips_removed_words_in_its_range():
+    assert mark_phrase(WORDS, 2, 4) == "of people."
+    assert mark_phrase(WORDS, 4, 4) == ""

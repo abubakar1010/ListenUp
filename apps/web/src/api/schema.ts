@@ -1051,6 +1051,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sessions/{session_id}/cards/suggestions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Card Suggestions
+     * @description Marked phrases, likely connected speech first. Only a suggestion: no card is made.
+     */
+    get: operations['card_suggestions_api_v1_sessions__session_id__cards_suggestions_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sessions/{session_id}/dictation/attempt': {
     parameters: {
       query?: never;
@@ -1568,6 +1588,28 @@ export interface components {
        * Format: date-time
        */
       reviewed_at: string;
+    };
+    /** CardSuggestion */
+    CardSuggestion: {
+      /**
+       * Mark Id
+       * Format: uuid
+       */
+      mark_id: string;
+      /** Phrase */
+      phrase: string;
+      /** Reasons */
+      reasons: ('multi_word' | 'linking' | 'reduction' | 'weak_form' | 'earlier_session')[];
+      /** Suggested */
+      suggested: boolean;
+    };
+    /**
+     * CardSuggestions
+     * @description The session's marks in the order the Card step offers them (FR-CA-4).
+     */
+    CardSuggestions: {
+      /** Suggestions */
+      suggestions: components['schemas']['CardSuggestion'][];
     };
     /** ChangeEntry */
     ChangeEntry: {
@@ -5159,6 +5201,51 @@ export interface operations {
     responses: {
       /** @description Successful Response */
       204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  card_suggestions_api_v1_sessions__session_id__cards_suggestions_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CardSuggestions'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `step_locked` */
+      409: {
         headers: {
           [name: string]: unknown;
         };

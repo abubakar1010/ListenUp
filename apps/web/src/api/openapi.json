@@ -310,6 +310,49 @@
         "title": "CardReview",
         "type": "object"
       },
+      "CardSuggestion": {
+        "properties": {
+          "mark_id": {
+            "format": "uuid",
+            "title": "Mark Id",
+            "type": "string"
+          },
+          "phrase": {
+            "title": "Phrase",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "enum": ["multi_word", "linking", "reduction", "weak_form", "earlier_session"],
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "suggested": {
+            "title": "Suggested",
+            "type": "boolean"
+          }
+        },
+        "required": ["mark_id", "phrase", "suggested", "reasons"],
+        "title": "CardSuggestion",
+        "type": "object"
+      },
+      "CardSuggestions": {
+        "description": "The session's marks in the order the Card step offers them (FR-CA-4).",
+        "properties": {
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/CardSuggestion"
+            },
+            "title": "Suggestions",
+            "type": "array"
+          }
+        },
+        "required": ["suggestions"],
+        "title": "CardSuggestions",
+        "type": "object"
+      },
       "ChangeEntry": {
         "properties": {
           "entry": {
@@ -5764,6 +5807,54 @@
           }
         },
         "summary": "Complete Cards",
+        "tags": ["cards"]
+      }
+    },
+    "/api/v1/sessions/{session_id}/cards/suggestions": {
+      "get": {
+        "description": "Marked phrases, likely connected speech first. Only a suggestion: no card is made.",
+        "operationId": "card_suggestions_api_v1_sessions__session_id__cards_suggestions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardSuggestions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "409": {
+            "description": "`step_locked`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Card Suggestions",
         "tags": ["cards"]
       }
     },
