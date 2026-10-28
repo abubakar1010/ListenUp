@@ -205,7 +205,7 @@ jobs:
           RELEASE_TAG: ${{ needs.release.outputs.release-tag }}
         run: docker buildx imagetools create --tag "$IMAGE:$RELEASE_TAG" "$IMAGE:$SHA_TAG"
       - if: steps.existing.outputs.found == 'false'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.file }}
