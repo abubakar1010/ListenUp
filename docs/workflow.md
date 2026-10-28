@@ -37,7 +37,7 @@ Owner decisions of 2026-10-28 (backlog index #119):
   is switched on in production (see `docs/legal/README.md`). YouTube intake stays
   in scope for launch behind that flag (D10) and the repository default stays off.
 - Other open dependencies keep the Ready rule above. In particular the YouTube
-  chain runs in order (#17, #37, #38, then #46, #40 and #113), and Shadow grading
+  chain runs in order (#17, #37, #38, then #46 and the YouTube halves of #93 and #105, then #40 and #113), and Shadow grading
   (#80, then #82 to #86) waits on #21 and #22, which need the Arm host (#16).
 
 Run two or three sessions at once on stories that touch different areas. Each has its own branch and pull request, so nothing needs merging by hand.
