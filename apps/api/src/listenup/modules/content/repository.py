@@ -235,7 +235,10 @@ SELECT c.id, c.title, m.source, m.status, m.duration_ms, c.created_at, {_STAGE_C
 
 async def get_content(session: AsyncSession, content_id: uuid.UUID) -> ContentRow | None:
     row = (
-        await session.execute(text(_CONTENT_COLUMNS + " WHERE c.id = :id"), {"id": content_id})
+        await session.execute(
+            text(_CONTENT_COLUMNS + " WHERE c.id = :id AND c.deleting_at IS NULL"),
+            {"id": content_id},
+        )
     ).first()
     return ContentRow(*row) if row else None
 
@@ -249,7 +252,7 @@ async def list_contents(
     """The learner's items, newest first, starting after `after` (keyset on
     contents_library_idx)."""
     params: dict[str, object] = {"learner": learner, "limit": limit}
-    where = "WHERE c.user_id = :learner"
+    where = "WHERE c.user_id = :learner AND c.deleting_at IS NULL"
     if after is not None:
         where += " AND (c.created_at, c.id) < (:after_at, :after_id)"
         params.update(after_at=after[0], after_id=after[1])
@@ -285,7 +288,7 @@ async def conversion_state(
               FROM content.uploads u
               JOIN content.media_objects m ON m.id = u.media_object_id
               JOIN content.contents c ON c.id = u.content_id
-             WHERE u.id = :upload_id AND m.id = :media_id
+             WHERE u.id = :upload_id AND m.id = :media_id AND c.deleting_at IS NULL
                FOR UPDATE OF m
             """),
             {"upload_id": upload_id, "media_id": media_id},
@@ -372,7 +375,10 @@ async def delete_content_item(session: AsyncSession, content_id: uuid.UUID) -> N
 async def retain_content(session: AsyncSession, learner: uuid.UUID, content_id: uuid.UUID) -> bool:
     return (
         await session.scalar(
-            text("SELECT id FROM content.contents WHERE id=:id AND user_id=:learner FOR KEY SHARE"),
+            text(
+                "SELECT id FROM content.contents WHERE id=:id AND user_id=:learner AND "
+                "deleting_at IS NULL FOR SHARE"
+            ),
             {"id": content_id, "learner": learner},
         )
     ) is not None
@@ -493,7 +499,7 @@ async def get_content_detail(
               FROM content.contents c
               JOIN content.media_objects m ON m.id = c.media_object_id
               LEFT JOIN content.uploads u ON u.content_id = c.id
-             WHERE c.id = :id AND c.user_id = :learner
+             WHERE c.id = :id AND c.user_id = :learner AND c.deleting_at IS NULL
             """
             ),
             {"id": content_id, "learner": learner},
@@ -519,7 +525,7 @@ async def learner_media(
             SELECT m.status, m.playback_key, m.peaks_key
               FROM content.contents c
               JOIN content.media_objects m ON m.id = c.media_object_id
-             WHERE c.media_object_id = :media_id AND c.user_id = :learner
+             WHERE c.media_object_id = :media_id AND c.user_id = :learner AND c.deleting_at IS NULL
             """),
             {"media_id": media_id, "learner": learner},
         )
@@ -534,7 +540,7 @@ async def learner_content_ids_for_media(
     rows = await session.execute(
         text("""
         SELECT id FROM content.contents
-         WHERE media_object_id = :media_id AND user_id = :learner
+         WHERE media_object_id = :media_id AND user_id = :learner AND deleting_at IS NULL
          ORDER BY id
         """),
         {"media_id": media_id, "learner": learner},
