@@ -20,10 +20,14 @@ class Segment(SegmentChoice):
 
 
 class Round(BaseModel):
+    id: uuid.UUID
     round: int
     transcript_shown: bool
     playback_status: Literal["ready", "ended"]
     recorded_at: datetime | None
+    recording_available: bool
+    # Grading is not built yet (ADR 0050): a saved recording shows no feedback.
+    feedback: Literal["unavailable"] | None
 
 
 class Rounds(BaseModel):
@@ -31,3 +35,20 @@ class Rounds(BaseModel):
     current: Round | None
     rounds: list[Round]
     text: str | None = None
+
+
+class RecordingRequest(BaseModel):
+    mime: str = Field(max_length=100)
+    size_bytes: int = Field(strict=True)
+
+
+class RecordingTarget(BaseModel):
+    url: str
+    method: str
+    headers: dict[str, str]
+    expires_at: datetime
+
+
+class RecordingUpload(BaseModel):
+    round_id: uuid.UUID
+    upload: RecordingTarget

@@ -346,7 +346,7 @@ def test_export_holds_every_learner_table_and_only_the_learners_data(
     assert segments[0]["session_id"] == str(a.sessions["shadow"])
     assert segments[0]["chosen_by"] == "system"
     assert segments[0]["mark_count"] == 0
-    assert segments[0]["locked_at"] is None
+    assert segments[0]["locked_at"] is not None  # round 1 has started (#81 seed)
     assert segments[0]["span"] == {"lower": 0, "upper": 90_000, "bounds": "[)"}
     assert {"identity.users", "content.media_objects"} <= set(tables)
     assert [row["id"] for row in tables["identity.users"]] == [str(a.user_id)]
