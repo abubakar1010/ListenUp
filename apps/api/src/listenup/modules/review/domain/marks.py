@@ -56,10 +56,15 @@ def place_mark(
     if not 0 <= word_from <= word_to < len(words):
         raise MarkOutOfRange(f"words {word_from} to {word_to} are not in the passage")
     check_length(word_from, word_to)
-    phrase = " ".join(word for word in words[word_from : word_to + 1] if word)
+    phrase = mark_phrase(words, word_from, word_to)
     if not phrase:
         raise MarkWithoutWords("those words were all removed from the transcript")
     return MarkPlace(at_ms=starts_ms[word_from], phrase=phrase)
+
+
+def mark_phrase(words: Sequence[str], word_from: int, word_to: int) -> str:
+    """The words a mark covers, skipping words removed from the transcript."""
+    return " ".join(word for word in words[word_from : word_to + 1] if word)
 
 
 def check_length(word_from: int, word_to: int) -> None:

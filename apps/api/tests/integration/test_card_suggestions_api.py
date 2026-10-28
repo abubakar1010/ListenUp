@@ -91,3 +91,15 @@ def test_other_tags_are_suggested(client, session_id, api_role_url, tag):
     client.put(f"{marks.marks_path(session_id)}/{one}/tag", json={"tag": tag})
     open_card(api_role_url, client, session_id)
     assert suggestions(client, session_id).json()["suggestions"][0]["reasons"] == [tag]
+
+
+def test_phrase_marked_only_in_a_later_session_is_not_called_earlier(
+    client, session_id, clip, api_role_url
+):
+    again = mark(client, session_id, word_from=2, word_to=2)  # "Again."
+    open_card(api_role_url, client, session_id)
+    later = start(client, clip, "dictation", passage=marks.PASSAGE)["id"]
+    finish(api_role_url, client, later, Step.DICTATION)
+    mark(client, later, word_from=2, word_to=2)
+    body = suggestions(client, session_id).json()["suggestions"]
+    assert body == [{"mark_id": again, "phrase": "Again.", "suggested": False, "reasons": []}]

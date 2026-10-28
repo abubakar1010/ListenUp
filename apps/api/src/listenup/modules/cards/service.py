@@ -107,15 +107,8 @@ async def suggestions(
 ) -> schemas.CardSuggestions:
     """FR-CA-4: the marks, likely connected-speech candidates first. Reading creates nothing."""
     await practice.require_reached(db, session_id, practice.Step.CARD)
-    marks = await review.list_marks(db, session_id)
-    transcript = await review.read_transcript(db, worker_database, learner, session_id)
-    words = {word.index: word.text for line in transcript.lines for word in line.words}
-    phrases = {
-        mark.id: " ".join(
-            words[index] for index in range(mark.word_from, mark.word_to + 1) if words.get(index)
-        )
-        for mark in marks
-    }
+    marks = await review.session_marks(db, session_id)
+    phrases = await review.mark_phrases(db, worker_database, learner, session_id, marks)
     earlier = {
         normalize(phrase)
         for phrase in await review.earlier_phrases(db, worker_database, learner, session_id)

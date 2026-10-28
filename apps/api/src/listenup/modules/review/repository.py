@@ -102,15 +102,22 @@ async def list_for_session(session: AsyncSession, session_id: uuid.UUID) -> list
 
 
 async def other_session_ranges(
-    session: AsyncSession, session_id: uuid.UUID, limit: int
+    session: AsyncSession, learner: uuid.UUID, session_id: uuid.UUID, limit: int
 ) -> list[tuple[uuid.UUID, int, int]]:
-    """The learner's newest marks outside this session, as (session, word_from, word_to)."""
+    """The learner's newest marks in sessions started before this one.
+
+    Rows are (session, word_from, word_to). The explicit learner filter keeps the
+    budget to this learner even where row-level security does not apply.
+    """
     result = await session.execute(
         text(
-            "SELECT session_id, word_from, word_to FROM practice.marks "
-            "WHERE session_id <> :session_id ORDER BY created_at DESC, id DESC LIMIT :limit"
+            "SELECT m.session_id, m.word_from, m.word_to FROM practice.marks m "
+            "JOIN practice.sessions s ON s.id = m.session_id AND s.user_id = m.user_id "
+            "WHERE m.user_id = :learner AND s.created_at < "
+            "(SELECT created_at FROM practice.sessions WHERE id = :session_id) "
+            "ORDER BY m.created_at DESC, m.id DESC LIMIT :limit"
         ),
-        {"session_id": session_id, "limit": limit},
+        {"learner": learner, "session_id": session_id, "limit": limit},
     )
     return [(row.session_id, row.word_from, row.word_to) for row in result]
 
