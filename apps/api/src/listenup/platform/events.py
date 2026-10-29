@@ -143,6 +143,8 @@ class Subscription:
 
     user_id: uuid.UUID
     queue: asyncio.Queue[_Item]
+    # A stream-ending event is queued (`account.disabled`): it stays, and nothing
+    # queued later, resync and shutdown included, may displace it.
     ending: bool = False
 
     async def next(self, timeout: float) -> _Item | None:
@@ -284,7 +286,7 @@ class EventHub:
         for subscriptions in self._streams.values():
             for subscription in subscriptions:
                 if subscription.ending:
-                    continue  # Deliver the queued terminal event before shutdown.
+                    continue  # it ends after the event it is about to deliver
                 _drain(subscription.queue)
                 subscription.queue.put_nowait(_Signal.CLOSE)
 
@@ -325,7 +327,7 @@ class EventHub:
 
     def _put(self, subscription: Subscription, item: _Item) -> None:
         if subscription.ending:
-            return
+            return  # the stream ends at its queued event; the rest comes on reconnect
         try:
             subscription.queue.put_nowait(item)
         except asyncio.QueueFull:

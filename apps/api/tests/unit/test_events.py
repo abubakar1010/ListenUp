@@ -246,6 +246,59 @@ async def test_a_full_stream_of_a_disabled_account_still_ends() -> None:
         await asyncio.wait_for(anext(stream), 1.0)
 
 
+async def assert_ends_with_account_disabled(stream: AsyncIterator[str], event_id: str) -> None:
+    (chunk,) = await drain(stream, 1)
+    assert parse(chunk)["event"] == "account.disabled"
+    assert parse(chunk)["id"] == event_id
+    with pytest.raises(StopAsyncIteration):
+        await asyncio.wait_for(anext(stream), 1.0)
+
+
+@pytest.mark.parametrize("queue_size", [1, 2, 100])
+async def test_later_events_do_not_displace_a_queued_account_disabled(queue_size: int) -> None:
+    """Notifications that arrive before the stream reads the queue (a learner restored
+    at once, a burst of progress) must not drop the event that ends the stream."""
+    hub = EventHub(queue_size=queue_size)
+    stream = await opened(hub, A)
+    disabled = hub.dispatch(A, EventType.ACCOUNT_DISABLED.value, str(A))
+
+    for number in range(5):
+        hub.dispatch(A, "job.progress", f"clip-{number}")
+
+    await assert_ends_with_account_disabled(stream, disabled.id)
+
+
+@pytest.mark.parametrize("queue_size", [1, 100])
+async def test_a_resync_does_not_displace_a_queued_account_disabled(queue_size: int) -> None:
+    hub = EventHub(queue_size=queue_size)
+    stream = await opened(hub, A)
+    disabled = hub.dispatch(A, EventType.ACCOUNT_DISABLED.value, str(A))
+
+    hub.mark_gap()
+
+    await assert_ends_with_account_disabled(stream, disabled.id)
+
+
+@pytest.mark.parametrize("queue_size", [1, 100])
+async def test_shutdown_does_not_displace_a_queued_account_disabled(queue_size: int) -> None:
+    hub = EventHub(queue_size=queue_size)
+    stream = await opened(hub, A)
+    disabled = hub.dispatch(A, EventType.ACCOUNT_DISABLED.value, str(A))
+
+    hub.close()
+
+    await assert_ends_with_account_disabled(stream, disabled.id)
+
+
+async def test_a_second_account_disabled_leaves_the_first_queued() -> None:
+    hub = EventHub(queue_size=1)
+    stream = await opened(hub, A)
+    first = hub.dispatch(A, EventType.ACCOUNT_DISABLED.value, str(A))
+    hub.dispatch(A, EventType.ACCOUNT_DISABLED.value, str(A))
+
+    await assert_ends_with_account_disabled(stream, first.id)
+
+
 async def test_a_replayed_stream_ending_event_ends_the_stream_too() -> None:
     """A reconnect that replays `account.disabled` ends like a live one (ADR 0029);
     the events after it come on the next reconnect, which names it as last seen."""
