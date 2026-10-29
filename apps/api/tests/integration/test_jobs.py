@@ -17,6 +17,7 @@ from procrastinate import schema
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.platform import jobs as platform_jobs
 from listenup.platform.database import Database
 from listenup.platform.jobs import (
     RECOVER_STALLED_JOBS,
@@ -463,6 +464,121 @@ async def test_a_stalled_job_with_a_copy_waiting_leaves_the_work_to_the_copy(
 
     assert await recover(queue) == 1
     assert [row["status"] for row in await jobs(queue)] == ["failed", "todo"]
+
+
+@pytest.mark.anyio
+async def test_a_job_restarted_after_it_was_selected_as_stalled_is_left_alone(
+    queue: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Selection and settling are separate transactions: a job taken by a live worker
+    in between is a new run, not the stalled one."""
+    async with queue.transaction() as session:
+        job_id = await enqueue(session, "test.record", n=1)
+    await stall(queue, job_id)
+    settle = platform_jobs._settle_stalled_job
+
+    async def restarted_first(database: Database, *args: Any) -> bool:
+        await stall(database, job_id, attempts=1, worker_alive=True)
+        return await settle(database, *args)
+
+    monkeypatch.setattr(platform_jobs, "_settle_stalled_job", restarted_first)
+
+    assert await recover(queue) == 0
+    [state] = await jobs(queue)
+    assert (state["status"], state["attempts"]) == ("doing", 1)
+
+
+@pytest.mark.anyio
+async def test_a_job_whose_worker_beat_again_after_selection_is_left_alone(
+    queue: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with queue.transaction() as session:
+        job_id = await enqueue(session, "test.record", n=1)
+    await stall(queue, job_id, worker_alive=True)
+    async with queue.transaction() as session:
+        await session.execute(
+            text(
+                "UPDATE procrastinate.procrastinate_workers "
+                "SET last_heartbeat = now() - '5 min'::interval"
+            )
+        )
+    settle = platform_jobs._settle_stalled_job
+
+    async def beat_first(database: Database, *args: Any) -> bool:
+        async with database.transaction() as session:
+            await session.execute(
+                text("UPDATE procrastinate.procrastinate_workers SET last_heartbeat = now()")
+            )
+        return await settle(database, *args)
+
+    monkeypatch.setattr(platform_jobs, "_settle_stalled_job", beat_first)
+
+    assert await recover(queue) == 0
+    assert (await jobs(queue))[0]["status"] == "doing"
+
+
+async def silence_workers(database: Database) -> None:
+    async with database.transaction() as session:
+        await session.execute(
+            text(
+                "UPDATE procrastinate.procrastinate_workers "
+                "SET last_heartbeat = now() - '5 min'::interval"
+            )
+        )
+
+
+@pytest.mark.anyio
+async def test_a_job_whose_silent_worker_still_has_a_row_is_settled(queue: Database) -> None:
+    async with queue.transaction() as session:
+        job_id = await enqueue(session, "test.record", n=1)
+    await stall(queue, job_id, worker_alive=True)
+    await silence_workers(queue)
+
+    assert await recover(queue) == 1
+    [state] = await jobs(queue)
+    assert (state["status"], state["attempts"]) == ("todo", 1)
+
+
+@pytest.mark.anyio
+async def test_a_job_taken_by_another_silent_worker_after_selection_is_left_alone(
+    queue: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the worker differs: attempts and heartbeat would still pass the recheck."""
+    async with queue.transaction() as session:
+        job_id = await enqueue(session, "test.record", n=1)
+    await stall(queue, job_id)
+    settle = platform_jobs._settle_stalled_job
+
+    async def taken_first(database: Database, *args: Any) -> bool:
+        await stall(database, job_id, worker_alive=True)
+        await silence_workers(database)
+        return await settle(database, *args)
+
+    monkeypatch.setattr(platform_jobs, "_settle_stalled_job", taken_first)
+
+    assert await recover(queue) == 0
+    assert (await jobs(queue))[0]["status"] == "doing"
+
+
+@pytest.mark.anyio
+async def test_a_job_on_a_later_attempt_after_selection_is_left_alone(
+    queue: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the attempt differs: the worker is the same and still silent."""
+    async with queue.transaction() as session:
+        job_id = await enqueue(session, "test.record", n=1)
+    await stall(queue, job_id)
+    settle = platform_jobs._settle_stalled_job
+
+    async def retried_first(database: Database, *args: Any) -> bool:
+        await stall(database, job_id, attempts=1)
+        return await settle(database, *args)
+
+    monkeypatch.setattr(platform_jobs, "_settle_stalled_job", retried_first)
+
+    assert await recover(queue) == 0
+    [state] = await jobs(queue)
+    assert (state["status"], state["attempts"]) == ("doing", 1)
 
 
 async def backdate_speech_jobs(database: Database, seconds: int) -> None:
