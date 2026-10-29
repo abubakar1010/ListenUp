@@ -51,10 +51,12 @@ type checking, build and size checks passed locally. Initial JavaScript was
 recorded in the PR after the remediation push. No production executable lines
 changed; the changed-line coverage gate still runs in CI.
 
-## Merge blockers retained
+## Outstanding validation and later merge authorization
 
-The owner explicitly required the review's remaining validation/policy gaps to
-be resolved before merge. This is not acceptance of the existing limitations:
+The owner initially required the review's remaining validation/policy gaps to
+be resolved before merge, then explicitly instructed merging the PR after the
+remediation and successful checks. That later instruction authorizes the merge;
+it does not establish that these checks passed or resolve release policy:
 
 - Real Safari on macOS/iOS and Chrome on Android, including recording/replay and
   second-device progress, have no new device evidence from this environment.
@@ -66,5 +68,26 @@ be resolved before merge. This is not acceptance of the existing limitations:
 - The nightly/manual matrix does not gate automatic deployment. The owner's
   release-policy question remains unresolved.
 
-Keep #99 and PR #252 open until the required evidence and policy decisions are
-available. A green automated run alone does not resolve these blockers.
+Keep #99 open for the required evidence and policy decisions. The earlier
+instruction to keep PR #252 open was superseded by the owner's merge instruction.
+A green automated run alone does not establish the missing device evidence.
+
+## Readiness race found during merge validation
+
+Push CI run 40884988278, attempt 2, on `7eec600` failed in
+`ShadowRecording.test.tsx`: `discards the recording when the round is stopped`
+could not find `Stop round 1` (737 tests passed, 1 failed). Its one-shot
+`loadedmetadata` event could precede the player's effect attaching the listener,
+so the subsequent Play click could hit a disabled button. The nearby
+`playRound` helper already handles that ordering.
+
+The test now waits for enabled Play while supplying metadata and verifies an
+active recorder before Stop. The track-stop and no-upload assertions remain.
+This repairs the test setup without changing product code or relaxing a check.
+
+Observed failure before this edit: `pnpm test:coverage` in the CI run above.
+After the edit, `pnpm exec vitest run
+src/features/shadow/ShadowRecording.test.tsx` passed all 8 tests. The focused
+format check and `pnpm typecheck` also passed. Final full CI results are in the
+PR. The initial cancelled push run and its failed rerun remain disclosed;
+neither is claimed as a pass or a fix by retry.
