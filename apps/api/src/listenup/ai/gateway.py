@@ -28,7 +28,7 @@ from listenup.ai.ports import (
     Transcript,
     Usage,
 )
-from listenup.ai.providers import fake
+from listenup.ai.providers import fake, fake_assessment
 from listenup.ai.registry import DEFAULT_REGISTRY, Registry
 from listenup.ai.validation import (
     revalidate,
@@ -93,7 +93,12 @@ class AIGateway:
                         f"no {role.value} adapter named {entry.provider!r}; "
                         f"known: {', '.join(sorted(known))}"
                     )
-                if entry.provider == fake.PROVIDER and environment == "production":
+                # `fake-assessment` ships registered but disabled in the packaged config
+                # (ADR 0074); any other fake is refused whether or not it is enabled.
+                if environment == "production" and (
+                    entry.provider == fake.PROVIDER
+                    or (entry.provider == fake_assessment.PROVIDER and entry.enabled)
+                ):
                     raise AIConfigError(
                         f"the fake {role.value} provider is not allowed in production"
                     )
@@ -105,7 +110,7 @@ class AIGateway:
 
     def entry(self, role: Role) -> ProviderEntry:
         """The provider the gateway calls for this role."""
-        providers = self._config.providers(role)
+        providers = [e for e in self._config.providers(role) if e.enabled]
         if not providers:
             raise AIUnavailable(role, "no provider configured")
         return providers[0]
