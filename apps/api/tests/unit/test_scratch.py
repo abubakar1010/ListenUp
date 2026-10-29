@@ -243,3 +243,33 @@ def test_media_child_receives_a_lifetime_lease(tmp_path, monkeypatch):
 
     monkeypatch.setattr(media_sandbox, "run_process", child)
     asyncio.run(media_sandbox.run_job("content.convert_upload", JobDeps(None, 1, 1), {}, 600))
+
+
+def test_lease_survives_the_real_media_launcher(tmp_path):
+    import fcntl
+
+    from listenup.platform.media_sandbox import run_process
+
+    async def go():
+        with (
+            scratch.directory(str(tmp_path), prefix="media-job-") as path,
+            (path / scratch.MARKER).open("rb") as lease,
+        ):
+            fcntl.flock(lease, fcntl.LOCK_SH)
+            await run_process(
+                [
+                    sys.executable,
+                    "-c",
+                    "import os,sys; "
+                    "assert os.read(int(sys.argv[1]),100)==b'listenup-scratch-v1\\n'",
+                    str(lease.fileno()),
+                ],
+                b"",
+                seconds=20,
+                memory_mb=512,
+                cpu_seconds=10,
+                pass_fds=(lease.fileno(),),
+            )
+        assert not path.exists()
+
+    asyncio.run(go())

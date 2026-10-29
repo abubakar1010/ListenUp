@@ -23,7 +23,7 @@ legal advice remains required before beta, launch and production YouTube enablem
 8. Give only the maintenance child its pool root and sweep export scratch separately.
 9. Keep legacy/unrelated scratch and refuse symlink/FIFO ownership markers.
 10. Publish privacy/voice `2026-2` labels; retain previous accepted texts unchanged.
-11. Use ADR 0087 (main ends at 0085, open #247 uses 0086); restore E2's 0074 reference.
+11. Use ADR 0087 (#247 owns 0086, now merged on main); restore E2's 0074 reference.
 12. Record tests honestly, run applicable checks and re-review material changes.
 
 ## Actual red/green records
@@ -43,6 +43,9 @@ Additional scratch denial/error/lease cases, the exact retention boundary cases
 (one microsecond before/at/after), and the full non-recording-column preservation
 assertion were added as characterization/strengthening after the initial fixes;
 they are not claimed as separately observed pre-implementation Red cycles.
+The real-launcher lease contract was added as characterization; a separate process
+that removes descriptor inheritance from the subprocess boundary makes it fail,
+confirming the test detects loss of the orphan-child protection.
 The original builder's missing-module failure and later broad Red claims remain
 historical author reports; this session cannot establish their chronology.
 
@@ -58,14 +61,34 @@ than deleting it, preserving the future grading parent.
 
 ## Verification
 
-- Focused neighboring suite: 136 passed (retention, scratch, recording, exports,
-  consent, supervisor, worker registration).
+Source fix: `ea39d4b`. Current main `39dffb1` (#247 restore checks) was subsequently
+merged cleanly; final aggregate CI and independent re-review of the combined head
+remain required before merge.
+
+- Focused neighboring suite: 136 passed. Focused coverage after the final FIFO fix:
+  137 passed, complete runtime inventory, **98% changed executable lines**; only
+  scratch race-guard lines 63 and 72 uncovered. No coverage exclusion was changed.
+- Added real-launcher lease contract: passes; removal of inherited descriptors in
+  an isolated process makes it fail as expected. This is characterization/mutation
+  evidence, not a fabricated pre-implementation Red record.
 - Ruff lint/format passed; mypy passed (214 source files); six import contracts kept.
 - Disposable PostgreSQL 16: upgrade, drift check, downgrade one, upgrade and drift
   check passed. `alembic heads`: exactly `93_shadow_retention`; parent is
   `89_content_deletion`. No new table/grant/RLS policy is introduced.
-- Full final backend coverage, performance, web checks, changed-line coverage,
-  deployed media sandbox check and final CI/re-review: pending at this checkpoint.
-  No pending result is a pass. Results will be updated after completion.
+- CI on `ea39d4b`: **2,616 backend tests passed**, one opt-in real-model test skipped;
+  required PostgreSQL and S3 flags were set. Separate performance: **1 passed**;
+  spike regression checks: **106 passed**. Required changed-line coverage passed.
+- Local web: **739 tests passed**; lint/format/types/build/size passed. Initial JS
+  126.7 KB gzip (200 KB budget). CI browser smoke, accessibility, deployed media
+  sandbox/real scanner, API client and vulnerability checks passed. Deploy checks,
+  including Arm64 images, passed.
+- The first CI worker-media image build failed during apt dependency installation:
+  Debian returned a package whose size differed from the index (mirror sync).
+  Failed/cancelled image jobs were requeued. Final aggregate CI is still required.
+- Broad local backend/browser runs were stopped in favor of complete CI evidence;
+  they are not passing results. The local browser run had 23 passes before being
+  interrupted; 238 cases did not run. A local scoring performance run failed under
+  concurrent coverage/browser load, then passed after that load stopped; CI's
+  separate uninstrumented performance run also passed. Neither result is hidden.
 - Actual-host performance and real speech-model acceptance remain outside this
   retention change and are not established by synthetic/unit/CI results.
