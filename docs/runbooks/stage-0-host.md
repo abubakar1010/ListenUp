@@ -1,151 +1,235 @@
-# Stage 0 host: provision and record (spike #16)
+# Stage 0 benchmark host: provision and verify (#16)
 
-For the owner. About 30 minutes if Oracle has capacity. Choice and limits: [ADR 0073](../adr/0073-stage-0-host-oracle-always-free-arm.md) (Proposed until step 9 is done). What runs on the host afterwards: [deploy.md](deploy.md). Nothing secret goes into the repository: private keys stay on your machine and in GitHub's secret store; only public keys and host facts are pasted anywhere.
+Status, 2026-10-29: **blocked on authorized OCI/SSH access; no benchmark host verified**.
+Owner-approved choice: Oracle Always Free Arm `VM.Standard.A1.Flex`, **2 OCPUs and
+12 GB nominal RAM**, Ubuntu 24.04 aarch64, 100 GB boot volume. See
+[ADR 0073](../adr/0073-stage-0-host-oracle-always-free-arm.md), still Proposed until
+the host and team access are verified.
 
-**Read first.** Oracle's free Arm allowance is now **2 OCPUs and 12 GB** (checked 2026-10-27), not the 4 cores and 16 GB the design assumed. The release workflow also builds **amd64 images only**, so this VM cannot run a release until the follow-ups in ADR 0073 are done. The VM is still the right place to run benchmarks B1 to B4 now (build the media image on the VM, step 8).
+This explicitly differs from #16's original **four-core** target and the design's
+four-core/16 GB assumption. It is an initial benchmark host, with no four-core,
+learner-capacity or performance claim. All performance targets remain unchanged.
+The managed development environment and Arm CI runners are not this host.
 
-## 1. Account (10 minutes)
+PRs [#238](https://github.com/abubakar1010/ListenUp/pull/238) and
+[#239](https://github.com/abubakar1010/ListenUp/pull/239) are merged: all six images
+have amd64/arm64 build support, and Parselmouth compiles in a throwaway stage.
+Native Arm CI build/import checks are evidence of build support. They do not
+verify a real published Release, this host's runtime, model quality or performance.
+Those layers remain unverified by #16. Do not start a Release to provision the host.
 
-1. Sign up at [oracle.com/cloud/free](https://www.oracle.com/cloud/free/) with a card (identity check; Always Free resources are not billed). Use one email you control for recovery.
-2. **Choose the home region carefully.** It cannot be changed, and Always Free VMs and volumes can only be created there. Pick a region you can reach with low latency; for a US audience a region other than the busiest ones is more likely to have Arm capacity (capacity is not guaranteed anywhere). Do not pick South Korea North (Chuncheon): no free A1 there.
-3. Turn on multi-factor sign-in for the account.
-4. In **Billing → Cost analysis**, check the account shows no paid resources. Do not upgrade to pay as you go unless step 4's capacity problem needs it (ADR 0073, fallback 1).
+## 1. Owner actions to unblock access
 
-## 2. SSH keys (3 minutes, on your machine)
+1. **Confirm account eligibility in Oracle Console.** Sign in or complete account
+   setup yourself, including identity/card verification and MFA. Choose the home
+   region carefully; it cannot be changed. Confirm the recurring Always Free
+   allowance for **2 OCPUs/12 GB without trial credits**, existing A1 allocations,
+   and remaining free boot/block storage (historical allowance: 200 GB combined).
+   Check that the proposed disk, IP, networking, traffic and any backups incur no
+   charges. Quota or a “free eligible” badge alone is not billing confirmation.
+   Do not upgrade the account, consume credits or create paid resources.
+2. **Choose an access route.** Prefer an existing authorized host if one exists.
+   Otherwise either configure scoped OCI provisioning credentials and a supported
+   SSH identity in the cloud environment's secure configuration, or create the
+   VM using step 2 and run steps 3–4 from your own machine. Never send passwords,
+   API credentials or private keys in chat or commit them. For remote work through
+   the cloud environment, also configure a TCP destination grant for the exact
+   host/SSH endpoint; unrestricted HTTP does not grant raw SSH access. Use the
+   supported environment configuration workflow, not edits to its policy file.
+3. **Return only non-secret confirmation:** account setup complete; home region;
+   recurring 2/12 eligibility without credits; existing/free allocation remaining;
+   existing instance or creation state/capacity error; and the access method.
+   For a host, supply host/account/port and a trusted Ed25519 fingerprint, or a
+   team-accessible controlled record containing them. Identify the access owner
+   and each authorized team member who will verify their own connection.
 
-Make one key for you and one for the release workflow. Keys never enter the repository.
+Observed blocker in this session: no cloud identities, secret bindings or runtime
+variables were configured; OCI CLI/profile and SSH config/known-hosts/agent were
+absent; no host endpoint was supplied. The TCP policy grants no destinations.
+The owner selected the Console/local-verification route; no results have yet been
+returned. Account eligibility and capacity have **not** been tested by this session. No provider create or
+SSH call was attempted. Documentation preparation continues independently.
 
-```sh
-ssh-keygen -t ed25519 -C "listenup-owner"      -f ~/.ssh/listenup_owner   # your login
-ssh-keygen -t ed25519 -C "listenup-release"    -f ~/.ssh/listenup_release -N ""   # GitHub's key, no passphrase
-```
+## 2. Create or identify the approved VM
 
-Keep `listenup_release` (private) only for step 7. You will paste the two **`.pub`** files below.
+First inventory any existing authorized instance and its workloads. Do not replace
+or resize a host without checking ownership. For a fresh VM, use Oracle Console →
+Compute → Instances → Create instance:
 
-## 3. Network: security list (3 minutes)
-
-Console → Networking → Virtual cloud networks → your VCN → the public subnet's **Security list** → add **ingress rules** (source `0.0.0.0/0`, stateful):
-
-| Protocol | Port | Why |
-| --- | --- | --- |
-| TCP | 22 | SSH. GitHub's runners connect from changing addresses, so it cannot be limited to your own address; key-only login and fail2ban protect it. To reduce scanning, set another port and `LISTENUP_DEPLOY_SSH_PORT` (deploy.md step 11). |
-| TCP | 80 | HTTP, redirected to HTTPS; ACME challenge. |
-| TCP | 443 | HTTPS. |
-| UDP | 443 | HTTP/3. |
-
-Nothing else. If you create the VM from the wizard's default VCN, it already has an ingress rule for 22. Egress stays at the default allow-all.
-
-## 4. Create the VM (5 minutes)
-
-Console → Compute → Instances → **Create instance**.
-
-| Field | Value |
+| Field | Approved value/check |
 | --- | --- |
 | Name | `listenup-stage0` |
-| Placement | Your home region. Any availability domain; if you get "out of host capacity", try the other availability domains, then wait and retry later in the day. |
-| Image | **Canonical Ubuntu 24.04** (aarch64 build; the wizard picks the right one for an Ampere shape) |
-| Shape | Change shape → Ampere → **VM.Standard.A1.Flex**, **2 OCPUs, 12 GB** (the whole free allowance). Total A1 across the tenancy must stay at 2 OCPUs and 12 GB: check Compute → Instances for old instances first. |
-| Networking | The public subnet, **assign a public IPv4 address** |
-| SSH keys | Paste `~/.ssh/listenup_owner.pub` |
-| Boot volume | **Specify a custom size: 100 GB** (Always Free storage is 200 GB in total for boot and block volumes) |
-| Advanced → Cloud-init | Paste the script below (or leave empty and run `provision-host.sh` by hand in step 5) |
+| Region/placement | Tenancy home region; record availability domain |
+| Shape | `VM.Standard.A1.Flex`, **2 OCPUs, 12 GB**; check aggregate tenancy use fits the recurring allowance |
+| Image | Official Canonical Ubuntu 24.04, aarch64; record image identifier |
+| Boot volume | 100 GB, free-eligible performance; total existing boot/block use must remain within verified free storage |
+| Networking | Team-reachable route; confirm any public IP/networking costs before creation |
+| Ingress | TCP 22 only from authorized team source ranges, or a verified VPN/bastion route; do not expose Docker API or open application ports |
+| SSH keys | Authorized people's public keys only; private keys stay with their owners |
+| Cloud-init | Leave empty; use the Docker-only steps below |
 
-Cloud-init (user data). Replace `<RELEASE_PUBLIC_KEY>` with the single line from `~/.ssh/listenup_release.pub`. It is a public key, so it is safe to paste.
+If no A1 capacity is available, try another availability domain in the home
+region or wait. Record the exact non-secret error and time. If account eligibility
+or capacity remains unavailable, stop and ask the owner for a new decision;
+no paid/trial-credit fallback is authorized.
 
-```yaml
-#cloud-config
-package_update: true
-packages: [git]
-runcmd:
-  - [bash, -c, "git clone --depth 1 https://github.com/abubakar1010/ListenUp.git /root/listenup-src && LISTENUP_DEPLOY_PUBKEY='<RELEASE_PUBLIC_KEY>' bash /root/listenup-src/infra/deploy/provision-host.sh > /var/log/listenup-provision.log 2>&1"]
-```
+Do not run `infra/deploy/provision-host.sh` for this limited task: that existing
+script also creates a release-workflow user, adds swap and opens web ports.
+Those broader deployment changes are unnecessary for #16. It is not modified here.
+Production setup belongs to [#112's deployment runbook](deploy.md).
 
-The clone works only while the repository is public. If it is private, leave cloud-init empty and copy `infra/deploy/provision-host.sh` over in step 5.
+## 3. Verify team SSH and install Docker
 
-If creation fails with "out of host capacity" for every availability domain over a few days, stop and see ADR 0073 (fallback). A third-party retry script exists but is not reviewed or endorsed here.
+1. Using the provider console or another trusted channel, obtain the server's
+   fingerprint with `sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`.
+   Compare it with the client-observed host key before accepting the key.
+   `ssh-keyscan` alone is not authentication. Use strict host-key checking for
+   subsequent connections; never use `StrictHostKeyChecking=no`.
+2. Install each authorized team member's public key in their intended account.
+   Prefer separate named accounts; grant sudo only to designated maintainers.
+   Keep the existing working SSH/console recovery route during setup. Record a
+   separate successful connection by each intended team operator using their own
+   key, with verifier and timestamp. A bootstrap login alone is not team access.
+3. Copy the install commands below to the **actual approved VM**. Inspect any
+   existing Docker/containerd installation and workloads first; do not blindly
+   remove packages or overwrite daemon configuration. For an already installed
+   compatible version, verify it rather than reinstalling it.
 
-## 5. First login and provisioning (5 minutes)
-
-```sh
-ssh -i ~/.ssh/listenup_owner ubuntu@<public ip>
-tail -f /var/log/listenup-provision.log      # if you used cloud-init; ends with the Docker versions
-```
-
-Without cloud-init, copy the script and run it (the default user `ubuntu` has sudo):
-
-```sh
-scp -i ~/.ssh/listenup_owner infra/deploy/provision-host.sh ubuntu@<public ip>:
-ssh -i ~/.ssh/listenup_owner ubuntu@<public ip> \
-  "LISTENUP_DEPLOY_PUBKEY='$(cat ~/.ssh/listenup_release.pub)' sudo -E bash provision-host.sh"
-```
-
-What the script does (read it first: `infra/deploy/provision-host.sh`): installs Docker Engine and the Compose plugin from Docker's apt repository (deploy.md needs Engine 28+ and Compose 2.24+), creates the `deploy` user in the `docker` group with only the release **public** key, turns off password and root SSH, adds a 4 GB swap file, opens ports 80, 443/tcp and 443/udp in the host's iptables (Oracle's Ubuntu image rejects everything but SSH there, in addition to the security list), and enables fail2ban and unattended upgrades. It creates `/opt/listenup`. It does not create `.env` (deploy.md step 9).
-
-**Check.** From your machine, `ssh -i ~/.ssh/listenup_release deploy@<public ip> docker version` prints Client and Server versions; Engine must be 28 or later. Ports: `nc -vz <public ip> 443` fails until Caddy runs, but is **not** "filtered"; test again after the first deploy.
-
-## 6. Record the host facts (2 minutes)
-
-From your machine:
+Follow the [official Docker Ubuntu installation guide](https://docs.docker.com/engine/install/ubuntu/).
+On a fresh Ubuntu 24.04 VM:
 
 ```sh
-scp -i ~/.ssh/listenup_owner infra/deploy/host-facts.sh ubuntu@<public ip>:
-ssh -i ~/.ssh/listenup_owner ubuntu@<public ip> bash host-facts.sh
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+sudo tee /etc/apt/sources.list.d/docker.sources >/dev/null <<EOF_DOCKER
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: noble
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF_DOCKER
+sudo apt-get update
+apt-cache policy docker-ce docker-ce-cli docker-compose-plugin
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+sudo docker version
+sudo docker compose version
+sudo docker buildx version
 ```
 
-It prints the date, architecture, OS, kernel, **CPU model, cores, threads per core, memory, swap, disk**, cgroup version (the deploy rehearsal ran on cgroup v1; this host should be v2), Docker and Compose versions, and the Arm CPU feature flags. It reads nothing secret. Paste the output into the table below in a pull request (or a comment on #16), with these two extra checks:
+Require **server Engine 28+ and Compose 2.24+**, and record exact observed versions.
+Use `sudo docker`; Docker group membership grants root-equivalent control and is
+not required for all team members. Keep normal CA/TLS verification enabled.
+Do not install application secrets, production Actions SSH keys, model weights or
+application services. Do not set `LISTENUP_DEPLOY_ENABLED=true`.
+
+## 4. Record hardware and smoke-check Docker
+
+Run only on the actual host. Save safe output and timestamps for the inventory;
+do not dump the environment, credential files, Docker config or application state.
+`infra/deploy/host-facts.sh` is an optional summary; the checks below also record
+usable CPU, byte counts and Docker enforcement.
 
 ```sh
-docker run --rm --platform linux/arm64 python:3.12-slim python -c "import platform; print(platform.machine())"   # aarch64
-for i in python:3.12-slim node:22-alpine caddy:2.10.2-alpine haproxy:3.2.4-alpine; do
-  echo "$i: $(docker buildx imagetools inspect "$i" | grep -c 'linux/arm64')"; done   # each must be 1 or more
+date -u +'%Y-%m-%dT%H:%M:%SZ'
+cat /etc/os-release
+uname -srmo
+lscpu
+nproc
+free -b
+swapon --show --bytes
+lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS
+df -B1 / /var/lib/docker
+stat -fc %T /sys/fs/cgroup
+dpkg-query -W docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl is-active docker
+sudo docker info --format 'Architecture={{.Architecture}} CPUs={{.NCPU}} Memory={{.MemTotal}} Cgroup={{.CgroupVersion}} Driver={{.CgroupDriver}}'
+sudo docker run --rm hello-world
+sudo docker image inspect hello-world --format 'Architecture={{.Architecture}} Digests={{json .RepoDigests}}'
 ```
 
-| Fact | Value |
+Require aarch64/arm64, two usable cores, and RAM consistent with the approved
+12 GB allocation, recording provider GB versus guest GiB. If nested or otherwise
+constrained, record host CPU quota/cpuset; visible processors alone are insufficient.
+Record root/Docker disk capacity and free bytes, disk type and any swap. Swap is
+not RAM; do not disable existing swap blindly. No stress test is required.
+
+Use a disposable generic container for resource checks. These limits are smoke
+values, not application budgets:
+
+```sh
+sudo docker run --rm --platform linux/arm64 --cpus=1 --memory=256m --memory-swap=256m --pids-limit=64 ubuntu:24.04 sh -ec '
+  uname -m
+  test -f /sys/fs/cgroup/cgroup.controllers
+  cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory.swap.max /sys/fs/cgroup/pids.max
+  sed -n "/^Seccomp:/p" /proc/self/status
+'
+sudo docker image inspect ubuntu:24.04 --format 'Architecture={{.Architecture}} Digests={{json .RepoDigests}}'
+sudo docker network create --internal --driver bridge --opt com.docker.network.bridge.gateway_mode_ipv4=isolated listenup-stage0-check
+sudo docker network inspect listenup-stage0-check --format 'Internal={{.Internal}} Options={{json .Options}}'
+sudo docker network rm listenup-stage0-check
+```
+
+For the Ubuntu 24.04/cgroup-v2 setup, require `cpu.max` quota/period ratio **1**,
+`memory.max` **268435456**, `memory.swap.max` **0**, `pids.max` **64**, and Seccomp
+**2**. Require `Internal=true` and gateway mode `isolated`; remove only the test
+network created above. If that name already exists, inspect ownership and choose
+an unused test name. Missing controllers, unsupported limits, Docker warnings or
+unexpected values are failures to investigate, not a pass. For an existing host
+using cgroup v1, document it and verify equivalent CPU/memory/memsw/pids controls
+before accepting it; these v2 commands do not prove v1 support.
+
+These checks prove basic Docker execution and configured limit support, not
+complete media sandbox enforcement, real-model performance or production readiness.
+Current production media limits are 18 GiB memory with **no container swap**;
+that ceiling exceeds this host's RAM. #16 changes no limits or worker concurrency.
+A later workload session must establish and record appropriate benchmark budgets.
+
+## 5. Host inventory
+
+Fill only with observed evidence. Never copy expected values into observed fields.
+Endpoint details may live in a controlled team-accessible record; credentials must
+remain outside the repository. Preserve command output in a sanitized evidence
+record linked here when verification is possible.
+
+| Fact | Observed value |
 | --- | --- |
-| Date, UTC | _to fill_ |
-| Cloud, region, availability domain, shape | _Oracle, ?, ?, VM.Standard.A1.Flex_ |
-| Architecture, OS, kernel | _to fill_ |
-| CPU model, cores, threads per core | _to fill_ |
-| Memory, swap | _to fill_ (expect 12 GiB) |
-| Disk (root total, free) | _to fill_ (expect about 100 GB) |
-| cgroup, Docker, Compose | _to fill_ |
-| `arm64` manifests for the four base images | _to fill_ |
+| Verification date/time, UTC | Pending |
+| Provisioning state | No authorized host supplied or verified in this session; #16 open |
+| Host/access/rebuild owner | Pending owner confirmation |
+| Account recurring free eligibility and existing allocations | Pending; no credits, upgrade or paid resources authorized |
+| Provider, region, AD, shape, instance/image identifier | Pending; approved shape is A1.Flex 2 OCPUs / 12 GB, not an observed allocation |
+| CPU model, architecture, topology, usable cores, quota/cpuset | Pending |
+| RAM total/available bytes; provider GB versus guest GiB | Pending |
+| Swap size/device | Pending |
+| Root/Docker disk type, total/free bytes | Pending |
+| OS, kernel, cgroup version/driver | Pending |
+| Docker server/CLI, Compose, Buildx, containerd versions | Pending |
+| SSH endpoint/account/port or controlled team-access record | Pending |
+| Host-key fingerprint and trusted verification channel | Pending |
+| Team operators' separate successful SSH verification/timestamps | Pending |
+| hello-world result, architecture and digest | Not run on benchmark host |
+| CPU/memory/swap/pids/seccomp output and test image digest | Not run on benchmark host |
+| Internal/isolated bridge result and cleanup | Not run on benchmark host |
+| Real published Arm Release / application performance | Unverified; outside #16 |
+| Production / automatic deployment | Not performed / not enabled by this task |
 
-## 7. Give the GitHub deploy workflow access (5 minutes)
+## 6. Completion and separate-session handoff
 
-Settings → Environments → **production** (create it; optionally add yourself as required reviewer). Add:
+Keep ADR 0073 Proposed until the host exists and team access plus checks succeed.
+One PR must contain the observed inventory, evidence and ADR update. Use **Refs
+#16**, not an automatic closing keyword. The owner merges after required CI and
+fresh-session review; keep #16 open until its revised two-core acceptance criteria
+are actually satisfied. A documentation-only merge does not satisfy them.
 
-| Kind | Name | Value |
-| --- | --- | --- |
-| Secret | `DEPLOY_HOST` | the VM's public IP or DNS name |
-| Secret | `DEPLOY_USER` | `deploy` |
-| Secret | `DEPLOY_SSH_KEY` | the **private** key file `~/.ssh/listenup_release` (the whole file, as the secret value) |
-| Secret | `DEPLOY_SSH_KNOWN_HOSTS` | the output of `ssh-keyscan -t ed25519 <public ip>`. First check its fingerprint (`ssh-keygen -lf` on that line) equals `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` run on the VM over your own login |
-| Variable | `LISTENUP_PUBLIC_URL` | `https://<domain>` once DNS exists |
-
-Do **not** set `LISTENUP_DEPLOY_ENABLED` to `true` yet: the images are amd64 only (ADR 0073 follow-up 1, [#231](https://github.com/abubakar1010/ListenUp/issues/231)) and the database, storage, SMTP and DNS steps of [deploy.md](deploy.md) come first. Test the SSH access by hand with the release key (step 5's check) and delete the private key from your machine once it is in GitHub, or keep it in a password manager. Rotation: deploy.md, "Secrets and their rotation".
-
-## 8. Run the benchmarks on this VM (outside this runbook's 30 minutes)
-
-On the VM, as `deploy`, with the repository checked out (`git clone` over HTTPS):
-
-1. Build the media image natively for arm64: `docker build -f infra/docker/backend.Dockerfile --target worker-media -t listenup-worker-media:arm64-test .`. **Expect the `praat-parselmouth` step to compile from source** (no Arm wheel exists); if it fails because CMake or a C++ compiler is missing, that confirms ADR 0073 follow-up 2, and the build output goes in the record. Report how long it took.
-2. Use a `compose.host.yml`-style override of `mem_limit: 7g` and `memswap_limit: 9g` for `worker-media` (the file's 18g is more than the VM has) and run one media process of 2 threads. Record the peak resident memory (`docker stats`).
-3. Run B1 to B4 per `docs/spikes/` and compare per-core-second numbers with ADR 0034's. Run B5 on a 4-vCPU trial-credit VM instead (ADR 0073, decision 3).
-4. Weekly: `docker stats --no-stream` and `uptime`. Oracle may reclaim a VM whose CPU (95th percentile), network and memory are **all** below 20% for 7 days (checked 2026-10-27); a loaded speech model keeps memory above 20% but CPU is idle between runs. If you see a reclaim notice, tell the team; do not add a fake load generator.
-
-## 9. Finish the spike
-
-1. Open a pull request that fills the table in step 6 and changes ADR 0073's status to **Accepted** (or a new ADR if the fallback was used). Link it to #16 (`Refs #16`).
-2. Close #16 when the acceptance criteria hold: a VM with Docker is reachable by the team and documented here, and the ADR records the host, its limits on the date, and the fallback.
-3. Check the Arm follow-ups [#231](https://github.com/abubakar1010/ListenUp/issues/231), [#232](https://github.com/abubakar1010/ListenUp/issues/232), [#233](https://github.com/abubakar1010/ListenUp/issues/233) and [#234](https://github.com/abubakar1010/ListenUp/issues/234) are done or consciously deferred before the live cutover (#112).
-
-## Troubleshooting
-
-| Symptom | Cause and fix |
-| --- | --- |
-| "Out of host capacity" | Try another availability domain; retry later; see ADR 0073 fallback 1. |
-| SSH works, ports 80/443 time out | The security list (step 3) or host iptables (`sudo iptables -S INPUT`) is missing the rule. |
-| `permission denied` for `docker` | You are not in the `docker` group yet: log out and in, or use the `deploy` user. |
-| `exec format error` on a pulled image | The image is amd64 only: ADR 0073 follow-up 1 ([#231](https://github.com/abubakar1010/ListenUp/issues/231)). |
-| The instance was stopped by Oracle | Idle or over-limit reclaim; check that total A1 is 2 OCPUs and 12 GB and read ADR 0073. |
+**#17 readiness: blocked.** No real host, team SSH or Docker/resource check has
+been verified. After those gates succeed, record readiness for a separate #17
+feasibility session on the two-core host. Do not run #17's video measurements,
+implement YouTube intake, run B1–B5, deploy production or enable automatic deployment
+in this session. Image build support and host provisioning alone establish no
+performance target result. #233 owns speech remeasurement; #112/#155 retain
+application deployment and launch-validation gates.
