@@ -1,5 +1,5 @@
 import { type Page } from '@playwright/test';
-import { expect, onMacWebKit, test } from './test';
+import { browserCheck, expect, MAC_WEBKIT_HEADERS, onMacWebKit, test } from './test';
 
 const LEARNER = {
   id: '1',
@@ -113,7 +113,13 @@ test('reference correction by keyboard updates score and Edited marker at 360px'
       expect(request.postDataJSON()).toEqual({ word_index: 0, corrected_text: 'cap' });
       expect(request.headers()['idempotency-key']).toBeTruthy();
       // Playwright's WebKit on macOS does not show these request headers to the test.
-      if (!onMacWebKit()) expect(request.headers()['x-csrf-token']).toBeTruthy();
+      await browserCheck(
+        'mutation sends the CSRF request header',
+        onMacWebKit() ? MAC_WEBKIT_HEADERS : undefined,
+        () => {
+          expect(request.headers()['x-csrf-token']).toBeTruthy();
+        },
+      );
       await saveResponse;
       edited = true;
       return route.fulfill({ json: result() });

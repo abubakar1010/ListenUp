@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 import { type Page } from '@playwright/test';
-import { WEBKIT_NO_REDIRECT_MOCK, expect, test } from './test';
+import { browserCheck, WEBKIT_BLOB_BODY, WEBKIT_NO_REDIRECT_MOCK, expect, test } from './test';
 import { expectFocusKept } from './focus';
 
 const LEARNER = {
@@ -290,7 +290,13 @@ test('a learner uploads a clip with progress and sees it in the library', async 
   const clip = page.getByRole('listitem').filter({ hasText: 'street-trees-talk' });
   await expect(clip).toContainText('Processing');
   // Playwright's WebKit cannot read a Blob request body, so the size is checked elsewhere.
-  if (browserName !== 'webkit') expect(putBody).toBe(256 * 1024);
+  await browserCheck(
+    'uploaded clip body has the selected file size',
+    browserName === 'webkit' ? WEBKIT_BLOB_BODY : undefined,
+    () => {
+      expect(putBody).toBe(256 * 1024);
+    },
+  );
 });
 
 test('a file of the wrong type is refused before it is sent', async ({ page }) => {

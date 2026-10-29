@@ -1,4 +1,5 @@
 import { expect, test as base, type Page } from '@playwright/test';
+import { recordingSkipReason } from './recording-policy';
 
 export { expect };
 
@@ -83,10 +84,35 @@ export const WEBKIT_NO_REDIRECT_MOCK =
  * Playwright's Linux WebKit build ships without MediaRecorder, so a recording cannot
  * be made there. The same specs run on WebKit on macOS in the cross-browser workflow.
  */
-export async function skipWithoutMediaRecorder(page: Page) {
-  const present = await page.evaluate(() => typeof MediaRecorder !== 'undefined');
-  test.skip(!present, 'this browser build has no MediaRecorder, so no recording can be made');
+export async function requireRecording(page: Page, browserName: string, mp4Required: boolean) {
+  const { present, mp4 } = await page.evaluate(() => ({
+    present: typeof MediaRecorder !== 'undefined',
+    mp4: typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/mp4'),
+  }));
+  const reason = recordingSkipReason(browserName, process.platform, present, mp4, mp4Required);
+  test.skip(Boolean(reason), reason);
 }
+
+/** Preserve the flow while explicitly reporting an assertion the driver cannot run. */
+export async function browserCheck(
+  name: string,
+  skipReason: string | undefined,
+  check: () => void | Promise<void>,
+) {
+  await test.step(name, async (step) => {
+    if (skipReason) {
+      test
+        .info()
+        .annotations.push({ type: 'skipped-check', description: `${name}: ${skipReason}` });
+      step.skip(true, skipReason);
+    }
+    await check();
+  });
+}
+
+export const WEBKIT_BLOB_BODY = "Playwright's WebKit driver does not expose Blob request bodies";
+export const MAC_WEBKIT_HEADERS =
+  "Playwright's macOS WebKit driver does not expose the CSRF request header";
 
 /**
  * Safari opens a native <select> menu on the arrow keys instead of changing the value,

@@ -1,4 +1,11 @@
-import { denyMicrophone, expect, skipWithoutMediaRecorder, test } from './test';
+import {
+  browserCheck,
+  denyMicrophone,
+  expect,
+  requireRecording,
+  test,
+  WEBKIT_BLOB_BODY,
+} from './test';
 import { sessionFixture } from '../src/features/session/fixtures';
 
 for (const duration of [45_000, 150_000]) {
@@ -310,12 +317,7 @@ for (const variant of ['browser default', 'WebM refused (older Safari)'] as cons
       });
     }
     await page.goto(`/sessions/${session.id}`);
-    await skipWithoutMediaRecorder(page);
-    const aacPossible = await page.evaluate(() => MediaRecorder.isTypeSupported('audio/mp4'));
-    test.skip(
-      variant !== 'browser default' && !aacPossible,
-      'this browser cannot record AAC in MP4',
-    );
+    await requireRecording(page, browserName, variant !== 'browser default');
     const mic = page.getByRole('button', { name: 'Check microphone' });
     await mic.focus();
     await mic.press('Enter');
@@ -384,7 +386,13 @@ for (const variant of ['browser default', 'WebM refused (older Safari)'] as cons
       } else await expect(page.getByText('All 4 steps finished')).toBeVisible();
       expect(uploads.at(-1)).toMatchObject({ number });
       // WebKit gives the test no request body; the declared size_bytes is checked above.
-      if (browserName !== 'webkit') expect(uploads.at(-1)!.bytes).toBeGreaterThan(0);
+      await browserCheck(
+        `round ${number}: uploaded body is nonempty`,
+        browserName === 'webkit' ? WEBKIT_BLOB_BODY : undefined,
+        () => {
+          expect(uploads.at(-1)!.bytes).toBeGreaterThan(0);
+        },
+      );
       expect(uploads.at(-1)!.type).toMatch(/^audio\/(webm|mp4)$/);
     }
     expect(uploads.map((u) => u.number)).toEqual([1, 2, 3]);
@@ -400,12 +408,16 @@ for (const variant of ['browser default', 'WebM refused (older Safari)'] as cons
     if (variant === 'browser default' && chromiumOrFirefox) expect(expected).toBe('audio/webm');
     expect(mimes).toEqual([expected, expected, expected]);
     expect(uploads.map((u) => u.type)).toEqual([expected, expected, expected]);
-    if (chromiumOrFirefox) {
-      for (const upload of uploads) {
-        if (expected === 'audio/webm') expect(upload.head.startsWith('\x1aE\xdf\xa3')).toBe(true);
-        else expect(upload.head.slice(4, 8)).toBe('ftyp');
-      }
-    }
+    await browserCheck(
+      'uploaded recording containers match the declared MIME',
+      browserName === 'webkit' ? WEBKIT_BLOB_BODY : undefined,
+      () => {
+        for (const upload of uploads) {
+          if (expected === 'audio/webm') expect(upload.head.startsWith('\x1aE\xdf\xa3')).toBe(true);
+          else expect(upload.head.slice(4, 8)).toBe('ftyp');
+        }
+      },
+    );
     for (const number of [1, 2, 3]) {
       const replay = page.getByRole('region', { name: `Round ${number} replay` });
       await expect(replay.getByLabel(`Your recording of round ${number}`)).toBeVisible();

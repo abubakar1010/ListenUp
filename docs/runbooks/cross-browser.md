@@ -5,7 +5,7 @@ Why and what each project does: [ADR 0080](../adr/0080-cross-browser-end-to-end-
 ## Before a release
 
 1. Actions → **Cross-browser** → Run workflow, on `main` (or the commit that ships).
-2. All four jobs (chromium, msedge, firefox, webkit) must be green. A skipped test is listed in the report with its reason; read the skips, since they are the cases a browser cannot run.
+2. All four jobs (chromium, msedge, firefox, webkit) must be green. A skipped test is listed in the report with its reason. Also inspect `skipped-check` annotations and skipped steps: a browser flow can pass while its driver cannot expose a particular header or Blob body assertion. Those assertions are skipped, not passed.
 3. Do the manual checks below.
 
 The workflow also runs every night; a red night means a browser difference reached `main`.
@@ -15,11 +15,21 @@ The workflow also runs every night; a red night means a browser difference reach
 ```bash
 cd apps/web
 pnpm exec playwright install chromium firefox webkit   # msedge: playwright install msedge
-E2E_BROWSERS=chromium,firefox,webkit pnpm e2e
+# Run Chromium and Edge without PulseAudio (install msedge above if using it).
+E2E_BROWSERS=chromium pnpm e2e --project=chromium
+# E2E_BROWSERS=msedge pnpm e2e --project=msedge
+
+# Headless Linux Firefox needs a sink. Keep this separate from Chromium/Edge.
+pulseaudio --start --exit-idle-time=-1
+pactl load-module module-null-sink sink_name=ci
+E2E_BROWSERS=firefox pnpm e2e --project=firefox
+pulseaudio --kill
+
+E2E_BROWSERS=webkit pnpm e2e --project=webkit
 ```
 
-- Firefox needs an audio output. With no sound card: `pulseaudio --start --exit-idle-time=-1 && pactl load-module module-null-sink sink_name=ci`. Stop PulseAudio again before running Chromium (`pulseaudio --kill`), or the fake microphone check fails.
-- On Linux, WebKit needs `playwright install-deps webkit`; it has no `MediaRecorder`, so the Shadow recording tests skip. They run in the macOS job.
+- Stop any existing PulseAudio daemon before the Chromium/Edge commands on headless Linux. Firefox needs an audio output. With no sound card: `pulseaudio --start --exit-idle-time=-1 && pactl load-module module-null-sink sink_name=ci`. Stop PulseAudio again before running Chromium (`pulseaudio --kill`), or the fake microphone check fails.
+- On Linux, WebKit needs `playwright install-deps webkit`; it has no `MediaRecorder`, so the Shadow recording tests skip. They run in the macOS job. Missing MediaRecorder on any other runner, or missing MP4 recording on a non-Firefox runner, fails instead of skipping.
 - Where Chromium cannot be installed, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE`.
 
 ## Known differences
