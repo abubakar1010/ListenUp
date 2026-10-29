@@ -20,11 +20,14 @@ import pytest
 from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 from httpx import Response
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 from starlette.responses import Response as StarletteResponse
 
 from listenup.main import create_app
 from listenup.modules.identity import jobs as identity_jobs
+from listenup.modules.identity import passwords
 from listenup.modules.identity import repository as identity_repository
 from listenup.modules.identity.domain.tokens import new_token, token_hash
 from listenup.modules.identity.service import build_accounts
@@ -553,6 +556,127 @@ def test_signing_in_asks_before_restoring(client: TestClient, migrated_url: str)
     assert client.get("/api/v1/me").status_code == 401
     assert user_row(migrated_url, user_id)[0] == "pending_deletion"  # type: ignore[index]
     assert deletion_request(migrated_url, user_id)["status"] == "pending"
+
+
+def assert_unknown_credentials(response: Response, unknown: Response) -> None:
+    assert response.status_code == unknown.status_code == 401
+    # Request ids identify requests, not accounts; every other field must match.
+    assert {k: v for k, v in response.json().items() if k != "request_id"} == {
+        k: v for k, v in unknown.json().items() if k != "request_id"
+    }
+    assert "listenup_session=" not in response.headers.get("set-cookie", "")
+
+
+def assert_still_deleted(client: TestClient, migrated_url: str, user_id: uuid.UUID) -> None:
+    assert client.get("/api/v1/me").status_code == 401
+    assert user_row(migrated_url, user_id)[0] == "pending_deletion"  # type: ignore[index]
+    request = deletion_request(migrated_url, user_id)
+    assert request["status"] == "pending"
+    assert request["cancelled_at"] is None
+    with psycopg.connect(migrated_url) as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM identity.auth_sessions WHERE user_id = %s", [user_id]
+        ).fetchone() == (0,)
+
+
+def test_restore_offer_rechecks_deadline_after_password_verification(
+    client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    email = unique_email()
+    user_id = register(client, email)
+    assert delete_me(client).status_code == 202
+    unknown = login(client, unique_email())
+    verify = passwords.verify_password
+    checks = []
+
+    async def verify_then_expire(encoded: str | None, password: str) -> bool:
+        valid = await verify(encoded, password)
+        checks.append(valid)
+        assert valid
+        # The lookup has already seen a future deadline. Advance it while hashing,
+        # still later than the request transaction's now(), earlier than wall time.
+        make_due(migrated_url, user_id, ago=timedelta(0))
+        return valid
+
+    monkeypatch.setattr(passwords, "verify_password", verify_then_expire)
+    response = login(client, email)
+
+    assert checks == [True]  # No extra hash check when the deadline expires.
+    assert_unknown_credentials(response, unknown)
+    assert_still_deleted(client, migrated_url, user_id)
+
+
+def test_restore_grant_rechecks_deadline_after_user_lock(
+    client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    email = unique_email()
+    user_id = register(client, email)
+    assert delete_me(client).status_code == 202
+    unknown = login(client, unique_email(), restore=True)
+    locking_user = threading.Event()
+    scalar = AsyncSession.scalar
+
+    async def observe_user_lock(
+        self: AsyncSession, statement: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        sql = str(statement)
+        # Observe the users-row lock attempt, whether explicit SELECT FOR UPDATE
+        # or the original restoring UPDATE. Do not change any eligibility result.
+        if "identity.users" in sql and ("FOR UPDATE" in sql or "SET status = 'active'" in sql):
+            locking_user.set()
+        return await scalar(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "scalar", observe_user_lock)
+    with (
+        concurrent.futures.ThreadPoolExecutor() as pool,
+        psycopg.connect(migrated_url) as blocker,
+    ):
+        blocker.execute("SELECT id FROM identity.users WHERE id = %s FOR UPDATE", [user_id])
+        attempt = pool.submit(login, client, email, restore=True)
+        try:
+            assert locking_user.wait(timeout=10), "restore never attempted the user lock"
+            # The request passed its lookup and password/offer checks. Expire
+            # while it waits for this row; no sleep or wall-clock race.
+            blocker.execute(
+                "UPDATE identity.users SET deletion_scheduled_at = clock_timestamp() WHERE id = %s",
+                [user_id],
+            )
+            blocker.commit()
+        finally:
+            blocker.rollback()  # Always release the lock before waiting for the thread.
+        response = attempt.result(timeout=10)
+
+    assert_unknown_credentials(response, unknown)
+    assert_still_deleted(client, migrated_url, user_id)
+
+
+@pytest.mark.parametrize("restore", [False, True], ids=["offer", "grant"])
+def test_restore_deadline_exact_boundary_is_expired(
+    client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch, restore: bool
+) -> None:
+    email = unique_email()
+    user_id = register(client, email)
+    until = datetime.fromisoformat(delete_me(client).json()["deletion_scheduled_at"])
+    unknown = login(client, unique_email(), restore=restore)
+    scalar = AsyncSession.scalar
+    clock_reads = []
+
+    async def at_deadline(self: AsyncSession, statement: Any, *args: Any, **kwargs: Any) -> Any:
+        sql = str(statement)
+        if "clock_timestamp()" in sql:
+            # Freeze only the wall clock; retain the real SQL comparison and DB
+            # writes. Transaction now() and the initial lookup remain unchanged.
+            clock_reads.append(until)
+            statement = text(sql.replace("clock_timestamp()", "CAST(:test_now AS timestamptz)"))
+            statement = statement.bindparams(test_now=until)
+        return await scalar(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "scalar", at_deadline)
+    response = login(client, email, restore=restore)
+
+    assert clock_reads == [until]
+    assert_unknown_credentials(response, unknown)
+    assert_still_deleted(client, migrated_url, user_id)
 
 
 def test_the_grace_period_shown_is_the_one_applied(make_client: ClientFactory) -> None:

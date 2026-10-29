@@ -275,7 +275,19 @@ class Accounts:
 
         async with self.database.transaction() as own:
             await repository.clear_failures(own, account.id)
-        await self.complete_sign_in(session, request, response, account, restore=restore)
+        try:
+            await self.complete_sign_in(session, request, response, account, restore=restore)
+        except ProblemError as error:
+            if error.code != "invalid_credentials":
+                raise
+            # Expiry during verification/locking is the same refusal and lockout
+            # subject as an unknown address, without doing another password hash.
+            left = await self._record_sign_in_failure(
+                email_lock_subject(
+                    self.settings.analytics_hmac_key.get_secret_value().encode(), email
+                )
+            )
+            raise _invalid_credentials(left, self.settings.login_lock_minutes) from error
         # After the restore step: it locks the deletion request before the users row,
         # as the purge does, and an account still waiting for deletion is refused
         # before any time is spent on a new hash.
@@ -316,11 +328,15 @@ class Accounts:
             await passwords.verify_password(None, password)  # the same work either way
         if valid:
             return True, threshold
+        return False, await self._record_sign_in_failure(subject)
+
+    async def _record_sign_in_failure(self, subject: str) -> int:
+        threshold = self.settings.login_lock_threshold
         async with self.database.transaction() as own:
             failures, until = await repository.record_failure(own, subject, self.lock, threshold)
         if until is not None:
             raise self._locked(until)
-        return False, attempts_left(failures, threshold)
+        return attempts_left(failures, threshold)
 
     async def complete_sign_in(
         self,
@@ -344,6 +360,8 @@ class Accounts:
         if account.waiting_for_deletion:
             assert account.deletion_scheduled_at is not None
             if not restore:
+                if not await repository.can_offer_restore(session, account.id):
+                    raise _invalid_credentials()
                 raise ProblemError(
                     409,
                     "account_pending_deletion",
