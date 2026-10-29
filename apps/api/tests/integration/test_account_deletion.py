@@ -606,20 +606,29 @@ def test_restore_offer_rechecks_deadline_after_password_verification(
     assert_still_deleted(client, migrated_url, user_id)
 
 
+@pytest.mark.parametrize("change_deadline", [True, False], ids=["changed-row", "unchanged-row"])
 def test_restore_grant_rechecks_deadline_after_user_lock(
-    client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, migrated_url: str, monkeypatch: pytest.MonkeyPatch, change_deadline: bool
 ) -> None:
     email = unique_email()
     user_id = register(client, email)
-    assert delete_me(client).status_code == 202
+    until = datetime.fromisoformat(delete_me(client).json()["deletion_scheduled_at"])
     unknown = login(client, unique_email(), restore=True)
     locking_user = threading.Event()
+    released = threading.Event()
     scalar = AsyncSession.scalar
 
     async def observe_user_lock(
         self: AsyncSession, statement: Any, *args: Any, **kwargs: Any
     ) -> Any:
         sql = str(statement)
+        if not change_deadline and "clock_timestamp()" in sql:
+            # Model the clock at statement dispatch: it advances while the row is
+            # held without changing the tuple. An UPDATE alone can evaluate its
+            # predicate before waiting and has no changed tuple to re-evaluate.
+            clock_now = until if released.is_set() else until - timedelta(seconds=1)
+            statement = text(sql.replace("clock_timestamp()", "CAST(:test_now AS timestamptz)"))
+            statement = statement.bindparams(test_now=clock_now)
         # Observe the users-row lock attempt, whether explicit SELECT FOR UPDATE
         # or the original restoring UPDATE. Do not change any eligibility result.
         if "identity.users" in sql and ("FOR UPDATE" in sql or "SET status = 'active'" in sql):
@@ -637,16 +646,63 @@ def test_restore_grant_rechecks_deadline_after_user_lock(
             assert locking_user.wait(timeout=10), "restore never attempted the user lock"
             # The request passed its lookup and password/offer checks. Expire
             # while it waits for this row; no sleep or wall-clock race.
-            blocker.execute(
-                "UPDATE identity.users SET deletion_scheduled_at = clock_timestamp() WHERE id = %s",
-                [user_id],
-            )
+            if change_deadline:
+                blocker.execute(
+                    "UPDATE identity.users SET deletion_scheduled_at = clock_timestamp() "
+                    "WHERE id = %s",
+                    [user_id],
+                )
+            released.set()
             blocker.commit()
         finally:
             blocker.rollback()  # Always release the lock before waiting for the thread.
         response = attempt.result(timeout=10)
 
     assert_unknown_credentials(response, unknown)
+    assert_still_deleted(client, migrated_url, user_id)
+
+
+@pytest.mark.parametrize("restore", [False, True], ids=["offer", "grant"])
+def test_restore_expiry_honors_existing_unknown_address_lock(
+    make_client: ClientFactory, migrated_url: str, monkeypatch: pytest.MonkeyPatch, restore: bool
+) -> None:
+    client = make_client(login_lock_threshold=2)
+    email = unique_email()
+    assert login(client, email).status_code == 401
+    unknown = login(client, email)
+    assert unknown.status_code == 429
+    user_id = register(client, email)
+    assert delete_me(client).status_code == 202
+
+    def email_counters() -> list[tuple[Any, ...]]:
+        with psycopg.connect(migrated_url) as conn:
+            return conn.execute(
+                "SELECT key, window_start, count FROM ops.rate_counters "
+                "WHERE key LIKE 'login_%:email:%' ORDER BY key, window_start"
+            ).fetchall()
+
+    before = email_counters()
+    verify = passwords.verify_password
+    checks = []
+
+    async def verify_then_expire(encoded: str | None, password: str) -> bool:
+        valid = await verify(encoded, password)
+        checks.append(valid)
+        assert valid
+        make_due(migrated_url, user_id, ago=timedelta(0))
+        return valid
+
+    monkeypatch.setattr(passwords, "verify_password", verify_then_expire)
+    response = login(client, email, restore=restore)
+
+    assert checks == [True]
+    assert response.status_code == unknown.status_code
+    assert {k: v for k, v in response.json().items() if k != "request_id"} == {
+        k: v for k, v in unknown.json().items() if k != "request_id"
+    }
+    assert "Retry-After" in response.headers
+    assert "listenup_session=" not in response.headers.get("set-cookie", "")
+    assert email_counters() == before  # An existing lock is not counted or extended.
     assert_still_deleted(client, migrated_url, user_id)
 
 

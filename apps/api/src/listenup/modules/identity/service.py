@@ -282,11 +282,14 @@ class Accounts:
                 raise
             # Expiry during verification/locking is the same refusal and lockout
             # subject as an unknown address, without doing another password hash.
-            left = await self._record_sign_in_failure(
-                email_lock_subject(
-                    self.settings.analytics_hmac_key.get_secret_value().encode(), email
-                )
+            subject = email_lock_subject(
+                self.settings.analytics_hmac_key.get_secret_value().encode(), email
             )
+            async with self.database.transaction() as own:
+                until = await repository.locked_until(own, subject, self.lock)
+            if until is not None:
+                raise self._locked(until) from error
+            left = await self._record_sign_in_failure(subject)
             raise _invalid_credentials(left, self.settings.login_lock_minutes) from error
         # After the restore step: it locks the deletion request before the users row,
         # as the purge does, and an account still waiting for deletion is refused
