@@ -6,12 +6,14 @@ a signed-in learner and get their id, with row-level security already scoped to 
 
 import hashlib
 import ipaddress
+import json
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Request, Response
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.identity import jobs, passwords, repository
@@ -39,7 +41,7 @@ from listenup.platform.config import Settings, get_settings
 from listenup.platform.database import Database, DbSession, set_learner
 from listenup.platform.errors import ProblemError
 from listenup.platform.events import EventType, publish
-from listenup.platform.export import ExportPart, learner_rows
+from listenup.platform.export import ExportPart, ExportTable, learner_rows
 from listenup.platform.ids import uuid7
 from listenup.platform.rate_limit import Limit, RateLimiter, ip_key
 
@@ -686,7 +688,7 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
             ),
             # Earlier deletions the learner cancelled by restoring the account (#120).
             # The storage prefix is an internal key, like the media keys.
-            await learner_rows(
+            await _deletion_export_rows(
                 session,
                 "ops.deletion_requests",
                 learner,
@@ -696,3 +698,119 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
             ),
         )
     )
+
+
+async def content_deletion_request(
+    db: AsyncSession,
+    learner: uuid.UUID,
+    target: uuid.UUID,
+    plan: dict[str, Any],
+    prefixes: list[str],
+) -> uuid.UUID:
+    """Create or reuse the durable DR-2 audit; the content parent is already locked."""
+    found = await db.scalar(
+        text(
+            "SELECT id FROM ops.deletion_requests WHERE subject_user_id=:user "
+            "AND target_id=:target AND scope='content' AND status IN "
+            "('pending','storage_deleted','failed')"
+        ),
+        {"user": learner, "target": target},
+    )
+    if found is not None:
+        return uuid.UUID(str(found))
+    request = uuid.uuid4()
+    await db.execute(
+        text(
+            "INSERT INTO "
+            "ops.deletion_requests(id,subject_user_id,scope,target_id,report,storage_prefixes) "
+            "VALUES (:id,:user,'content',:target,CAST(:plan AS jsonb),:prefixes)"
+        ),
+        {
+            "id": request,
+            "user": learner,
+            "target": target,
+            "plan": json.dumps(plan),
+            "prefixes": prefixes,
+        },
+    )
+    return request
+
+
+async def content_deletion_state(db: AsyncSession, request_id: uuid.UUID) -> dict[str, Any] | None:
+    row = (
+        await db.execute(
+            text(
+                "SELECT subject_user_id,target_id,status,report,storage_prefixes "
+                "FROM ops.deletion_requests WHERE id=:id AND scope='content' FOR UPDATE"
+            ),
+            {"id": request_id},
+        )
+    ).first()
+    return dict(row._mapping) if row else None
+
+
+async def store_content_deletion(
+    db: AsyncSession,
+    request_id: uuid.UUID,
+    status: str,
+    report: dict[str, Any],
+    prefixes: list[str],
+) -> None:
+    await repository.update_deletion_request(db, request_id, status=status, report=report)
+    await db.execute(
+        text(
+            "UPDATE ops.deletion_requests SET storage_prefixes=:prefixes, "
+            "due_at=now()+interval '1 hour' WHERE id=:id"
+        ),
+        {"id": request_id, "prefixes": prefixes},
+    )
+
+
+async def content_deletions_to_reconcile(db: AsyncSession) -> list[uuid.UUID]:
+    # Completed manifests remain pointers to keys an old signed PUT might recreate.
+    return list(
+        (
+            await db.scalars(
+                text(
+                    "SELECT id FROM ops.deletion_requests WHERE scope='content' "
+                    "AND due_at <= now() ORDER BY due_at,id LIMIT 1000"
+                )
+            )
+        ).all()
+    )
+
+
+async def fail_content_deletion(db: AsyncSession, request_id: uuid.UUID) -> None:
+    if await content_deletion_state(db, request_id) is not None:
+        await repository.mark_deletion_failed(db, request_id)
+
+
+async def _deletion_export_rows(
+    session: AsyncSession,
+    table: str,
+    learner: uuid.UUID,
+    *,
+    column: str,
+    omit: tuple[str, ...],
+    order_by: str,
+) -> ExportTable:
+    """Export useful audit counts without exposing private cleanup manifests."""
+    result = await learner_rows(
+        session, table, learner, column=column, omit=omit, order_by=order_by
+    )
+    for row in result.rows:
+        report = row.get("report")
+        if isinstance(report, dict):
+            # An allowlist keeps future internal manifest fields private too.
+            row["report"] = {
+                key: report[key]
+                for key in (
+                    "objects_removed",
+                    "sessions_removed",
+                    "rows_removed",
+                    "rows_total",
+                    "replay_responses_removed",
+                )
+                if key in report
+            }
+    return result

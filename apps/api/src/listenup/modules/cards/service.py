@@ -35,6 +35,7 @@ async def create(
     mark = next((mark for mark in marks if mark.id == new.mark_id), None)
     if mark is None:
         raise ProblemError(404, "mark_not_found", "There is no such mark in this session.")
+    await content.retain_content(db, learner, session.content_id)
     item = await content.get_content(db, learner, session.content_id)
     transcript = await review.read_transcript(db, worker_database, learner, session_id)
     words = [
@@ -245,3 +246,72 @@ async def record_review(
     if await repository.audio_row(db, card_id, learner, lock=True) is None:
         raise ProblemError(404, "card_not_found", "There is no such card.")
     return await repository.insert_review(db, learner, card_id, uuid7(), body.result)
+
+
+async def content_deletion_objects(
+    db: AsyncSession,
+    learner: uuid.UUID,
+    sessions: list[uuid.UUID],
+    manifest_prefixes: list[str],
+) -> tuple[list[str], list[str]]:
+    """Card writers must drain before the first content storage sweep."""
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id FROM practice.cards WHERE user_id=:user AND "
+                "session_id=ANY(:sessions) ORDER BY id FOR UPDATE"
+            ),
+            {"user": learner, "sessions": sessions},
+        )
+    ).all()
+    # A deleted card can still have an uncertain writer. Its durable manifest,
+    # rather than the surviving parent rows, defines the cleanup responsibility.
+    ids = sorted(
+        {row.id for row in rows}
+        | {uuid.UUID(prefix.rstrip("/").rsplit("/", 1)[-1]) for prefix in manifest_prefixes}
+    )
+    await _require_no_content_writes(db, learner, ids)
+    return [f"users/{learner}/cards/{card}/" for card in ids], []
+
+
+async def _require_no_content_writes(
+    db: AsyncSession, learner: uuid.UUID, ids: list[uuid.UUID]
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from listenup.platform.jobs import Reschedule
+
+    if ids and await db.scalar(
+        text(
+            "SELECT EXISTS(SELECT 1 FROM practice.card_snippet_writes "
+            "WHERE user_id=:user AND card_id=ANY(:ids))"
+        ),
+        {"user": learner, "ids": ids},
+    ):
+        raise Reschedule(datetime.now(UTC) + timedelta(minutes=1))
+
+
+async def settle_content_deletion(
+    db: AsyncSession, learner: uuid.UUID, prefixes: list[str]
+) -> None:
+    """Remove cascade tombstones only after their objects have been deleted."""
+    ids = [uuid.UUID(prefix.rstrip("/").rsplit("/", 1)[-1]) for prefix in prefixes]
+    await _require_no_content_writes(db, learner, ids)
+    if ids:
+        await db.execute(
+            text(
+                "DELETE FROM practice.card_snippet_cleanup WHERE user_id=:user AND "
+                "card_id=ANY(:ids)"
+            ),
+            {"user": learner, "ids": ids},
+        )
+
+
+async def content_deletion_snapshot(
+    db: AsyncSession, learner: uuid.UUID, sessions: list[uuid.UUID]
+) -> list[str]:
+    rows = await db.scalars(
+        text("SELECT id FROM practice.cards WHERE user_id=:user AND session_id=ANY(:sessions)"),
+        {"user": learner, "sessions": sessions},
+    )
+    return [f"users/{learner}/cards/{card}/" for card in rows]

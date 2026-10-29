@@ -46,8 +46,18 @@ roles:
         threads: 2
         window_seconds: 30  # bounded emission windows; rerun B2 with production preprocessing
         int8: true  # dynamic int8 linear layers; record this choice in provenance
-  # No adapter yet: Shadow grading (#20, #21) adds one.
-  speech_assessment: []
+  # E2 (owner approved 2026-10-28): contract plumbing only; never real grading.
+  # Enable only in non-production for synthetic development. #80 stays open:
+  # the real-model local provider and B3 still depend on #21 and #22.
+  speech_assessment:
+    - provider: fake-assessment
+      model: synthetic-assessment-v1
+      enabled: false
+      accepted: true  # synthetic contract only, never model acceptance
+      local: true
+      trains_on_inputs: false
+      timeout_seconds: 5
+      retries: 0
   text_ai:
     # Hosted free tier. Disabled until the operator has verified the organisation's limits,
     # zero data retention, allowed regions and populations, and the golden set passes

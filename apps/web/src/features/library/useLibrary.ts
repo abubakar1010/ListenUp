@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '../../api/client';
 import type { components } from '../../api/schema';
@@ -32,5 +32,28 @@ export function useUploadUsage() {
   return useQuery({
     queryKey: UPLOAD_USAGE_KEY,
     queryFn: () => api<StorageUse>('/uploads/usage'),
+  });
+}
+
+export function useDeleteContent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<{ request_id: string }>(`/contents/${id}`, {
+        method: 'DELETE',
+        body: { confirm: true },
+      }),
+    onSuccess: () => {
+      for (const queryKey of [
+        LIBRARY_KEY,
+        UPLOAD_USAGE_KEY,
+        ['contents'],
+        ['sessions'],
+        ['cards'],
+        ['review'],
+      ]) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
+    },
   });
 }

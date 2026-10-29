@@ -17,6 +17,7 @@ def test_every_job_module_imports_and_registers_its_jobs() -> None:
     assert "identity.send_password_reset" in jobs._registry
     assert jobs._registry["cards.generate_snippet"].lane is jobs.Lane.INTAKE
     assert jobs._registry["cards.cleanup_snippets"].lane is jobs.Lane.BACKGROUND
+    assert jobs._registry["library.delete_content"].lane is jobs.Lane.BACKGROUND
 
 
 def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
@@ -28,6 +29,7 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
     from listenup.modules.identity import jobs as identity_jobs
 
     importlib.import_module("listenup.ai.jobs")
+    importlib.import_module("listenup.modules.library.jobs")
 
     installed: list[tuple[str, str]] = []
 
@@ -46,6 +48,7 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
         identity_jobs.PURGE_DUE_ACCOUNTS,
         "ai.maintain",
         card_jobs.CLEANUP,
+        "library.reconcile_content_deletions",
     ]
 
     assert jobs.install_schedules(media) == []
@@ -55,10 +58,11 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
         (identity_jobs.PURGE_SCHEDULE, identity_jobs.PURGE_DUE_ACCOUNTS),
         ("*/5 * * * *", "ai.maintain"),
         ("* * * * *", card_jobs.CLEANUP),
+        ("* * * * *", "library.reconcile_content_deletions"),
     }
     # Installing again (a second worker of the pool) registers nothing twice.
     assert set(jobs.install_schedules(default)) == set(scheduled)
-    assert len(installed) == 4
+    assert len(installed) == 5
 
 
 @pytest.mark.anyio
