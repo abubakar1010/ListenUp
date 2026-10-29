@@ -121,16 +121,34 @@ async def schedule_deletion(
     return result
 
 
+async def can_offer_restore(session: AsyncSession, user_id: uuid.UUID) -> bool:
+    """Recheck wall time after identity verification (FR-ACC-4, DR-1; ADR 0029)."""
+    return bool(
+        await session.scalar(
+            text("""
+            SELECT deletion_scheduled_at > clock_timestamp()
+              FROM identity.users WHERE id = :id AND status = 'pending_deletion'
+            """),
+            {"id": user_id},
+        )
+    )
+
+
 async def restore_account(session: AsyncSession, user_id: uuid.UUID) -> bool:
     """Reactivate an account whose grace period has not ended (#120).
 
     False when there is nothing to restore: the grace period ended, or the purge job
     already took the account (it sets 'deleting' first, under the same row lock).
     """
+    # The caller already holds the deletion request lock. Take the users row
+    # before checking wall time: an UPDATE predicate alone can run before waiting
+    # for its row lock (FR-ACC-4, DR-1; ADR 0029).
+    await lock_user_status(session, user_id)
     restored = await session.scalar(
         text("""
         UPDATE identity.users SET status = 'active', deletion_scheduled_at = NULL
-         WHERE id = :id AND status = 'pending_deletion' AND deletion_scheduled_at > now()
+         WHERE id = :id AND status = 'pending_deletion'
+           AND deletion_scheduled_at > clock_timestamp()
         RETURNING id
         """),
         {"id": user_id},
