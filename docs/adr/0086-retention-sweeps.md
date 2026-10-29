@@ -1,4 +1,4 @@
-# ADR 0074: Retention sweeps as scheduled background jobs
+# ADR 0086: Retention sweeps as scheduled background jobs
 
 - Status: Accepted
 - Related: #93, #38, ADRs 0015, 0029 and 0070; SRS FR-SH-17, NFR-SEC-4

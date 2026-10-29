@@ -138,11 +138,18 @@ class AlignmentPort(Protocol):
 
 
 class SoundScore(Span):
+    """A provider-labelled sound with normalized accuracy in [0, 1]."""
+
     label: str = Field(min_length=1)
     score: float = Field(ge=0, le=1)
 
 
 class WordScore(Span):
+    """A matched reference word; index addresses reference_text.split().
+
+    Missing/unmatched words may be omitted. Sounds are ordered within this word.
+    """
+
     index: int = Field(ge=0)
     text: str = Field(min_length=1)
     accuracy: float = Field(ge=0, le=1)
@@ -159,7 +166,13 @@ class PitchPoint(_Strict):
 
 
 class SpeechAssessment(AIResult):
-    """Per-word and per-sound scores, timing, pauses, fillers and pitch (Architecture 7.1)."""
+    """Raw assessment signals (Architecture 7.1), not the seven grading measures.
+
+    Times are recording-relative seconds, scores are normalized to [0, 1], and
+    pitch uses Hz (None for unvoiced samples). Empty tuples mean no observations;
+    they do not establish perfect speech. Every result retains provider provenance.
+    E2 adds synthetic contract evidence only; real-model acceptance remains #80 work.
+    """
 
     words: tuple[WordScore, ...]
     pauses: tuple[Span, ...]

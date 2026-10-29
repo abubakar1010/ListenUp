@@ -26,7 +26,28 @@ merged implementation, while #48 remains open for NFR-USE-1 validation under #11
 usability criterion passed, waive it, or extend the actual-server performance
 deferral to usability. Other unresolved dependencies retain the Ready rule above.
 
+Owner decisions of 2026-10-28 (backlog index #119):
+
+- #113 depends on #102 (the OQ-6 legal review). That dependency is treated as
+  satisfied for the build, as for #95 and #57 above. #102 and #103 are assumed
+  cleared for the build; the #103 texts are drafts on `main` and need no new
+  session. Nothing in the build waits on them.
+- The assumption does not clear the launch gates. Written legal advice is still
+  needed before the beta (#115), before launch, and before `youtube_intake_enabled`
+  is switched on in production (see `docs/legal/README.md`). YouTube intake stays
+  in scope for launch behind that flag (D10) and the repository default stays off.
+- Other open dependencies keep the Ready rule above. In particular the YouTube
+  chain runs in order (#17, #37, #38, then #46 and the YouTube halves of #93 and #105, then #40 and #113), and Shadow grading
+  (#80, then #82 to #86) waits on #21 and #22, which need the Arm host (#16).
+
 Run two or three sessions at once on stories that touch different areas. Each has its own branch and pull request, so nothing needs merging by hand.
+
+For #80, owner exception E2 (approved 2026-10-28) permits the speech assessment
+port, output schema, `ai.yaml` registration and a fake second provider (AT-22)
+without #21 or #22. The real-model local provider and B3 budget criterion still
+wait for both. #82–#86 may be built against the fake provider only after the port
+is merged; other dependencies still apply. This does not close #80. See
+[ADR 0074](adr/0074-speech-assessment-contract-split.md).
 
 Each cloud task already has an isolated checkout; use it without creating a
 worktree unless the owner asks. Start a new story from current `main` on one
