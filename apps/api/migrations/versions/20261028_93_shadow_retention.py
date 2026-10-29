@@ -25,7 +25,8 @@ BEGIN
       NEW.recording_mime,NEW.recording_bytes) IS DISTINCT FROM (OLD.recorded_at,OLD.uploaded_at,
       OLD.recording_key,OLD.recording_mime,OLD.recording_bytes)
       -- Retention (FR-SH-17) may clear the whole recording and nothing else.
-      AND NOT (OLD.recording_key IS NOT NULL AND NEW.recorded_at = OLD.recorded_at
+      AND NOT (OLD.recording_key IS NOT NULL
+               AND NEW.recorded_at IS NOT DISTINCT FROM OLD.recorded_at
                AND NEW.recording_key IS NULL AND NEW.recording_mime IS NULL
                AND NEW.recording_bytes IS NULL AND NEW.uploaded_at IS NULL) THEN
      RAISE EXCEPTION 'round_order' USING ERRCODE = 'check_violation';

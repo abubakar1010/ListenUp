@@ -8,7 +8,6 @@ deletes it once its keep period ends. Both run on the background lane.
 import asyncio
 import json
 import logging
-import tempfile
 import uuid
 import zipfile
 from datetime import UTC, datetime, timedelta
@@ -26,6 +25,7 @@ from listenup.platform.database import Database, set_learner
 from listenup.platform.events import EventType, publish
 from listenup.platform.export import ExportPart
 from listenup.platform.jobs import JobDeps, Lane, Reschedule, enqueue, job
+from listenup.platform.scratch import directory
 from listenup.platform.storage import Storage, get_storage
 
 logger = logging.getLogger(__name__)
@@ -152,9 +152,7 @@ async def _build(
 
     parts, exported_at = await _snapshot(database, learner)
     settings = get_settings()
-    with tempfile.TemporaryDirectory(
-        prefix="listenup-export-", dir=settings.media_scratch_dir
-    ) as scratch:
+    with directory(settings.media_scratch_dir, prefix="listenup-export-") as scratch:
         zip_path = Path(scratch) / "export.zip"
         file_count = await _write_archive(
             storage, zip_path, Path(scratch), parts, learner, export, exported_at

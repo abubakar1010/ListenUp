@@ -74,14 +74,16 @@ def test_current_versions_come_from_configuration(monkeypatch: pytest.MonkeyPatc
     assert consent_versions(Settings()) == CurrentVersions("2026-11", "2026-12", "voice-2")
 
 
-def test_the_default_versions_are_the_2026_1_drafts(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_default_versions_include_the_retention_revision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from listenup.platform.config import Settings
 
     for name in ("TERMS", "PRIVACY", "VOICE_CONSENT"):
         monkeypatch.delenv(f"LISTENUP_{name}_VERSION", raising=False)
     # The texts in docs/legal/ (#103); a label names exactly one file there.
     versions = consent_versions(Settings(_env_file=None))  # type: ignore[call-arg]
-    assert versions == CurrentVersions("terms-2026-1", "privacy-2026-1", "voice-2026-1")
+    assert versions == CurrentVersions("terms-2026-1", "privacy-2026-2", "voice-2026-2")
 
 
 def test_every_default_version_has_its_text_in_the_web_app(

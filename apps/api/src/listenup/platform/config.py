@@ -78,8 +78,8 @@ class Settings(BaseSettings):
     # a new file and a new label. Labels fit identity.consents.version (at most 20
     # characters); a label containing "placeholder" is refused outside local and test.
     terms_version: ConsentVersion = "terms-2026-1"
-    privacy_version: ConsentVersion = "privacy-2026-1"
-    voice_consent_version: ConsentVersion = "voice-2026-1"
+    privacy_version: ConsentVersion = "privacy-2026-2"
+    voice_consent_version: ConsentVersion = "voice-2026-2"
 
     # File uploads (FR-CI-1, FR-CI-3, D5). Sizes are binary: 500 MB is 500 MiB, as
     # operating systems show file sizes.
@@ -113,6 +113,8 @@ class Settings(BaseSettings):
     # Where media workers write source and converted files while a job runs; the
     # system's temporary directory when unset. Each job removes its own files.
     media_scratch_dir: str | None = None
+    # Set only by the media supervisor for its scratch maintenance child.
+    scratch_cleanup_root: str | None = None
     # Retention sweeps (#93): days a Shadow recording is kept after it was recorded
     # (D7, FR-SH-17), and the age after which leftover worker scratch files go.
     shadow_recording_retention_days: int = Field(default=90, ge=1)

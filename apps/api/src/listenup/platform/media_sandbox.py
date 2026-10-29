@@ -14,7 +14,6 @@ import os
 import resource
 import signal
 import sys
-import tempfile
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -40,6 +39,7 @@ async def run_process(
     memory_mb: int,
     cpu_seconds: int,
     env: dict[str, str] | None = None,
+    pass_fds: tuple[int, ...] = (),
 ) -> None:
     process = await asyncio.create_subprocess_exec(
         sys.executable,
@@ -50,6 +50,7 @@ async def run_process(
         *command,
         stdin=asyncio.subprocess.PIPE,
         env=env,
+        pass_fds=pass_fds,
         # Job output is content-free logs, never parsed as a result.
         start_new_session=True,
     )
@@ -110,28 +111,45 @@ def _group_usage(group: int) -> tuple[int, float]:
 
 async def run_job(name: str, deps: JobDeps, args: dict[str, object], seconds: float) -> None:
     from listenup.platform.config import get_settings
+    from listenup.platform.scratch import directory
 
     settings = get_settings()
-    with tempfile.TemporaryDirectory(
-        prefix="media-job-", dir=settings.media_scratch_dir
-    ) as scratch:
-        await run_process(
-            [sys.executable, "-m", "listenup.platform.media_job"],
-            json.dumps(
-                {
-                    "name": name,
-                    "job_id": deps.job_id,
-                    "attempt": deps.attempt,
-                    "args": args,
-                    "request_id": current_request_id(),
-                    "trace": job_trace_args().get(TRACE_ARG),
-                }
-            ).encode(),
-            env={**os.environ, "TMPDIR": scratch, "LISTENUP_MEDIA_SCRATCH_DIR": scratch},
-            seconds=seconds,
-            memory_mb=settings.media_job_memory_mb,
-            cpu_seconds=settings.media_job_cpu_seconds,
-        )
+    with directory(settings.media_scratch_dir, prefix="media-job-") as scratch:
+        child_env = {
+            **os.environ,
+            "TMPDIR": str(scratch),
+            "LISTENUP_MEDIA_SCRATCH_DIR": str(scratch),
+        }
+        # Ordinary media children never inherit root-maintenance authority.
+        child_env.pop("LISTENUP_SCRATCH_CLEANUP_ROOT", None)
+        if name == "ops.sweep_scratch_files" and settings.media_scratch_dir is not None:
+            child_env["LISTENUP_SCRATCH_CLEANUP_ROOT"] = settings.media_scratch_dir
+        # Pass a shared lifetime lease through the launcher to the actual child.
+        # It survives supervisor death and protects an orphan still using scratch.
+        import fcntl
+
+        from listenup.platform.scratch import MARKER
+
+        with (scratch / MARKER).open("rb") as lease:
+            fcntl.flock(lease, fcntl.LOCK_SH)
+            await run_process(
+                [sys.executable, "-m", "listenup.platform.media_job"],
+                json.dumps(
+                    {
+                        "name": name,
+                        "job_id": deps.job_id,
+                        "attempt": deps.attempt,
+                        "args": args,
+                        "request_id": current_request_id(),
+                        "trace": job_trace_args().get(TRACE_ARG),
+                    }
+                ).encode(),
+                env=child_env,
+                pass_fds=(lease.fileno(),),
+                seconds=seconds,
+                memory_mb=settings.media_job_memory_mb,
+                cpu_seconds=settings.media_job_cpu_seconds,
+            )
 
 
 def _deny_detach() -> None:

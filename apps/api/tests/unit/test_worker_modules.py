@@ -55,6 +55,7 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
         "ops.sweep_one_time_tokens",
         "ops.sweep_idempotency_keys",
         "ops.sweep_rate_counters",
+        "ops.sweep_default_scratch_files",
         "library.reconcile_content_deletions",
     ]
 
@@ -67,6 +68,7 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
         ("*/5 * * * *", "ai.maintain"),
         ("* * * * *", card_jobs.CLEANUP),
         (retention.SCRATCH_SCHEDULE, "ops.sweep_scratch_files"),
+        (retention.SCRATCH_SCHEDULE, "ops.sweep_default_scratch_files"),
         (retention.SHADOW_SCHEDULE, "ops.sweep_shadow_recordings"),
         (retention.SESSIONS_SCHEDULE, "ops.sweep_login_sessions"),
         (retention.TOKENS_SCHEDULE, "ops.sweep_one_time_tokens"),
@@ -76,7 +78,7 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
     }
     # Installing again (a second worker of the pool) registers nothing twice.
     assert set(jobs.install_schedules(default)) == set(scheduled)
-    assert len(installed) == 11
+    assert len(installed) == 12
 
 
 @pytest.mark.anyio

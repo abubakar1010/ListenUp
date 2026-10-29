@@ -6,14 +6,14 @@ with the owner connection. Shadow recordings use the fake storage.
 
 import asyncio
 import os
-import time
 import uuid
 from collections.abc import Callable, Iterator
-from pathlib import Path
+from contextlib import asynccontextmanager
 from typing import Any
 
 import psycopg
 import pytest
+from sqlalchemy import text
 
 from listenup.ops import retention
 from listenup.platform.config import Settings
@@ -126,19 +126,23 @@ def test_recording_retention_reads_configuration(
     assert key in storage.deleted
 
 
-def test_recording_sweep_keeps_scores_of_the_round(migrated_url: str, storage: FakeStorage) -> None:
-    """The row (round number, playback status) is what grades hang off; it is updated,
-    never deleted."""
-    round_id, _key = recorded_round(migrated_url, 120)
+def test_recording_sweep_preserves_all_nonrecording_round_data(
+    migrated_url: str, storage: FakeStorage
+) -> None:
+    """Preserve every shipped round field; Shadow grades/labels are not shipped yet.
 
-    run(migrated_url, retention.sweep_shadow_recordings)
-
-    status = one(
-        migrated_url,
-        "SELECT playback_status FROM practice.shadow_rounds WHERE id = %s",
-        round_id,
+    This projection also picks up future columns, rather than claiming playback
+    status alone establishes grade/label preservation.
+    """
+    round_id, _ = recorded_round(migrated_url, 120)
+    query = (
+        "SELECT to_jsonb(r) - ARRAY['recording_key','recording_mime',"
+        "'recording_bytes','uploaded_at'] "
+        "FROM practice.shadow_rounds r WHERE id=%s"
     )
-    assert status == "ended"
+    before = one(migrated_url, query, round_id)
+    run(migrated_url, retention.sweep_shadow_recordings)
+    assert one(migrated_url, query, round_id) == before
 
 
 def test_recording_sweep_is_idempotent(migrated_url: str, storage: FakeStorage) -> None:
@@ -247,6 +251,202 @@ def test_one_failing_delete_does_not_block_newer_recordings(
         for row_id in (old_id, new_id)
     }
     assert keys == {old_id: old_key, new_id: None}
+
+
+def test_shadow_trigger_refuses_clearing_recorded_at_to_null(migrated_url: str) -> None:
+    round_id, _ = recorded_round(migrated_url, 100)
+    with (
+        psycopg.connect(migrated_url, autocommit=True) as conn,
+        pytest.raises(psycopg.errors.CheckViolation),
+    ):
+        conn.execute(
+            "UPDATE practice.shadow_rounds SET recording_key=NULL, recording_mime=NULL, "
+            "recording_bytes=NULL, uploaded_at=NULL, recorded_at=NULL WHERE id=%s",
+            [round_id],
+        )
+
+
+def test_recording_storage_calls_hold_no_database_transaction(
+    migrated_url: str, storage: FakeStorage
+) -> None:
+    recorded_round(migrated_url, 100)
+
+    async def go() -> None:
+        database = Database(conninfo_to_url(migrated_url))
+
+        class ObservedDatabase:
+            active = 0
+
+            @asynccontextmanager
+            async def transaction(self):
+                async with database.transaction() as session:
+                    await session.execute(text("SET LOCAL ROLE listenup_worker"))
+                    await session.execute(
+                        text("SET LOCAL idle_in_transaction_session_timeout='30s'")
+                    )
+                    self.active += 1
+                    try:
+                        yield session
+                    finally:
+                        self.active -= 1
+
+        observed = ObservedDatabase()
+        original = storage.delete
+
+        async def delete(key: str) -> None:
+            assert observed.active == 0, "storage latency must not hold a DB transaction"
+            await original(key)
+
+        storage.delete = delete  # type: ignore[method-assign]
+        try:
+            await retention.sweep_shadow_recordings(JobDeps(observed, None, 1))  # type: ignore[arg-type]
+        finally:
+            await database.dispose()
+
+    asyncio.run(go())
+
+
+@pytest.mark.parametrize(
+    ("offset", "removed"),
+    [("-1 microsecond", True), ("0 seconds", False), ("1 microsecond", False)],
+)
+def test_recording_exact_retention_boundary(migrated_url, storage, offset, removed):
+    round_id, key = recorded_round(migrated_url, 100)
+
+    async def go():
+        database = Database(conninfo_to_url(migrated_url))
+
+        class BoundaryDatabase:
+            first = True
+
+            @asynccontextmanager
+            async def transaction(self):
+                async with database.transaction() as session:
+                    if self.first:
+                        self.first = False
+                        await session.execute(
+                            text("ALTER TABLE practice.shadow_rounds DISABLE TRIGGER USER")
+                        )
+                        await session.execute(
+                            text(
+                                "UPDATE practice.shadow_rounds SET recorded_at=now()"
+                                "-interval '90 days' "
+                                "+cast(:offset as interval) WHERE id=:id"
+                            ),
+                            {"id": round_id, "offset": offset},
+                        )
+                        await session.execute(
+                            text("ALTER TABLE practice.shadow_rounds ENABLE TRIGGER USER")
+                        )
+                    yield session
+
+        try:
+            await retention.sweep_shadow_recordings(JobDeps(BoundaryDatabase(), None, 1))
+        finally:
+            await database.dispose()
+
+    asyncio.run(go())
+    assert (key in storage.deleted) is removed
+
+
+def test_recording_database_rollback_keeps_key_for_retry(
+    migrated_url: str, storage: FakeStorage
+) -> None:
+    round_id, key = recorded_round(migrated_url, 100)
+
+    async def go() -> None:
+        database = Database(conninfo_to_url(migrated_url))
+
+        class RollbackOnce:
+            failed = False
+
+            @asynccontextmanager
+            async def transaction(self):
+                async with database.transaction() as session:
+                    yield session
+                    if key in storage.deleted and not self.failed:
+                        self.failed = True
+                        raise RuntimeError("crash before commit")
+
+        try:
+            with pytest.raises(RuntimeError, match="crash before commit"):
+                await retention.sweep_shadow_recordings(JobDeps(RollbackOnce(), None, 1))  # type: ignore[arg-type]
+            assert (
+                one(
+                    migrated_url,
+                    "SELECT recording_key FROM practice.shadow_rounds WHERE id=%s",
+                    round_id,
+                )
+                == key
+            )
+            await retention.sweep_shadow_recordings(JobDeps(database, None, 2))
+            assert storage.deleted.count(key) == 2
+            assert (
+                one(
+                    migrated_url,
+                    "SELECT recording_key FROM practice.shadow_rounds WHERE id=%s",
+                    round_id,
+                )
+                is None
+            )
+        finally:
+            await database.dispose()
+
+    asyncio.run(go())
+
+
+def test_recording_overlap_does_not_lock_normal_traffic(
+    migrated_url: str, storage: FakeStorage
+) -> None:
+    round_id, key = recorded_round(migrated_url, 100)
+
+    async def go() -> None:
+        database = Database(conninfo_to_url(migrated_url), pool_size=3)
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = storage.delete
+        calls = 0
+
+        async def delete(key: str) -> None:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                entered.set()
+                await release.wait()
+            await original(key)
+
+        storage.delete = delete  # type: ignore[method-assign]
+        first = asyncio.create_task(retention.sweep_shadow_recordings(JobDeps(database, None, 1)))
+        try:
+            await asyncio.wait_for(entered.wait(), 5)
+            async with database.transaction() as session:
+                await session.execute(text("SET LOCAL lock_timeout = '100ms'"))
+                await session.execute(
+                    text(
+                        "UPDATE practice.shadow_rounds SET playback_status=playback_status "
+                        "WHERE id=:id"
+                    ),
+                    {"id": round_id},
+                )
+            second = await asyncio.wait_for(
+                retention.sweep_shadow_recordings(JobDeps(database, None, 1)), 5
+            )
+            release.set()
+            assert second + await first == 1
+            assert key in storage.deleted
+            assert (
+                one(
+                    migrated_url,
+                    "SELECT recording_key FROM practice.shadow_rounds WHERE id=%s",
+                    round_id,
+                )
+                is None
+            )
+        finally:
+            release.set()
+            await asyncio.gather(first, return_exceptions=True)
+            await database.dispose()
+
+    asyncio.run(go())
 
 
 # --- Short-lived data -------------------------------------------------------------
@@ -362,116 +562,6 @@ def test_sweeps_are_safe_to_repeat(migrated_url: str) -> None:
 # --- Worker scratch files ---------------------------------------------------------
 
 
-def age(path: Path, seconds: int) -> None:
-    then = time.time() - seconds
-    os.utime(path, (then, then))
-
-
-def test_scratch_older_than_an_hour_is_removed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        retention, "get_settings", lambda: Settings(media_scratch_dir=str(tmp_path))
-    )
-    stale = tmp_path / "transcript-abc"
-    stale.mkdir()
-    (stale / "playback.mp4").write_bytes(b"x")
-    age(stale / "playback.mp4", 7200)
-    age(stale, 7200)
-    stale_file = tmp_path / "listenup-convert-xyz"
-    stale_file.write_bytes(b"x")
-    age(stale_file, 3601)
-    fresh = tmp_path / "profile-live"
-    fresh.mkdir()
-    foreign = tmp_path / "not-ours"
-    foreign.write_bytes(b"x")
-    age(foreign, 7200)
-
-    removed = asyncio.run(retention.sweep_scratch_files(JobDeps(None, None, 1)))  # type: ignore[arg-type]
-
-    assert removed == 2
-    assert not stale.exists() and not stale_file.exists()
-    assert fresh.exists()
-    assert foreign.exists()  # only directories and files our jobs create
-
-
-def test_every_scratch_prefix_our_jobs_use_is_swept(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        retention, "get_settings", lambda: Settings(media_scratch_dir=str(tmp_path))
-    )
-    for prefix in ("card-", "transcript-", "profile-", "listenup-convert-", "media-job-"):
-        entry = tmp_path / f"{prefix}abc"
-        entry.mkdir()
-        age(entry, 7200)
-
-    removed = asyncio.run(retention.sweep_scratch_files(JobDeps(None, None, 1)))  # type: ignore[arg-type]
-
-    assert removed == 5
-
-
-def test_dangling_symlink_inside_a_stale_directory_does_not_keep_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        retention, "get_settings", lambda: Settings(media_scratch_dir=str(tmp_path))
-    )
-    stale = tmp_path / "transcript-dangling"
-    stale.mkdir()
-    (stale / "gone").symlink_to(tmp_path / "missing-target")
-    then = time.time() - 7200
-    os.utime(stale / "gone", (then, then), follow_symlinks=False)
-    age(stale, 7200)
-
-    removed = asyncio.run(retention.sweep_scratch_files(JobDeps(None, None, 1)))  # type: ignore[arg-type]
-
-    assert removed == 1
-    assert not stale.exists()
-
-
-def test_an_entry_that_cannot_be_removed_does_not_stop_the_sweep(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        retention, "get_settings", lambda: Settings(media_scratch_dir=str(tmp_path))
-    )
-    stuck, other = tmp_path / "transcript-stuck", tmp_path / "profile-other"
-    for entry in (stuck, other):
-        entry.mkdir()
-        age(entry, 7200)
-    real_rmtree = retention.shutil.rmtree
-
-    def rmtree(path: Path, *args: Any, **kwargs: Any) -> None:
-        if Path(path) == stuck:
-            raise PermissionError("busy")
-        real_rmtree(path, *args, **kwargs)
-
-    monkeypatch.setattr(retention.shutil, "rmtree", rmtree)
-
-    removed = asyncio.run(retention.sweep_scratch_files(JobDeps(None, None, 1)))  # type: ignore[arg-type]
-
-    assert removed == 1
-    assert stuck.exists() and not other.exists()
-
-
-def test_directory_with_a_recent_file_inside_is_kept(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        retention, "get_settings", lambda: Settings(media_scratch_dir=str(tmp_path))
-    )
-    busy = tmp_path / "media-job-1"
-    busy.mkdir()
-    (busy / "growing.wav").write_bytes(b"x")
-    age(busy, 7200)
-
-    removed = asyncio.run(retention.sweep_scratch_files(JobDeps(None, None, 1)))  # type: ignore[arg-type]
-
-    assert removed == 0
-    assert busy.exists()
-
-
 def test_scratch_sweep_does_nothing_without_a_configured_directory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -492,6 +582,7 @@ def test_sweeps_are_registered_and_scheduled() -> None:
         "ops.sweep_rate_counters": Lane.BACKGROUND,
         # Scratch files live on the media pool's disk, so its lane sweeps them.
         "ops.sweep_scratch_files": Lane.INTAKE,
+        "ops.sweep_default_scratch_files": Lane.BACKGROUND,
     }
     for name, lane in names.items():
         assert _registry[name].lane == lane

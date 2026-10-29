@@ -1,9 +1,9 @@
 """Scheduled retention sweeps (#93; Database Design 10.3, FR-SH-17, NFR-SEC-4).
 
 Each sweep is a background job that works in batches of `BATCH` rows chosen with
-`FOR UPDATE SKIP LOCKED`, one transaction per batch: it never holds a long lock, skips
-rows normal traffic is using, and a second run (or a concurrent one) finds nothing
-left to do. Handlers return how many rows or files they removed.
+`FOR UPDATE SKIP LOCKED`, in short transactions. Storage calls run outside transactions;
+repeated or overlapping runs safely converge on the same persisted result. Handlers
+return how many rows or files they removed.
 
 AI call log partitions are created ahead and dropped after 90 days by `ai.maintain`
 (#64), which runs every five minutes.
@@ -14,13 +14,13 @@ files, unreferenced YouTube media), which wait for #38.
 
 import asyncio
 import logging
-import shutil
-import time
+import tempfile
 import uuid
 from pathlib import Path
 
 from sqlalchemy import text
 
+from listenup.platform import scratch
 from listenup.platform.config import get_settings
 from listenup.platform.jobs import JobDeps, Lane, job
 from listenup.platform.storage import get_storage
@@ -28,9 +28,7 @@ from listenup.platform.storage import get_storage
 logger = logging.getLogger(__name__)
 
 BATCH = 1000
-# Recording deletes are serial storage calls made while the batch's row locks are held,
-# and the worker role drops a transaction idle for 30 s: keep that batch small.
-SHADOW_BATCH = 50
+SHADOW_BATCH = BATCH
 
 # Daily sweeps run in the quiet hours (UTC); minutes are spread so they do not start
 # together.
@@ -40,17 +38,6 @@ TOKENS_SCHEDULE = "29 3 * * *"
 IDEMPOTENCY_SCHEDULE = "35 * * * *"
 RATE_SCHEDULE = "41 * * * *"
 SCRATCH_SCHEDULE = "*/15 * * * *"
-
-# Every directory or file the worker jobs create in LISTENUP_MEDIA_SCRATCH_DIR. Only
-# these are swept, so a directory shared with other programs is left alone.
-SCRATCH_PREFIXES = (
-    "card-",
-    "transcript-",
-    "profile-",
-    "listenup-export-",
-    "listenup-convert-",
-    "media-job-",
-)
 
 
 async def _delete_in_batches(deps: JobDeps, table: str, condition: str) -> int:
@@ -99,25 +86,27 @@ async def sweep_shadow_recordings(deps: JobDeps, timestamp: int | None = None) -
                     {"days": days, "batch": SHADOW_BATCH, "failed": failed},
                 )
             ).all()
-            deleted: list[uuid.UUID] = []
-            for round_id, key in rows:
-                try:
-                    await storage.delete(key)
-                except Exception:  # one bad key must not hold back the rest
-                    logger.exception("shadow recording not deleted", extra={"round_id": round_id})
-                    failed.append(round_id)
-                else:
-                    deleted.append(round_id)
-            if deleted:
-                await session.execute(
+        # The retained key is durable retry state. Recorded keys cannot be replaced;
+        # concurrent sweeps may repeat the idempotent object delete, then only one
+        # conditional UPDATE wins. No DB transaction spans a remote storage call.
+        for round_id, key in rows:
+            try:
+                await storage.delete(key)
+            except Exception:
+                logger.exception("shadow recording not deleted", extra={"round_id": round_id})
+                failed.append(round_id)
+                continue
+            async with deps.database.transaction() as session:
+                result = await session.execute(
                     text(
                         "UPDATE practice.shadow_rounds SET recording_key = NULL, "
                         "recording_mime = NULL, recording_bytes = NULL, uploaded_at = NULL "
-                        "WHERE id = ANY(:ids)"
+                        "WHERE id = :id AND recording_key = :key "
+                        "AND recorded_at < now() - make_interval(days => :days)"
                     ),
-                    {"ids": deleted},
+                    {"id": round_id, "key": key, "days": days},
                 )
-        total += len(deleted)
+                total += int(getattr(result, "rowcount", 0) or 0)
         if len(rows) < SHADOW_BATCH:
             break
     if total:
@@ -159,54 +148,23 @@ async def sweep_rate_counters(deps: JobDeps, timestamp: int | None = None) -> in
     )
 
 
-def _mtime(path: Path) -> float:
-    """Modification time of the entry itself; a dangling symlink has one too."""
-    try:
-        return path.lstat().st_mtime
-    except FileNotFoundError:
-        return 0.0
-
-
-def _sweep_scratch(root: Path, max_age_seconds: int) -> int:
-    """Remove our entries under `root` that nothing wrote to for `max_age_seconds`."""
-    cutoff = time.time() - max_age_seconds
-    removed = 0
-    for entry in root.iterdir():
-        if not entry.name.startswith(SCRATCH_PREFIXES):
-            continue
-        try:
-            newest = entry.lstat().st_mtime
-            if entry.is_dir() and not entry.is_symlink():
-                newest = max([newest, *(_mtime(p) for p in entry.rglob("*"))])
-            if newest >= cutoff:
-                continue  # a job may still be using it
-            if entry.is_dir() and not entry.is_symlink():
-                shutil.rmtree(entry)
-            else:
-                entry.unlink()
-            removed += 1
-        except FileNotFoundError:
-            continue  # the owning job cleaned up meanwhile
-        except OSError:
-            logger.exception("scratch entry not removed", extra={"path": str(entry)})
-    return removed
+async def _sweep_scratch_root(root: Path, max_age_seconds: int) -> int:
+    return await asyncio.to_thread(scratch.sweep, root, max_age_seconds)
 
 
 @job(Lane.INTAKE, "ops.sweep_scratch_files", schedule=SCRATCH_SCHEDULE)
 async def sweep_scratch_files(deps: JobDeps, timestamp: int | None = None) -> int:
-    """Remove worker scratch files left behind for over an hour (crashed or killed jobs).
-
-    Runs on the intake lane so it executes in the media pool, where the scratch
-    directory is. Without `LISTENUP_MEDIA_SCRATCH_DIR` it does nothing: the system's
-    temporary directory is shared with other programs.
-    """
+    """Sweep only owned, unlocked entries on the media pool's scratch disk."""
     settings = get_settings()
-    if settings.media_scratch_dir is None:
+    root = settings.scratch_cleanup_root or settings.media_scratch_dir
+    if root is None:
         return 0
-    root = Path(settings.media_scratch_dir)
-    if not root.is_dir():
-        return 0
-    removed = await asyncio.to_thread(_sweep_scratch, root, settings.scratch_max_age_seconds)
-    if removed:
-        logger.info("scratch files removed", extra={"count": removed})
-    return removed
+    return await _sweep_scratch_root(Path(root), settings.scratch_max_age_seconds)
+
+
+@job(Lane.BACKGROUND, "ops.sweep_default_scratch_files", schedule=SCRATCH_SCHEDULE)
+async def sweep_default_scratch_files(deps: JobDeps, timestamp: int | None = None) -> int:
+    """The default pool owns export scratch, including when pools have separate disks."""
+    settings = get_settings()
+    root = settings.media_scratch_dir or tempfile.gettempdir()
+    return await _sweep_scratch_root(Path(root), settings.scratch_max_age_seconds)
