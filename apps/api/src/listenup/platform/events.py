@@ -143,6 +143,7 @@ class Subscription:
 
     user_id: uuid.UUID
     queue: asyncio.Queue[_Item]
+    ending: bool = False
 
     async def next(self, timeout: float) -> _Item | None:
         """The next item, or None when nothing arrived within `timeout` seconds."""
@@ -282,6 +283,8 @@ class EventHub:
         self._closed = True
         for subscriptions in self._streams.values():
             for subscription in subscriptions:
+                if subscription.ending:
+                    continue  # Deliver the queued terminal event before shutdown.
                 _drain(subscription.queue)
                 subscription.queue.put_nowait(_Signal.CLOSE)
 
@@ -321,6 +324,8 @@ class EventHub:
         self._next_sweep = now + self.replay_seconds
 
     def _put(self, subscription: Subscription, item: _Item) -> None:
+        if subscription.ending:
+            return
         try:
             subscription.queue.put_nowait(item)
         except asyncio.QueueFull:
@@ -331,6 +336,9 @@ class EventHub:
 
     def _end(self, subscription: Subscription, event: Event) -> None:
         """Deliver `event` and end; a full queue drops only the older backlog."""
+        if subscription.ending:
+            return
+        subscription.ending = True
         try:
             subscription.queue.put_nowait(_EndingEvent(event))
         except asyncio.QueueFull:

@@ -266,3 +266,86 @@ async def test_a_replayed_stream_ending_event_ends_the_stream_too() -> None:
     (chunk,) = await drain(again, 1)
     assert parse(chunk)["id"] == later.id
     assert hub.stream_count(A) == 1
+
+
+async def assert_disabled_then_closed(stream: AsyncIterator[str], event_id: str) -> None:
+    fields = parse(await asyncio.wait_for(anext(stream), 1))
+    assert fields == {
+        "id": event_id,
+        "event": "account.disabled",
+        "data": json.dumps({"type": "account.disabled", "resource_id": str(A)}),
+    }
+    with pytest.raises(StopAsyncIteration):
+        await asyncio.wait_for(anext(stream), 1)
+
+
+async def test_account_disabled_survives_later_notifications() -> None:
+    hub = EventHub(queue_size=2)
+    stream = await opened(hub, A)
+    disabled = hub.dispatch(A, EventType.ACCOUNT_DISABLED, str(A))
+
+    for number in range(3):
+        hub.dispatch(A, EventType.JOB_PROGRESS, str(number))
+
+    await assert_disabled_then_closed(stream, disabled.id)
+    assert hub.stream_count(A) == 0
+
+
+async def test_account_disabled_arrives_at_a_saturated_queue() -> None:
+    hub = EventHub(queue_size=2)
+    stream = await opened(hub, A)
+    for number in range(2):
+        hub.dispatch(A, EventType.JOB_PROGRESS, str(number))
+
+    disabled = hub.dispatch(A, EventType.ACCOUNT_DISABLED, str(A))
+
+    await assert_disabled_then_closed(stream, disabled.id)
+    assert hub.stream_count(A) == 0
+
+
+async def test_account_disabled_survives_resync() -> None:
+    hub = EventHub(queue_size=2)
+    stream = await opened(hub, A)
+    hub.dispatch(A, EventType.JOB_PROGRESS, "before")
+    disabled = hub.dispatch(A, EventType.ACCOUNT_DISABLED, str(A))
+
+    hub.mark_gap()
+
+    first = parse(await asyncio.wait_for(anext(stream), 1))
+    assert first["event"] == "job.progress"
+    await assert_disabled_then_closed(stream, disabled.id)
+    assert hub.stream_count(A) == 0
+
+
+async def test_account_disabled_survives_shutdown() -> None:
+    hub = EventHub(queue_size=2)
+    stream = await opened(hub, A)
+    disabled = hub.dispatch(A, EventType.ACCOUNT_DISABLED, str(A))
+
+    hub.close()
+
+    await assert_disabled_then_closed(stream, disabled.id)
+    assert hub.stream_count(A) == 0
+
+
+async def test_account_disabled_survives_in_a_one_slot_queue() -> None:
+    hub = EventHub(queue_size=1)
+    stream = await opened(hub, A)
+    hub.dispatch(A, EventType.JOB_PROGRESS, "before")
+    disabled = hub.dispatch(A, EventType.ACCOUNT_DISABLED, str(A))
+
+    hub.dispatch(A, EventType.JOB_PROGRESS, "after")
+
+    await assert_disabled_then_closed(stream, disabled.id)
+    assert hub.stream_count(A) == 0
+
+
+async def test_account_disabled_keeps_the_first_terminal_event() -> None:
+    hub = EventHub(queue_size=1)
+    stream = await opened(hub, A)
+    disabled = hub.dispatch(A, EventType.ACCOUNT_DISABLED, str(A))
+
+    hub.dispatch(A, EventType.ACCOUNT_DISABLED, str(A))
+
+    await assert_disabled_then_closed(stream, disabled.id)
+    assert hub.stream_count(A) == 0
