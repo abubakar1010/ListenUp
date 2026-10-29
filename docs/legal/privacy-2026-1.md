@@ -71,7 +71,7 @@ A hosted text service may be used later for gist grading and key points, and for
 
 - **Account and practice**: until you delete them or your account.
 - **Uploaded clips**: until you delete them.
-- **Voice recordings**: the policy is to delete them 90 days after recording, on request, or when the session or clip is deleted, whichever comes first. Grades and word labels stay after recording expiry. Account deletion has the separate 7-day grace period below. Automatic recording expiry and individual recording, session and clip deletion are not implemented yet (#89, #90, #93); this draft does not promise that these controls are available. They are required before public launch.
+- **Voice recordings**: the policy is to delete them 90 days after recording, on request, or when the session or clip is deleted, whichever comes first. Grades and word labels stay after recording expiry. Account deletion has the separate 7-day grace period below. Deleting a clip deletes its recordings. Automatic recording expiry and deleting a single recording or session on request are not implemented yet (#90, #93); this draft does not promise that these controls are available. They are required before public launch.
 - **YouTube video copies**: the intended policy is deletion 30 days after last use; the cleanup is not implemented and YouTube intake remains disabled. Transcript retention is subject to the OQ-6 review.
 - **Uploads you never finished**: an upload that is not confirmed within 24 hours is not added to your library.
 - **Data export archives**: deleted 7 days after they are ready.
@@ -85,7 +85,9 @@ A hosted text service may be used later for gist grading and key points, and for
 
 **Delete your account.** In Settings you can delete your account. It is disabled at once and you are signed out everywhere. If you sign in within 7 days, you can choose to restore it, with everything as it was. After the grace period, background purging removes your account, data, clips and recordings from the live service. Backup copies expire separately as described above. Signing in alone does not restore an account: you must choose Restore; choosing Keep it deleted preserves its deletion schedule.
 
-**Delete content.** The intended controls remove a recording on request, or remove a clip together with its sessions, marks, recordings and transcript corrections. These individual deletion controls are not implemented yet (#89, #90). An upload transcript goes with its clip; a shared transcript is removed only when no learner still uses its media. Usage events remain until account deletion. Account deletion is available in Settings.
+**Delete a clip.** In your library you can delete a clip after confirming. Deleting it removes the clip together with its sessions, marks, cards, recordings and transcript corrections, and the files stored for it. The removal runs in the background, so it may take a short while to finish. An upload transcript goes with its clip; a shared transcript is removed only when no learner still uses its media, and removing the shared media copy itself is not implemented yet (#93). Backup copies expire separately as described above. Usage events remain until account deletion.
+
+**Delete a session or a recording.** The intended controls remove a single recording or a single session on request. They are not implemented yet (#90). Account deletion is available in Settings.
 
 **Withdraw voice-recording consent.** In Settings you can withdraw your consent at any time. New Shadow rounds will then not record until you agree again.
 
