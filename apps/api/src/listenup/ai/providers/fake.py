@@ -2,7 +2,7 @@
 
 Select one in `ai.yaml` with `provider: fake`. They need no model and no network, so
 switching a role to `fake` is how a test proves the provider is chosen by configuration
-alone (AT-22). The gateway refuses them in production.
+alone (AT-22). The gateway refuses `fake` in production, enabled or not.
 """
 
 import asyncio

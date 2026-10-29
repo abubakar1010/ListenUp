@@ -7,6 +7,7 @@ from listenup.ai.evals.metrics import summarize
 from listenup.ai.evals.models import Dataset, Grade, Thresholds
 from listenup.ai.gateway import AIGateway
 from listenup.ai.ports import Role
+from listenup.ai.providers.fake_assessment import SYNTHETIC_PROVIDERS
 from listenup.ai.tasks import GistGrade, GradeGistInput
 from listenup.ai.text_tasks import run_task
 
@@ -41,6 +42,10 @@ def gist_grade(value: GistGrade, bounds: tuple[float, float, float]) -> Grade:
             "level": levels[sum(overall >= b for b in bounds)],
         }
     )
+
+
+def uses_synthetic_provider(providers: set[str]) -> bool:
+    return not providers.isdisjoint(SYNTHETIC_PROVIDERS)
 
 
 async def run(
@@ -179,9 +184,9 @@ async def run(
     report["thresholds"] = decisions
     report["status"] = "pass" if all(d["pass"] for d in decisions.values()) else "fail"
     report["model_quality_evidence"] = (
-        dataset.kind == "teacher" and not offline and "fake" not in actual
+        dataset.kind == "teacher" and not offline and not uses_synthetic_provider(actual)
     )
-    if "fake" in actual:
+    if uses_synthetic_provider(actual):
         report["notice"] = "Fake-provider fixtures: harness validation only, not model quality."
     report["provider_acceptance"] = (
         report["status"] == "pass"

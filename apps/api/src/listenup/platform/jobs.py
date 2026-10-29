@@ -498,9 +498,9 @@ async def recover_stalled_jobs(deps: JobDeps, timestamp: int | None = None) -> i
     """
     async with deps.database.transaction() as session:
         stalled = (
-            await session.scalars(
+            await session.execute(
                 text("""
-                SELECT j.id FROM procrastinate.procrastinate_jobs j
+                SELECT j.id, j.worker_id, j.attempts FROM procrastinate.procrastinate_jobs j
                   LEFT JOIN procrastinate.procrastinate_workers w ON w.id = j.worker_id
                  WHERE j.status = 'doing'
                    AND (w.id IS NULL OR w.last_heartbeat < now() - :stalled_after)
@@ -510,26 +510,41 @@ async def recover_stalled_jobs(deps: JobDeps, timestamp: int | None = None) -> i
             )
         ).all()
     settled = 0
-    for job_id in stalled:
-        if await _settle_stalled_job(deps.database, job_id):
+    for job_id, worker_id, run_attempts in stalled:
+        if await _settle_stalled_job(deps.database, job_id, worker_id, run_attempts):
             settled += 1
     return settled
 
 
-async def _settle_stalled_job(database: Database, job_id: int) -> bool:
+async def _settle_stalled_job(
+    database: Database, job_id: int, worker_id: int | None, run_attempts: int
+) -> bool:
+    """Settle the run that was selected as stalled: the same worker and attempt, and a
+    worker still silent. A job restarted since the selection is a new run."""
     async with database.transaction() as session:
         row = (
             await session.execute(
                 text("""
-                SELECT task_name, attempts, args FROM procrastinate.procrastinate_jobs
-                 WHERE id = :id AND status = 'doing'
-                   FOR UPDATE SKIP LOCKED
+                SELECT j.task_name, j.attempts, j.args
+                  FROM procrastinate.procrastinate_jobs j
+                  LEFT JOIN procrastinate.procrastinate_workers w ON w.id = j.worker_id
+                 WHERE j.id = :id AND j.status = 'doing'
+                   AND j.worker_id IS NOT DISTINCT FROM :worker_id
+                   AND j.attempts = :run_attempts
+                   AND (w.id IS NULL OR w.last_heartbeat < now() - :stalled_after)
+                   FOR UPDATE OF j SKIP LOCKED
                 """),
-                {"id": job_id},
+                {
+                    "id": job_id,
+                    "worker_id": worker_id,
+                    "run_attempts": run_attempts,
+                    "stalled_after": STALLED_AFTER,
+                },
             )
         ).first()
         if row is None:
-            return False  # finished meanwhile, or another run is settling it
+            # Finished, restarted or heard from meanwhile, or another run is settling it.
+            return False
         task_name, attempts, args = row
         entry = _registry.get(task_name)
         # `attempts` counts the runs before the one that stalled.
