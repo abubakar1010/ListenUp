@@ -14,6 +14,8 @@ All three are drafts. They have **not** been reviewed by a legal adviser, and ea
 
 For this revision the owner approved updating the existing, undeployed `2026-1` drafts without changing the consent labels (2026-10-28). No configuration or consent-capture behavior changes. This is not permission to edit a label after learners have accepted it in a deployment. A text that changes after review is published as a new version (for example `privacy-2026-2`): a label a learner accepted always names the text they saw.
 
+A follow-up check on 2026-10-29 found zero GitHub deployments, while #112 still records the live cutover as unverified. No evidence of learner acceptance of the `2026-1` labels was found in those sources; this does not establish whether deployments outside GitHub have used them. The owner must confirm whether any deployment has shown these labels to learners. Confirmed prior acceptance requires new labels for meaningful changes.
+
 ## Publishing a new version
 
 1. Add the new file (`<kind>-<year>-<n>.md`); never edit the text of a label already deployed, except for typo fixes that change no meaning.
@@ -101,6 +103,7 @@ exact-version selection, stable links, missing-version failure and explicit agre
 Actual commands and outcomes are recorded in the pull request. Legal review remains
 outstanding in #102, and #103 must remain open until its review criterion is met.
 
-The only files changed are this source register and the three draft texts. Existing
+This clip-deletion follow-up changes only this source register, the privacy draft
+and the voice-recording draft. Existing
 `texts.ts`, `LegalPage`, `DOCUMENTS`, sign-up and Shadow readiness already load/link
 these files. No additional registry or route is required.
