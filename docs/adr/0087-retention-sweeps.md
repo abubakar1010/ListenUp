@@ -45,6 +45,13 @@ returns the number of persisted removals and converges safely on repeated runs.
   an orphan child still using its files remains protected. The sweep takes an
   exclusive nonblocking lock, checks marker/entry identity without following symlinks,
   and removes only entries whose descendants are all older than the configured age.
+  Namespace and entry directories must belong to the worker's effective user and
+  have no group/other permissions. Markers must be regular, singly linked, owned
+  by that user and not writable by other users. Inspection and removal use open
+  directory descriptors; replacing the entry pathname cannot redirect deletion.
+  Entry and marker identities are rechecked after scanning and before final unlink.
+  Code running as the worker's own Unix user is trusted not to tamper with live
+  leases; these checks are not an isolation boundary between same-user processes.
   Unmarked/legacy/unrelated entries remain for operator inspection; age is not proof
   of abandoned ownership. Each pool sweeps its own disk every 15 minutes: intake
   `ops.sweep_scratch_files` on media, background `ops.sweep_default_scratch_files` on

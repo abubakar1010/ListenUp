@@ -92,3 +92,39 @@ remain required before merge.
   separate uninstrumented performance run also passed. Neither result is hidden.
 - Actual-host performance and real speech-model acceptance remain outside this
   retention change and are not established by synthetic/unit/CI results.
+
+## Independent re-review remediation, 2026-10-30
+
+The owner instructed this session to post the independent review, fix all findings
+and merge only if everything is fine. The review of `8f488bc` is posted at
+https://github.com/abubakar1010/ListenUp/pull/249#issuecomment-6526165898.
+It found a scratch pathname-replacement race and stale completion documentation.
+This instruction authorizes the current fixes and conditional merge; it does not
+establish historical migration ownership, initial plan approval or TDD chronology.
+No migration is changed in this remediation. Main `61a5d92` (#253 and #252) is
+integrated without conflicts. E1, #93's open status and all legal gates still apply.
+
+| Criterion | Named test / check | Actual Red | Green |
+| --- | --- | --- | --- |
+| A replaced directory must not redirect deletion | `test_directory_replaced_during_scan_is_not_deleted` | Sweep removed the unmarked replacement; expected 0, got 1 | Passed after descriptor-relative removal |
+| A replacement marker with an active lease must survive | `test_marker_replaced_by_active_lease_during_scan_is_preserved` | Sweep removed the directory despite the new shared lease | Passed after marker identity revalidation |
+| Reject a namespace writable by other users | `test_nonprivate_namespace_is_refused_and_not_swept` | Sweep removed a stale directory from a mode-0777 namespace | Passed after owner/mode validation |
+| Preserve completion after recording expiry, FR-SH-17 | Read completion convention against `complete_recording` and `test_step_completes_when_an_older_recording_was_swept` | Documentation-only; no artificial Red | Convention now uses preserved `recorded_at` as completion evidence |
+
+The three regression tests above were run before the fix with
+`.venv/bin/python -m pytest tests/unit/test_scratch.py -k 'replaced or nonprivate' -q`:
+**3 failed**. The expanded focused command is
+`.venv/bin/python -m pytest tests/unit/test_scratch.py tests/unit/test_media_sandbox.py tests/unit/test_worker_modules.py tests/unit/test_consents.py -q --cov=listenup.platform.scratch --cov-report=term-missing`:
+**79 passed; scratch line and branch coverage 100%**. Added late-removal, final-unlink,
+nested-symlink, missing-namespace and invalid-marker/owner cases are strengthening
+after implementation, not invented pre-implementation Red cycles. Their assertions
+check retained foreign contents and retained active lease markers, not just counts.
+The permission-error test now injects refusal at `rmdir`, the filesystem boundary
+used by descriptor-relative cleanup, and still requires the other entry to progress.
+
+Backend Ruff lint/format passed; mypy passed on 214 source files; all six import
+contracts passed. Full required-service suites, changed-line coverage and deployed
+boundary/image checks must pass in CI on the final pushed head. Material fixes need
+fresh-session re-review before merge. Results on older heads do not satisfy that gate.
+The implementation now explicitly states its Unix-user trust boundary: another
+process running as the same worker user is not an isolated hostile principal.

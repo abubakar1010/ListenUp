@@ -173,14 +173,14 @@ def test_marker_symlink_is_never_followed(tmp_path):
 
 def test_unremovable_directory_does_not_block_other_entries(tmp_path, monkeypatch):
     blocked, other = abandoned(tmp_path), abandoned(tmp_path)
-    original = scratch.shutil.rmtree
+    original = scratch.os.rmdir
 
     def remove(path, **kwargs):
-        if Path(path) == blocked:
+        if Path(path).name == blocked.name:
             raise PermissionError("refused")
         return original(path, **kwargs)
 
-    monkeypatch.setattr(scratch.shutil, "rmtree", remove)
+    monkeypatch.setattr(scratch.os, "rmdir", remove)
     assert scratch.sweep(tmp_path, 3600) == 1
     assert blocked.exists() and not other.exists()
 
@@ -273,3 +273,175 @@ def test_lease_survives_the_real_media_launcher(tmp_path):
         assert not path.exists()
 
     asyncio.run(go())
+
+
+def test_directory_replaced_during_scan_is_not_deleted(tmp_path, monkeypatch):
+    stale = abandoned(tmp_path)
+    identity = stale.stat().st_ino
+    replacement = tmp_path / "unmarked"
+    replacement.mkdir()
+    (replacement / "keep").write_bytes(b"unrelated")
+    old(replacement)
+    original = Path.rglob
+    swapped = False
+
+    def scan(path, pattern):
+        nonlocal swapped
+        if not swapped and path.stat().st_ino == identity:
+            swapped = True
+            stale.rename(tmp_path / "original")
+            replacement.rename(stale)
+        return original(path, pattern)
+
+    monkeypatch.setattr(Path, "rglob", scan)
+    assert scratch.sweep(tmp_path, 3600) == 0
+    assert swapped
+    assert (stale / "keep").read_bytes() == b"unrelated"
+
+
+def test_marker_replaced_by_active_lease_during_scan_is_preserved(tmp_path, monkeypatch):
+    import fcntl
+
+    stale = abandoned(tmp_path)
+    original = Path.rglob
+    leases = []
+
+    def scan(path, pattern):
+        if not leases:
+            (stale / scratch.MARKER).rename(tmp_path / "original-marker")
+            lease = (stale / scratch.MARKER).open("xb")
+            lease.write(scratch.MAGIC)
+            lease.flush()
+            fcntl.flock(lease, fcntl.LOCK_SH)
+            leases.append(lease)
+            then = time.time() - 7200
+            for item in (stale / scratch.MARKER, stale):
+                os.utime(item, (then, then))
+        return original(path, pattern)
+
+    monkeypatch.setattr(Path, "rglob", scan)
+    try:
+        assert scratch.sweep(tmp_path, 3600) == 0
+        assert (stale / scratch.MARKER).read_bytes() == scratch.MAGIC
+    finally:
+        for lease in leases:
+            lease.close()
+
+
+def test_nonprivate_namespace_is_refused_and_not_swept(tmp_path):
+    stale = abandoned(tmp_path)
+    stale.parent.chmod(0o777)
+    assert scratch.sweep(tmp_path, 3600) == 0
+    assert stale.exists()
+    with (
+        pytest.raises(OSError, match="private"),
+        scratch.directory(str(tmp_path), prefix="media-job-"),
+    ):
+        pytest.fail("must not use a namespace writable by other users")
+
+
+def test_replacement_after_validation_cannot_redirect_removal(tmp_path, monkeypatch):
+    stale = abandoned(tmp_path)
+    (stale / "data").write_bytes(b"expired")
+    old(stale)
+    inode = stale.stat().st_ino
+    replacement = tmp_path / "unmarked"
+    replacement.mkdir()
+    (replacement / "data").write_bytes(b"keep")
+    original = os.scandir
+    swapped = False
+
+    def scan(path):
+        nonlocal swapped
+        if isinstance(path, int) and not swapped and os.fstat(path).st_ino == inode:
+            swapped = True
+            stale.rename(tmp_path / "original")
+            replacement.rename(stale)
+        return original(path)
+
+    monkeypatch.setattr(os, "scandir", scan)
+    assert scratch.sweep(tmp_path, 3600) == 0
+    assert swapped
+    assert (stale / "data").read_bytes() == b"keep"
+
+
+def test_stale_tree_removal_does_not_follow_nested_symlinks(tmp_path):
+    stale = abandoned(tmp_path)
+    nested = stale / "nested"
+    nested.mkdir()
+    (nested / "audio").write_bytes(b"expired")
+    (stale / "file").write_bytes(b"expired")
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    (foreign / "keep").write_bytes(b"safe")
+    (stale / "link").symlink_to(foreign, target_is_directory=True)
+    old(stale)
+    assert scratch.sweep(tmp_path, 3600) == 1
+    assert not stale.exists()
+    assert (foreign / "keep").read_bytes() == b"safe"
+
+
+def test_namespace_owned_by_another_user_is_refused(tmp_path, monkeypatch):
+    stale = abandoned(tmp_path)
+    monkeypatch.setattr(os, "geteuid", lambda: stale.stat().st_uid + 1)
+    assert scratch.sweep(tmp_path, 3600) == 0
+    assert stale.exists()
+    with (
+        pytest.raises(OSError, match="owned"),
+        scratch.directory(str(tmp_path), prefix="media-job-"),
+    ):
+        pytest.fail("must not use another user's namespace")
+
+
+@pytest.mark.parametrize("kind", ["directory", "hardlink", "writable", "foreign"])
+def test_invalid_marker_ownership_is_preserved(tmp_path, monkeypatch, kind):
+    stale = abandoned(tmp_path)
+    marker = stale / scratch.MARKER
+    if kind == "directory":
+        marker.unlink()
+        marker.mkdir()
+    elif kind == "hardlink":
+        os.link(marker, tmp_path / "alias")
+    elif kind == "writable":
+        marker.chmod(0o666)
+    else:
+        original = os.fstat
+
+        def info(fd):
+            result = original(fd)
+            if result.st_ino == marker.stat().st_ino:
+                values = list(result)
+                values[4] = result.st_uid + 1
+                return os.stat_result(values)
+            return result
+
+        monkeypatch.setattr(os, "fstat", info)
+    old(stale)
+    assert scratch.sweep(tmp_path, 3600) == 0
+    assert stale.exists()
+
+
+def test_missing_namespace_is_a_noop(tmp_path):
+    assert scratch.sweep(tmp_path, 3600) == 0
+
+
+def test_replacement_during_final_unlink_is_preserved(tmp_path, monkeypatch):
+    stale = abandoned(tmp_path)
+    inode = stale.stat().st_ino
+    replacement = tmp_path / "unmarked"
+    replacement.mkdir()
+    original = os.unlink
+    swapped = False
+
+    def unlink(path, *, dir_fd=None):
+        nonlocal swapped
+        if path == scratch.MARKER and not swapped and os.fstat(dir_fd).st_ino == inode:
+            swapped = True
+            stale.rename(tmp_path / "original")
+            replacement.rename(stale)
+        return original(path, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "unlink", unlink)
+    assert scratch.sweep(tmp_path, 3600) == 0
+    assert swapped
+    assert stale.is_dir()

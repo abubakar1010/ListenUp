@@ -436,8 +436,11 @@ Read the section for the area you are changing before you change it. The rules e
 - Recording finalization takes the client's session `version`; new writes refuse
   stale versions with `session_changed`. A recorded round is a no-op on repeat,
   including after completion. Ownership and voice consent still apply.
-- After all three rounds have both `recorded_at` and `uploaded_at`, call
-  `practice.service.complete_step` in the same transaction. Playback alone never
+- After all three rounds have `recorded_at`, call
+  `practice.service.complete_step` in the same transaction. Finalization sets it
+  only after upload succeeds; retention preserves it while clearing `uploaded_at`
+  and the recording file fields. Expired recordings therefore still count toward
+  completion. Playback alone never
   completes Shadow; no grading job, profile or provider gates this transition.
 - Completed (done) Shadow sessions retain read-only segment/round state and replay.
   Skipped sessions retain the existing step refusal. The web refreshes session
