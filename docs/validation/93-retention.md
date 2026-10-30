@@ -128,3 +128,16 @@ boundary/image checks must pass in CI on the final pushed head. Material fixes n
 fresh-session re-review before merge. Results on older heads do not satisfy that gate.
 The implementation now explicitly states its Unix-user trust boundary: another
 process running as the same worker user is not an isolated hostile principal.
+
+Additional local PostgreSQL 16 validation passed: **71** retention, Shadow recording
+and export integration tests. The initial final-head CI attempt then failed its
+real dependency audit: locked `joserfc` 1.7.5 has CVE-2026-119284, fixed in 1.7.6.
+`uv lock --upgrade-package joserfc==1.7.6` changed only that package in `uv.lock`.
+This is a security patch required to clear CI, not a waived audit or added ignore.
+Actual Red: CI job 124145396510 reported that vulnerability and exited 1. Green:
+`uv export --frozen --no-dev --no-hashes --no-emit-project` followed by
+`uvx pip-audit -r <exported requirements>` reported **No known vulnerabilities**.
+Authentication neighbors on the patched dependency passed **119 tests**:
+`test_google_oidc.py`, `test_google_data.py`, `test_auth.py`, integration/unit
+`test_consents.py`, and `test_google_redirects.py`. Final CI must rerun on this
+patched head; the earlier failed attempt remains disclosed.
