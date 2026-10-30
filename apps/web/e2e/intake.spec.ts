@@ -1,4 +1,5 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { type Page, type Route } from '@playwright/test';
+import { expect, test } from './test';
 
 /*
  * Intake status and refusals (#39, #40, #41), with the API answered by the test.

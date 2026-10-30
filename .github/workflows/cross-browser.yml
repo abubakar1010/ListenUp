@@ -1,0 +1,74 @@
+# The plan paths on Chrome, Edge, Firefox and Safari's engine (#99, NFR-COM-1, ADR 0080).
+#
+# The Playwright suite answers the API from the tests, so this proves what each browser
+# does with the interface and the media, not the server (the API integration tests
+# prove that). It runs every night, and by hand before a release: Actions → Cross-browser
+# → Run workflow, on the commit that is about to ship (docs/runbooks/cross-browser.md).
+# CI's own e2e job stays Chromium-only so every push is quick.
+#
+# One job per browser, because the engines need different machines:
+#   chromium, msedge   Ubuntu; Chromium's fake microphone.
+#   firefox            Ubuntu with a PulseAudio null sink (no sound card on a runner).
+#                      PulseAudio must not run for the Chromium jobs: with it present the
+#                      fake microphone check never hears a sound.
+#   webkit             macOS: Playwright's Linux WebKit has no MediaRecorder, so Shadow
+#                      recording (Safari's AAC in MP4) can only run on the macOS build.
+name: Cross-browser
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cross-browser-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: ${{ matrix.browser }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {browser: chromium, os: ubuntu-latest, install: chromium}
+          - {browser: msedge, os: ubuntu-latest, install: msedge}
+          - {browser: firefox, os: ubuntu-latest, install: firefox}
+          - {browser: webkit, os: macos-latest, install: webkit}
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Install the browser
+        run: pnpm exec playwright install ${{ runner.os == 'Linux' && '--with-deps ' || '' }}${{ matrix.install }}
+      - name: Audio sink for Firefox
+        if: matrix.browser == 'firefox'
+        run: |
+          sudo apt-get install -y pulseaudio
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=ci
+      - name: Run the suite
+        env:
+          E2E_BROWSERS: ${{ matrix.browser }}
+        run: pnpm e2e --project=${{ matrix.browser }}
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: playwright-report-${{ matrix.browser }}
+          path: apps/web/playwright-report
+          retention-days: 14

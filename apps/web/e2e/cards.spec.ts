@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { SAFARI_SELECT, expect, isMacWebKit, test } from './test';
 
 function audibleSnippet() {
   const rate = 8000;
@@ -22,7 +22,11 @@ function audibleSnippet() {
 
 // Browser behavior against a mocked API; DB limits are proved by test_cards_api.py.
 for (const refreshFails of [false, true]) {
-  test(`cards_keyboard_at_360px (count refresh fails: ${refreshFails})`, async ({ page }) => {
+  test(`cards_keyboard_at_360px (count refresh fails: ${refreshFails})`, async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(isMacWebKit(browserName), SAFARI_SELECT);
     await page.setViewportSize({ width: 360, height: 800 });
     let done = false;
     const cards: Record<string, unknown>[] = [];

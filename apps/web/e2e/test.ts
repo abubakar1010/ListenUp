@@ -1,0 +1,128 @@
+import { expect, test as base, type Page } from '@playwright/test';
+import { recordingSkipReason } from './recording-policy';
+
+export { expect };
+
+/**
+ * `getUserMedia` for browsers with no fake-device switch (WebKit, #99): a Web Audio
+ * oscillator stream. The page still records it with the real MediaRecorder, so Safari
+ * produces genuine AAC in MP4 and the upload path sees real bytes.
+ */
+function fakeMicrophone() {
+  // WebKit only lets an AudioContext run if it was resumed inside a user gesture, and
+  // getUserMedia is called after an await, so the tone is built at the first gesture.
+  let stream: MediaStream | undefined;
+  const build = () => {
+    if (stream) return;
+    const context = new AudioContext();
+    void context.resume();
+    const tone = context.createOscillator();
+    tone.frequency.value = 440;
+    const destination = context.createMediaStreamDestination();
+    tone.connect(destination);
+    tone.start();
+    stream = destination.stream;
+  };
+  for (const type of ['pointerdown', 'keydown', 'click'])
+    window.addEventListener(type, build, { capture: true });
+  // On the prototype: WebKit hands out a fresh MediaDevices object, so patching the
+  // instance does not last.
+  MediaDevices.prototype.getUserMedia = () => {
+    build();
+    return Promise.resolve(stream!.clone());
+  };
+}
+
+/** `getUserMedia` refused the way a browser refuses after the learner clicks Block. */
+function blockedMicrophone() {
+  MediaDevices.prototype.getUserMedia = () =>
+    Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
+}
+
+/**
+ * Safari's Tab skips buttons and links unless Full Keyboard Access is on; Option+Tab
+ * reaches them. WebKit on macOS behaves the same, so the keyboard specs, which Tab
+ * between buttons, press Option+Tab there. Every other browser is untouched.
+ */
+const SAFARI_TAB: Record<string, string> = { Tab: 'Alt+Tab', 'Shift+Tab': 'Alt+Shift+Tab' };
+
+export const test = base.extend({
+  page: async ({ page, browserName }, provide) => {
+    if (browserName === 'webkit') await page.addInitScript(fakeMicrophone);
+    if (browserName === 'webkit' && process.platform === 'darwin') {
+      const press = page.keyboard.press.bind(page.keyboard);
+      page.keyboard.press = (key, options) => press(SAFARI_TAB[key] ?? key, options);
+    }
+    await provide(page);
+  },
+});
+
+/**
+ * Deny the microphone. Chromium has a real permission switch over CDP; the other
+ * engines have none, so the refusal is simulated at `getUserMedia`.
+ */
+export async function denyMicrophone(page: Page, browserName: string) {
+  if (browserName === 'chromium') {
+    const cdp = await page.context().newCDPSession(page);
+    const { targetInfo } = await cdp.send('Target.getTargetInfo');
+    await cdp.send('Browser.setPermission', {
+      browserContextId: targetInfo.browserContextId,
+      permission: { name: 'microphone' },
+      setting: 'denied',
+      origin: new URL(page.url()).origin,
+    });
+  } else {
+    await page.evaluate(blockedMicrophone);
+  }
+}
+
+/** Playwright's WebKit driver refuses `route.fulfill` with a 3xx status. */
+export const WEBKIT_NO_REDIRECT_MOCK =
+  "Playwright's WebKit cannot fulfil a redirect response, so the mock cannot stand in for the server";
+
+/**
+ * Playwright's Linux WebKit build ships without MediaRecorder, so a recording cannot
+ * be made there. The same specs run on WebKit on macOS in the cross-browser workflow.
+ */
+export async function requireRecording(page: Page, browserName: string, mp4Required: boolean) {
+  const { present, mp4 } = await page.evaluate(() => ({
+    present: typeof MediaRecorder !== 'undefined',
+    mp4: typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/mp4'),
+  }));
+  const reason = recordingSkipReason(browserName, process.platform, present, mp4, mp4Required);
+  test.skip(Boolean(reason), reason);
+}
+
+/** Preserve the flow while explicitly reporting an assertion the driver cannot run. */
+export async function browserCheck(
+  name: string,
+  skipReason: string | undefined,
+  check: () => void | Promise<void>,
+) {
+  await test.step(name, async (step) => {
+    if (skipReason) {
+      test
+        .info()
+        .annotations.push({ type: 'skipped-check', description: `${name}: ${skipReason}` });
+      step.skip(true, skipReason);
+    }
+    await check();
+  });
+}
+
+export const WEBKIT_BLOB_BODY = "Playwright's WebKit driver does not expose Blob request bodies";
+export const MAC_WEBKIT_HEADERS =
+  "Playwright's macOS WebKit driver does not expose the CSRF request header";
+
+/**
+ * Safari opens a native <select> menu on the arrow keys instead of changing the value,
+ * and so does WebKit on macOS. The selects' keyboard use there is a manual check.
+ */
+export const SAFARI_SELECT =
+  'Safari opens a native select on ArrowDown instead of changing its value';
+export const isMacWebKit = (browserName: string) =>
+  browserName === 'webkit' && process.platform === 'darwin';
+
+/** The same check from inside a helper that has no `browserName`; call it during a test. */
+export const onMacWebKit = () =>
+  test.info().project.name === 'webkit' && process.platform === 'darwin';

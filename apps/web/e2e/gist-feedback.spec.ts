@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './test';
 import { sessionFixture } from '../src/features/session/fixtures';
 
 for (const entry of ['blind', 'both'] as const) {

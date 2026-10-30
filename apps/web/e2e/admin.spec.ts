@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { browserCheck, expect, MAC_WEBKIT_HEADERS, onMacWebKit, test } from './test';
 
 const ADMIN = {
   id: '1',
@@ -70,7 +71,14 @@ async function answerApi(page: Page, admin: boolean) {
       });
     if (admin && path === '/admin/jobs') return route.fulfill({ json: { lanes: LANES, failed } });
     if (admin && path === '/admin/jobs/12/retry' && request.method() === 'POST') {
-      expect(request.headers()['x-csrf-token']).toBe('e2e-token');
+      // Playwright's WebKit on macOS does not show these request headers to the test.
+      await browserCheck(
+        'mutation sends the CSRF request header',
+        onMacWebKit() ? MAC_WEBKIT_HEADERS : undefined,
+        () => {
+          expect(request.headers()['x-csrf-token']).toBe('e2e-token');
+        },
+      );
       failed = [];
       return route.fulfill({ status: 202, json: { job_id: 40 } });
     }
