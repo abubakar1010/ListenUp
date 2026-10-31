@@ -15,13 +15,13 @@ ListenUp is **partially conformant** with WCAG 2.1 AA: most of it meets the guid
 ## What we check
 
 - An automated check (axe) runs on every screen and its main states, at a desktop width, at 360 pixels wide and in the dark theme, each time the code changes.
-- A keyboard-only run goes through each of the three plan paths, from the library to the finished plan, including a mark, a card and the three Shadow rounds. Every control is reached with Tab, and each one shows where the focus is.
+- A keyboard-only run goes through each of the three plan paths, from the library to the finished plan, including a mark, a card and the three Shadow rounds, in Chrome on every change and in Firefox and Edge each night (not yet in Safari). Every control on the way is reached with Tab and shows where the focus is, except the browser's own audio player controls, which are left to a manual check.
 - At 360 pixels wide, no screen scrolls sideways and every control is at least 44 pixels in each direction.
-- Colours meet the contrast ratios of WCAG 2.1 AA in the light and the dark theme.
+- The automated check tests the contrast of text in the light and the dark theme. It does not test the contrast of other parts, such as borders and focus rings; those were chosen to meet WCAG 2.1 AA in the design.
 
 ## Using ListenUp with a keyboard
 
-- Every control can be reached with Tab and used with Enter or Space. Practice screens list their keys on the page.
+- The practice screens, from the library to the finished plan, are tested with the keyboard alone: controls are reached with Tab and used with Enter or Space, the arrow keys (lists, the passage handles and the words in Transcript) or typing. Other screens, such as sign-in and settings, have not had a keyboard-only run yet. Practice screens list their keys on the page.
 - In the player outside a text field: Space or K plays and pauses, J goes back 5 seconds, R replays, and the square brackets change the speed.
 - In Transcript, Left and Right move between words, Shift with an arrow selects several words, and M marks them.
 - Dialogs put focus on the safe choice, keep focus inside, and close with Escape.
@@ -40,6 +40,7 @@ Because ListenUp trains listening, its exercises depend on hearing the audio.
 
 - In Shadow, when a round finishes playing, keyboard focus moves to the top of the page instead of staying with the next step. Tab still reaches Start round. A fix has been reported.
 - In Shadow, the link to the voice recording consent is shorter than 44 pixels on phones. A fix has been reported.
+- The focus ring of the browser's own audio player controls (the recording replays after Shadow) has not been checked yet.
 - ListenUp is in English only.
 
 ## Tell us about a problem
