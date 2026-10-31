@@ -82,26 +82,37 @@ def _make_entry(namespace: int, prefix: str) -> str:
 
 def _newest_mtime(descriptor: int) -> float:
     """Newest modification time of a directory and everything below it, read through
-    open descriptors so a replaced pathname is never followed."""
+    open descriptors so a replaced pathname is never followed. Iterative, so a deeply
+    nested tree cannot exhaust the recursion limit; the caller keeps `descriptor`."""
     newest = os.fstat(descriptor).st_mtime
-    with os.scandir(descriptor) as children:
-        for child in children:
-            info = child.stat(follow_symlinks=False)
-            newest = max(newest, info.st_mtime)
-            if child.is_dir(follow_symlinks=False):
-                try:
-                    inner = os.open(
-                        child.name,
-                        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                        dir_fd=descriptor,
-                    )
-                except FileNotFoundError:
-                    continue
-                try:
-                    newest = max(newest, _newest_mtime(inner))
-                finally:
-                    os.close(inner)
-    return newest
+    pending: list[int] = []
+    current = descriptor
+    try:
+        while True:
+            with os.scandir(current) as children:
+                for child in children:
+                    newest = max(newest, child.stat(follow_symlinks=False).st_mtime)
+                    if not child.is_dir(follow_symlinks=False):
+                        continue
+                    try:
+                        pending.append(
+                            os.open(
+                                child.name,
+                                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                dir_fd=current,
+                            )
+                        )
+                    except FileNotFoundError:
+                        continue
+            if current != descriptor:
+                os.close(current)
+            if not pending:
+                return newest
+            current = pending.pop()
+    except BaseException:
+        for leftover in (*pending, *([current] if current != descriptor else [])):
+            os.close(leftover)
+        raise
 
 
 @contextmanager
@@ -157,7 +168,7 @@ def _sweep(namespace: int, max_age_seconds: int) -> int:
                     removed += _remove(namespace, name, entry, marker.fileno())
         except FileNotFoundError:
             continue
-        except OSError:
+        except (OSError, RecursionError):  # e.g. a tree too deep to remove safely
             logger.exception("scratch entry not removed", extra={"path": name})
     return removed
 
