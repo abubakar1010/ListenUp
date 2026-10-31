@@ -153,6 +153,10 @@ Read the section for the area you are changing before you change it. The rules e
 - The AI gateway (#64) calls `record_ai_call` and `record_ai_quota`, and grading jobs call `record_grading`; the alert rules already read those metrics. A new alert goes in `infra/observability/alerts.yml` with a case in `alerts.test.yml` (it fires, and stays quiet just below the threshold), a `runbook` entry in `docs/runbooks/alerts.md`, and a row in ADR 0031.
 - Backups are `python -m listenup.ops.backup` (the `backup` image target). A backup is complete only with its `manifest.json`; the restore test is a monthly run recorded in the log at the end of `docs/runbooks/backups.md`. A migration that adds a schema or role must keep a restore into a database with the roles in place working (`tests/integration/test_backup.py`).
 - Retention sweeps live in `listenup/ops/retention.py` (ADR 0087): select at most 1,000 rows with `FOR UPDATE SKIP LOCKED` in short transactions and return a count. Storage calls run outside transactions; retain immutable recording keys until conditional finalization commits, so crash retries and overlapping workers converge safely. Register schedules in `tests/unit/test_worker_modules.py`. Media and default pools sweep their own disk through `platform.scratch`: only owned entries in its private namespace with an acquirable exclusive lifetime lock are candidates. Do not sweep legacy files by name or age alone. Shadow recording retention is `LISTENUP_SHADOW_RECORDING_RETENTION_DAYS`. Scratch directories come from `platform.scratch.directory` (no `/proc`, so it runs on macOS), but isolated media-pool jobs need Linux or Docker.
+  Scratch scans must avoid recursion and keep descriptor use independent of tree
+  depth. Reopen each component relative to the pinned entry with `O_NOFOLLOW`;
+  never replace that traversal with a joined path that could follow intermediate
+  symlinks. Preserve the entry and marker identity checks before deletion.
 
 ## Deployment (ADR 0066)
 
