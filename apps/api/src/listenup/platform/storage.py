@@ -35,10 +35,21 @@ REUSE_FRACTION = 0.8
 CACHE_SIZE = 10_000
 DELETE_BATCH = 1000  # the S3 limit for one DeleteObjects call
 DOWNLOAD_CHUNK = 1024 * 1024
-WRITE_THREADS = 8
+
+# One request waits at most (1 + MAX_RETRIES) * (CONNECT_TIMEOUT + READ_TIMEOUT) = 26 s. A write
+# is drained on cancellation, and the pool's threads are joined at exit, so a stalled
+# request must end inside the worker's shutdown grace (worker.SHUTDOWN_GRACE_SECONDS, 30 s).
+# botocore's defaults (60 s each, legacy retries) could hold a stopping worker for minutes.
+CONNECT_TIMEOUT_SECONDS = 3
+READ_TIMEOUT_SECONDS = 10
+MAX_RETRIES = 1  # botocore counts retries after the first attempt
 
 # Uploads have their own threads: the loop's default executor is small on a small host
 # and shared with `asyncio.to_thread` and DNS lookups, which must not queue behind them.
+# Eight matches the widest worker lane (the AI lane runs 8 jobs); more uploads wait for a
+# thread. A queued upload cannot be withdrawn: it runs even if its caller is cancelled,
+# so a stopping process also waits for the queue.
+WRITE_THREADS = 8
 _write_pool = ThreadPoolExecutor(max_workers=WRITE_THREADS, thread_name_prefix="storage-write")
 
 
@@ -48,7 +59,9 @@ async def _write_to_completion(write: Callable[[], object]) -> None:
     anyio's thread helper does not survive a native `Task.cancel()` (what `asyncio.run`
     does to every task at shutdown), so the caller could release its fence while the
     upload was still running (#228 item 2). A plain executor future drained by
-    `finish_on_cancel` returns only once the thread has finished.
+    `finish_on_cancel` returns only once the thread has finished. Unlike anyio's helper,
+    `run_in_executor` does not copy context variables into the thread; the write
+    callables use only the storage client.
     """
     await finish_on_cancel(asyncio.get_running_loop().run_in_executor(_write_pool, write))
 
@@ -122,7 +135,13 @@ class S3Storage:
             aws_access_key_id=settings.s3_access_key,
             aws_secret_access_key=settings.s3_secret_key.get_secret_value(),
             # Path-style addressing works with every S3-compatible server.
-            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+            config=Config(
+                signature_version="s3v4",
+                s3={"addressing_style": "path"},
+                connect_timeout=CONNECT_TIMEOUT_SECONDS,
+                read_timeout=READ_TIMEOUT_SECONDS,
+                retries={"max_attempts": MAX_RETRIES, "mode": "standard"},
+            ),
         )
 
     def signed_upload(
