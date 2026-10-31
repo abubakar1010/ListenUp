@@ -18,6 +18,14 @@ The owner instructed remediation of #249 on 2026-10-29. The affected retention
 statements are published as new `2026-2` privacy and voice versions; old labels are
 preserved regardless of deployment history. These remain unreviewed drafts.
 
+The owner approved carrying the clip-deletion clarification into these current
+`2026-2` drafts on 2026-10-31, preserving the `2026-1` texts. A follow-up check found
+zero GitHub deployments, while #112 still records the live cutover as unverified.
+No evidence of learner acceptance of `2026-2` was found in those sources; this does
+not establish whether deployments outside GitHub have used these labels. The owner
+must confirm whether any deployment has shown these labels to learners. Confirmed
+prior acceptance requires new labels for meaningful changes.
+
 ## Publishing a new version
 
 1. Add the new file (`<kind>-<year>-<n>.md`); never edit the text of a label already deployed, except for typo fixes that change no meaning.
@@ -29,7 +37,7 @@ Production refuses a label containing `placeholder` at start-up.
 
 ## Where each stated value comes from
 
-Checked against PR #249 and `origin/main` at `86133c5` on 2026-10-29. These are repository defaults and implementation sources, not verification of a running production deployment.
+Checked against `origin/main` at `1494640` on 2026-10-31, including #249 and #244. These are repository defaults and implementation sources, not verification of a running production deployment.
 
 | Stated value | Source |
 | --- | --- |
@@ -50,7 +58,7 @@ Checked against PR #249 and `origin/main` at `86133c5` on 2026-10-29. These are 
 | Original upload deleted after conversion | ADR 0022 |
 | YouTube intake switched off | `youtube_intake_enabled = False` in `config.py`; ADR 0011; OQ-6 |
 | YouTube copies shared between learners and deleted 30 days after last use | System Design 6.2 and 6.3. **Clean-up not built yet**; drafts disclose this: see owner note 2 |
-| Deleting a clip removes its sessions, marks, recordings and corrections | SRS DR-2. Clip deletion built in #89 (`DELETE /contents/{content_id}`, ADR 0085); **session and recording deletion not built yet** (#90) and the `2026-2` drafts distinguish those missing controls |
+| Deleting a clip removes its sessions, marks, cards, recordings and corrections | SRS DR-2. Clip deletion built in #89 (merged in #244; `DELETE /contents/{content_id}`, ADR 0085; [runbook](../runbooks/content-deletion.md)): confirmed in the library, with private files and rows removed by a background job. Shared media and caches are only released; their orphan sweep is not built yet (#93). Backups expire separately. The current `2026-2` drafts describe clip deletion; **single-session and single-recording deletion are not built yet** (#90): see owner notes 1, 6 and 7 |
 | Usage events keep ids only, outlive clip and session deletion, go with the account | SRS DR-2; ADR 0035 |
 | Application backup dumps kept 14 days; provider backups unconfirmed | `backup_retention_days = 14` in `config.py`; ADR 0032 |
 | Links to media expire after minutes | `signed_url_ttl_seconds = 300` in `config.py`; NFR-SEC-2 |
@@ -68,15 +76,19 @@ The owner approved the 2026-10-28 plan to retain D7 as the intended policy while
    90-day default and daily sweep. `privacy-2026-2` and `voice-2026-2` describe this
    behavior and distinguish individual recording/session deletion, still owned by #90.
    Earlier `2026-1` labels remain unchanged and registered. This is narrow retention
-   synchronization in #249, not a restart of #103 or legal clearance.
+   synchronization in #249, not a restart of #103 or legal clearance. Both current
+   drafts also describe deleting a clip's recordings, separately from expiry.
 2. **YouTube copies' 30-day clean-up is not built** (ADR 0029 consequences). YouTube intake is off, so no copy exists; the text describes the rule for when it is switched on.
 3. **Sub-processors are placeholders.** [ADR 0073](../adr/0073-stage-0-host-oracle-always-free-arm.md) proposes Oracle Cloud for the stage-0 host but remains Proposed pending provisioning. It does not establish the deployed processor or region. Confirm actual hosting/database, storage, email, backup providers and locations before filling the policy; do not treat a proposed host as a verified sub-processor.
 4. **Application backup dumps have a 14-day retention default**, separate from live-service purging. The policy no longer promises that all copies are gone after the 7-day grace period. Additional infrastructure/provider backup retention is unconfirmed; see adviser question 14.
 5. **Server log retention is not specified** in the design or configuration.
 6. **Withdrawing voice consent does not delete existing recordings**; individual recording/session deletion (#90) is not available yet, and clip deletion (#89, #244) does not run on withdrawal. Account deletion is available. Whether withdrawal should additionally offer deletion remains an owner/legal question; no such behavior is added here.
-7. **Deleting a session or a single recording is not built yet** (#90). The current
-   `2026-2` drafts describe clip deletion as built (#89, #244, ADR 0085), while keeping
-   individual recording/session deletion unavailable.
+7. **Deleting a session or a single recording is not built yet** (#90). Clip
+   deletion is built (#89, #244) and both current `2026-2` drafts describe library
+   confirmation, background removal and separate backup expiry. Shared YouTube media
+   and caches are only released, not removed by clip deletion; the orphan sweep
+   remains in #93, as the privacy policy discloses (ADR 0085). Recording expiry is
+   already implemented separately (owner note 1).
 8. **Expired unconfirmed uploads**: nothing deletes the stored file of an upload that was never confirmed; the policy says only that it is not added to the library.
 9. **Login session rows** (with IP and user agent): #93 deletes expired rows in a daily sweep; the policy states the maximum 30-day sign-in lifetime.
 10. **The sources disagree on what hosted text AI may receive.** SRS FR-BL-13 lists the transcript, key points and gist; `ai/tasks.py` also sends Shadow round measures and flagged words (`shadow_feedback`, with `groq` as its fallback in `ai.yaml`). The privacy policy discloses both. The owner must either amend FR-BL-13 or remove `groq` from `shadow_feedback`, and then update the policy.
@@ -111,6 +123,7 @@ exact-version selection, stable links, missing-version failure and explicit agre
 Actual commands and outcomes are recorded in the pull request. Legal review remains
 outstanding in #102, and #103 must remain open until its review criterion is met.
 
-The only files changed are this source register and the three draft texts. Existing
+This clip-deletion follow-up changes only this source register and the current
+`2026-2` privacy and voice-recording drafts. The `2026-1` texts are preserved. Existing
 `texts.ts`, `LegalPage`, `DOCUMENTS`, sign-up and Shadow readiness already load/link
 these files. No additional registry or route is required.
