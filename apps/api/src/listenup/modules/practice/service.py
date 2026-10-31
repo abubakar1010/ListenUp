@@ -666,3 +666,41 @@ async def content_deletion_resource_ids(
             )
         ).all()
     )
+
+
+async def mark_for_deletion(db: AsyncSession, session_id: uuid.UUID) -> None:
+    """Hide the learner's session at once before its storage-first deletion (#90).
+
+    Takes the session row lock, the first lock every mode request takes, so a mode
+    write either commits before this or finds the session gone. Repeating it is
+    harmless; a session whose clip is being deleted is already gone (404).
+    """
+    content_id = await hide_for_deletion(db, session_id)
+    if content_id is None or await content.find_content(db, content_id) is None:
+        raise _not_found()
+
+
+async def hide_for_deletion(db: AsyncSession, session_id: uuid.UUID) -> uuid.UUID | None:
+    """Set the deletion barrier (idempotent); the session's content id, None if gone."""
+    from sqlalchemy import text
+
+    content_id: uuid.UUID | None = await db.scalar(
+        text(
+            "UPDATE practice.sessions SET deleting_at = coalesce(deleting_at, now()) "
+            "WHERE id = :id RETURNING content_id"
+        ),
+        {"id": session_id},
+    )
+    return content_id
+
+
+async def remove_deleted_session(
+    db: AsyncSession, learner: uuid.UUID, session_id: uuid.UUID
+) -> None:
+    """Delete the session row once its objects are gone; children cascade (#90)."""
+    from sqlalchemy import text
+
+    await db.execute(
+        text("DELETE FROM practice.sessions WHERE id = :id AND user_id = :user"),
+        {"id": session_id, "user": learner},
+    )

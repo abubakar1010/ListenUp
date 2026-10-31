@@ -144,7 +144,9 @@ async def find_session(
     session: AsyncSession, session_id: uuid.UUID
 ) -> tuple[SessionRow, list[StepRow]] | None:
     row = (
-        await session.execute(text(_SESSION_COLUMNS + " WHERE id = :id"), {"id": session_id})
+        await session.execute(
+            text(_SESSION_COLUMNS + " WHERE id = :id AND deleting_at IS NULL"), {"id": session_id}
+        )
     ).first()
     if row is None:
         return None
@@ -235,7 +237,7 @@ async def latest_status_by_content(
         text("""
         SELECT DISTINCT ON (content_id) content_id, status
           FROM practice.sessions
-         WHERE content_id = ANY(:content_ids)
+         WHERE content_id = ANY(:content_ids) AND deleting_at IS NULL
          ORDER BY content_id, created_at DESC, id DESC
         """),
         {"content_ids": content_ids},
@@ -255,7 +257,7 @@ async def list_sessions(
     whole page come in one more query.
     """
     params: dict[str, object] = {"learner": learner, "limit": limit}
-    where = "WHERE user_id = :learner"
+    where = "WHERE user_id = :learner AND deleting_at IS NULL"
     if after is not None:
         where += " AND (updated_at, id) < (:after_at, :after_id)"
         params.update(after_at=after[0], after_id=after[1])

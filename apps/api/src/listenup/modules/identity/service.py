@@ -10,7 +10,7 @@ import json
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, Request, Response
 from sqlalchemy import text
@@ -717,21 +717,26 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
     )
 
 
+DeletionScope = Literal["content", "session"]
+"""The learner-requested deletions that share one storage-first manifest (ADR 0085, 0092)."""
+
+
 async def content_deletion_request(
     db: AsyncSession,
     learner: uuid.UUID,
     target: uuid.UUID,
     plan: dict[str, Any],
     prefixes: list[str],
+    scope: DeletionScope = "content",
 ) -> uuid.UUID:
-    """Create or reuse the durable DR-2 audit; the content parent is already locked."""
+    """Create or reuse the durable DR-2 audit; the target's parent is already locked."""
     found = await db.scalar(
         text(
             "SELECT id FROM ops.deletion_requests WHERE subject_user_id=:user "
-            "AND target_id=:target AND scope='content' AND status IN "
+            "AND target_id=:target AND scope=:scope AND status IN "
             "('pending','storage_deleted','failed')"
         ),
-        {"user": learner, "target": target},
+        {"user": learner, "target": target, "scope": scope},
     )
     if found is not None:
         return uuid.UUID(str(found))
@@ -740,11 +745,12 @@ async def content_deletion_request(
         text(
             "INSERT INTO "
             "ops.deletion_requests(id,subject_user_id,scope,target_id,report,storage_prefixes) "
-            "VALUES (:id,:user,'content',:target,CAST(:plan AS jsonb),:prefixes)"
+            "VALUES (:id,:user,:scope,:target,CAST(:plan AS jsonb),:prefixes)"
         ),
         {
             "id": request,
             "user": learner,
+            "scope": scope,
             "target": target,
             "plan": json.dumps(plan),
             "prefixes": prefixes,
@@ -753,14 +759,16 @@ async def content_deletion_request(
     return request
 
 
-async def content_deletion_state(db: AsyncSession, request_id: uuid.UUID) -> dict[str, Any] | None:
+async def content_deletion_state(
+    db: AsyncSession, request_id: uuid.UUID, scope: DeletionScope = "content"
+) -> dict[str, Any] | None:
     row = (
         await db.execute(
             text(
                 "SELECT subject_user_id,target_id,status,report,storage_prefixes "
-                "FROM ops.deletion_requests WHERE id=:id AND scope='content' FOR UPDATE"
+                "FROM ops.deletion_requests WHERE id=:id AND scope=:scope FOR UPDATE"
             ),
-            {"id": request_id},
+            {"id": request_id, "scope": scope},
         )
     ).first()
     return dict(row._mapping) if row else None
@@ -783,22 +791,27 @@ async def store_content_deletion(
     )
 
 
-async def content_deletions_to_reconcile(db: AsyncSession) -> list[uuid.UUID]:
+async def content_deletions_to_reconcile(
+    db: AsyncSession, scope: DeletionScope = "content"
+) -> list[uuid.UUID]:
     # Completed manifests remain pointers to keys an old signed PUT might recreate.
     return list(
         (
             await db.scalars(
                 text(
-                    "SELECT id FROM ops.deletion_requests WHERE scope='content' "
+                    "SELECT id FROM ops.deletion_requests WHERE scope=:scope "
                     "AND due_at <= now() ORDER BY due_at,id LIMIT 1000"
-                )
+                ),
+                {"scope": scope},
             )
         ).all()
     )
 
 
-async def fail_content_deletion(db: AsyncSession, request_id: uuid.UUID) -> None:
-    if await content_deletion_state(db, request_id) is not None:
+async def fail_content_deletion(
+    db: AsyncSession, request_id: uuid.UUID, scope: DeletionScope = "content"
+) -> None:
+    if await content_deletion_state(db, request_id, scope) is not None:
         await repository.mark_deletion_failed(db, request_id)
 
 

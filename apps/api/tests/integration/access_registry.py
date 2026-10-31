@@ -462,3 +462,8 @@ REGISTRY[("DELETE", "/api/v1/contents/{content_id}")] = Owned(
     params=lambda w: {"content_id": w.a.content_id},
     body=lambda w: {"confirm": True},
 )
+REGISTRY[("DELETE", "/api/v1/sessions/{session_id}")] = Owned(
+    "session_not_found",
+    params=lambda w: {"session_id": w.a.sessions["shadow"]},
+    body=lambda w: {"confirm": True},
+)

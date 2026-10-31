@@ -57,7 +57,14 @@ async def insert_round(
 async def round_by_id(
     db: AsyncSession, round_id: uuid.UUID, *, lock: bool = False
 ) -> ShadowRound | None:
-    query = select(ShadowRound).where(ShadowRound.id == round_id)
+    query = select(ShadowRound).where(
+        ShadowRound.id == round_id,
+        # A session being deleted (#90) hides its rounds at once.
+        text(
+            "EXISTS (SELECT 1 FROM practice.sessions s WHERE s.id = "
+            "practice.shadow_rounds.session_id AND s.deleting_at IS NULL)"
+        ),
+    )
     # A caller may have read this row before waiting for the parent session lock.
     # Refresh its identity-map entry so a concurrent completed recording is visible.
     return await db.scalar(

@@ -68,7 +68,8 @@ async def list_cards(
             text(f"""
         SELECT {_COLUMNS}, '/contents/' || s.content_id || '?at_ms=' || c.at_ms AS source_url
         FROM practice.cards c JOIN practice.sessions s ON s.id=c.session_id AND s.user_id=c.user_id
-        WHERE (CAST(:session_id AS uuid) IS NULL OR c.session_id=:session_id)
+        WHERE s.deleting_at IS NULL
+        AND (CAST(:session_id AS uuid) IS NULL OR c.session_id=:session_id)
         AND (CAST(:time AS timestamptz) IS NULL OR (c.created_at,c.id)<(:time,:id))
         ORDER BY c.created_at DESC, c.id DESC LIMIT :limit
     """),
@@ -124,7 +125,7 @@ async def audio_row(
                 """
         SELECT c.*, s.content_id FROM practice.cards c JOIN practice.sessions s
         ON s.id=c.session_id AND s.user_id=c.user_id
-        WHERE c.id=:id AND c.user_id=:user
+        WHERE c.id=:id AND c.user_id=:user AND s.deleting_at IS NULL
     """
                 + (" FOR UPDATE OF c" if lock else "")
             ),
