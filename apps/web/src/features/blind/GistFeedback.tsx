@@ -61,6 +61,19 @@ export function GistFeedback({
     query.isError;
   const delayed = grade?.status === 'delayed';
   const ready = grade?.status === 'ready';
+  const statusText = ready
+    ? 'Your gist feedback is ready.'
+    : delayed
+      ? 'Feedback delayed'
+      : unavailable
+        ? 'Feedback unavailable'
+        : 'Preparing your gist feedback…';
+  // A grade that arrives while the panel waits is announced (UX-04): the line turns polite
+  // once a read has found the grade not ready, before its text changes. A grade already
+  // there when the panel opens is only shown, so arriving at Transcript does not repeat a
+  // grade heard after Blind or talk over the step's heading (UX-22).
+  const [waited, setWaited] = useState(false);
+  if (grade && !ready && !waited) setWaited(true);
   return (
     <section
       aria-label="Gist feedback"
@@ -70,15 +83,8 @@ export function GistFeedback({
       <h2 ref={heading} tabIndex={takeFocus ? -1 : undefined} className="font-display text-heading">
         Your gist feedback
       </h2>
-      {/* A late result fills in place with a polite announcement, in both places (UX-04). */}
-      <p aria-live="polite">
-        {ready
-          ? 'Your gist feedback is ready.'
-          : delayed
-            ? 'Feedback delayed'
-            : unavailable
-              ? 'Feedback unavailable'
-              : 'Preparing your gist feedback…'}
+      <p aria-live={waited ? 'polite' : 'off'} data-testid="gist-status">
+        {statusText}
       </p>
       {(unavailable || delayed) && (
         <p>
