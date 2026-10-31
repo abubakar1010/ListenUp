@@ -174,4 +174,16 @@ These are in `src/features/shadow`, which this story may not change:
 
 ## Final checks
 
-See the PR for the commands and outcomes of the full checks.
+Run locally from `apps/web` on the branch head, Chromium only:
+
+| Check | Result |
+| --- | --- |
+| `pnpm lint`, `pnpm format:check`, `pnpm typecheck` | pass |
+| `pnpm test:coverage` | 70 files, 750 tests passed |
+| Changed-line coverage (`diff-cover` against `origin/main`, as in CI) | 38 of 38 changed lines covered (100%); every runtime file resolves in the report |
+| `pnpm build`, `pnpm size` | pass; 126.8 kB of 200 kB initial JavaScript |
+| `pnpm e2e` (chromium and the three a11y projects) | 290 passed, 2 skipped (the desktop and dark runs of the 360 px plan sheet) |
+
+Not run here: Firefox, WebKit and Edge (the nightly cross-browser workflow runs the new
+spec there; it skips on macOS WebKit like the other native-select specs), and the
+manual screen-reader passes. No backend change, so no backend checks apply.
