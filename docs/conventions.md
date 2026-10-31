@@ -467,3 +467,15 @@ Read the section for the area you are changing before you change it. The rules e
   overall score; never substitute 0 or 100. Accent never enters the overall.
 - Filler counts are an estimate until `count_validated` is true (B4, #22). An echo
   check without a leakage signal is `unchecked`, never clean.
+
+- The E2 round job accepts only the configured `fake-assessment` entry, with no
+  real-provider fallback. Store its synthetic marker and keep learner projections
+  unavailable. `grade.ready` uses the round id and the result transaction.
+- Queue via `grading.service.queue_round` in recording completion. Retry admission,
+  result writes and deadline/give-up callbacks use the stored generation; live work
+  coalesces on the round key. The 120-second deadline and failures never undo a
+  recording or block plan completion. A late result in the same generation is valid.
+- Missing playback offsets disable timing only (`playback_offset_unknown`). Original
+  transcript cache identities map profile words to assessment indices; learner text
+  corrections never become the scoring reference. Echo stays `unchecked` without a
+  detector signal, regardless of `echo_detected=false`.

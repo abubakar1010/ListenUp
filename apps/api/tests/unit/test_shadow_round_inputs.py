@@ -55,3 +55,44 @@ def test_speech_info_stores_provenance_and_marks_synthetic_output(provider, synt
         "parameters_version": "1",
         "parameters_calibrated": False,
     }
+
+
+def test_missing_playback_offset_only_disables_timing():
+    from listenup.modules.grading.round_inputs import delivery_result
+
+    result = delivery_result(
+        assessment("fake-assessment"),
+        DeliveryParameters.load(),
+        reference_word_count=2,
+        original=[(0, 10_000, 10_200), (1, 10_300, 10_900)],
+        segment=(10_000, 70_000),
+        playback_offset_ms=None,
+    )
+    assert result["measures"]["timing"] == {
+        "score": None,
+        "reason": "playback_offset_unknown",
+        "details": {},
+    }
+    assert result["measures"]["completeness"]["score"] == 100
+    assert result["measures"]["fluency"]["score"] is not None
+    assert result["filler_count"] == 1
+    assert result["speech_info"]["synthetic"] is True
+    assert result["speech_info"]["overall_basis"] == ["fluency", "fillers", "completeness"]
+    assert result["speech_info"]["echo"] == {"status": "unchecked", "message": None}
+
+
+def test_delivery_result_keeps_headphones_warning_and_scores():
+    from listenup.modules.grading.round_inputs import delivery_result
+
+    result = delivery_result(
+        assessment("fake-assessment"),
+        DeliveryParameters.load(),
+        reference_word_count=2,
+        original=[(0, 10_000, 10_200), (1, 10_300, 10_900)],
+        segment=(10_000, 70_000),
+        playback_offset_ms=3_200,
+        leakage=0.5,
+    )
+    assert result["echo_detected"] is True
+    assert result["speech_info"]["echo"] == {"status": "leak", "message": "use_headphones"}
+    assert result["measures"]["timing"]["score"] is not None

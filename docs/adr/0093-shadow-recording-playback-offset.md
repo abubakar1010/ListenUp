@@ -40,3 +40,13 @@ timing score with a reason. It never gets an assumed count-in.
 - The offset is measured in the browser, which `performance.now()` precision and
   audio output latency bound. Playback-start accuracy is not validated here; it joins
   #80's real-device checks.
+
+## Continuation scope (2026-10-31)
+
+The approved #82 continuation consumes an absent offset explicitly and records
+`timing.score = null` with `playback_offset_unknown`; fluency, fillers and
+completeness still use original timings. The migration in this continuation adds
+`round_grades` and the round ownership key only. It does not add the offset column,
+change recording request schemas or change the browser. The design update, browser
+measurement and offset persistence above remain pending with their owners. There
+is no assumed three-second count-in and no speech-derived offset.

@@ -1,6 +1,7 @@
 """Shadow segment selection, playback rounds and private recordings (#77, #79, #81)."""
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -208,8 +209,8 @@ async def complete_recording(
 ) -> None:
     """Mark the round recorded and done once the object is in storage (ADR 0050 option a).
 
-    No analysis is queued: grading is not built yet, so the learner sees feedback as
-    unavailable. Three uploaded recordings complete the plan (FR-SH-6, SR-6).
+    Analysis is independent of progress. Synthetic scores stay unavailable to learners.
+    Three uploaded recordings complete the plan (FR-SH-6, SR-6).
     """
     found = await repository.round_by_id(db, round_id)
     if found is None:
@@ -244,6 +245,9 @@ async def complete_recording(
     row.recorded_at = now
     row.uploaded_at = now
     await db.flush()
+    from listenup.modules.grading import service as grading
+
+    await grading.queue_round(db, row.user_id, row.id)
     rounds = await repository.rounds(db, row.session_id)
     # `recorded_at` stays after retention clears an old recording (FR-SH-17), so it, not
     # `uploaded_at`, says that a round was recorded.
@@ -266,6 +270,12 @@ async def require_round(db: AsyncSession, round_id: uuid.UUID) -> None:
         raise _round_not_found()
 
 
+async def require_owned_round(db: AsyncSession, learner: uuid.UUID, round_id: uuid.UUID) -> None:
+    row = await repository.round_by_id(db, round_id)
+    if row is None or row.user_id != learner:
+        raise _round_not_found()
+
+
 async def discard_upload(db: AsyncSession, storage: Storage, round_id: uuid.UUID) -> None:
     """Drop an unfinished upload, as when voice consent was withdrawn before completion."""
     row = await repository.round_by_id(db, round_id)
@@ -276,3 +286,29 @@ async def discard_upload(db: AsyncSession, storage: Storage, round_id: uuid.UUID
 async def content_deletion_prefixes(learner: uuid.UUID, sessions: list[uuid.UUID]) -> list[str]:
     """A session prefix covers pending recordings and every offered MIME type."""
     return [f"users/{learner}/shadow/{session}/" for session in sessions]
+
+
+@dataclass(frozen=True)
+class AssessmentSource:
+    session_id: uuid.UUID
+    recording_key: str
+    span: tuple[int, int]
+    number: int
+    playback_offset_ms: int | None = None
+
+
+async def assessment_source(
+    db: AsyncSession, learner: uuid.UUID, round_id: uuid.UUID
+) -> AssessmentSource:
+    """Worker-only input; explicit ownership still applies on BYPASSRLS connections."""
+    row = await repository.round_by_id(db, round_id)
+    if row is None or row.user_id != learner:
+        raise _round_not_found()
+    if row.uploaded_at is None or row.recording_key is None:
+        raise ProblemError(409, "recording_not_ready", "The recording is unavailable.")
+    selection = await repository.get(db, row.session_id)
+    assert selection is not None
+    assert selection.span.lower is not None and selection.span.upper is not None
+    return AssessmentSource(
+        row.session_id, row.recording_key, (selection.span.lower, selection.span.upper), row.round
+    )

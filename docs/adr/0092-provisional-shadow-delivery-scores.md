@@ -90,5 +90,31 @@ measured, and they must not be described as validated.
   The real-sample part, the filler count within one, and the leakage detector stay
   with #80, #22 and #110. The p95 50 s budget is deferred to #21 and tracker #155.
 - A new parameter set is a new file version, so stored scores stay comparable.
-- The round job, `grading.round_grades` migration and `grade.ready` event follow
-  after #90 merges.
+- The round job, `grading.round_grades` migration and `grade.ready` event use
+  the migration token assigned to #82 in #119. The earlier #90 wait is superseded.
+
+## E2 implementation boundary (2026-10-31)
+
+The lane-1 job admits only the configured `fake-assessment` entry and constructs
+an assessment-only gateway with that entry, so a real fallback cannot run. Ordinary
+eligibility, timeout, quota, validation and accounting checks still apply. The fake
+receives local files but does not decode them; real segment extraction, inference
+and leakage detection remain gated by #80. With no leakage signal, stored echo
+status is `unchecked`; a false `echo_detected` alone does not establish clean audio.
+
+`grading.round_grades` stores the measures (including null reasons), filler count,
+parameter version, speech provenance, original-profile provenance and synthetic
+marker. A generation UUID fences result writes, deadlines and failure callbacks;
+only an admitted retry changes it. `grade.ready` carries the round id and commits
+with the result. No result/event survives transaction rollback, and late results
+may replace unavailable state within the same generation.
+
+The learner read endpoint always returns `unavailable` under E2, including after
+synthetic evidence is stored. Retry is owned, consent-protected and coalesces live
+work. The recording still completes its round and three recordings complete the
+plan independently. A 120-second deadline and exhausted/permanent failures leave
+recordings intact. No written feedback or real assessment is enabled.
+
+The owner permitted the single matching UNIQUE(id,user_id) addition in
+`shadow/models.py` so the composite grade ownership FK and migration metadata agree.
+No other non-service Shadow implementation changes are part of this continuation.
