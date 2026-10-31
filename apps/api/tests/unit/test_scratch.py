@@ -282,18 +282,18 @@ def test_directory_replaced_during_scan_is_not_deleted(tmp_path, monkeypatch):
     replacement.mkdir()
     (replacement / "keep").write_bytes(b"unrelated")
     old(replacement)
-    original = Path.rglob
+    original = scratch._newest_mtime
     swapped = False
 
-    def scan(path, pattern):
+    def scan(descriptor):
         nonlocal swapped
-        if not swapped and path.stat().st_ino == identity:
+        if not swapped and os.fstat(descriptor).st_ino == identity:
             swapped = True
             stale.rename(tmp_path / "original")
             replacement.rename(stale)
-        return original(path, pattern)
+        return original(descriptor)
 
-    monkeypatch.setattr(Path, "rglob", scan)
+    monkeypatch.setattr(scratch, "_newest_mtime", scan)
     assert scratch.sweep(tmp_path, 3600) == 0
     assert swapped
     assert (stale / "keep").read_bytes() == b"unrelated"
@@ -303,10 +303,10 @@ def test_marker_replaced_by_active_lease_during_scan_is_preserved(tmp_path, monk
     import fcntl
 
     stale = abandoned(tmp_path)
-    original = Path.rglob
+    original = scratch._newest_mtime
     leases = []
 
-    def scan(path, pattern):
+    def scan(descriptor):
         if not leases:
             (stale / scratch.MARKER).rename(tmp_path / "original-marker")
             lease = (stale / scratch.MARKER).open("xb")
@@ -317,9 +317,9 @@ def test_marker_replaced_by_active_lease_during_scan_is_preserved(tmp_path, monk
             then = time.time() - 7200
             for item in (stale / scratch.MARKER, stale):
                 os.utime(item, (then, then))
-        return original(path, pattern)
+        return original(descriptor)
 
-    monkeypatch.setattr(Path, "rglob", scan)
+    monkeypatch.setattr(scratch, "_newest_mtime", scan)
     try:
         assert scratch.sweep(tmp_path, 3600) == 0
         assert (stale / scratch.MARKER).read_bytes() == scratch.MAGIC
@@ -445,3 +445,50 @@ def test_replacement_during_final_unlink_is_preserved(tmp_path, monkeypatch):
     assert scratch.sweep(tmp_path, 3600) == 0
     assert swapped
     assert stale.is_dir()
+
+
+def test_scratch_works_where_proc_does_not_exist(tmp_path, monkeypatch):
+    """macOS has no /proc: creating, leasing and sweeping must not use it."""
+    stale = abandoned(tmp_path)
+    (stale / "left-behind").mkdir()
+    old(stale)
+
+    def deny(real):
+        def guarded(path, *args, **kwargs):
+            if isinstance(path, str | bytes | os.PathLike) and os.fsdecode(path).startswith(
+                "/proc"
+            ):
+                raise FileNotFoundError(path)
+            return real(path, *args, **kwargs)
+
+        return guarded
+
+    for name in ("open", "mkdir", "stat", "lstat", "scandir", "listdir"):
+        monkeypatch.setattr(os, name, deny(getattr(os, name)))
+
+    with scratch.directory(str(tmp_path), prefix="media-job-") as path:
+        (path / "nested").mkdir()
+        (path / "nested" / "audio.wav").write_bytes(b"x")
+        assert path.name.startswith("media-job-")
+    assert not path.exists()
+
+    assert scratch.sweep(tmp_path, 3600) == 1
+    assert not stale.exists()
+
+
+def test_a_taken_scratch_name_is_retried_and_exhaustion_is_an_error(tmp_path, monkeypatch):
+    names = iter(["aa", "aa", "bb"])
+    monkeypatch.setattr(scratch.secrets, "token_hex", lambda _: next(names))
+    with (
+        scratch.directory(str(tmp_path), prefix="media-job-") as first,
+        scratch.directory(str(tmp_path), prefix="media-job-") as second,
+    ):
+        assert (first.name, second.name) == ("media-job-aa", "media-job-bb")
+
+    monkeypatch.setattr(scratch.secrets, "token_hex", lambda _: "cc")
+    with (
+        scratch.directory(str(tmp_path), prefix="media-job-"),
+        pytest.raises(FileExistsError),
+        scratch.directory(str(tmp_path), prefix="media-job-"),
+    ):
+        pass
