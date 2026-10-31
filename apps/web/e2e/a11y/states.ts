@@ -55,7 +55,14 @@ const LIBRARY: Schema['LibraryItem'][] = [
     stage: 'converting',
     queue_position: null,
   },
-  { ...CLIP, id: 'clip-3', title: 'Interview', status: 'failed', duration_ms: null },
+  // An upload titled by its file name: one long word must still wrap at 360 px (UI-4).
+  {
+    ...CLIP,
+    id: 'clip-3',
+    title: 'interview_recording_2026_10_31_final_version_two_with_the_questions.mp3',
+    status: 'failed',
+    duration_ms: null,
+  },
 ];
 const DETAIL = {
   ...ITEM,

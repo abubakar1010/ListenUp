@@ -197,7 +197,7 @@ function ClipRow({ item, onDelete }: { item: LibraryItem; onDelete: () => void }
       <div className="flex min-w-0 flex-col gap-1">
         <Link
           to={`/contents/${item.id}`}
-          className="inline-flex min-h-11 items-center self-start font-bold break-words"
+          className="inline-flex min-h-11 max-w-full items-center self-start font-bold [overflow-wrap:anywhere]"
         >
           {item.title}
         </Link>
