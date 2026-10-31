@@ -11,6 +11,7 @@ import {
 } from './a11y/allowlist';
 import { fakeApi } from './a11y/fakeApi';
 import { STATES } from './a11y/states';
+import { compareTargets, KNOWN_SMALL_TARGETS, smallTargets } from './a11y/targets';
 
 /*
  * axe on every route and main state (#98, NFR-USE-2, UI-4), run by the a11y-* projects
@@ -78,6 +79,23 @@ test('allowlist problems name each broken rule', () => {
   expect(allowedFor([entry({})], 'card', 'a11y-360')).toHaveLength(1);
 });
 
+test('known small targets name scan states and a reason, and are compared by prefix', () => {
+  const names = new Set(STATES.map((state) => state.name));
+  for (const entry of KNOWN_SMALL_TARGETS) {
+    expect(entry.reason.trim()).not.toBe('');
+    expect(entry.states.filter((state) => !names.has(state))).toEqual([]);
+  }
+  const known = [{ states: ['a'], target: 'a "Link"', reason: 'r' }];
+  expect(compareTargets('a', ['a "Link" 90×24', 'button "B" 30×30'], known)).toEqual({
+    unexpected: ['button "B" 30×30'],
+    stale: [],
+  });
+  expect(compareTargets('a', [], known).stale).toEqual([
+    'a "Link": no longer found on "a", remove it',
+  ]);
+  expect(compareTargets('b', ['a "Link" 90×24'], known).unexpected).toEqual(['a "Link" 90×24']);
+});
+
 test('scan state names are unique', () => {
   const names = STATES.map((state) => state.name);
   expect(names.filter((name, i) => names.indexOf(name) !== i)).toEqual([]);
@@ -133,6 +151,12 @@ for (const state of STATES) {
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
       );
       expect(overflow, 'sideways scrolling at 360 px (UI-4)').toBeLessThanOrEqual(0);
+      const { unexpected: small, stale: fixed } = compareTargets(
+        state.name,
+        await smallTargets(page),
+      );
+      expect(small, 'targets under 44 px at 360 px (UX-15, WCAG 2.5.8)').toEqual([]);
+      expect(fixed, 'known small targets that are fixed now').toEqual([]);
     }
   });
 }

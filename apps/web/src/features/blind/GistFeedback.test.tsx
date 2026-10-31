@@ -179,3 +179,43 @@ test('the server deadline ends the spinner even when the next read stalls', asyn
     vi.useRealTimers();
   }
 });
+
+// UX-04, UX-22 (#98): a grade that arrives while the learner is on the screen that shows
+// it is announced politely, from a line that was live before it changed, in both places. A
+// grade already there when the panel opens is only shown: arriving at Transcript must not
+// repeat a grade heard after Blind or talk over the step's heading.
+test.each(['blind', 'transcript'] as const)(
+  'a %s grade that arrives while the panel waits is announced',
+  async (context) => {
+    const { QueryClient } = await import('@tanstack/react-query');
+    const { act } = await import('@testing-library/react');
+    let ready = false;
+    mockRoutes({
+      'GET /gists/attempt-1/grade': () => jsonResponse(200, ready ? full : { status: 'pending' }),
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <GistFeedback attemptId="attempt-1" context={context} />
+      </QueryClientProvider>,
+    );
+    const region = await screen.findByText('Preparing your gist feedback…');
+    await waitFor(() => expect(region).toHaveAttribute('aria-live', 'polite'));
+
+    ready = true;
+    await act(() => queryClient.invalidateQueries());
+    await waitFor(() => expect(region).toHaveTextContent('Your gist feedback is ready.'));
+    expect(screen.getByTestId('gist-status')).toBe(region);
+    expect(region).toHaveAttribute('aria-live', 'polite');
+  },
+);
+
+test.each(['blind', 'transcript'] as const)(
+  'a %s grade already there when the panel opens is not announced',
+  async (context) => {
+    mockRoutes({ 'GET /gists/attempt-1/grade': jsonResponse(200, full) });
+    renderWithProviders(<GistFeedback attemptId="attempt-1" context={context} />);
+    expect(await screen.findByText(full.feedback)).toBeInTheDocument();
+    expect(screen.getByText('Your gist feedback is ready.')).toHaveAttribute('aria-live', 'off');
+  },
+);

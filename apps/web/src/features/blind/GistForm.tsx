@@ -70,7 +70,7 @@ export function GistForm({ sessionId, attemptId }: { sessionId: string; attemptI
   if (submit.isSuccess)
     return (
       <div className="flex flex-col gap-4">
-        <GistFeedback attemptId={attemptId} context="blind" />
+        <GistFeedback attemptId={attemptId} context="blind" takeFocus />
         <button
           type="button"
           className={buttonClass('primary')}

@@ -130,7 +130,10 @@ export default function DeleteAccountPage() {
   return (
     <main className={PAGE_CLASS}>
       <div className="flex flex-col gap-2">
-        <Link to="/settings" className="self-start font-bold text-accent">
+        <Link
+          to="/settings"
+          className="inline-flex min-h-11 items-center self-start font-bold text-accent"
+        >
           ← Back to settings
         </Link>
         <p className="text-body-s font-bold text-ink-muted">

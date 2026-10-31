@@ -195,7 +195,10 @@ function ClipRow({ item, onDelete }: { item: LibraryItem; onDelete: () => void }
   return (
     <li className="flex flex-col gap-2 rounded-md border border-line bg-surface-raised p-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 flex-col gap-1">
-        <Link to={`/contents/${item.id}`} className="font-bold break-words">
+        <Link
+          to={`/contents/${item.id}`}
+          className="inline-flex min-h-11 max-w-full items-center self-start font-bold [overflow-wrap:anywhere]"
+        >
           {item.title}
         </Link>
         <span className="text-body-s text-ink-muted">

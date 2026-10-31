@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { PageLoading } from '../../app/PageLoading';
@@ -44,6 +44,7 @@ export default function SessionPage() {
 
 function SessionView({ session }: { session: Session }) {
   const open = session.open_step;
+  useArrivalFocus(open);
   if (open === 'blind')
     return <BlindStep session={session} progress={<Progress session={session} />} />;
   // The session opens at its current step (#50); each mode fills its own screen.
@@ -82,6 +83,56 @@ function SessionView({ session }: { session: Session }) {
       {open ? <OpenStep session={session} /> : <Finished session={session} />}
     </PracticeLayout>
   );
+}
+
+/** How long the arriving step may take to show its content and keep the arrival focus. */
+const ARRIVAL_WINDOW_MS = 3000;
+
+/**
+ * On arrival at the next step, focus goes to the page's h1 (shared rule for practice
+ * screens; WCAG 2.4.3, #98): the control that moved the plan on left with its step. A
+ * step that places focus itself when it opens (Dictation's text box, UX-42; Card's
+ * heading) keeps it: its effects run before this one. A step that swaps its loading
+ * screen for its content replaces the heading, and a dialog that closed with the last
+ * step sends focus to <main>, so for a short while focus that falls to the page or to
+ * <main> goes to the heading, until the learner presses a key or the pointer. The first
+ * render is a page load, where focus is left to the route.
+ */
+function useArrivalFocus(open: Session['open_step']) {
+  const previous = useRef(open);
+  useEffect(() => {
+    if (previous.current === open) return;
+    previous.current = open;
+    // The body, or <main> itself: where a dialog sends focus when its opener has gone
+    // (ConfirmDialog), which for a skip is after this effect focused the heading.
+    const lost = () => {
+      const active = document.activeElement;
+      return !active || active === document.body || active === document.querySelector('main');
+    };
+    if (!lost()) return;
+    const focusHeading = () => {
+      if (!lost()) return;
+      const heading = document.querySelector<HTMLElement>('main h1');
+      if (!heading) return;
+      heading.tabIndex = -1;
+      heading.focus();
+    };
+    focusHeading();
+    const observer = new MutationObserver(focusHeading);
+    observer.observe(document.body, { childList: true, subtree: true });
+    const timer = window.setTimeout(stop, ARRIVAL_WINDOW_MS);
+    document.addEventListener('focusin', focusHeading);
+    document.addEventListener('keydown', stop, { capture: true });
+    document.addEventListener('pointerdown', stop, { capture: true });
+    function stop() {
+      observer.disconnect();
+      window.clearTimeout(timer);
+      document.removeEventListener('focusin', focusHeading);
+      document.removeEventListener('keydown', stop, { capture: true });
+      document.removeEventListener('pointerdown', stop, { capture: true });
+    }
+    return stop;
+  }, [open]);
 }
 
 /** The step progress, with "Change entry" until Transcript starts (FR-PL-5). */
