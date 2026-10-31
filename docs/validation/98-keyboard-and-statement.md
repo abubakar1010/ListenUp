@@ -73,17 +73,19 @@ on the body.
 | After Submit gist, focus is on the feedback heading | `GistForm.test.tsx` › `after submitting, focus is on the gist feedback heading` | focus on the body | passes |
 
 The first version of the arrival test used Skip Card. It stayed red after the fix
-because `ConfirmDialog` sends focus to `<main>` when its opener has gone; that is
-designed behavior and keeps focus, so the test was moved to the gist path, which has no
-dialog.
+because `ConfirmDialog` sent focus to `<main>` when its opener had gone, after the
+arrival focus had put it on the h1, so the test was moved to the gist path. The review
+of #260 found that race; the arrival focus now also moves focus that lands on `<main>`
+during its window (see [Review fixes](#review-fixes)).
 
 ## 360 px gaps
 
 Part 1 already fails any state that scrolls sideways at 360 px. This part adds the
 UX-15 target size: at 360 px every visible control's hit area must be at least 44 px
 in each direction (`e2e/a11y/targets.ts`). A checkbox or radio counts its label; a
-wider absolutely placed `::before` counts. Links inside running text and transcript
-words are exempt, as UX-15 says.
+wider absolutely placed `::before` counts. Transcript words are exempt, as UX-15
+says (they carry `data-inline-target`); links inside running text are exempt under
+WCAG 2.5.8's inline exception, which UX-15 does not name (an owner question on #260).
 
 Red (`pnpm exec playwright test a11y.spec --project=a11y-360`, gate on, fixes stashed):
 almost every state failed, on these targets. Green after the fixes: `pnpm e2e:a11y`
@@ -143,6 +145,23 @@ Red: `pnpm vitest run src/features/legal/AccessibilityStatementPage.test.tsx` �
 `src/features/account` and `App.test.tsx`. Axe passes on the page in all three
 projects.
 
+## Review fixes
+
+An independent review of #260 found these; each was fixed test first. AT-7 is the plan
+paths' acceptance test (steps, unlock order, entry rule), which the keyboard runs also
+check; the keyboard requirement itself is UI-4 and NFR-USE-2.
+
+| Finding | Test | Red | Green |
+| --- | --- | --- | --- |
+| A clip title with no spaces pushed the library 241 px past 360 px (the `inline-flex self-start` target fix sized the link to its longest word) | `axe: library with clips and plans` (a11y-360) with a file-name title in the fixture | `pnpm exec playwright test a11y.spec --project=a11y-360`: "sideways scrolling at 360 px", received 241 | `max-w-full [overflow-wrap:anywhere]` on the link: 69 passed |
+| The transcript-word exemption keyed on `data-inline-target`, which no word carried; the gate passed only on wide fixture words | `axe: <transcript states>` (a11y-360) with a one-letter word in the fixture | same command: `button "Jump to a" 17×44` on 4 states | the word buttons carry `data-inline-target`: 69 passed |
+| The gist status line was polite from mount, so Transcript's fresh read re-announced a grade heard after Blind, over the h1 | `GistFeedback.test.tsx` › `a {blind,transcript} grade that arrives while the panel waits is announced`, `… already there when the panel opens is not announced` | with `GistFeedback.tsx` stashed: 4 failed | the line turns polite once a read finds the grade not ready: 60 passed in `src/features/blind` |
+| After Skip Card or Skip Shadow, `ConfirmDialog` moved focus from the arriving h1 to `<main>` | `SessionChanges.test.tsx` › `skipping Card puts focus on the Shadow heading`; the Skip Shadow test now expects the h1 | 2 failed, focus on `<main>` | during the arrival window focus on `<main>` goes to the h1: 753 passed. A first try changed `ConfirmDialog`'s fallback to the h1 instead; `e2e/cards.spec.ts` › `cards_keyboard_at_360px` caught that it also moved focus after deleting a card within Card, so it was dropped |
+| The "step places focus itself" test started on a first render, which the arrival focus skips | `SessionPage.test.tsx` › `arriving_at_dictation_keeps_focus_on_its_text_box`; the keyboard runs assert the text box has focus on arrival at Dictation | characterization; fails when the arrival focus ignores the step's own focus (checked by changing `lost()` to always true) | passes |
+| The focus-indicator check passed any box-shadow and transparent outlines | `keyboard-paths.spec.ts` › `the focus indicator check needs a visible outline or a focus-ring shadow` | "resting" shadow reported visible | outline ≥ 2 px in a colour that draws, or a shadow in the focus-ring colour: 8 passed |
+| The plan server answered writes without the CSRF header | `keyboard-paths.spec.ts` › `the plan server refuses a write without the CSRF header` | 201 instead of 403 | refused and recorded, which fails a run: 8 passed |
+| The statement claimed every control works with Tab and Enter or Space and that colours meet AA | `AccessibilityStatementPage.test.tsx`, axe `accessibility statement` | documentation | wording limited to what is tested; native audio focus ring listed as a known limitation |
+
 ## Reported for #82
 
 These are in `src/features/shadow`, which this story may not change:
@@ -173,6 +192,13 @@ These are in `src/features/shadow`, which this story may not change:
 - The statement's contact and review date must be completed before launch.
 
 ## Final checks
+
+After the review fixes, from `apps/web` on the branch head (merged with `main`),
+Chromium only: `pnpm format:check`, `pnpm lint`, `pnpm typecheck` pass;
+`pnpm test:coverage` 753 passed; `pnpm build` and `pnpm size` (126.8 kB) pass;
+`pnpm exec playwright test --project=chromium` 87 passed; `pnpm e2e:a11y` 205 passed,
+2 skipped. The record below is from before the
+review.
 
 Run locally from `apps/web` on the branch head, Chromium only:
 
