@@ -16,6 +16,7 @@ from listenup.modules.grading.domain.delivery import (
     DeliveryParameters,
     Interval,
     Word,
+    place_original,
     score_round,
 )
 
@@ -476,3 +477,31 @@ def test_saying_another_word_never_lowers_completeness(recorded, extra):
     more = [*recorded, Word(extra, 200.0, 200.3)]
     before = score(recorded).measures["completeness"].score or 0
     assert score(more).measures["completeness"].score >= before  # type: ignore[operator]
+
+
+# --- The recording clock (ADR 0096) -----------------------------------------------
+
+
+def test_original_words_are_placed_on_the_recording_clock():
+    """The browser reports when the original began in the recording (count-in or a
+    later "Play now"); media times move by segment start and that offset."""
+    placed = place_original(
+        [(0, 60_000, 60_400), (1, 60_500, 61_000)],
+        segment=(60_000, 90_000),
+        playback_offset_ms=3_250,
+    )
+    assert placed == [Word(0, 3.25, 3.65), Word(1, 3.75, 4.25)]
+
+
+def test_original_words_outside_the_segment_are_dropped():
+    placed = place_original(
+        [(0, 59_900, 60_200), (1, 60_200, 60_500), (2, 89_800, 90_100), (3, 89_500, 90_000)],
+        segment=(60_000, 90_000),
+        playback_offset_ms=0,
+    )
+    assert [w.index for w in placed] == [1, 3]
+
+
+def test_an_unknown_playback_offset_is_refused():
+    with pytest.raises(ValueError, match="playback offset"):
+        place_original([(0, 60_000, 60_400)], segment=(60_000, 90_000), playback_offset_ms=-1)

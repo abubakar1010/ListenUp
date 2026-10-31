@@ -359,3 +359,30 @@ def score_round(
     total = sum(measures[name].score or 0 for name in basis)
     overall = (2 * total + len(basis)) // (2 * len(basis)) if basis else None
     return DeliveryScores(measures, overall, basis, len(fillers), echo, parameters.version)
+
+
+def place_original(
+    words: Sequence[tuple[int, int, int]],
+    *,
+    segment: tuple[int, int],
+    playback_offset_ms: int,
+) -> list[Word]:
+    """Put the original's words, `(segment word index, start ms, end ms)` in media
+    time, on the recording's clock (ADR 0096).
+
+    `playback_offset_ms` is where the original began in the recording, as the browser
+    reported it: after the count-in, or later when autoplay waited for "Play now".
+    Words not wholly inside the half-open segment were not played and are dropped.
+    """
+    if type(playback_offset_ms) is not int or playback_offset_ms < 0:
+        raise ValueError("Invalid playback offset")
+    left, right = segment
+    return [
+        Word(
+            index,
+            (start - left + playback_offset_ms) / 1000,
+            (end - left + playback_offset_ms) / 1000,
+        )
+        for index, start, end in words
+        if left <= start and end <= right
+    ]
