@@ -128,3 +128,58 @@ class KeyPointDelay(Base):
     )
     span: Mapped[Range[int]] = mapped_column(INT4RANGE, primary_key=True)
     prompt_version: Mapped[str] = mapped_column(Text, primary_key=True)
+
+
+class RoundGrade(Base):
+    """Private synthetic scoring evidence; learner projection remains unavailable (E2)."""
+
+    __tablename__ = "round_grades"
+    __table_args__ = (
+        CheckConstraint("status IN ('pending','scored','ready','unavailable')"),
+        CheckConstraint("overall BETWEEN 0 AND 100"),
+        CheckConstraint("filler_count >= 0"),
+        CheckConstraint("char_length(feedback) <= 1500"),
+        CheckConstraint("feedback_mode IN ('ai','template')"),
+        CheckConstraint("measures IS NULL OR jsonb_typeof(measures) = 'object'"),
+        CheckConstraint(
+            "speech_info IS NULL OR COALESCE(jsonb_typeof(speech_info) = 'object' "
+            "AND speech_info ?& ARRAY['provider','model','version',"
+            "'synthetic','parameters_version'] "
+            "AND jsonb_typeof(speech_info->'synthetic') = 'boolean' "
+            "AND length(speech_info->>'provider') > 0 "
+            "AND length(speech_info->>'model') > 0 "
+            "AND length(speech_info->>'version') > 0, false)"
+        ),
+        CheckConstraint(
+            "status NOT IN ('scored','ready') OR (measures IS NOT NULL "
+            "AND overall IS NOT NULL AND filler_count IS NOT NULL AND speech_info IS NOT NULL)"
+        ),
+        ForeignKeyConstraint(
+            ["round_id", "user_id"],
+            ["practice.shadow_rounds.id", "practice.shadow_rounds.user_id"],
+            name="round_grades_round_user_fk",
+            ondelete="CASCADE",
+        ),
+        {"schema": "grading"},
+    )
+    round_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    user_id: Mapped[uuid.UUID]
+    status: Mapped[str] = mapped_column(Text, server_default="pending")
+    measures: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    overall: Mapped[int | None] = mapped_column(SmallInteger)
+    filler_count: Mapped[int | None] = mapped_column(SmallInteger)
+    word_labels: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    feedback: Mapped[str | None] = mapped_column(Text)
+    top_fixes: Mapped[list[str] | None] = mapped_column(JSONB)
+    feedback_mode: Mapped[str | None] = mapped_column(Text)
+    speech_info: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    text_info: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    echo_detected: Mapped[bool] = mapped_column(server_default="false")
+    generation: Mapped[uuid.UUID]
+    feedback_deadline: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )

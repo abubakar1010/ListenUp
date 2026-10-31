@@ -14,6 +14,7 @@ from listenup.modules.content.service import build_uploads
 from listenup.modules.dictation import api as dictation_api
 from listenup.modules.export import api as export_api
 from listenup.modules.export.service import build_exports
+from listenup.modules.grading import api as grading_api
 from listenup.modules.identity import api as identity_api
 from listenup.modules.identity import google_api
 from listenup.modules.identity.oidc import GoogleOIDC
@@ -98,6 +99,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(review_api.router)
     api.include_router(cards_api.router)
     api.include_router(shadow_api.router)
+    api.include_router(grading_api.router)
     api.include_router(blind_api.router)
     api.include_router(dictation_api.router)
     api.include_router(export_api.router)

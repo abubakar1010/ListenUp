@@ -7,8 +7,8 @@ import pytest
 from listenup.ai.config import DEFAULT_CONFIG, FAKE_CONFIG, load_config, parse_config
 from listenup.ai.errors import AIConfigError, AIUnavailable
 from listenup.ai.evals.runner import uses_synthetic_provider
-from listenup.ai.gateway import AIGateway, get_gateway
-from listenup.ai.ports import Role, SpeechAssessment, SpeechAssessmentPort
+from listenup.ai.gateway import AIGateway, get_gateway, is_synthetic
+from listenup.ai.ports import Provenance, Role, SpeechAssessment, SpeechAssessmentPort
 from listenup.ai.providers.fake_assessment import SYNTHETIC_PROVIDERS
 from listenup.ai.registry import DEFAULT_REGISTRY
 from listenup.ai.validation import validate_assessment
@@ -119,6 +119,14 @@ def test_every_synthetic_provider_is_recognised_as_synthetic():
         assert uses_synthetic_provider({name, "faster-whisper"})
     assert not uses_synthetic_provider({"faster-whisper"})
     assert not uses_synthetic_provider(set())
+
+
+@pytest.mark.parametrize(
+    ("provider", "synthetic"), [("fake", True), ("fake-assessment", True), ("local-speech", False)]
+)
+def test_callers_tell_synthetic_output_from_the_gateway(provider, synthetic):
+    """Modules ask the gateway, not a provider adapter, whether a result is synthetic."""
+    assert is_synthetic(Provenance(provider=provider, model="m", version="1")) is synthetic
 
 
 @pytest.mark.anyio

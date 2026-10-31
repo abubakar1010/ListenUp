@@ -176,6 +176,12 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ("GET", "/api/v1/shadow/rounds/{round_id}/recording"): Owned(
         "round_not_found", params=lambda w: {"round_id": w.a.shadow_round_id}
     ),
+    ("GET", "/api/v1/shadow/rounds/{round_id}/grade"): Owned(
+        "round_not_found", params=lambda w: {"round_id": w.a.shadow_round_id}
+    ),
+    ("POST", "/api/v1/shadow/rounds/{round_id}/grade/retry"): Owned(
+        "round_not_found", params=lambda w: {"round_id": w.a.shadow_round_id}
+    ),
     ("POST", "/api/v1/grades/{attempt_id}/retry"): Owned(
         "attempt_not_found", params=lambda w: {"attempt_id": w.a.blind_attempt_id}
     ),
