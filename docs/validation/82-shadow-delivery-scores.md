@@ -5,14 +5,14 @@
 Partial. Owner decisions of 2026-10-31 (plan review): Q1 provisional versioned
 parameters, Q2 overall over the available measures, Q3 echo plumbing only; the
 version 1 starting values were confirmed the same day as placeholders, not evidence
-([ADR 0095](../adr/0095-provisional-shadow-delivery-scores.md)). Built against the
+([ADR 0092](../adr/0092-provisional-shadow-delivery-scores.md)). Built against the
 synthetic assessment provider under E2 ([ADR 0074](../adr/0074-speech-assessment-contract-split.md)).
 
 Done: the pure scoring for timing, fluency, filler words and completeness, the
 version 1 parameter file and its validation, and the echo flag rule.
 
 Also done: `place_original`, which puts the original's words on the recording clock
-from the browser-reported playback offset ([ADR 0096](../adr/0096-shadow-recording-playback-offset.md),
+from the browser-reported playback offset ([ADR 0093](../adr/0093-shadow-recording-playback-offset.md),
 owner option b), and `grading/round_inputs.py`, which turns an assessment into
 scoring input and stored provenance with a `synthetic` flag.
 
@@ -32,7 +32,7 @@ All tests are in `apps/api/tests/unit/test_shadow_delivery_scoring.py`.
 | Leaking original flagged with a headphones message | `test_leakage_at_the_threshold_asks_for_headphones`, `test_no_leakage_signal_means_the_echo_check_did_not_run`, `test_an_invalid_leakage_signal_is_refused` | Rule only (Q3 c); the detector and its reliability are #80 |
 | Measures and provider info stored per round (FR-SH-18) | — | Not built: waits for #90 and the migration |
 | Each measure 0 to 100, overall the equal mean without accent (FR-SH-9, FR-SH-15) | `test_overall_is_the_equal_mean_of_the_measures_available`, `test_an_unobservable_measure_is_left_out_of_the_overall`, `test_accent_and_unbuilt_measures_never_enter_the_overall`, `test_every_score_is_bounded_or_explicitly_unobservable` | Met for the four measures (Q2) |
-| Original words on the recording clock (ADR 0096) | `test_original_words_are_placed_on_the_recording_clock`, `test_original_words_outside_the_segment_are_dropped`, `test_an_unknown_playback_offset_is_refused` | Met for the rule; storing and reporting the offset wait for the migration |
+| Original words on the recording clock (ADR 0093) | `test_original_words_are_placed_on_the_recording_clock`, `test_original_words_outside_the_segment_are_dropped`, `test_an_unknown_playback_offset_is_refused` | Met for the rule; storing and reporting the offset wait for the migration |
 | Provider, model and version per result; synthetic output marked (NFR-AI-5, ADR 0074) | `tests/unit/test_shadow_round_inputs.py`: `test_speech_info_stores_provenance_and_marks_synthetic_output`, `test_recorded_words_and_fillers_keep_reference_indices_and_times` | Built; persisted after the migration |
 | Null never becomes 0 or 100 (ADR 0050) | `test_no_matched_words_is_unobservable_not_zero`, `test_an_empty_reference_is_reported_as_such`, `test_timing_needs_two_matched_words`, `test_timing_needs_the_original_timing_of_matched_words`, `test_a_pause_beside_words_the_original_could_not_place_is_not_judged`, `test_fluency_needs_the_originals_duration`, `test_fillers_need_the_originals_duration` | Met |
 

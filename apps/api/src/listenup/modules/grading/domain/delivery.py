@@ -2,7 +2,7 @@
 
 Pure code: speech models only supply word timings and fillers, and every number
 here comes from our own arithmetic. The transforms and their parameters live in a
-versioned file that is provisional and uncalibrated (ADR 0095): they are
+versioned file that is provisional and uncalibrated (ADR 0092): they are
 placeholders until the teacher golden set (#107/#110) calibrates them, never
 approved scoring policy (ADR 0050). Times are seconds on one clock, the
 recording's; the caller places the original's words on it.
@@ -313,7 +313,7 @@ def _fillers(
 
 
 def _echo(section: Mapping[str, Any], leakage: float | None) -> EchoCheck:
-    """Plumbing only: the leakage detector and its reliability are #80's (ADR 0095).
+    """Plumbing only: the leakage detector and its reliability are #80's (ADR 0092).
 
     A flagged round keeps its numbers; the learner is asked to use headphones.
     """
@@ -354,7 +354,7 @@ def score_round(
         "completeness": _completeness(reference_word_count, recorded),
     }
     # FR-SH-9's equal weights over what is observable; accent is never included
-    # (FR-SH-15) and #83 adds pronunciation and articulation (ADR 0095).
+    # (FR-SH-15) and #83 adds pronunciation and articulation (ADR 0092).
     basis = tuple(name for name in MEASURES if measures[name].score is not None)
     total = sum(measures[name].score or 0 for name in basis)
     overall = (2 * total + len(basis)) // (2 * len(basis)) if basis else None
@@ -368,7 +368,7 @@ def place_original(
     playback_offset_ms: int,
 ) -> list[Word]:
     """Put the original's words, `(segment word index, start ms, end ms)` in media
-    time, on the recording's clock (ADR 0096).
+    time, on the recording's clock (ADR 0093).
 
     `playback_offset_ms` is where the original began in the recording, as the browser
     reported it: after the count-in, or later when autoplay waited for "Play now".

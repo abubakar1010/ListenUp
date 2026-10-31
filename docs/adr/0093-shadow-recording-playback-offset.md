@@ -1,8 +1,8 @@
-# ADR 0096: The browser reports where the original starts in a Shadow recording
+# ADR 0093: The browser reports where the original starts in a Shadow recording
 
 - Status: Accepted (owner, 2026-10-31, option b); the Database Design change and
   the migration are pending
-- Story: #82. Related: ADRs 0063, 0070, 0095; #90
+- Story: #82. Related: ADRs 0063, 0070, 0092; #90
 - Requirements: FR-SH-4, FR-SH-8, FR-SH-9, AT-17
 
 ## Context

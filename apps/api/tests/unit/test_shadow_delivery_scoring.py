@@ -1,6 +1,6 @@
 """Shadow delivery measures are pure code over assessment signals (#82, FR-SH-4/9).
 
-Parameters are provisional and uncalibrated (ADR 0095); these tests pin the
+Parameters are provisional and uncalibrated (ADR 0092); these tests pin the
 arithmetic and the null rules, not speech accuracy, which #80/#22/#110 validate.
 """
 
@@ -305,7 +305,7 @@ def test_fillers_need_the_originals_duration():
 
 
 def test_overall_is_the_equal_mean_of_the_measures_available():
-    """FR-SH-9 over the four measures built so far; #83 adds the other two (ADR 0095)."""
+    """FR-SH-9 over the four measures built so far; #83 adds the other two (ADR 0092)."""
     result = score(
         shifted(minute_original(), after=4, by=1.5),  # fluency 83
         n=12,  # completeness 10/12 = 83
@@ -329,7 +329,7 @@ def test_accent_and_unbuilt_measures_never_enter_the_overall():
     assert set(score(original_of(10)).measures) == {"timing", "fluency", "fillers", "completeness"}
 
 
-# --- Echo check (plumbing; the detector is #80's, ADR 0095) ------------------------
+# --- Echo check (plumbing; the detector is #80's, ADR 0092) ------------------------
 
 
 def test_no_leakage_signal_means_the_echo_check_did_not_run():
@@ -479,7 +479,7 @@ def test_saying_another_word_never_lowers_completeness(recorded, extra):
     assert score(more).measures["completeness"].score >= before  # type: ignore[operator]
 
 
-# --- The recording clock (ADR 0096) -----------------------------------------------
+# --- The recording clock (ADR 0093) -----------------------------------------------
 
 
 def test_original_words_are_placed_on_the_recording_clock():

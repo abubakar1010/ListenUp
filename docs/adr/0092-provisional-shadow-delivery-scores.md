@@ -1,4 +1,4 @@
-# ADR 0095: Provisional Shadow delivery scores
+# ADR 0092: Provisional Shadow delivery scores
 
 - Status: Accepted (Q1–Q3 and the version 1 starting values, owner, 2026-10-31)
 - Story: #82. Related: ADRs 0010, 0050, 0074; #80, #21, #22, #83, #107, #110

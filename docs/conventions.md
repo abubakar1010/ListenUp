@@ -453,7 +453,7 @@ Read the section for the area you are changing before you change it. The rules e
   lives in memory, ADR 0070); Shadow then completes only by skipping. Owner decision on
   #242 review: accepted, and the round-3 copy says so.
 
-## Shadow delivery scores (ADR 0095, #82)
+## Shadow delivery scores (ADR 0092, #82)
 
 - `grading/domain/delivery.py` computes timing, fluency, filler words and
   completeness as pure code over plain `Word`/`Interval` values; it never imports
