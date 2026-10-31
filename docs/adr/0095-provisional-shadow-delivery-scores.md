@@ -1,6 +1,6 @@
 # ADR 0095: Provisional Shadow delivery scores
 
-- Status: Accepted (Q1–Q3, owner, 2026-10-31); starting parameter values proposed
+- Status: Accepted (Q1–Q3 and the version 1 starting values, owner, 2026-10-31)
 - Story: #82. Related: ADRs 0010, 0050, 0074; #80, #21, #22, #83, #107, #110
 - Requirements: FR-SH-4, FR-SH-9, FR-SH-15, FR-SH-18, AT-17
 
@@ -64,7 +64,7 @@ All times are on the recording's clock; the caller places the original's words o
 - **Null is explicit.** No reference words, no matched words, too few paired words
   or no original timing each give a null score with a reason (ADR 0050).
 
-### Starting values (version 1, proposed for owner confirmation)
+### Starting values (version 1, confirmed by the owner on 2026-10-31)
 
 | Parameter | Value | Meaning |
 | --- | --- | --- |

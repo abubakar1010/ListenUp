@@ -3,7 +3,8 @@
 ## Scope and status
 
 Partial. Owner decisions of 2026-10-31 (plan review): Q1 provisional versioned
-parameters, Q2 overall over the available measures, Q3 echo plumbing only
+parameters, Q2 overall over the available measures, Q3 echo plumbing only; the
+version 1 starting values were confirmed the same day as placeholders, not evidence
 ([ADR 0095](../adr/0095-provisional-shadow-delivery-scores.md)). Built against the
 synthetic assessment provider under E2 ([ADR 0074](../adr/0074-speech-assessment-contract-split.md)).
 
