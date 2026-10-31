@@ -62,6 +62,19 @@ export function useMarks(id: string) {
   });
 }
 
+/**
+ * The session's marks as Card reads them, once Transcript has fixed them (#72). A cache
+ * entry of its own: Card opens in the same render that closes Transcript, before
+ * Transcript's copy is dropped, and that copy is the list as Transcript opened (#98).
+ */
+export function useFinishedMarks(id: string) {
+  return useQuery({
+    queryKey: [...marksKey(id), 'finished'],
+    queryFn: () => api<MarkList>(`/sessions/${encodeURIComponent(id)}/marks`),
+    retry: false,
+  });
+}
+
 /** The marks API as `MarkSync` sends to it. */
 export function markTransport(sessionId: string): MarkTransport {
   const path = `/sessions/${encodeURIComponent(sessionId)}/marks`;

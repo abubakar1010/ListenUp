@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import { buttonClass } from '../../components/button';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { ErrorPanel } from '../../components/ErrorPanel';
-import { useMarks, useTranscript } from '../review/api';
+import { useFinishedMarks, useTranscript } from '../review/api';
 import { useSkipStep, type Session } from '../session/api';
 import { PracticeLayout } from '../session/PracticeLayout';
 import { STEP_RULES } from '../session/plan';
@@ -33,7 +33,7 @@ const inputClass =
 
 export function CardScreen({ session, progress }: { session: Session; progress: ReactNode }) {
   const cards = useCards(session.id);
-  const marks = useMarks(session.id);
+  const marks = useFinishedMarks(session.id);
   const transcript = useTranscript(session.id);
   const suggestions = useCardSuggestions(session.id);
   const [selected, setSelected] = useState('');
