@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 
 import { expect, isMacWebKit, requireRecording, SAFARI_SELECT, test } from './test';
 import { expectFocusKept } from './focus';
-import { activate, expectNoSideScroll, playThrough, tabTo } from './keyboard/keys';
+import { activate, expectNoSideScroll, focusIndicator, playThrough, tabTo } from './keyboard/keys';
 import { planServer, TYPED, type Entry, type PlanState } from './keyboard/planServer';
 
 /*
@@ -30,6 +30,28 @@ const WIDTHS = [1280, 360];
  */
 const SHADOW_ROUND_END =
   'Shadow: focus falls to the page when a round ends (#98 report; shadow files are #82)';
+
+// WCAG 2.4.7: the check must not pass a resting shadow or an invisible outline.
+test('the focus indicator check needs a visible outline or a focus-ring shadow', async ({
+  page,
+}) => {
+  await page.setContent(`
+    <style>:root { --color-focus-ring: rgb(10, 90, 200); }</style>
+    <button id="ring" style="outline: 3px solid var(--color-focus-ring)">Ring</button>
+    <button id="shadow" style="outline: none; box-shadow: 0 0 0 3px var(--color-focus-ring)">Shadow</button>
+    <button id="resting" style="outline: none; box-shadow: 0 1px 2px rgb(0 0 0 / 0.3)">Resting</button>
+    <button id="clear" style="outline: 2px solid transparent">Clear</button>
+    <button id="thin" style="outline: 1px solid black">Thin</button>`);
+  const visible = async (id: string) => {
+    await page.locator(`#${id}`).focus();
+    return (await focusIndicator(page)).visible;
+  };
+  expect(await visible('ring')).toBe(true);
+  expect(await visible('shadow')).toBe(true);
+  expect(await visible('resting')).toBe(false);
+  expect(await visible('clear')).toBe(false);
+  expect(await visible('thin')).toBe(false);
+});
 
 for (const { entry, steps } of PATHS) {
   for (const width of WIDTHS) {

@@ -8,8 +8,11 @@ import { expect, test } from '../test';
  * control missing from the Tab order fails the spec.
  */
 
-/** What the focused element shows for WCAG 2.4.7: an outline or a ring of box shadow. */
-async function focusIndicator(page: Page) {
+/**
+ * What the focused element shows for WCAG 2.4.7: an outline at least 2 px wide in a colour
+ * that draws, or a box-shadow ring in the focus-ring colour.
+ */
+export async function focusIndicator(page: Page) {
   return page.evaluate(() => {
     const element = document.activeElement as HTMLElement | null;
     if (!element || element === document.body) return { lost: true, name: '', visible: false };
@@ -17,12 +20,25 @@ async function focusIndicator(page: Page) {
     // are out of reach of getComputedStyle; the manual checklist covers them.
     const native = element.matches('audio[controls], video[controls]');
     const style = getComputedStyle(element);
-    const outline = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 2;
-    const ring = style.boxShadow !== 'none';
+    // A colour with no alpha, or alpha 0, draws nothing.
+    const drawn = (color: string) => !/^transparent$|rgba\([^)]*,\s*0\)$/.test(color.trim());
+    const outline =
+      style.outlineStyle !== 'none' &&
+      parseFloat(style.outlineWidth) >= 2 &&
+      drawn(style.outlineColor);
+    // A box-shadow counts only when it draws in the focus-ring colour: a resting shadow
+    // is not a focus indicator.
+    const tokenSet =
+      getComputedStyle(document.documentElement).getPropertyValue('--color-focus-ring') !== '';
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--color-focus-ring)';
+    document.body.append(probe);
+    const focusRing = getComputedStyle(probe).color;
+    probe.remove();
+    const ring = tokenSet && style.boxShadow !== 'none' && style.boxShadow.includes(focusRing);
     const name =
       element.getAttribute('aria-label') ??
-      (element.textContent ?? '').trim().slice(0, 40) ??
-      element.tagName;
+      ((element.textContent ?? '').trim().slice(0, 40) || element.tagName);
     return {
       lost: false,
       name: `${element.tagName.toLowerCase()} "${name}"`,
