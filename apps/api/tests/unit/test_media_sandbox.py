@@ -256,7 +256,9 @@ async def test_job_scratch_is_removed_after_a_killed_job(
     monkeypatch.setattr(media_sandbox, "run_process", killed)
     with pytest.raises(media_sandbox.MediaProcessFailed):
         await media_sandbox.run_job("any.future.media.job", JobDeps(object(), 1, 1), {}, 3)
-    assert list(tmp_path.iterdir()) == []
+    from listenup.platform.scratch import NAMESPACE
+
+    assert list((tmp_path / NAMESPACE).iterdir()) == []
 
 
 @pytest.mark.anyio
