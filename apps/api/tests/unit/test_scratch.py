@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -495,6 +496,202 @@ def test_a_taken_scratch_name_is_retried_and_exhaustion_is_an_error(tmp_path, mo
         pass
 
 
+@pytest.mark.parametrize(("depth", "descriptor_limit"), [(1200, None), (120, 64)])
+def test_newest_mtime_handles_deep_trees_with_bounded_descriptors(
+    tmp_path, depth, descriptor_limit
+):
+    root = tmp_path / "deep"
+    root.mkdir()
+    current = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    created = 0
+    try:
+        for _ in range(depth):
+            os.mkdir("d", dir_fd=current)
+            os.utime(current, (1_000_000_000, 1_000_000_000))
+            inner = os.open("d", os.O_RDONLY | os.O_DIRECTORY, dir_fd=current)
+            os.close(current)
+            current = inner
+            created += 1
+        os.utime(current, (2_000_000_000, 2_000_000_000))
+        # A subprocess confines RLIMIT_NOFILE and catches leaked scanner handles
+        # across repeated scans without depending on /proc or /dev/fd.
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import os, resource, sys; "
+                "from listenup.platform.scratch import _newest_mtime; "
+                "limit = int(sys.argv[2]); "
+                "limit and resource.setrlimit(resource.RLIMIT_NOFILE, "
+                "(limit, resource.getrlimit(resource.RLIMIT_NOFILE)[1])); "
+                "fd = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY); "
+                "assert all(_newest_mtime(fd) == 2000000000 for _ in range(3)); "
+                "os.close(fd)",
+                str(root),
+                str(descriptor_limit or 0),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, result.stderr[-2000:]
+    finally:
+        # Avoid recursive cleanup and joined paths beyond macOS's PATH_MAX.
+        try:
+            for _ in range(created):
+                parent = os.open("..", os.O_RDONLY | os.O_DIRECTORY, dir_fd=current)
+                os.close(current)
+                current = parent
+                os.rmdir("d", dir_fd=current)
+        finally:
+            os.close(current)
+
+
+@pytest.mark.parametrize("moment", ["stat", "open"])
+def test_child_removed_during_scan_does_not_block_other_entries(tmp_path, monkeypatch, moment):
+    stale, other = abandoned(tmp_path), abandoned(tmp_path)
+    (stale / "vanishing").mkdir()
+    old(stale)
+    real_scandir, real_open = os.scandir, os.open
+    removed = False
+
+    def vanish(descriptor):
+        nonlocal removed
+        os.rmdir("vanishing", dir_fd=descriptor)
+        then = time.time() - 7200
+        os.utime(descriptor, (then, then))
+        removed = True
+
+    class Child:
+        def __init__(self, child, descriptor):
+            self.child, self.descriptor = child, descriptor
+            self.name = child.name
+
+        def stat(self, **kwargs):
+            if moment == "stat" and self.name == "vanishing" and not removed:
+                vanish(self.descriptor)
+            return self.child.stat(**kwargs)
+
+        def is_dir(self, **kwargs):
+            return self.child.is_dir(**kwargs)
+
+    @contextmanager
+    def scan(descriptor):
+        with real_scandir(descriptor) as children:
+            yield (Child(child, descriptor) for child in children)
+
+    def open_child(path, flags, *args, dir_fd=None, **kwargs):
+        if moment == "open" and path == "vanishing" and not removed:
+            vanish(dir_fd)
+        return real_open(path, flags, *args, dir_fd=dir_fd, **kwargs)
+
+    monkeypatch.setattr(os, "scandir", scan)
+    monkeypatch.setattr(os, "open", open_child)
+    assert scratch.sweep(tmp_path, 3600) == (1 if moment == "stat" else 2)
+    assert removed
+    assert not other.exists()
+    assert stale.exists() == (moment == "stat")
+
+
+def test_sweep_keeps_recent_nested_file_when_its_parents_are_old(tmp_path):
+    stale = abandoned(tmp_path)
+    nested = stale / "nested"
+    nested.mkdir()
+    recent = nested / "recent"
+    recent.write_bytes(b"keep")
+    old(stale)
+    now = time.time()
+    os.utime(recent, (now, now))
+    assert scratch.sweep(tmp_path, 3600) == 0
+    assert recent.read_bytes() == b"keep"
+
+
+@pytest.mark.parametrize("failure", [None, "open", "scandir"])
+def test_scan_closes_owned_handles_on_success_and_failure(tmp_path, monkeypatch, failure):
+    (tmp_path / "parent" / "leaf").mkdir(parents=True)
+    root = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    leaf_identity = (tmp_path / "parent" / "leaf").stat().st_ino
+    real_open, real_dup, real_close, real_scandir = os.open, os.dup, os.close, os.scandir
+    owned = set()
+    scanners = 0
+
+    def open_child(path, flags, **kwargs):
+        if failure == "open" and path == "leaf":
+            raise PermissionError("child open refused")
+        descriptor = real_open(path, flags, **kwargs)
+        owned.add(descriptor)
+        return descriptor
+
+    def duplicate(descriptor):
+        duplicate = real_dup(descriptor)
+        owned.add(duplicate)
+        return duplicate
+
+    def close(descriptor):
+        owned.remove(descriptor)
+        real_close(descriptor)
+
+    @contextmanager
+    def scan(descriptor):
+        nonlocal scanners
+        if failure == "scandir" and os.fstat(descriptor).st_ino == leaf_identity:
+            raise PermissionError("child scan refused")
+        with real_scandir(descriptor) as children:
+            scanners += 1
+            try:
+                yield children
+            finally:
+                scanners -= 1
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "open", open_child)
+            patch.setattr(os, "dup", duplicate)
+            patch.setattr(os, "close", close)
+            patch.setattr(os, "scandir", scan)
+            if failure:
+                with pytest.raises(PermissionError):
+                    scratch._newest_mtime(root)
+            else:
+                scratch._newest_mtime(root)
+            assert not owned
+            assert scanners == 0
+            assert os.fstat(root).st_ino == tmp_path.stat().st_ino
+    finally:
+        real_close(root)
+
+
+def test_scan_never_follows_an_intermediate_directory_replaced_by_a_symlink(tmp_path, monkeypatch):
+    stale, other = abandoned(tmp_path), abandoned(tmp_path)
+    (stale / "parent" / "leaf").mkdir(parents=True)
+    parent_identity = (stale / "parent").stat().st_ino
+    target = tmp_path / "foreign"
+    (target / "leaf").mkdir(parents=True)
+    (target / "leaf" / "keep").write_bytes(b"safe")
+    foreign_identities = {target.stat().st_ino, (target / "leaf").stat().st_ino}
+    old(stale)
+    original = os.scandir
+    swapped = False
+
+    @contextmanager
+    def scan(descriptor):
+        nonlocal swapped
+        identity = os.fstat(descriptor).st_ino
+        assert identity not in foreign_identities, "must never scan through the symlink"
+        with original(descriptor) as children:
+            yield children
+        if identity == parent_identity and not swapped:
+            (stale / "parent").rename(stale / "original")
+            (stale / "parent").symlink_to(target, target_is_directory=True)
+            swapped = True
+
+    monkeypatch.setattr(os, "scandir", scan)
+    assert scratch.sweep(tmp_path, 3600) == 1
+    assert swapped
+    assert stale.exists() and not other.exists()
+    assert (target / "leaf" / "keep").read_bytes() == b"safe"
+
+
 def deepen(path: Path, depth: int) -> None:
     """Nest directories `depth` levels below `path` using descriptors, so the pathname
     length limit does not apply."""
@@ -579,3 +776,21 @@ def test_a_failed_scan_closes_every_descriptor_it_opened(tmp_path, monkeypatch):
     again = os.dup(0)
     os.close(again)
     assert again == probe
+
+
+def test_recursive_removal_failure_does_not_abort_other_entries(tmp_path, monkeypatch):
+    blocked, other = abandoned(tmp_path), abandoned(tmp_path)
+    (blocked / "nested").mkdir()
+    old(blocked)
+    original = scratch.shutil.rmtree
+
+    def remove(path, **kwargs):
+        if path == "nested":
+            raise RecursionError("platform remover exhausted its stack")
+        return original(path, **kwargs)
+
+    monkeypatch.setattr(scratch.shutil, "rmtree", remove)
+    assert scratch.sweep(tmp_path, 3600) == 1
+    assert not other.exists()
+    assert (blocked / "nested").is_dir()
+    assert (blocked / scratch.MARKER).read_bytes() == scratch.MAGIC

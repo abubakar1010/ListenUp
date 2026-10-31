@@ -137,7 +137,7 @@ export function Waveform({
           onChange(move(handle, target));
         }}
         style={{ left: `${percent(value)}%` }}
-        className="absolute top-1/2 z-10 h-11 w-4 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm border-2 border-surface-raised bg-accent before:absolute before:inset-y-0 before:-right-3 before:-left-3 before:content-['']"
+        className="absolute top-1/2 z-10 h-11 w-4 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm border-2 border-surface-raised bg-accent before:absolute before:inset-y-0 before:-right-3.5 before:-left-3.5 before:content-['']"
       />
     );
   }

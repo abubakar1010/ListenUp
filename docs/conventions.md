@@ -159,6 +159,10 @@ Read the section for the area you are changing before you change it. The rules e
 - The AI gateway (#64) calls `record_ai_call` and `record_ai_quota`, and grading jobs call `record_grading`; the alert rules already read those metrics. A new alert goes in `infra/observability/alerts.yml` with a case in `alerts.test.yml` (it fires, and stays quiet just below the threshold), a `runbook` entry in `docs/runbooks/alerts.md`, and a row in ADR 0031.
 - Backups are `python -m listenup.ops.backup` (the `backup` image target). A backup is complete only with its `manifest.json`; the restore test is a monthly run recorded in the log at the end of `docs/runbooks/backups.md`. A migration that adds a schema or role must keep a restore into a database with the roles in place working (`tests/integration/test_backup.py`).
 - Retention sweeps live in `listenup/ops/retention.py` (ADR 0087): select at most 1,000 rows with `FOR UPDATE SKIP LOCKED` in short transactions and return a count. Storage calls run outside transactions; retain immutable recording keys until conditional finalization commits, so crash retries and overlapping workers converge safely. Register schedules in `tests/unit/test_worker_modules.py`. Media and default pools sweep their own disk through `platform.scratch`: only owned entries in its private namespace with an acquirable exclusive lifetime lock are candidates. Do not sweep legacy files by name or age alone. Shadow recording retention is `LISTENUP_SHADOW_RECORDING_RETENTION_DAYS`. Scratch directories come from `platform.scratch.directory` (no `/proc`, so it runs on macOS), but isolated media-pool jobs need Linux or Docker.
+  Scratch scans must avoid recursion and keep descriptor use independent of tree
+  depth. Reopen each component relative to the pinned entry with `O_NOFOLLOW`;
+  never replace that traversal with a joined path that could follow intermediate
+  symlinks. Preserve the entry and marker identity checks before deletion.
 
 ## Deployment (ADR 0066)
 
@@ -191,6 +195,8 @@ Read the section for the area you are changing before you change it. The rules e
 - Clip notices (`src/features/content/ClipNotices.tsx`) turn `content.ready` into a polite live-region notice that never takes focus and waits while a `/sessions/` page is open. Upload refusals map to messages in `src/features/library/refusals.ts`.
 - Account settings live at `/settings` (`src/features/account/SettingsPage.tsx`); each section is its own component (`DataExportSection.tsx`, `ConsentsSection.tsx`, `DeleteAccountSection.tsx`). `RequireAuth` shows `auth/ConsentPrompt.tsx` instead of a signed-in page while `me.consents_required` is not empty, except `/settings` and `/settings/delete-account`, and on a `/sessions/` page only after a request was refused with `consent_required` (ADR 0048); consent hooks live in `src/auth/consentApi.ts`.
 - Every route and main state has an entry in `e2e/a11y/states.ts`; `pnpm e2e:a11y` runs axe on each at 1280 px, 360 px and in the dark theme and fails on serious or critical WCAG 2.1 A/AA violations (#98). Each state must reach the screen it names: an unanswered request or an unexpected alert fails it, and fixtures are typed against `src/api/schema.ts`. Fix violations in the change that adds them; only a screen owned by #70, #73 or #79 may get an `e2e/a11y/allowlist.ts` entry, with a reason and that story's issue.
+- At 360 px the scan also fails any control whose hit area is under 44 px (UX-15; `e2e/a11y/targets.ts`); transcript words (`data-inline-target`) and links in running text are exempt, and a code area another story owns goes in `KNOWN_SMALL_TARGETS` with its reason, which fails once fixed. `e2e/keyboard-paths.spec.ts` runs each plan path by keyboard alone against the stateful `e2e/keyboard/planServer.ts`: reach controls with `tabTo`/`activate` from `e2e/keyboard/keys.ts`, never `focus()` or a click, and answer every new request a step makes in the plan server (#98).
+- On arrival at the next step `SessionPage` puts focus on the page's h1 unless the step placed focus itself, and follows a loading-to-content swap for up to 3 s. Within that window focus that a closing `ConfirmDialog` puts on `<main>` (its opener gone with the step) also goes to the h1. A screen that replaces the focused control in place (a submitted form) moves focus to the new content's heading. A late result that fills in on screen is announced from a live region that was mounted before it arrived (UX-04).
 
 ## Google authentication (ADRs 0039, 0040)
 
@@ -341,6 +347,10 @@ Read the section for the area you are changing before you change it. The rules e
   the UUID, so an old job cannot change a newer attempt. Exports omit this UUID
   and writer identity/owner fields. Upload cancellation drains before releasing
   the registration; an uncertain S3 response retains it.
+  S3 writes run in their own eight-thread pool (`platform/storage.py`) and are drained
+  on cancellation, so a stalled request must end inside `worker.SHUTDOWN_GRACE_SECONDS`:
+  the client's connect timeout, read timeout and one retry are sized to fit (26 s of 30 s).
+  Change them together with that constant.
 - Cards-local playback pauses on unmount; pending cards poll and readiness/failure
   events invalidate `['cards', sessionId]`. Keep shared-player behavior unchanged.
 

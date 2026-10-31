@@ -190,6 +190,26 @@ test('confirming skips Card and opens Shadow', async () => {
   expect(screen.getByRole('button', { name: 'Skip Shadow' })).toBeInTheDocument();
 });
 
+// Shared rule (focus order on practice screens), WCAG 2.4.3 (#98): the skip arrives at
+// the next step, so focus goes to its h1 even though the dialog closes with it.
+test('skipping Card puts focus on the Shadow heading', async () => {
+  serve(sessionFixture({ done: 2 }), {
+    'POST /sessions/session-1/steps/card/skip': () =>
+      jsonResponse(200, sessionFixture({ done: 3, skipped: ['card'] })),
+  });
+  renderSession();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Skip Card' }));
+  const dialog = screen.getByRole('dialog', { name: 'Skip Card?' });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Skip Card' }));
+
+  const heading = await screen.findByRole('heading', { level: 1, name: /^Shadow/ });
+  await waitFor(() => expect(heading).toHaveFocus());
+  // After the dialog's own focus return has run.
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(heading).toHaveFocus();
+});
+
 test('skipping Shadow after Card was done completes the plan (D12)', async () => {
   serve(sessionFixture({ done: 3 }), {
     'POST /sessions/session-1/steps/shadow/skip': () =>
@@ -203,7 +223,7 @@ test('skipping Shadow after Card was done completes the plan (D12)', async () =>
   expect(await screen.findByText('All 4 steps finished')).toBeInTheDocument();
   expect(screen.getByText('Plan complete', { selector: 'p' })).toBeInTheDocument();
   expect(screen.getByText('Skipped: Shadow.')).toBeInTheDocument();
-  await waitFor(() => expect(screen.getByRole('main')).toHaveFocus());
+  await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toHaveFocus());
 });
 
 test('a refused skip is shown inside the dialog', async () => {

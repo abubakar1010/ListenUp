@@ -5,7 +5,7 @@ export function Wordmark({ to }: { to: string }) {
   return (
     <Link
       to={to}
-      className="rounded-sm font-display text-[1.375rem] leading-7 font-extrabold tracking-[-0.02em] text-ink no-underline hover:text-ink"
+      className="inline-flex min-h-11 items-center rounded-sm font-display text-[1.375rem] leading-7 font-extrabold tracking-[-0.02em] text-ink no-underline hover:text-ink"
     >
       ListenUp
     </Link>
