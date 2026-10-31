@@ -55,6 +55,10 @@ test('one recording is deleted after confirming; the round stays recorded (FR-SH
   );
   expect(screen.getByRole('region', { name: 'Round 2 replay' })).toBeInTheDocument();
   expect(screen.getByText('Three Shadow rounds recorded.')).toBeInTheDocument();
+  // The replay and its button are gone: focus moves to the Shadow complete region.
+  await vi.waitFor(() =>
+    expect(screen.getByRole('region', { name: 'Shadow complete' })).toHaveFocus(),
+  );
   expect(calls.filter((call) => call.method === 'DELETE')).toHaveLength(1);
 });
 

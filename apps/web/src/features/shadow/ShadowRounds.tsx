@@ -4,6 +4,7 @@ import { BusyButton } from '../../components/BusyButton';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { useContent } from '../content/useContent';
 import { RECORDING_MAX_BYTES, useChangeRound, useRounds, useUploadRecording } from './api';
+import { useFocusLater } from '../../lib/useFocusLater';
 import { DeleteRecording } from './DeleteRecording';
 import { useRoundRecorder, type Recording } from './recording';
 import { ShadowReadiness } from './ShadowReadiness';
@@ -31,6 +32,7 @@ export function ShadowRounds({
   const number = current?.round ?? 0;
   const heading = useRef<HTMLHeadingElement>(null);
   const focusRound = useRef(false);
+  const focusHeading = useFocusLater(heading);
   useEffect(() => {
     if (focusRound.current && number) {
       heading.current?.focus();
@@ -187,7 +189,10 @@ export function ShadowRounds({
               sessionId={sessionId}
               roundId={r.id}
               round={r.round}
-              onDeleted={reportStatus}
+              onDeleted={(message) => {
+                reportStatus(message);
+                focusHeading();
+              }}
             />
           </section>
         ))}

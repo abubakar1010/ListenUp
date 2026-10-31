@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { ErrorPanel } from '../../components/ErrorPanel';
+import { useFocusLater } from '../../lib/useFocusLater';
 import { useContent } from '../content/useContent';
 import type { Session } from '../session/api';
 import { useRounds } from './api';
@@ -11,8 +12,15 @@ export function ShadowCompletion({ session }: { session: Session }) {
   const rounds = useRounds(session.id);
   const content = useContent(session.content_id);
   const [status, setStatus] = useState('');
+  const region = useRef<HTMLElement>(null);
+  const focusRegion = useFocusLater(region);
   return (
-    <section aria-label="Shadow complete" className="flex w-full flex-col gap-3">
+    <section
+      ref={region}
+      tabIndex={-1}
+      aria-label="Shadow complete"
+      className="flex w-full flex-col gap-3"
+    >
       <p>Three Shadow rounds recorded.</p>
       <p role="status">{status}</p>
       <p>Feedback unavailable.</p>
@@ -39,7 +47,10 @@ export function ShadowCompletion({ session }: { session: Session }) {
               sessionId={session.id}
               roundId={round.id}
               round={round.round}
-              onDeleted={setStatus}
+              onDeleted={(message) => {
+                setStatus(message);
+                focusRegion();
+              }}
             />
           </section>
         ))}

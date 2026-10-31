@@ -91,6 +91,9 @@ test('a plan is deleted only after confirming, and leaves the list (FR-SH-17)', 
   renderWithProviders(<SessionsSection />);
 
   const section = await screen.findByRole('region', { name: 'Your plans' });
+  // The polite region exists, empty, before anything is announced in it (review #263).
+  const status = within(section).getByRole('status');
+  expect(status).toBeEmptyDOMElement();
   fireEvent.click(within(section).getByRole('button', { name: 'Delete plan Old talk' }));
   const dialog = screen.getByRole('dialog', { name: 'Delete this plan on Old talk?' });
   expect(dialog).toHaveTextContent(/recordings, marks and cards/);
@@ -101,13 +104,17 @@ test('a plan is deleted only after confirming, and leaves the list (FR-SH-17)', 
 
   fireEvent.click(within(section).getByRole('button', { name: 'Delete plan Old talk' }));
   fireEvent.click(screen.getByRole('button', { name: 'Delete plan' }));
-  expect(await screen.findByRole('status')).toHaveTextContent('Plan deleted.');
+  await vi.waitFor(() => expect(status).toHaveTextContent('Plan on Old talk deleted.'));
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(calls.find((call) => call.method === 'DELETE')?.body).toEqual({ confirm: true });
   await vi.waitFor(() =>
     expect(within(section).queryByText('Old talk', { selector: 'b' })).not.toBeInTheDocument(),
   );
   expect(within(section).getByText('Kept talk', { selector: 'b' })).toBeInTheDocument();
+  // The deleted row is gone, so focus moves to the section heading, not <body>.
+  await vi.waitFor(() =>
+    expect(within(section).getByRole('heading', { name: 'Your plans' })).toHaveFocus(),
+  );
 });
 
 test('a refused plan deletion keeps the dialog open with the error and a retry', async () => {
@@ -131,6 +138,31 @@ test('a refused plan deletion keeps the dialog open with the error and a retry',
   const dialog = screen.getByRole('dialog');
   expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
   fireEvent.click(within(dialog).getByRole('button', { name: /try again/i }));
-  expect(await screen.findByRole('status')).toHaveTextContent('Plan deleted.');
+  expect(await screen.findByRole('status')).toHaveTextContent('Plan on Old talk deleted.');
   expect(attempts).toBe(2);
+});
+
+test('deleting the last plan keeps the same status region and heading', async () => {
+  let deleted = false;
+  mockRoutes({
+    'GET /sessions': () =>
+      jsonResponse(200, {
+        items: deleted ? [] : [sessionFixture({ id: 's2', content_title: 'Only talk' })],
+        next_cursor: null,
+      }),
+    'DELETE /sessions/s2': () => {
+      deleted = true;
+      return jsonResponse(202, { request_id: 'r1' });
+    },
+  });
+  renderWithProviders(<SessionsSection />);
+
+  const section = await screen.findByRole('region', { name: 'Your plans' });
+  const status = within(section).getByRole('status');
+  fireEvent.click(within(section).getByRole('button', { name: 'Delete plan Only talk' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete plan' }));
+  await vi.waitFor(() => expect(within(section).queryByRole('listitem')).not.toBeInTheDocument());
+  expect(screen.getByRole('status')).toBe(status);
+  expect(status).toHaveTextContent('Plan on Only talk deleted.');
+  await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Your plans' })).toHaveFocus());
 });

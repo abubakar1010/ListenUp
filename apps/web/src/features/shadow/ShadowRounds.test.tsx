@@ -354,6 +354,7 @@ it('deletes a recording from the round replay; the round still counts as recorde
     expect(screen.queryByRole('region', { name: 'Round 1 replay' })).not.toBeInTheDocument(),
   );
   expect(status).toHaveTextContent('Round 1: recorded, recording deleted');
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'Round 1 of 3' })).toHaveFocus());
   expect(screen.getByRole('button', { name: 'Start round 2' })).toBeInTheDocument();
   expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
 });

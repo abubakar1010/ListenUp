@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router';
 
 import { buttonClass, buttonProps } from '../../components/button';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { ErrorPanel } from '../../components/ErrorPanel';
+import { useFocusLater } from '../../lib/useFocusLater';
 import { progressText, useDeleteSession, useSessions, type Session } from './api';
 import { STEP_NAMES } from './plan';
 import { formatClock } from './time';
@@ -19,16 +20,22 @@ export function SessionsSection() {
   const deletion = useDeleteSession();
   const [selected, setSelected] = useState<Session | null>(null);
   const [notice, setNotice] = useState('');
+  const heading = useRef<HTMLHeadingElement>(null);
+  const focusHeading = useFocusLater(heading);
   const items = sessions.data?.pages.flatMap((page) => page.items) ?? [];
 
   function confirmDelete() {
-    if (selected)
+    if (selected) {
+      const title = selected.content_title;
       deletion.mutate(selected.id, {
         onSuccess: () => {
           setSelected(null);
-          setNotice('Plan deleted. Its recordings, marks and cards are being removed.');
+          // Naming the plan keeps two deletions in a row distinct for screen readers.
+          setNotice(`Plan on ${title} deleted. Its recordings, marks and cards are being removed.`);
+          focusHeading();
         },
       });
+    }
   }
 
   if (sessions.isError && items.length === 0) {
@@ -41,17 +48,23 @@ export function SessionsSection() {
       </section>
     );
   }
-  if (items.length === 0) return notice ? <p role="status">{notice}</p> : null;
+  // After a deletion the section stays, with its status region, even when it is empty.
+  if (items.length === 0 && !notice) return null;
   // Plans come newest activity first: only the latest unfinished one gets the primary
   // Resume, so the page keeps one primary action (#197).
   const leadId = items.find((session) => session.status === 'active')?.id;
 
   return (
     <section aria-labelledby="library-plans" className="flex flex-col gap-3">
-      <h2 id="library-plans" className="font-display text-heading-compact md:text-heading">
+      <h2
+        ref={heading}
+        tabIndex={-1}
+        id="library-plans"
+        className="font-display text-heading-compact md:text-heading"
+      >
         Your plans
       </h2>
-      {notice && <p role="status">{notice}</p>}
+      <p role="status">{notice}</p>
       {selected && (
         <ConfirmDialog
           title={`Delete this plan on ${selected.content_title}?`}
