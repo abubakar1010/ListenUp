@@ -6,7 +6,7 @@
 
 # The web build is plain static files, so it always runs on the builder's own
 # architecture, even when the edge image is built for arm64 (ADR 0073).
-FROM --platform=$BUILDPLATFORM node:22-alpine AS build
+FROM --platform=$BUILDPLATFORM node:25-alpine AS build
 # Optional session CA for managed builders; ordinary CI uses system trust.
 RUN --mount=type=secret,id=proxy_ca \
     if [ -f /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi; \
