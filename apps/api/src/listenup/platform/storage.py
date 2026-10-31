@@ -10,10 +10,12 @@ in-memory LRU cache, so a page that asks for the same file repeatedly gets the s
 URL and the browser cache keeps working.
 """
 
+import asyncio
 import hashlib
 import time
 from collections import OrderedDict
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
@@ -23,6 +25,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
+from listenup.platform.cancellation import finish_on_cancel
 from listenup.platform.config import Settings, get_settings
 
 if TYPE_CHECKING:
@@ -32,6 +35,22 @@ REUSE_FRACTION = 0.8
 CACHE_SIZE = 10_000
 DELETE_BATCH = 1000  # the S3 limit for one DeleteObjects call
 DOWNLOAD_CHUNK = 1024 * 1024
+WRITE_THREADS = 8
+
+# Uploads have their own threads: the loop's default executor is small on a small host
+# and shared with `asyncio.to_thread` and DNS lookups, which must not queue behind them.
+_write_pool = ThreadPoolExecutor(max_workers=WRITE_THREADS, thread_name_prefix="storage-write")
+
+
+async def _write_to_completion(write: Callable[[], object]) -> None:
+    """Run a synchronous write in a thread that cancellation cannot abandon.
+
+    anyio's thread helper does not survive a native `Task.cancel()` (what `asyncio.run`
+    does to every task at shutdown), so the caller could release its fence while the
+    upload was still running (#228 item 2). A plain executor future drained by
+    `finish_on_cancel` returns only once the thread has finished.
+    """
+    await finish_on_cancel(asyncio.get_running_loop().run_in_executor(_write_pool, write))
 
 
 @dataclass(frozen=True)
@@ -161,7 +180,7 @@ class S3Storage:
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         check_key(key)
-        await anyio.to_thread.run_sync(
+        await _write_to_completion(
             lambda: self._client.put_object(
                 Bucket=self.bucket, Key=key, Body=data, ContentType=content_type
             )
@@ -181,7 +200,7 @@ class S3Storage:
                     "Storage write outcome requires reconciliation."
                 ) from error
 
-        await anyio.to_thread.run_sync(upload)
+        await _write_to_completion(upload)
 
     async def download(self, key: str, destination: Path) -> Downloaded | None:
         """Stream one object into a local file, hashing it on the way.
