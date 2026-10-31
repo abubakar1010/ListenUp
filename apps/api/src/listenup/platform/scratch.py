@@ -9,6 +9,7 @@ code running as that same user is trusted not to tamper with live leases.
 import fcntl
 import logging
 import os
+import secrets
 import shutil
 import stat
 import tempfile
@@ -66,6 +67,43 @@ def _remove(parent: int, name: str, entry: int, marker: int) -> bool:
     return True
 
 
+def _make_entry(namespace: int, prefix: str) -> str:
+    """Create a private directory named `prefix` + random through the namespace
+    descriptor, without /proc (absent on macOS); retry if the name is taken."""
+    for _ in range(100):
+        name = prefix + secrets.token_hex(8)
+        try:
+            os.mkdir(name, 0o700, dir_fd=namespace)
+        except FileExistsError:
+            continue
+        return name
+    raise FileExistsError(f"no free scratch name for prefix {prefix!r}")
+
+
+def _newest_mtime(descriptor: int) -> float:
+    """Newest modification time of a directory and everything below it, read through
+    open descriptors so a replaced pathname is never followed."""
+    newest = os.fstat(descriptor).st_mtime
+    with os.scandir(descriptor) as children:
+        for child in children:
+            info = child.stat(follow_symlinks=False)
+            newest = max(newest, info.st_mtime)
+            if child.is_dir(follow_symlinks=False):
+                try:
+                    inner = os.open(
+                        child.name,
+                        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        dir_fd=descriptor,
+                    )
+                except FileNotFoundError:
+                    continue
+                try:
+                    newest = max(newest, _newest_mtime(inner))
+                finally:
+                    os.close(inner)
+    return newest
+
+
 @contextmanager
 def directory(root: str | None, *, prefix: str) -> Iterator[Path]:
     """Hold a shared lifetime lock until cleanup; process death releases it."""
@@ -75,7 +113,7 @@ def directory(root: str | None, *, prefix: str) -> Iterator[Path]:
         raise OSError("scratch namespace must not be a symlink")
     with _private_directory(parent) as namespace:
         # Create relative to the validated namespace, including if its path moves.
-        name = Path(tempfile.mkdtemp(prefix=prefix, dir=f"/proc/self/fd/{namespace}")).name
+        name = _make_entry(namespace, prefix)
         path = parent / name
         with _private_directory(name, dir_fd=namespace) as entry:
             descriptor = os.open(MARKER, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=entry)
@@ -114,11 +152,7 @@ def _sweep(namespace: int, max_age_seconds: int) -> int:
                         continue
                     if marker.read(len(MAGIC) + 1) != MAGIC:
                         continue
-                    opened = Path(f"/proc/self/fd/{entry}")
-                    newest = max(
-                        [os.fstat(entry).st_mtime, *(p.lstat().st_mtime for p in opened.rglob("*"))]
-                    )
-                    if newest >= cutoff:
+                    if _newest_mtime(entry) >= cutoff:
                         continue
                     removed += _remove(namespace, name, entry, marker.fileno())
         except FileNotFoundError:
