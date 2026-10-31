@@ -452,3 +452,18 @@ Read the section for the area you are changing before you change it. The rules e
 - A round that was played but never saved cannot be recorded again in the UI (the blob
   lives in memory, ADR 0070); Shadow then completes only by skipping. Owner decision on
   #242 review: accepted, and the round-3 copy says so.
+
+## Shadow delivery scores (ADR 0095, #82)
+
+- `grading/domain/delivery.py` computes timing, fluency, filler words and
+  completeness as pure code over plain `Word`/`Interval` values; it never imports
+  `listenup.ai`. The caller converts the assessment and the reference profile and
+  places the original's words on the recording's clock.
+- Every threshold and weight lives in `grading/domain/shadow_delivery.v<N>.json`
+  (`provisional`, `calibrated`). Change a value only in a new version, and store
+  `parameters_version` with each result. Do not copy spike or notebook transforms
+  into this file as approved policy (ADR 0050).
+- An unobservable measure returns `score=None` with a reason and is left out of the
+  overall score; never substitute 0 or 100. Accent never enters the overall.
+- Filler counts are an estimate until `count_validated` is true (B4, #22). An echo
+  check without a leakage signal is `unchecked`, never clean.
