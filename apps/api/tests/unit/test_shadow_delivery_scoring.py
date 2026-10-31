@@ -184,9 +184,31 @@ def test_timing_rounds_halves_up_despite_float_error():
 
 
 def test_early_speech_is_off_time_too():
-    early = words([i * 0.5 - 1.0 for i in range(10)])
-    early = [Word(w.index, max(0.0, w.start), w.end) for w in early]
-    assert score(early).measures["timing"].score < 100
+    # Words 2-9 lead the original by 1.0 s: onset credit 0.5 each, rate unchanged.
+    # (60 * 0.5 + 20 * 1) / 80 = 62.5 -> 63, the same as lagging by 1.0 s.
+    early = words([i * 0.5 - 1.0 for i in range(2, 10)], first=2)
+    late = words([i * 0.5 + 1.0 for i in range(2, 10)], first=2)
+    assert score(early).measures["timing"].score == 63
+    assert score(late).measures["timing"].score == 63
+
+
+def test_a_break_is_a_gap_of_break_s_or_more_on_both_sides():
+    timing = {**PARAMETERS["timing"], "break_s": 0.25}  # type: ignore[dict-item]
+    original = [Word(0, 0.0, 0.25), Word(1, 0.5, 0.75)]  # a gap of exactly 0.25 s
+
+    def phrasing(recorded: list[Word]) -> tuple[int, int]:
+        details = score_round(
+            params(timing=timing),
+            reference_word_count=2,
+            original=original,
+            recorded=recorded,
+            fillers=[],
+            leakage=None,
+        ).measures["timing"].details
+        return details["breaks"], details["breaks_kept"]
+
+    assert phrasing(original) == (1, 1)
+    assert phrasing([Word(0, 0.0, 0.375), Word(1, 0.5, 0.75)]) == (1, 0)  # 0.125 s
 
 
 # --- Fluency -----------------------------------------------------------------------
@@ -239,6 +261,25 @@ def test_a_restart_is_counted_once():
     restarted = [*original[:3], Word(1, 13.0, 13.25), *original[3:]]
     result = fluency(restarted)
     assert (result.score, result.details["restarts"]) == (83, 1)
+
+
+def test_a_repeated_word_is_not_a_restart_and_its_gap_is_not_judged():
+    original = minute_original()
+    repeated = [*original[:2], Word(1, 9.0, 9.25), *original[2:]]  # "the the"
+    result = fluency(repeated)
+    assert result.score == 100
+    assert (result.details["restarts"], result.details["long_pauses"]) == (0, 0)
+    assert result.details["judged_gaps"] == 9
+
+
+def test_overlapping_original_words_expect_no_gap():
+    """Alignment may overlap neighbouring words; their expected gap is 0, not negative."""
+    original = minute_original()
+    original[4:6] = [Word(4, 24.0, 25.0), Word(5, 24.75, 25.0)]
+    recorded = minute_original()
+    recorded[4:6] = [Word(4, 24.0, 24.25), Word(5, 24.375, 25.0)]  # a 0.125 s gap
+    result = fluency(recorded, original=original)
+    assert (result.score, result.details["hesitations"]) == (100, 0)
 
 
 def test_a_pause_beside_words_the_original_could_not_place_is_not_judged():
@@ -338,10 +379,11 @@ def test_overall_is_the_equal_mean_of_the_measures_available():
         original=minute_original(),
         fillers=fillers_at(4),  # fillers 67
     )
-    timing = result.measures["timing"].score
-    assert timing is not None
+    # Timing: words 5-9 lag 1.5 s (no credit), so onsets 0.5; rate 55.5 / 54 is within
+    # 10 %; all nine of the original's breaks are kept. (60 * 0.5 + 20 + 20) / 100.
+    assert result.measures["timing"].score == 70
     assert result.overall_basis == ("timing", "fluency", "fillers", "completeness")
-    assert result.overall == math.floor((timing + 83 + 67 + 83) / 4 + 0.5)
+    assert result.overall == 76  # (70 + 83 + 67 + 83) / 4 = 75.75
 
 
 def test_an_unobservable_measure_is_left_out_of_the_overall():
@@ -354,7 +396,10 @@ def test_an_unobservable_measure_is_left_out_of_the_overall():
 
 
 def test_accent_and_unbuilt_measures_never_enter_the_overall():
-    assert set(score(original_of(10)).measures) == {"timing", "fluency", "fillers", "completeness"}
+    result = score(original_of(10))
+    built = ("timing", "fluency", "fillers", "completeness")
+    assert tuple(result.measures) == built
+    assert result.overall_basis == built
 
 
 # --- Echo check (plumbing; the detector is #80's, ADR 0095) ------------------------
@@ -429,6 +474,7 @@ def broken(path: str, value: object) -> dict[str, object]:
         ("timing.min_matched_words", 2.5),
         ("timing.onset_zero_credit_s", 0.5),  # not above full credit
         ("timing.rate_tolerance", -0.1),
+        ("timing.rate_zero", 0.1),  # not above the tolerance
         ("timing.break_s", "0.3"),
         ("timing.weights", {"onsets": 60, "rate": 20}),
         ("timing.weights.rate", 0),
