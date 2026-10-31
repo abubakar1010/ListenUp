@@ -8,7 +8,7 @@
 # its ready file (listenup.worker).
 # Build from the repository root: docker build -f infra/docker/backend.Dockerfile --target api .
 
-FROM python:3.12-slim AS base
+FROM python:3.15-slim AS base
 # Optional session CA for managed builders; ordinary CI uses system trust.
 RUN --mount=type=secret,id=proxy_ca \
     if [ -f /run/secrets/proxy_ca ]; then export PIP_CERT=/run/secrets/proxy_ca; fi; \
