@@ -50,7 +50,9 @@ returns the number of persisted removals and converges safely on repeated runs.
   by that user and not writable by other users. Inspection and removal use open
   directory descriptors; replacing the entry pathname cannot redirect deletion.
   Entries are created with `mkdir(dir_fd=)` and scanned through open descriptors, never
-  `/proc`, so the scratch code also runs on macOS development machines.
+  `/proc`, so the scratch module is portable. Isolated media-pool jobs still need
+  Linux (`/proc` accounting in the supervisor and libseccomp); on macOS only
+  default-pool jobs such as export run natively.
   Scanning uses an explicit work list and reopens each path component from the
   pinned entry descriptor with `O_NOFOLLOW`. Ancestor descriptors and scanners
   are closed before visiting descendants, keeping scan descriptor use constant
