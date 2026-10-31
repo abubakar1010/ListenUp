@@ -1,6 +1,7 @@
 """Owned scratch survives active work and is reclaimed after a killed owner."""
 
 import asyncio
+import contextlib
 import os
 import subprocess
 import sys
@@ -509,6 +510,28 @@ def deepen(path: Path, depth: int) -> None:
         os.close(descriptor)
 
 
+def flatten(path: Path) -> None:
+    """Remove what `deepen` built, bottom-up and without recursion: pytest's own
+    cleanup of `tmp_path` recurses and would fail on a tree this deep."""
+    chain = [os.open(path, os.O_RDONLY | os.O_DIRECTORY)]
+    try:
+        while True:
+            try:
+                chain.append(
+                    os.open("d", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=chain[-1])
+                )
+            except FileNotFoundError:
+                break
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink("leaf", dir_fd=chain[-1])
+        while len(chain) > 1:
+            os.close(chain.pop())
+            os.rmdir("d", dir_fd=chain[-1])
+    finally:
+        for descriptor in chain:
+            os.close(descriptor)
+
+
 def test_a_very_deep_tree_is_scanned_without_recursion(tmp_path):
     deepen(tmp_path, 1500)
     descriptor = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
@@ -516,6 +539,7 @@ def test_a_very_deep_tree_is_scanned_without_recursion(tmp_path):
         assert scratch._newest_mtime(descriptor) >= tmp_path.stat().st_mtime
     finally:
         os.close(descriptor)
+        flatten(tmp_path)
 
 
 def test_an_entry_that_cannot_be_scanned_does_not_abort_the_sweep(tmp_path):
@@ -523,8 +547,12 @@ def test_an_entry_that_cannot_be_scanned_does_not_abort_the_sweep(tmp_path):
     deepen(deep, 1500)
     old(deep)
     normal = abandoned(tmp_path)
-    assert scratch.sweep(tmp_path, 3600) >= 1
-    assert not normal.exists()
+    try:
+        assert scratch.sweep(tmp_path, 3600) >= 1
+        assert not normal.exists()
+    finally:
+        if deep.exists():
+            flatten(deep)
 
 
 def test_a_failed_scan_closes_every_descriptor_it_opened(tmp_path, monkeypatch):
