@@ -174,7 +174,9 @@ def _sweep(namespace: int, max_age_seconds: int) -> int:
                     removed += _remove(namespace, name, entry, marker.fileno())
         except FileNotFoundError:
             continue
-        except OSError:
+        except (OSError, RecursionError):
+            # Some Python versions recurse in shutil.rmtree; one deep entry must
+            # not prevent cleanup of the other owned entries.
             logger.exception("scratch entry not removed", extra={"path": name})
     return removed
 

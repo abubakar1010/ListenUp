@@ -776,3 +776,21 @@ def test_a_failed_scan_closes_every_descriptor_it_opened(tmp_path, monkeypatch):
     again = os.dup(0)
     os.close(again)
     assert again == probe
+
+
+def test_recursive_removal_failure_does_not_abort_other_entries(tmp_path, monkeypatch):
+    blocked, other = abandoned(tmp_path), abandoned(tmp_path)
+    (blocked / "nested").mkdir()
+    old(blocked)
+    original = scratch.shutil.rmtree
+
+    def remove(path, **kwargs):
+        if path == "nested":
+            raise RecursionError("platform remover exhausted its stack")
+        return original(path, **kwargs)
+
+    monkeypatch.setattr(scratch.shutil, "rmtree", remove)
+    assert scratch.sweep(tmp_path, 3600) == 1
+    assert not other.exists()
+    assert (blocked / "nested").is_dir()
+    assert (blocked / scratch.MARKER).read_bytes() == scratch.MAGIC

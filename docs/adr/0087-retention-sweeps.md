@@ -58,6 +58,8 @@ returns the number of persisted removals and converges safely on repeated runs.
   are closed before visiting descendants, keeping scan descriptor use constant
   with depth at the cost of reopening ancestors. A child removed before it is
   opened is skipped; disappearance during stat leaves the entry for a later pass.
+  A platform remover that exhausts its recursion or descriptor limit leaves the
+  entry for retry/operator inspection without aborting cleanup of other entries.
   Entry and marker identities are rechecked after scanning and before final unlink.
   Code running as the worker's own Unix user is trusted not to tamper with live
   leases; these checks are not an isolation boundary between same-user processes.
