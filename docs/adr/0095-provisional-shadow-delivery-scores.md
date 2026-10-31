@@ -54,15 +54,23 @@ All times are on the recording's clock; the caller places the original's words o
   observe drops out and the weights renormalize. At least two paired words are
   required (ADR 0050).
 - **Fluency.** A pause counts by how much it exceeds the original's gap between
-  the same two words (a hesitation or a long pause), and a step back in the text
-  is a restart. A gap next to a word the original's alignment could not place is
-  not judged. Weighted events are rated per minute of the original passage.
+  the same two words (a hesitation or a long pause). The expected gap is never below
+  0, so original words that overlap expect no pause. A step back in the text is a
+  restart. Saying the same word twice in a row is neither a restart nor a judged gap.
+  A gap next to a word the original's alignment could not place is not judged. If no
+  gap was judged and there was no restart, fluency is null (`no_judged_gaps`), never
+  100. Weighted events are rated per minute of the original passage.
 - **Filler words.** Count and rate per minute of the original passage, labelled an
   estimate until B4 (#22) passes and `count_validated` becomes true.
 - **Per minute of the original passage**, so rounds 1–3 on one segment compare
   like for like (FR-SH-12) and a learner's own pauses cannot dilute a rate.
-- **Null is explicit.** No reference words, no matched words, too few paired words
-  or no original timing each give a null score with a reason (ADR 0050).
+- **Null is explicit.** No reference words, no matched words, too few paired words,
+  no judged gap or no original timing each give a null score with a reason (ADR 0050).
+- **Halves round up** in every score. Float scores are rounded to nine places first,
+  so a score that is exactly x.5 in decimals is never lost to binary error.
+- **The parameter file is strict.** Each section has a fixed set of keys, so an
+  unknown key is refused as a typo. At least one fluency event weight must be above 0.
+  The loaded values are a read-only copy.
 
 ### Starting values (version 1, confirmed by the owner on 2026-10-31)
 
@@ -92,3 +100,16 @@ measured, and they must not be described as validated.
 - A new parameter set is a new file version, so stored scores stay comparable.
 - The round job, `grading.round_grades` migration and `grade.ready` event follow
   after #90 merges.
+
+## Open questions for the owner (review of PR #261)
+
+These do not change version 1. They are recorded so a later decision can make a new
+parameter version:
+
+- Should the filler score need a minimum amount of speech? Today the rate is per
+  minute of the original passage, so a learner who says almost nothing scores 100.
+- Should pairs that come from restarts or repeated words count toward ADR 0050's
+  "two unambiguous matched words" for timing?
+- When #83 adds pronunciation and articulation, should the changed overall score
+  need a new parameter version, or a separate version for the overall definition?
+- Is a round flagged `leak` shown and ranked like the others, or held back?

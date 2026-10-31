@@ -463,7 +463,11 @@ Read the section for the area you are changing before you change it. The rules e
   (`provisional`, `calibrated`). Change a value only in a new version, and store
   `parameters_version` with each result. Do not copy spike or notebook transforms
   into this file as approved policy (ADR 0050).
+  The loader refuses unknown keys; add a key to `SECTION_KEYS` with its validation.
 - An unobservable measure returns `score=None` with a reason and is left out of the
   overall score; never substitute 0 or 100. Accent never enters the overall.
+  Fluency with no judged gap and no restart is null too.
+- Ask `listenup.ai.gateway.is_synthetic(provenance)` whether output is synthetic;
+  never import a provider adapter for it.
 - Filler counts are an estimate until `count_validated` is true (B4, #22). An echo
   check without a leakage signal is `unchecked`, never clean.

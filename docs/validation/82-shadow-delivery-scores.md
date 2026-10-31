@@ -22,7 +22,8 @@ storage of measures and provider info, and the `grade.ready` event. They wait fo
 
 ## Acceptance criteria
 
-All tests are in `apps/api/tests/unit/test_shadow_delivery_scoring.py`.
+Tests are in `apps/api/tests/unit/test_shadow_delivery_scoring.py` unless a row
+names another file.
 
 | Criterion | Evidence | State |
 | --- | --- | --- |
@@ -33,8 +34,8 @@ All tests are in `apps/api/tests/unit/test_shadow_delivery_scoring.py`.
 | Measures and provider info stored per round (FR-SH-18) | — | Not built: waits for #90 and the migration |
 | Each measure 0 to 100, overall the equal mean without accent (FR-SH-9, FR-SH-15) | `test_overall_is_the_equal_mean_of_the_measures_available`, `test_an_unobservable_measure_is_left_out_of_the_overall`, `test_accent_and_unbuilt_measures_never_enter_the_overall`, `test_every_score_is_bounded_or_explicitly_unobservable` | Met for the four measures (Q2) |
 | Original words on the recording clock (ADR 0096) | `test_original_words_are_placed_on_the_recording_clock`, `test_original_words_outside_the_segment_are_dropped`, `test_an_unknown_playback_offset_is_refused` | Met for the rule; storing and reporting the offset wait for the migration |
-| Provider, model and version per result; synthetic output marked (NFR-AI-5, ADR 0074) | `tests/unit/test_shadow_round_inputs.py`: `test_speech_info_stores_provenance_and_marks_synthetic_output`, `test_recorded_words_and_fillers_keep_reference_indices_and_times` | Built; persisted after the migration |
-| Null never becomes 0 or 100 (ADR 0050) | `test_no_matched_words_is_unobservable_not_zero`, `test_an_empty_reference_is_reported_as_such`, `test_timing_needs_two_matched_words`, `test_timing_needs_the_original_timing_of_matched_words`, `test_a_pause_beside_words_the_original_could_not_place_is_not_judged`, `test_fluency_needs_the_originals_duration`, `test_fillers_need_the_originals_duration` | Met |
+| Provider, model and version per result; synthetic output marked (NFR-AI-5, ADR 0074) | `tests/unit/test_shadow_round_inputs.py`: `test_speech_info_stores_provenance_and_marks_synthetic_output`, `test_recorded_words_and_fillers_keep_reference_indices_and_times`; `tests/unit/ai/test_assessment_contract.py`: `test_callers_tell_synthetic_output_from_the_gateway` | Built; persisted after the migration |
+| Null never becomes 0 or 100 (ADR 0050) | `test_no_matched_words_is_unobservable_not_zero`, `test_an_empty_reference_is_reported_as_such`, `test_timing_needs_two_matched_words`, `test_timing_needs_the_original_timing_of_matched_words`, `test_a_pause_beside_words_the_original_could_not_place_is_not_judged`, `test_fluency_needs_the_originals_duration`, `test_fillers_need_the_originals_duration`, `test_fluency_with_nothing_to_judge_is_unobservable_not_perfect`, `test_an_unobservable_measure_is_left_out_of_the_overall` | Met |
 
 ## Red and green
 
@@ -54,6 +55,31 @@ Command for every cycle, from `apps/api`:
 The three Hypothesis invariants were added after the measures, as
 characterization; they passed at once.
 
+### Fixes from the fresh-session review
+
+The review of `a83cffe` is posted on PR #261. Its findings were fixed test-first:
+
+| Cycle | Red (observed) | Green (observed) |
+| --- | --- | --- |
+| 8 Fluency with nothing to judge (ADR 0050) | 3 failed: `assert (100, None) == (None, 'no_judged_gaps')`, the missing `judged_gaps` detail, and the overall still counting fluency 100 for one word said | 63 passed, with `test_a_restart_alone_is_observed_disfluency` |
+| 9 Halves up despite float error | `assert 77 == 78` (lags 0.4 and 0.6 s give exactly 77.5, held as 77.4999...) | 64 passed. A brute-force grid of two-word timings against exact fractions then found no mismatch |
+| 10 Boundaries (characterization) | Passed at once; red is the mutants below, each of which failed these tests | 68 passed |
+| 11 Strict parameter file | 7 failed: unknown keys (`brake_s`, `notes`), all-zero event weights and non-mapping files accepted, and the loaded values still mutable | 75 passed |
+| 12 Synthetic check from the gateway (`uv run pytest tests/unit/ai/test_assessment_contract.py -q`) | `ImportError: cannot import name 'is_synthetic'` | 30 passed with `test_shadow_round_inputs.py` and `tests/architecture` |
+
+Cycle 10's tests: `test_early_speech_is_off_time_too` (now pinned at 63 for leading
+and lagging by 1.0 s, with valid word times),
+`test_a_break_is_a_gap_of_break_s_or_more_on_both_sides`,
+`test_a_repeated_word_is_not_a_restart_and_its_gap_is_not_judged`,
+`test_overlapping_original_words_expect_no_gap`, the `timing.rate_zero` validation
+case, and `test_overall_is_the_equal_mean_of_the_measures_available` (now pinned at
+76 by hand).
+
+ADR 0096 gained the measurement rules for the offset (recorder `start` event,
+`currentTime` correction, null after a stall or before the recorder started). The
+review's four policy questions are recorded as open in ADR 0095; they do not
+change version 1.
+
 ## Mutation check
 
 Temporary mutants, each restored afterwards; every one was caught:
@@ -63,6 +89,12 @@ repeated original word (the first attempt was a list reorder, which `min` over
 unplaced words judged, the echo threshold made exclusive, unobservable measures
 counted in the overall, timing on one word, restarts dropped, the estimate label
 dropped, the original's gap ignored, phrasing always credited.
+
+Review mutants, all caught after the fixes: round-half-to-even and half-up
+without the float correction, the expected-gap clamp removed, the
+`rate_zero > rate_tolerance` check removed, the break threshold made exclusive for
+the original and for the learner, a repeated word counted as a restart, early speech
+given full onset credit, and the no-judged-gap rule removed.
 
 ## Checks
 
