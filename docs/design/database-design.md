@@ -372,7 +372,8 @@ CREATE TABLE practice.sessions (
   version         int4 NOT NULL DEFAULT 0, -- optimistic concurrency
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
-  completed_at    timestamptz
+  completed_at    timestamptz,
+  deleting_at     timestamptz              -- learner deleted it; hidden until removed (ADR 0092)
 );
 CREATE INDEX sessions_user_idx    ON practice.sessions (user_id, updated_at DESC, id);
 CREATE INDEX sessions_content_idx ON practice.sessions (content_id);
@@ -591,7 +592,7 @@ Shadow segment ownership, RLS/grants and immutable locking follow [ADR 0057](../
 `shadow_round_order` locks the session then segment, requires sequential insertion
 following an ended playback, locks the segment on round 1, and refuses changing
 round identity or resetting ended playback. `playback_status` is independent of
-`recorded_at`; playback never sets recording success or completes the plan. Recordings (ADR 0070) can be offered only after playback ended and are write-once; `recorded_at` and `uploaded_at` are set when the stored object matches the declared size and type.
+`recorded_at`; playback never sets recording success or completes the plan. Recordings (ADR 0070) can be offered only after playback ended and are write-once; `recorded_at` and `uploaded_at` are set when the stored object matches the declared size and type. The one change allowed on a recorded round is clearing `recording_key`, `recording_mime`, `recording_bytes` and `uploaded_at` together with `recorded_at` unchanged; the retention sweep (ADR 0087) and the learner's own delete (ADR 0092) both use it, so the round, its plan progress and its grade stay, and a cleared recording can never be set again.
 
 Blind and Dictation attempt rows use `own_rows`; the API has `SELECT, INSERT, UPDATE`, with no independent draft deletion. `interrupted` records a second interruption, a device pause of 5 s or more, or an unreported pause beyond the anchor tolerance. The one resume (FR-BL-3) resets the 20 s buffering allowance and records `resume_stop_ms`; draft saves use `draft_version` to reject stale differing text with 409 `draft_conflict`, while an identical resend succeeds ([ADR 0024](../adr/0024-blind-heartbeats-resume-and-attempt-bound-media.md), [ADR 0025](../adr/0025-dictation-drafts-autosave-and-passage-player.md)).
 
@@ -1061,7 +1062,7 @@ Deletion removes storage objects first and database rows second, so a crash midw
 4. The job runs `DELETE FROM identity.users WHERE id = $1`. Cascades remove every learner row; the reference-count trigger decrements shared media.
 5. The request is marked `completed` with a report of rows and objects removed.
 
-Content, session and recording deletions follow the same order at a smaller scope.
+Content, session and recording deletions follow the same order at a smaller scope. A session deletion sets `sessions.deleting_at`, which hides the session at once, and writes an `ops.deletion_requests` row (`scope = 'session'`, at most one open per session through `deletion_requests_one_open_session_idx`) listing its Shadow and card snippet prefixes. The job deletes those prefixes with no transaction open, then deletes the session row, and its children cascade. A single recording is deleted file first; then the round's recording columns are cleared ([ADR 0092](../adr/0092-session-and-recording-deletion.md)).
 
 Analytics events cascade on account deletion and are included in the learner's export (DR-1, NFR-SEC-5). They have no content/session foreign keys and survive clip or session deletion as the owner-approved exception to DR-2 and AT-9 (2026-10-15). Retained events contain only pseudonymous ids and typed metadata, including learner-scoped HMAC patterns, never learner text or content. There is no independent age-based expiry in this implementation; account deletion removes all of the learner's events. See ADR 0035.
 
