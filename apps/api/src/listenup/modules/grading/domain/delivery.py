@@ -17,6 +17,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Literal
 
 PACKAGED_PARAMETERS = Path(__file__).with_name("shadow_delivery.v1.json")
@@ -66,13 +67,31 @@ class DeliveryScores:
     parameters_version: str
 
 
+# Every key a parameter file has; an unknown key is a typo, never an extra.
+SECTION_KEYS = {
+    "timing": {
+        "min_matched_words",
+        "onset_full_credit_s",
+        "onset_zero_credit_s",
+        "rate_tolerance",
+        "rate_zero",
+        "break_s",
+        "weights",
+    },
+    "fluency": {"hesitation_s", "long_pause_s", "event_weights", "zero_events_per_minute"},
+    "fillers": {"free_per_minute", "zero_per_minute", "count_validated"},
+    "echo": {"leakage_threshold"},
+}
+TOP_KEYS = {"version", "provisional", "calibrated", *SECTION_KEYS}
+
+
 def _invalid(key: str) -> ValueError:
     return ValueError(f"Invalid delivery parameter {key}")
 
 
 def _section(data: Mapping[str, Any], key: str) -> Mapping[str, Any]:
     value = data.get(key)
-    if not isinstance(value, Mapping):
+    if not isinstance(value, Mapping) or set(value) != SECTION_KEYS[key]:
         raise _invalid(key)
     return value
 
@@ -109,6 +128,8 @@ def _validate(data: Mapping[str, Any]) -> None:
     fluency = _section(data, "fluency")
     _number(fluency, "long_pause_s", above=_number(fluency, "hesitation_s", above=0))
     _weights(fluency, "event_weights", {"hesitation", "long_pause", "restart"}, low=0)
+    if not any(fluency["event_weights"].values()):  # all zero would make fluency always 100
+        raise _invalid("event_weights")
     _number(fluency, "zero_events_per_minute", above=0)
     fillers = _section(data, "fillers")
     _number(fillers, "zero_per_minute", above=_number(fillers, "free_per_minute"))
@@ -132,13 +153,22 @@ class DeliveryParameters:
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "DeliveryParameters":
+        if not isinstance(data, Mapping) or set(data) != TOP_KEYS:
+            raise ValueError("Invalid delivery parameter keys")
         version = data.get("version")
         if not isinstance(version, str) or not version:
             raise ValueError("Invalid delivery parameter version")
         if type(data.get("provisional")) is not bool or type(data.get("calibrated")) is not bool:
             raise ValueError("Invalid delivery parameter status")
         _validate(data)
-        return cls(version, data["provisional"], data["calibrated"], data)
+        # A frozen copy, so nothing changes the values after they were validated.
+        return cls(version, data["provisional"], data["calibrated"], _frozen(data))
+
+
+def _frozen(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _frozen(item) for key, item in value.items()})
+    return value
 
 
 def _half_up(value: float) -> int:

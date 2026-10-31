@@ -197,14 +197,18 @@ def test_a_break_is_a_gap_of_break_s_or_more_on_both_sides():
     original = [Word(0, 0.0, 0.25), Word(1, 0.5, 0.75)]  # a gap of exactly 0.25 s
 
     def phrasing(recorded: list[Word]) -> tuple[int, int]:
-        details = score_round(
-            params(timing=timing),
-            reference_word_count=2,
-            original=original,
-            recorded=recorded,
-            fillers=[],
-            leakage=None,
-        ).measures["timing"].details
+        details = (
+            score_round(
+                params(timing=timing),
+                reference_word_count=2,
+                original=original,
+                recorded=recorded,
+                fillers=[],
+                leakage=None,
+            )
+            .measures["timing"]
+            .details
+        )
         return details["breaks"], details["breaks_kept"]
 
     assert phrasing(original) == (1, 1)
@@ -488,11 +492,29 @@ def broken(path: str, value: object) -> dict[str, object]:
         ("echo", KeyError),
         ("timing.break_s", True),
         ("timing.break_s", float("inf")),
+        ("timing.brake_s", 0.3),  # an unknown key is a typo, not an extra
+        ("notes", "x"),
+        ("fluency.event_weights", {"hesitation": 0, "long_pause": 0, "restart": 0}),
     ],
 )
 def test_invalid_parameters_are_refused(path, value):
     with pytest.raises(ValueError, match="delivery parameter"):
         DeliveryParameters.from_mapping(broken(path, value))
+
+
+@pytest.mark.parametrize("data", [[], "parameters", None])
+def test_parameters_that_are_not_a_mapping_are_refused(data):
+    with pytest.raises(ValueError, match="delivery parameter"):
+        DeliveryParameters.from_mapping(data)  # type: ignore[arg-type]
+
+
+def test_loaded_parameters_are_a_frozen_copy():
+    data = copy.deepcopy(PARAMETERS)
+    loaded = DeliveryParameters.from_mapping(data)
+    data["timing"]["break_s"] = 99  # type: ignore[index]
+    assert loaded.raw["timing"]["break_s"] == 0.3
+    with pytest.raises(TypeError):
+        loaded.raw["timing"]["weights"]["rate"] = 0  # type: ignore[index]
 
 
 # --- Invariants (characterization: written after the measures above) ---------------
