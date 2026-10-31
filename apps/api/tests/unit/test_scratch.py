@@ -492,3 +492,62 @@ def test_a_taken_scratch_name_is_retried_and_exhaustion_is_an_error(tmp_path, mo
         scratch.directory(str(tmp_path), prefix="media-job-"),
     ):
         pass
+
+
+def deepen(path: Path, depth: int) -> None:
+    """Nest directories `depth` levels below `path` using descriptors, so the pathname
+    length limit does not apply."""
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for _ in range(depth):
+            os.mkdir("d", 0o700, dir_fd=descriptor)
+            inner = os.open("d", os.O_RDONLY | os.O_DIRECTORY, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = inner
+        os.close(os.open("leaf", os.O_WRONLY | os.O_CREAT, 0o600, dir_fd=descriptor))
+    finally:
+        os.close(descriptor)
+
+
+def test_a_very_deep_tree_is_scanned_without_recursion(tmp_path):
+    deepen(tmp_path, 1500)
+    descriptor = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        assert scratch._newest_mtime(descriptor) >= tmp_path.stat().st_mtime
+    finally:
+        os.close(descriptor)
+
+
+def test_an_entry_that_cannot_be_scanned_does_not_abort_the_sweep(tmp_path):
+    deep = abandoned(tmp_path)
+    deepen(deep, 1500)
+    old(deep)
+    normal = abandoned(tmp_path)
+    assert scratch.sweep(tmp_path, 3600) >= 1
+    assert not normal.exists()
+
+
+def test_a_failed_scan_closes_every_descriptor_it_opened(tmp_path, monkeypatch):
+    (tmp_path / "a" / "b").mkdir(parents=True)
+    (tmp_path / "c").mkdir()
+    real, calls = os.scandir, []
+
+    def failing(target):
+        calls.append(target)
+        if len(calls) == 3:
+            raise PermissionError("denied")
+        return real(target)
+
+    probe = os.dup(0)
+    os.close(probe)
+    descriptor = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    monkeypatch.setattr(os, "scandir", failing)
+    try:
+        with pytest.raises(PermissionError):
+            scratch._newest_mtime(descriptor)
+    finally:
+        os.close(descriptor)
+    monkeypatch.undo()
+    again = os.dup(0)
+    os.close(again)
+    assert again == probe
