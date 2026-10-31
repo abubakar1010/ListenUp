@@ -335,6 +335,10 @@ Read the section for the area you are changing before you change it. The rules e
   the UUID, so an old job cannot change a newer attempt. Exports omit this UUID
   and writer identity/owner fields. Upload cancellation drains before releasing
   the registration; an uncertain S3 response retains it.
+  S3 writes run in their own eight-thread pool (`platform/storage.py`) and are drained
+  on cancellation, so a stalled request must end inside `worker.SHUTDOWN_GRACE_SECONDS`:
+  the client's connect timeout, read timeout and one retry are sized to fit (26 s of 30 s).
+  Change them together with that constant.
 - Cards-local playback pauses on unmount; pending cards poll and readiness/failure
   events invalidate `['cards', sessionId]`. Keep shared-player behavior unchanged.
 
