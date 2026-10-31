@@ -3,7 +3,7 @@
 import uuid
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,4 +62,16 @@ async def round_by_id(
     # Refresh its identity-map entry so a concurrent completed recording is visible.
     return await db.scalar(
         query.with_for_update().execution_options(populate_existing=True) if lock else query
+    )
+
+
+async def clear_recording(db: AsyncSession, round_id: uuid.UUID, key: str) -> None:
+    """Clear the four recording columns together, the one change `check_shadow_round`
+    allows on a recorded round; only while the round still holds this key."""
+    await db.execute(
+        text(
+            "UPDATE practice.shadow_rounds SET recording_key = NULL, recording_mime = NULL, "
+            "recording_bytes = NULL, uploaded_at = NULL WHERE id = :id AND recording_key = :key"
+        ),
+        {"id": round_id, "key": key},
     )
