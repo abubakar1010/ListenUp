@@ -31,6 +31,19 @@ const WIDTHS = [1280, 360];
 const SHADOW_ROUND_END =
   'Shadow: focus falls to the page when a round ends (#98 report; shadow files are #82)';
 
+// The fake refuses a write without the CSRF header, as the API does, and the run fails on it.
+test('the plan server refuses a write without the CSRF header', async ({ page }) => {
+  const server = await planServer(page);
+  await page.goto('/library');
+  await expect(page.getByRole('heading', { level: 1, name: 'Library' })).toBeVisible();
+  const status = await page.evaluate(async () => {
+    const response = await fetch('/api/v1/sessions', { method: 'POST', body: '{}' });
+    return response.status;
+  });
+  expect(status).toBe(403);
+  expect(server.unanswered).toEqual(['POST /sessions without X-CSRF-Token']);
+});
+
 // WCAG 2.4.7: the check must not pass a resting shadow or an invisible outline.
 test('the focus indicator check needs a visible outline or a focus-ring shadow', async ({
   page,

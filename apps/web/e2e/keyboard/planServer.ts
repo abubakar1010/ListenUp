@@ -169,7 +169,10 @@ export interface PlanState {
   voiceConsent: boolean;
   rounds: Schema['Round'][];
   uploads: number[];
-  /** Requests the fake has no answer for: a path the spec must cover, so it fails. */
+  /**
+   * Requests the fake has no answer for (a path the spec must cover) or refuses (a write
+   * without the CSRF header), so the run fails.
+   */
   unanswered: string[];
 }
 
@@ -412,7 +415,7 @@ const ROUTES: [string, Handler][] = [
           status: 'pending',
           wait_ms: 60_000,
           gist: state.blind?.gist_text ?? null,
-        } satisfies Partial<Schema['GistFeedback']>,
+        } satisfies Schema['GistFeedback'],
       }),
   ],
 
@@ -762,6 +765,12 @@ export async function planServer(page: Page): Promise<PlanState> {
     }
     if (path === '/events') return route.abort();
     if (path.startsWith('/media/')) return media(route);
+    // Every write carries the CSRF header (the web client's `api()` adds it); the API
+    // refuses one without it, and so does the fake, which fails the run.
+    if (!['GET', 'HEAD'].includes(method) && request.headers()['x-csrf-token'] !== 'e2e-token') {
+      state.unanswered.push(`${method} ${path} without X-CSRF-Token`);
+      return problem(route, 403, 'csrf_failed', 'missing CSRF token');
+    }
     const body = () => (request.postDataJSON() ?? {}) as Record<string, unknown>;
     for (const [matches, handler] of MATCHERS) {
       if (!matches(method, path)) continue;
