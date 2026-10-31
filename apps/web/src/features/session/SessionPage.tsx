@@ -93,16 +93,22 @@ const ARRIVAL_WINDOW_MS = 3000;
  * screens; WCAG 2.4.3, #98): the control that moved the plan on left with its step. A
  * step that places focus itself when it opens (Dictation's text box, UX-42; Card's
  * heading) keeps it: its effects run before this one. A step that swaps its loading
- * screen for its content replaces the heading, so for a short while focus that falls to
- * the page goes to the new heading, until the learner presses a key or the pointer. The
- * first render is a page load, where focus is left to the route.
+ * screen for its content replaces the heading, and a dialog that closed with the last
+ * step sends focus to <main>, so for a short while focus that falls to the page or to
+ * <main> goes to the heading, until the learner presses a key or the pointer. The first
+ * render is a page load, where focus is left to the route.
  */
 function useArrivalFocus(open: Session['open_step']) {
   const previous = useRef(open);
   useEffect(() => {
     if (previous.current === open) return;
     previous.current = open;
-    const lost = () => !document.activeElement || document.activeElement === document.body;
+    // The body, or <main> itself: where a dialog sends focus when its opener has gone
+    // (ConfirmDialog), which for a skip is after this effect focused the heading.
+    const lost = () => {
+      const active = document.activeElement;
+      return !active || active === document.body || active === document.querySelector('main');
+    };
     if (!lost()) return;
     const focusHeading = () => {
       if (!lost()) return;
@@ -115,11 +121,13 @@ function useArrivalFocus(open: Session['open_step']) {
     const observer = new MutationObserver(focusHeading);
     observer.observe(document.body, { childList: true, subtree: true });
     const timer = window.setTimeout(stop, ARRIVAL_WINDOW_MS);
+    document.addEventListener('focusin', focusHeading);
     document.addEventListener('keydown', stop, { capture: true });
     document.addEventListener('pointerdown', stop, { capture: true });
     function stop() {
       observer.disconnect();
       window.clearTimeout(timer);
+      document.removeEventListener('focusin', focusHeading);
       document.removeEventListener('keydown', stop, { capture: true });
       document.removeEventListener('pointerdown', stop, { capture: true });
     }
