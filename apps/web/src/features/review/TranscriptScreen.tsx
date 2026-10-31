@@ -236,7 +236,7 @@ function TranscriptWork({
       aside={
         <>
           <details className="rounded-md border border-line p-3">
-            <summary className="cursor-pointer font-bold">Keyboard shortcuts</summary>
+            <summary className="cursor-pointer py-2.5 font-bold">Keyboard shortcuts</summary>
             <p className="mt-2 text-body-s">
               Space or K: play/pause. J: back 5 seconds. R: replay line. [ and ]: speed. Tab to a
               word, then Enter or Space to jump. On a word: Left and Right arrows move, Shift and an
