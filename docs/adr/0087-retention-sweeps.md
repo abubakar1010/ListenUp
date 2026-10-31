@@ -51,6 +51,11 @@ returns the number of persisted removals and converges safely on repeated runs.
   directory descriptors; replacing the entry pathname cannot redirect deletion.
   Entries are created with `mkdir(dir_fd=)` and scanned through open descriptors, never
   `/proc`, so the scratch code also runs on macOS development machines.
+  Scanning uses an explicit work list and reopens each path component from the
+  pinned entry descriptor with `O_NOFOLLOW`. Ancestor descriptors and scanners
+  are closed before visiting descendants, keeping scan descriptor use constant
+  with depth at the cost of reopening ancestors. A child removed before it is
+  opened is skipped; disappearance during stat leaves the entry for a later pass.
   Entry and marker identities are rechecked after scanning and before final unlink.
   Code running as the worker's own Unix user is trusted not to tamper with live
   leases; these checks are not an isolation boundary between same-user processes.

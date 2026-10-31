@@ -80,27 +80,44 @@ def _make_entry(namespace: int, prefix: str) -> str:
     raise FileExistsError(f"no free scratch name for prefix {prefix!r}")
 
 
+def _open_descendant(root: int, parts: tuple[str, ...]) -> int:
+    """Return an owned descriptor, checking every component without following links.
+
+    Reopening from the pinned root trades extra opens for constant descriptor use;
+    joining the names into one path would let intermediate symlinks be followed.
+    """
+    current = os.dup(root)
+    try:
+        for name in parts:
+            inner = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=current)
+            os.close(current)
+            current = inner
+        return current
+    except BaseException:
+        os.close(current)
+        raise
+
+
 def _newest_mtime(descriptor: int) -> float:
-    """Newest modification time of a directory and everything below it, read through
-    open descriptors so a replaced pathname is never followed."""
+    """Scan through descriptors without recursion or retaining ancestor handles."""
     newest = os.fstat(descriptor).st_mtime
-    with os.scandir(descriptor) as children:
-        for child in children:
-            info = child.stat(follow_symlinks=False)
-            newest = max(newest, info.st_mtime)
-            if child.is_dir(follow_symlinks=False):
-                try:
-                    inner = os.open(
-                        child.name,
-                        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                        dir_fd=descriptor,
-                    )
-                except FileNotFoundError:
-                    continue
-                try:
-                    newest = max(newest, _newest_mtime(inner))
-                finally:
-                    os.close(inner)
+    pending: list[tuple[str, ...]] = [()]
+    while pending:
+        parts = pending.pop()
+        try:
+            current = _open_descendant(descriptor, parts)
+        except FileNotFoundError:
+            continue
+        try:
+            newest = max(newest, os.fstat(current).st_mtime)
+            with os.scandir(current) as children:
+                for child in children:
+                    info = child.stat(follow_symlinks=False)
+                    newest = max(newest, info.st_mtime)
+                    if child.is_dir(follow_symlinks=False):
+                        pending.append((*parts, child.name))
+        finally:
+            os.close(current)
     return newest
 
 
