@@ -27,8 +27,10 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
     default pool (background lane)."""
     from listenup.modules.cards import jobs as card_jobs
     from listenup.modules.identity import jobs as identity_jobs
+    from listenup.ops import retention
 
     importlib.import_module("listenup.ai.jobs")
+    importlib.import_module("listenup.ops.retention")
     importlib.import_module("listenup.modules.library.jobs")
 
     installed: list[tuple[str, str]] = []
@@ -48,21 +50,35 @@ def test_scheduled_jobs_run_only_in_the_pool_of_their_lane(
         identity_jobs.PURGE_DUE_ACCOUNTS,
         "ai.maintain",
         card_jobs.CLEANUP,
+        "ops.sweep_shadow_recordings",
+        "ops.sweep_login_sessions",
+        "ops.sweep_one_time_tokens",
+        "ops.sweep_idempotency_keys",
+        "ops.sweep_rate_counters",
+        "ops.sweep_default_scratch_files",
         "library.reconcile_content_deletions",
     ]
 
-    assert jobs.install_schedules(media) == []
+    # Scratch files live on the media pool's disk, so its intake lane sweeps them (#93).
+    assert jobs.install_schedules(media) == ["ops.sweep_scratch_files"]
     assert set(jobs.install_schedules(default)) == set(scheduled)
     assert set(installed) == {
         (jobs.RECOVER_SCHEDULE, jobs.RECOVER_STALLED_JOBS),
         (identity_jobs.PURGE_SCHEDULE, identity_jobs.PURGE_DUE_ACCOUNTS),
         ("*/5 * * * *", "ai.maintain"),
         ("* * * * *", card_jobs.CLEANUP),
+        (retention.SCRATCH_SCHEDULE, "ops.sweep_scratch_files"),
+        (retention.SCRATCH_SCHEDULE, "ops.sweep_default_scratch_files"),
+        (retention.SHADOW_SCHEDULE, "ops.sweep_shadow_recordings"),
+        (retention.SESSIONS_SCHEDULE, "ops.sweep_login_sessions"),
+        (retention.TOKENS_SCHEDULE, "ops.sweep_one_time_tokens"),
+        (retention.IDEMPOTENCY_SCHEDULE, "ops.sweep_idempotency_keys"),
+        (retention.RATE_SCHEDULE, "ops.sweep_rate_counters"),
         ("* * * * *", "library.reconcile_content_deletions"),
     }
     # Installing again (a second worker of the pool) registers nothing twice.
     assert set(jobs.install_schedules(default)) == set(scheduled)
-    assert len(installed) == 5
+    assert len(installed) == 12
 
 
 @pytest.mark.anyio

@@ -6,8 +6,11 @@ import uuid
 import psycopg
 import pytest
 
+from listenup.ops import retention
+from listenup.platform.storage import use_storage
 from tests.integration.conftest import conninfo_to_url
 from tests.integration.intake_helpers import FakeStorage, client_factory, learner_id
+from tests.integration.test_retention_sweeps import run
 from tests.integration.test_shadow_rounds import base, end_round, setup, start_round
 
 MB = 1024 * 1024
@@ -293,6 +296,33 @@ def test_two_recorded_rounds_do_not_complete(client, migrated_url, api_role_url,
     assert session["open_step"] == "shadow"
     assert session["status"] == "active"
     assert session["completed_at"] is None
+
+
+def test_step_completes_when_an_older_recording_was_swept(
+    client, migrated_url, api_role_url, storage
+):
+    """FR-SH-6, FR-SH-17: retention clears round 1's file after 90 days; recording the
+    other rounds later still completes the step, because the round keeps `recorded_at`."""
+    sid = setup(client, migrated_url, api_role_url)
+    first = record_round(client, storage, sid, 1)
+    with psycopg.connect(migrated_url) as db:
+        db.execute("ALTER TABLE practice.shadow_rounds DISABLE TRIGGER USER")
+        db.execute(
+            "UPDATE practice.shadow_rounds SET recorded_at = now() - interval '100 days' "
+            "WHERE id = %s",
+            [first["round_id"]],
+        )
+        db.execute("ALTER TABLE practice.shadow_rounds ENABLE TRIGGER USER")
+    use_storage(storage)
+    try:
+        run(migrated_url, retention.sweep_shadow_recordings)
+    finally:
+        use_storage(None)
+    for number in (2, 3):
+        record_round(client, storage, sid, number)
+    session = client.get(f"/api/v1/sessions/{sid}").json()
+    assert session["status"] == "completed"
+    assert session["open_step"] is None
 
 
 def test_repeat_recording_completion_is_idempotent(client, migrated_url, api_role_url, storage):

@@ -152,6 +152,7 @@ Read the section for the area you are changing before you change it. The rules e
 - `enqueue` stores the request id and the W3C trace context in the job's arguments (`_request_id`, `_trace`); the `@job` wrapper pops both before the handler runs, so handlers never see them. A new job needs nothing for tracing or job metrics.
 - The AI gateway (#64) calls `record_ai_call` and `record_ai_quota`, and grading jobs call `record_grading`; the alert rules already read those metrics. A new alert goes in `infra/observability/alerts.yml` with a case in `alerts.test.yml` (it fires, and stays quiet just below the threshold), a `runbook` entry in `docs/runbooks/alerts.md`, and a row in ADR 0031.
 - Backups are `python -m listenup.ops.backup` (the `backup` image target). A backup is complete only with its `manifest.json`; the restore test is a monthly run recorded in the log at the end of `docs/runbooks/backups.md`. A migration that adds a schema or role must keep a restore into a database with the roles in place working (`tests/integration/test_backup.py`).
+- Retention sweeps live in `listenup/ops/retention.py` (ADR 0087): select at most 1,000 rows with `FOR UPDATE SKIP LOCKED` in short transactions and return a count. Storage calls run outside transactions; retain immutable recording keys until conditional finalization commits, so crash retries and overlapping workers converge safely. Register schedules in `tests/unit/test_worker_modules.py`. Media and default pools sweep their own disk through `platform.scratch`: only owned entries in its private namespace with an acquirable exclusive lifetime lock are candidates. Do not sweep legacy files by name or age alone. Shadow recording retention is `LISTENUP_SHADOW_RECORDING_RETENTION_DAYS`.
 
 ## Deployment (ADR 0066)
 
@@ -435,8 +436,11 @@ Read the section for the area you are changing before you change it. The rules e
 - Recording finalization takes the client's session `version`; new writes refuse
   stale versions with `session_changed`. A recorded round is a no-op on repeat,
   including after completion. Ownership and voice consent still apply.
-- After all three rounds have both `recorded_at` and `uploaded_at`, call
-  `practice.service.complete_step` in the same transaction. Playback alone never
+- After all three rounds have `recorded_at`, call
+  `practice.service.complete_step` in the same transaction. Finalization sets it
+  only after upload succeeds; retention preserves it while clearing `uploaded_at`
+  and the recording file fields. Expired recordings therefore still count toward
+  completion. Playback alone never
   completes Shadow; no grading job, profile or provider gates this transition.
 - Completed (done) Shadow sessions retain read-only segment/round state and replay.
   Skipped sessions retain the existing step refusal. The web refreshes session
