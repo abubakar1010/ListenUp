@@ -23,6 +23,7 @@ from listenup.platform.config import get_settings
 from listenup.platform.errors import ProblemError
 from listenup.platform.events import EventType, publish
 from listenup.platform.jobs import JobDeps, Lane, PermanentError, Reschedule, job
+from listenup.platform.storage import get_storage
 from listenup.platform.telemetry import record_grading
 
 GRADE_GIST_JOB = service.GRADE_GIST
@@ -243,4 +244,158 @@ async def gist_deadline(deps: JobDeps, attempt_id: str, user_id: str, deadline: 
     async with deps.database.transaction(uuid.UUID(user_id)) as db:
         await repository.expire_feedback(
             db, uuid.UUID(user_id), uuid.UUID(attempt_id), now, deadline=due
+        )
+
+
+async def _round_give_up(deps: JobDeps, round_id: str, user_id: str, generation: str) -> None:
+    async with deps.database.transaction(uuid.UUID(user_id)) as db:
+        await repository.round_unavailable(
+            db, uuid.UUID(user_id), uuid.UUID(round_id), uuid.UUID(generation)
+        )
+    record_grading("shadow_round", False)
+
+
+@job(Lane.SPEECH_INTERACTIVE, service.GRADE_ROUND, on_give_up=_round_give_up)
+async def grade_round(deps: JobDeps, round_id: str, user_id: str, generation: str) -> None:
+    """E2 synthetic assessment only. Inference never holds a database transaction."""
+    try:
+        await _grade_round(deps, uuid.UUID(round_id), uuid.UUID(user_id), uuid.UUID(generation))
+    except Reschedule:
+        raise
+    except PermanentError:
+        await _round_give_up(deps, round_id, user_id, generation)
+        raise
+    except (Exception, asyncio.CancelledError):
+        # Keep the source and any evidence. The lane retries; availability is independent.
+        await _round_give_up(deps, round_id, user_id, generation)
+        raise
+
+
+async def _grade_round(
+    deps: JobDeps, round_id: uuid.UUID, learner: uuid.UUID, generation: uuid.UUID
+) -> None:
+    import tempfile
+    from pathlib import Path
+
+    from listenup.ai.config import AIConfig
+    from listenup.ai.gateway import AIGateway
+    from listenup.ai.policy import CallContext
+    from listenup.modules.content import service as content
+    from listenup.modules.grading.domain.delivery import DeliveryParameters
+    from listenup.modules.grading.round_inputs import delivery_result
+    from listenup.modules.practice import service as practice
+    from listenup.modules.shadow import service as shadow
+
+    async with deps.database.transaction(learner) as db:
+        row = await repository.round_grade(db, learner, round_id)
+        if row is None or row.generation != generation or row.measures is not None:
+            return
+        if not await identity.account_is_active(db, learner):
+            return
+        if not await identity.has_voice_consent(db, learner, get_settings()):
+            raise PermanentError("Voice consent is required")
+        try:
+            source = await shadow.assessment_source(db, learner, round_id)
+        except ProblemError as error:
+            if error.status == 404:
+                return
+            raise PermanentError("Recording is unavailable") from error
+        session = await practice.get_session(db, source.session_id)
+        audio_source = await content.transcription_source(db, learner, session.content_id)
+        try:
+            reference = await transcript.reference_for_shadow(
+                db, deps.database, learner, source.session_id
+            )
+            profile = await transcript.reference_profile(
+                db, deps.database, learner, source.session_id
+            )
+        except ProblemError as error:
+            if error.status != 409:
+                raise
+            raise Reschedule(server_now() + timedelta(seconds=10)) from error
+        if profile.status == "failed":
+            raise PermanentError("Reference profile failed")
+        if profile.status != "ready":
+            raise Reschedule(server_now() + timedelta(seconds=10))
+
+    # E2 must never dispatch to a real provider, including a configured fallback.
+    entry = get_gateway().entry(Role.SPEECH_ASSESSMENT)
+    if entry.provider != "fake-assessment":
+        raise PermanentError("E2 requires the fake-assessment provider")
+    gateway = AIGateway(
+        AIConfig(version=1, roles={Role.SPEECH_ASSESSMENT: (entry,)}),
+        environment=get_settings().environment,
+    )
+    chosen = [
+        i
+        for i, (start, end) in enumerate(zip(reference.start_ms, reference.end_ms, strict=True))
+        if source.span[0] <= start and end <= source.span[1]
+    ]
+    reference_text = " ".join(reference.words[i] for i in chosen)
+    if not reference_text.strip():
+        raise PermanentError("The segment has no reference words")
+    indices = {reference.word_sources[i]: j for j, i in enumerate(chosen)}
+    original = [
+        (indices[(p.passage_transcript_id, index)], start, end)
+        for p in profile.profiles
+        for index, start, end in zip(p.word_indices, p.word_start_ms, p.word_end_ms, strict=True)
+        if (p.passage_transcript_id, index) in indices
+    ]
+    # Fakes do not decode either file. Real reference extraction and inference remain gated.
+    with tempfile.TemporaryDirectory(
+        prefix="round-", dir=get_settings().media_scratch_dir
+    ) as scratch:
+        recording, reference_audio = Path(scratch) / "recording", Path(scratch) / "original"
+        storage = get_storage()
+        if await storage.download(source.recording_key, recording) is None:
+            raise PermanentError("Recording object is missing")
+        if await storage.download(audio_source.playback_key, reference_audio) is None:
+            raise PermanentError("Original object is missing")
+        assessment = await gateway.assess(
+            recording,
+            reference_text,
+            reference_audio,
+            context=CallContext(
+                audio_seconds=(source.span[1] - source.span[0]) / 1000, round=source.number
+            ),
+        )
+    values = delivery_result(
+        assessment,
+        DeliveryParameters.load(),
+        reference_word_count=len(chosen),
+        original=original,
+        segment=source.span,
+        playback_offset_ms=source.playback_offset_ms,
+    )
+    values["speech_info"]["reference_profiles"] = [p.provenance for p in profile.profiles]
+    async with deps.database.transaction(learner) as db:
+        if not await identity.account_is_active(db, learner):
+            return
+        if not await identity.has_voice_consent(db, learner, get_settings()):
+            raise PermanentError("Voice consent was withdrawn")
+        try:
+            await content.retain_content(db, learner, session.content_id)
+            await shadow.assessment_source(db, learner, round_id)
+        except ProblemError as error:
+            if error.status == 404:
+                return
+            raise PermanentError("Recording is unavailable") from error
+        saved = await repository.finish_round(db, learner, round_id, generation, values)
+        if saved:
+            await publish(db, learner, EventType.GRADE_READY, round_id)
+    if saved:
+        record_grading("shadow_round", True)
+
+
+@job(Lane.BACKGROUND, "grading.round_deadline")
+async def round_deadline(deps: JobDeps, round_id: str, user_id: str, generation: str) -> None:
+    async with deps.database.transaction(uuid.UUID(user_id)) as db:
+        row = await repository.round_grade(db, uuid.UUID(user_id), uuid.UUID(round_id))
+        if row is None or row.generation != uuid.UUID(generation) or row.status != "pending":
+            return
+        now = server_now()
+        if now < row.feedback_deadline:
+            raise Reschedule(row.feedback_deadline)
+        await repository.expire_round(
+            db, uuid.UUID(user_id), uuid.UUID(round_id), now, uuid.UUID(generation)
         )

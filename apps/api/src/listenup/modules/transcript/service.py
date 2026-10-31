@@ -109,6 +109,13 @@ async def reference_for_scoring(
     )
 
 
+async def reference_for_shadow(
+    db: AsyncSession, worker_database: Database, learner: uuid.UUID, session_id: uuid.UUID
+) -> PassageTranscript:
+    """Original words and cache identities for assessment; never learner overlays."""
+    return await _read(db, worker_database, learner, session_id, practice.Step.SHADOW)
+
+
 async def _read(
     db: AsyncSession,
     worker_database: Database,

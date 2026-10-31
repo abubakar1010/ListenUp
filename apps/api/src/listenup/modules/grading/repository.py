@@ -8,7 +8,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import Range, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from listenup.modules.grading.models import GistGrade, KeyPointDelay, KeyPoints
+from listenup.modules.grading.models import GistGrade, KeyPointDelay, KeyPoints, RoundGrade
 from listenup.platform.ids import uuid7
 
 
@@ -164,3 +164,76 @@ async def set_reference_delay(
                 KeyPointDelay.prompt_version == version,
             )
         )
+
+
+async def round_grade(
+    db: AsyncSession, learner: uuid.UUID, round_id: uuid.UUID, *, lock: bool = False
+) -> RoundGrade | None:
+    from listenup.modules.grading.models import RoundGrade
+
+    query = select(RoundGrade).where(RoundGrade.round_id == round_id, RoundGrade.user_id == learner)
+    return await db.scalar(query.with_for_update() if lock else query)
+
+
+async def expire_round(
+    db: AsyncSession,
+    learner: uuid.UUID,
+    round_id: uuid.UUID,
+    now: datetime,
+    generation: uuid.UUID | None = None,
+) -> None:
+    from listenup.modules.grading.models import RoundGrade
+
+    query = update(RoundGrade).where(
+        RoundGrade.round_id == round_id,
+        RoundGrade.user_id == learner,
+        RoundGrade.status == "pending",
+        RoundGrade.feedback_deadline <= now,
+    )
+    if generation is not None:
+        query = query.where(RoundGrade.generation == generation)
+    await db.execute(query.values(status="unavailable", updated_at=func.now()))
+
+
+async def round_unavailable(
+    db: AsyncSession, learner: uuid.UUID, round_id: uuid.UUID, generation: uuid.UUID
+) -> None:
+    from listenup.modules.grading.models import RoundGrade
+
+    await db.execute(
+        update(RoundGrade)
+        .where(
+            RoundGrade.round_id == round_id,
+            RoundGrade.user_id == learner,
+            RoundGrade.generation == generation,
+            RoundGrade.measures.is_(None),
+        )
+        .values(status="unavailable", updated_at=func.now())
+    )
+
+
+async def finish_round(
+    db: AsyncSession,
+    learner: uuid.UUID,
+    round_id: uuid.UUID,
+    generation: uuid.UUID,
+    values: dict[str, Any],
+) -> bool:
+    from listenup.modules.grading.models import RoundGrade
+
+    result = await db.scalar(
+        update(RoundGrade)
+        .where(
+            RoundGrade.round_id == round_id,
+            RoundGrade.user_id == learner,
+            RoundGrade.generation == generation,
+            RoundGrade.measures.is_(None),
+        )
+        .values(
+            **values,
+            status="scored" if values["overall"] is not None else "unavailable",
+            updated_at=func.now(),
+        )
+        .returning(RoundGrade.round_id)
+    )
+    return result is not None

@@ -84,7 +84,12 @@ async def queue_deadline(
 
 
 async def export_data(db: AsyncSession, learner: uuid.UUID) -> ExportPart:
-    return ExportPart(tables=(await learner_rows(db, "grading.gist_grades", learner),))
+    return ExportPart(
+        tables=(
+            await learner_rows(db, "grading.gist_grades", learner),
+            await learner_rows(db, "grading.round_grades", learner, order_by="round_id"),
+        )
+    )
 
 
 async def read_gist_grade(
@@ -175,3 +180,88 @@ async def retry_gist(
     row.updated_at = now
     await queue_deadline(db, learner, attempt_id, row.feedback_deadline)
     return True
+
+
+GRADE_ROUND = "grading.grade_round"
+ROUND_FEEDBACK_SECONDS = 120
+
+
+async def queue_round(db: AsyncSession, learner: uuid.UUID, round_id: uuid.UUID) -> None:
+    """Recording and grade admission commit together; never assess in a request."""
+    from sqlalchemy.dialects.postgresql import insert
+
+    from listenup.modules.grading import jobs as _jobs  # noqa: F401
+    from listenup.modules.grading.models import RoundGrade
+
+    generation = uuid.uuid4()
+    due = server_now() + timedelta(seconds=ROUND_FEEDBACK_SECONDS)
+    await db.execute(
+        insert(RoundGrade)
+        .values(
+            round_id=round_id,
+            user_id=learner,
+            generation=generation,
+            feedback_deadline=due,
+        )
+        .on_conflict_do_nothing(index_elements=["round_id"])
+    )
+    row = await repository.round_grade(db, learner, round_id)
+    assert row is not None
+    if row.measures is not None:
+        return
+    await _enqueue_round(db, learner, round_id, row.generation, row.feedback_deadline)
+
+
+async def _enqueue_round(
+    db: AsyncSession, learner: uuid.UUID, round_id: uuid.UUID, generation: uuid.UUID, due: datetime
+) -> bool:
+    key = f"round-grade:{round_id}"
+    queued = await enqueue(
+        db,
+        GRADE_ROUND,
+        unique_key=key,
+        lock=key,
+        round_id=str(round_id),
+        user_id=str(learner),
+        generation=str(generation),
+    )
+    if queued is None:
+        return False
+    await enqueue(
+        db,
+        "grading.round_deadline",
+        unique_key=f"round-deadline:{round_id}:{generation}",
+        run_at=due,
+        round_id=str(round_id),
+        user_id=str(learner),
+        generation=str(generation),
+    )
+    return True
+
+
+async def read_round_grade(
+    db: AsyncSession, learner: uuid.UUID, round_id: uuid.UUID
+) -> dict[str, Any]:
+    """E2 results are evidence only, never learner grades. Authorize even with worker rights."""
+    from listenup.modules.shadow import service as shadow
+
+    await shadow.require_owned_round(db, learner, round_id)
+    await repository.expire_round(db, learner, round_id, server_now())
+    return {"status": "unavailable"}
+
+
+async def retry_round(db: AsyncSession, learner: uuid.UUID, round_id: uuid.UUID) -> None:
+    from listenup.modules.shadow import service as shadow
+
+    await shadow.assessment_source(db, learner, round_id)
+    row = await repository.round_grade(db, learner, round_id, lock=True)
+    if row is None:
+        await queue_round(db, learner, round_id)
+        return
+    if row.measures is not None:
+        return
+    generation = uuid.uuid4()
+    due = server_now() + timedelta(seconds=ROUND_FEEDBACK_SECONDS)
+    if await _enqueue_round(db, learner, round_id, generation, due):
+        row.generation, row.feedback_deadline, row.status = generation, due, "pending"
+        row.updated_at = server_now()

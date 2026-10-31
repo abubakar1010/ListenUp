@@ -1,8 +1,8 @@
-# ADR 0096: The browser reports where the original starts in a Shadow recording
+# ADR 0093: The browser reports where the original starts in a Shadow recording
 
 - Status: Accepted (owner, 2026-10-31, option b); the Database Design change and
   the migration are pending
-- Story: #82. Related: ADRs 0063, 0070, 0095; #90
+- Story: #82. Related: ADRs 0063, 0070, 0092; #90
 - Requirements: FR-SH-4, FR-SH-8, FR-SH-9, AT-17
 
 ## Context
@@ -67,3 +67,13 @@ timing score with a reason. It never gets an assumed count-in.
   #80's real-device checks.
 - The web recorder must listen for `waiting`, `stalled` and `seeking` during a round.
   Today's Shadow player handles none of them while it plays.
+
+## Continuation scope (2026-10-31)
+
+The approved #82 continuation consumes an absent offset explicitly and records
+`timing.score = null` with `playback_offset_unknown`; fluency, fillers and
+completeness still use original timings. The migration in this continuation adds
+`round_grades` and the round ownership key only. It does not add the offset column,
+change recording request schemas or change the browser. The design update, browser
+measurement and offset persistence above remain pending with their owners. There
+is no assumed three-second count-in and no speech-derived offset.

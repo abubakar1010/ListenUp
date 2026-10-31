@@ -1409,6 +1409,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/shadow/rounds/{round_id}/grade': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read Round */
+    get: operations['read_round_api_v1_shadow_rounds__round_id__grade_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/shadow/rounds/{round_id}/grade/retry': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Retry Round */
+    post: operations['retry_round_api_v1_shadow_rounds__round_id__grade_retry_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/shadow/rounds/{round_id}/recording': {
     parameters: {
       query?: never;
@@ -2762,6 +2796,15 @@ export interface components {
        */
       job_id: number;
     };
+    /** RetryAccepted */
+    RetryAccepted: {
+      /**
+       * Status
+       * @default accepted
+       * @constant
+       */
+      status: 'accepted';
+    };
     /** ReviewHistory */
     ReviewHistory: {
       /** Reviews */
@@ -2797,6 +2840,15 @@ export interface components {
       round: number;
       /** Transcript Shown */
       transcript_shown: boolean;
+    };
+    /** RoundFeedback */
+    RoundFeedback: {
+      /**
+       * Status
+       * @default unavailable
+       * @constant
+       */
+      status: 'unavailable';
     };
     /** Rounds */
     Rounds: {
@@ -6384,6 +6436,82 @@ export interface operations {
       };
       /** @description `upload_incomplete`, `upload_size_mismatch`, `upload_type_mismatch`, `step_locked`, `session_changed`, `session_closed` or `round_order` */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  read_round_api_v1_shadow_rounds__round_id__grade_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        round_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RoundFeedback'];
+        };
+      };
+      /** @description round_not_found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  retry_round_api_v1_shadow_rounds__round_id__grade_retry_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        round_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RetryAccepted'];
+        };
+      };
+      /** @description round_not_found */
+      404: {
         headers: {
           [name: string]: unknown;
         };
