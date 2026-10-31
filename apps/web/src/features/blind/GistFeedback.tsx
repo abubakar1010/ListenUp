@@ -18,11 +18,18 @@ const PARTS: Record<string, string> = {
 export function GistFeedback({
   attemptId,
   context,
+  takeFocus = false,
 }: {
   attemptId: string;
   context: 'blind' | 'transcript';
+  /** Focus the heading when shown: it replaces the submitted form (WCAG 2.4.3, #98). */
+  takeFocus?: boolean;
 }) {
   const queryClient = useQueryClient();
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (takeFocus) heading.current?.focus();
+  }, [takeFocus]);
   const retrying = useRef(false);
   const [expiredRead, setExpiredRead] = useState<number | null>(null);
   const query = useQuery({
@@ -60,7 +67,9 @@ export function GistFeedback({
       aria-busy={!ready && !unavailable && !delayed}
       className="flex min-w-0 flex-col gap-3 rounded-md border border-line bg-surface-raised p-4 [overflow-wrap:anywhere]"
     >
-      <h2 className="font-display text-heading">Your gist feedback</h2>
+      <h2 ref={heading} tabIndex={takeFocus ? -1 : undefined} className="font-display text-heading">
+        Your gist feedback
+      </h2>
       <p aria-live={context === 'blind' ? 'polite' : 'off'}>
         {ready
           ? 'Your gist feedback is ready.'

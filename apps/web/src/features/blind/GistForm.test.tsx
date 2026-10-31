@@ -120,3 +120,25 @@ test('submitted gist stays with its pending feedback until Continue', async () =
   expect(screen.getByRole('button', { name: 'Continue to Dictation' })).toBeInTheDocument();
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
 });
+
+// WCAG 2.4.3 (#98): Submit gist goes with the form, so focus moves to the feedback's
+// heading instead of falling to the page; the next Tab reaches Continue.
+test('after submitting, focus is on the gist feedback heading', async () => {
+  mockRoutes({
+    [SUBMIT]: jsonResponse(201, {
+      attempt: attemptFixture({ status: 'submitted', gist_text: THREE }),
+      open_step: 'transcript',
+      session_version: 1,
+    }),
+    'GET /gists/attempt-1/grade': jsonResponse(200, { status: 'pending' }),
+  });
+  renderForm();
+  type(THREE);
+  const submit = screen.getByRole('button', { name: 'Submit gist' });
+  submit.focus();
+  fireEvent.click(submit);
+
+  const heading = await screen.findByRole('heading', { name: 'Your gist feedback' });
+  await waitFor(() => expect(heading).toHaveFocus());
+  expect(heading).toHaveAttribute('tabindex', '-1');
+});
