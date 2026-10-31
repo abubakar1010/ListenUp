@@ -575,3 +575,85 @@ def test_queue_and_grade_roll_back_together(migrated_url, recorded):
             ).fetchone()
             is None
         )
+
+
+def test_consent_withdrawn_during_assessment_prevents_result(
+    migrated_url, recorded, run_round, monkeypatch
+):
+    from listenup.ai.providers.fake_assessment import FakeAssessment
+    from listenup.platform.jobs import PermanentError
+
+    assess = FakeAssessment.assess
+
+    async def withdraw(self, *args):
+        result = await assess(self, *args)
+        with psycopg.connect(migrated_url) as db:
+            db.execute(
+                "UPDATE identity.consents SET withdrawn_at=now() "
+                "WHERE user_id=%s AND kind='voice_recording' AND withdrawn_at IS NULL",
+                [recorded[1]],
+            )
+        return result
+
+    monkeypatch.setattr(FakeAssessment, "assess", withdraw)
+    with pytest.raises(PermanentError, match="Voice consent was withdrawn"):
+        run_round[0]()
+    assert len(run_round[1]) == 1 and run_round[2] == []
+    with psycopg.connect(migrated_url) as db:
+        assert db.execute(
+            "SELECT status,measures FROM grading.round_grades WHERE round_id=%s", [recorded[0]]
+        ).fetchone() == ("unavailable", None)
+
+
+def test_account_disabled_during_assessment_prevents_result(
+    migrated_url, recorded, run_round, monkeypatch
+):
+    from listenup.ai.providers.fake_assessment import FakeAssessment
+
+    assess = FakeAssessment.assess
+
+    async def disable(self, *args):
+        result = await assess(self, *args)
+        with psycopg.connect(migrated_url) as db:
+            db.execute(
+                "UPDATE identity.users SET status='pending_deletion',deletion_scheduled_at=now() "
+                "WHERE id=%s",
+                [recorded[1]],
+            )
+        return result
+
+    monkeypatch.setattr(FakeAssessment, "assess", disable)
+    run_round[0]()
+    assert len(run_round[1]) == 1 and run_round[2] == []
+    with psycopg.connect(migrated_url) as db:
+        assert db.execute(
+            "SELECT measures FROM grading.round_grades WHERE round_id=%s", [recorded[0]]
+        ).fetchone() == (None,)
+
+
+def test_retained_round_without_recording_cannot_be_assessed(migrated_url, recorded, run_round):
+    from listenup.platform.jobs import PermanentError
+
+    with psycopg.connect(migrated_url) as db:
+        db.execute(
+            "UPDATE practice.shadow_rounds SET recording_key=NULL,recording_mime=NULL,"
+            "recording_bytes=NULL,uploaded_at=NULL WHERE id=%s",
+            [recorded[0]],
+        )
+    with pytest.raises(PermanentError, match="Recording is unavailable"):
+        run_round[0]()
+    assert run_round[1] == run_round[2] == []
+
+
+def test_reference_transcript_wait_reschedules_without_assessment(recorded, run_round, monkeypatch):
+    from listenup.modules.transcript import service as transcript
+    from listenup.platform.errors import ProblemError
+    from listenup.platform.jobs import Reschedule
+
+    async def waiting(*args):
+        raise ProblemError(409, "transcript_not_ready", "Not ready")
+
+    monkeypatch.setattr(transcript, "reference_for_shadow", waiting)
+    with pytest.raises(Reschedule):
+        run_round[0]()
+    assert run_round[1] == run_round[2] == []

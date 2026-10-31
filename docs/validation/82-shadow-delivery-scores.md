@@ -118,7 +118,7 @@ Tests below are in `tests/integration/test_shadow_delivery_jobs.py` unless state
 | FR-SH-16 failure, retry, deadline, late success | `test_provider_failure_keeps_recording_and_retry_can_score`, `test_retry_coalesces_live_work_and_resets_only_admitted_cycle`, `test_due_deadline_marks_unavailable_without_changing_recording`, `test_finished_round_deadline_is_a_noop` |
 | No stale callback or cross-learner writes | `test_stale_generation_cannot_assess_or_change_new_cycle`, `test_round_grade_rls_and_owner_constraint`, `test_assessment_source_authorizes_round_and_uses_original_words` |
 | E2 projection and provider restriction | `test_synthetic_grade_is_unavailable_and_retry_is_owned`, `test_e2_refuses_other_provider_before_any_audio` |
-| Consent, deletion, missing source/profile | `test_withdrawn_voice_consent_prevents_assessment`, `test_disabled_account_does_not_assess`, `test_session_deleted_during_assessment_is_not_recreated`, `test_missing_audio_keeps_data_and_never_assesses`, `test_profile_state_never_calls_assessment` |
+| Consent, deletion, missing source/profile | `test_withdrawn_voice_consent_prevents_assessment`, `test_consent_withdrawn_during_assessment_prevents_result`, `test_disabled_account_does_not_assess`, `test_session_deleted_during_assessment_is_not_recreated`, `test_missing_audio_keeps_data_and_never_assesses`, `test_profile_state_never_calls_assessment` |
 | Missing offset and headphones evidence | `tests/unit/test_shadow_round_inputs.py::test_missing_playback_offset_only_disables_timing`, `test_delivery_result_keeps_headphones_warning_and_scores` |
 | Recording/plan remains independent | `tests/integration/test_shadow_recording.py::test_three_rounds_produce_three_replayable_recordings` |
 | Migration/metadata | `tests/integration/test_migrations.py::test_upgrade_downgrade_one_and_upgrade_again`, `test_full_downgrade_leaves_an_empty_database`, `test_history_is_linear` |
@@ -156,6 +156,99 @@ no artificial red test. OpenAPI was exported and the TypeScript client regenerat
 
 ## Final continuation checks
 
-Pending completion of the current full checks; actual outcomes follow below.
-Fresh-session independent review and green required CI remain merge gates. No PR
-is opened until the owner requests it; no merge is authorized.
+Actual outcomes and the source snapshots they validate are recorded below.
+Fresh-session independent review and green required CI remain merge gates. Draft PR #261 was opened by another session while this continuation ran; this
+session did not open another PR. The owner alone merges it.
+
+Continuation assertion checks used an isolated copy under `work/82-mutant`, never
+edited the live source or created another branch/worktree. All four mutations were
+detected: an absent assessment job (pending instead of scored), admitting a stale
+generation (unexpected assessment call), removing both voice-consent checks
+(unexpected assessment/no refusal), and omitting the transactional event
+(missing event). This validates assertion sensitivity without relabelling the
+post-implementation characterization tests as test-first work.
+
+Current main was merged in `f40f020` to inherit the storage-cancellation and
+scratch fixes already reviewed on main; no other story branch was changed.
+The first full local coverage attempt was interrupted after SeaweedFS reported
+no writable volumes. A local-only Compose override uses 64 MB volumes on a fresh
+test-only volume; the existing storage volume was preserved. The backup-store
+round-trip passed after recovery. No repository deployment configuration changed.
+
+Focused continuation suite after implementation:
+`uv run pytest tests/integration/test_shadow_delivery_jobs.py tests/unit/test_shadow_round_inputs.py tests/unit/test_shadow_delivery_scoring.py -q`:
+**88 passed**. Migration upgrade, `alembic check`, downgrade one and re-upgrade
+passed; `uv run alembic heads` reported exactly `82_round_grades (head)` before
+the implementation push. Format/lint, strict mypy (217 files) and all six import
+contracts passed. The initial separate architecture/cross-learner run passed those
+checks but contained the subsequently corrected consent-test setup failure;
+its partial coverage output is not the final coverage report.
+
+For a non-production manual contract run, select a private `LISTENUP_AI_CONFIG`
+whose `speech_assessment` role contains an enabled `fake-assessment` entry with
+`local: true`, `accepted: true`, `trains_on_inputs: false` and an explicit model
+name. Other roles may keep their ordinary local fake configuration. The packaged
+`ai.fake.yaml` uses the older `fake` assessment adapter, which this E2 job
+intentionally refuses; packaged production registration remains disabled. Tests
+construct the same provider-neutral gateway configuration explicitly. No shipped
+configuration turns synthetic assessment on for learners.
+
+Additional final-audit characterization:
+`uv run pytest tests/integration/test_shadow_delivery_jobs.py::test_consent_withdrawn_during_assessment_prevents_result -q`
+passed (1 test). It withdraws consent at the provider boundary and verifies no
+stored measures or event. It was added after the full local run had collected its
+tests, so its separate result supplements that run; no production code changed.
+
+Local web checks passed: lint, format, typecheck, 739 coverage tests, production
+build, 126.7 KB gzip initial JavaScript (200 KB budget), and `pnpm e2e` with
+278 passed / 2 skipped. The two inherited skips are desktop/dark scans of the
+narrow-only plan sheet; the narrow scan ran. This is Chromium plus axe at desktop,
+360 px and dark theme, with mocked API responses, not a live-stack or four-browser
+quality result. OpenAPI export and `pnpm api:generate` completed successfully.
+
+## Final combined-head verification (2026-10-31)
+
+- Full backend functional/security/integration/coverage command with PostgreSQL and
+  S3 required, on `f40f020`: **2,747 passed, 1 skipped, 1 performance test deselected**,
+  98% total coverage. The skip is the opt-in LibriSpeech real-profile fixture;
+  no real-model evidence is claimed. The uninterrupted passing run took 884.15 s.
+- Another session then pushed scoring review fixes and merged this implementation
+  at `45bd25f`. This checkout fast-forwarded to that head, preserving its strict
+  immutable parameters, null-fluency fix, rounding fix, gateway synthetic helper,
+  ADR updates and newer main scratch fixes. The saved full-suite report belongs
+  to the preceding snapshot, not the changed combined source.
+- Combined-head affected recheck: all unit, contract and architecture tests plus
+  delivery jobs, recording, migration and cross-learner integrations: **1,695 passed**.
+  That command mistakenly included the performance-marked Dictation test under
+  coverage; it alone failed at 0.214 s versus 0.2 s. This is disclosed rather than
+  reporting the command as green. `uv run pytest -m performance --no-cov -q`
+  then **passed (1 test)** on the combined source, with instrumentation removed.
+- Coverage review added three passing characterization cases, with no production
+  changes: `test_account_disabled_during_assessment_prevents_result`,
+  `test_retained_round_without_recording_cannot_be_assessed`, and
+  `test_reference_transcript_wait_reschedules_without_assessment`.
+  Their coverage was appended only to the combined-source report, not the older
+  full snapshot. The current affected report is not a whole-repository baseline.
+- Current changed-code coverage against `origin/main`: **476/484 executable lines
+  covered (98%)**; `check-coverage.py api` resolves every runtime file. The pure
+  scoring, result conversion, API, models and repository changes are at 100%.
+  Job changes are 96.1%; remaining paths are initial concurrent deletion, a
+  non-409 reference refusal, empty reference text, and recording loss during
+  inference. They settle/propagate without storing results. Service gaps are
+  export invocation and defensive queue/retry paths; the full snapshot exercised
+  export, and result projection, retry admission, ownership, generation fencing,
+  transaction rollback and privacy races have explicit assertions.
+- Final format/lint, strict mypy (217 files), six import contracts and coverage
+  inventory checks passed. Web inventory resolves every runtime file; its diff
+  contains generated types/OpenAPI only, with no executable changed lines.
+- The existing draft PR #261 supersedes the initial no-PR snapshot. Review of the
+  original scoring slice is recorded above; the new pipeline still needs a fresh
+  independent review. The four policy questions in ADR 0092 remain open and do
+  not alter the approved version-1 placeholders.
+- Required CI is pending on the combined/final branch. The run on `f40f020` was
+  cancelled after the other session advanced the branch; no cancelled run is
+  claimed green. Required CI and independent review remain pre-merge gates.
+
+No quality acceptance is implied by these checks: real-sample AT-17, B4 filler
+recall/count accuracy, p95 50 s and real leakage reliability remain **not met**.
+Browser offset capture and persistence remain with their owners (ADR 0093).
