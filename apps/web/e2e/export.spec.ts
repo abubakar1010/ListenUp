@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { browserCheck, expect, MAC_WEBKIT_HEADERS, onMacWebKit, test } from './test';
 
 const LEARNER = {
   id: '1',
@@ -44,7 +44,14 @@ test('a learner asks for a copy of their data and gets a download link', async (
     }
     if (path === '/me') return route.fulfill({ json: LEARNER });
     if (path === '/me/exports' && request.method() === 'POST') {
-      expect(request.headers()['x-csrf-token']).toBe('e2e-token');
+      // Playwright's WebKit on macOS does not show these request headers to the test.
+      await browserCheck(
+        'mutation sends the CSRF request header',
+        onMacWebKit() ? MAC_WEBKIT_HEADERS : undefined,
+        () => {
+          expect(request.headers()['x-csrf-token']).toBe('e2e-token');
+        },
+      );
       latest = PENDING;
       return route.fulfill({ status: 202, json: PENDING });
     }

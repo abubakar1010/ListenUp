@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './test';
 
 import type { components } from '../src/api/schema';
 import { fakeApi } from './a11y/fakeApi';
@@ -48,7 +48,10 @@ test('content deletion confirms safely, blocks duplicate submits and retries err
   });
   await page.goto('/library');
   const opener = page.getByRole('button', { name: 'Delete My private clip' });
-  await opener.click();
+  // Opened from the keyboard: Safari does not focus a button on a mouse click, so there
+  // would be no focused opener to return to.
+  await opener.focus();
+  await opener.press('Enter');
   const dialog = page.getByRole('dialog', { name: 'Delete My private clip?' });
   await expect(dialog.getByRole('button', { name: 'Keep clip' })).toBeFocused();
   await page.keyboard.press('Tab');

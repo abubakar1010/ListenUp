@@ -214,8 +214,14 @@ it('discards the recording when the round is stopped', async () => {
   const { calls } = routes();
   renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
   await screen.findByRole('button', { name: 'Play round 1' });
-  fireEvent.loadedMetadata(document.querySelector('audio')!);
+  const audio = document.querySelector('audio')!;
+  // The media listener is attached by an effect after the initial button render.
+  await waitFor(() => {
+    fireEvent.loadedMetadata(audio);
+    expect(screen.getByRole('button', { name: 'Play round 1' })).toBeEnabled();
+  });
   fireEvent.click(screen.getByRole('button', { name: 'Play round 1' }));
+  await waitFor(() => expect(FakeRecorder.instances[0]?.state).toBe('recording'));
   fireEvent.click(await screen.findByRole('button', { name: 'Stop round 1' }));
   await waitFor(() => expect(track.stop).toHaveBeenCalled());
   expect(calls.some((c) => c.path.includes('/recording'))).toBe(false);

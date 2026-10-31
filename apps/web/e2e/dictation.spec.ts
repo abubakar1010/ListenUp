@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { browserCheck, expect, MAC_WEBKIT_HEADERS, onMacWebKit, test } from './test';
 
 const LEARNER = {
   id: '1',
@@ -111,7 +112,14 @@ test('reference correction by keyboard updates score and Edited marker at 360px'
     if (path === '/dictation/attempts/attempt-1/disputes') {
       expect(request.postDataJSON()).toEqual({ word_index: 0, corrected_text: 'cap' });
       expect(request.headers()['idempotency-key']).toBeTruthy();
-      expect(request.headers()['x-csrf-token']).toBeTruthy();
+      // Playwright's WebKit on macOS does not show these request headers to the test.
+      await browserCheck(
+        'mutation sends the CSRF request header',
+        onMacWebKit() ? MAC_WEBKIT_HEADERS : undefined,
+        () => {
+          expect(request.headers()['x-csrf-token']).toBeTruthy();
+        },
+      );
       await saveResponse;
       edited = true;
       return route.fulfill({ json: result() });
@@ -282,7 +290,10 @@ test('the draft saves itself and comes back after a reload', async ({ page }) =>
   await expect(text).toHaveAttribute('autocapitalize', 'off');
   await expect(text).toHaveAttribute('autocomplete', 'off');
 
-  await text.press('End');
+  // End scrolls instead of moving the caret on macOS, so place the caret directly.
+  await text.evaluate((el: HTMLTextAreaElement) =>
+    el.setSelectionRange(el.value.length, el.value.length),
+  );
   await text.pressSequentially(' you notice is the shade');
   await expect.poll(() => server.puts.length, { timeout: 5000 }).toBe(1);
   expect(server.puts[0]).toEqual({

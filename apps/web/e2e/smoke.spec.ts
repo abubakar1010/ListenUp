@@ -1,7 +1,8 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { browserCheck, WEBKIT_BLOB_BODY, WEBKIT_NO_REDIRECT_MOCK, expect, test } from './test';
 import { expectFocusKept } from './focus';
 
 const LEARNER = {
@@ -186,7 +187,9 @@ test('a refused sign-in keeps focus on Sign in, which says it is busy while wait
   await page.getByLabel('Password').fill('wrong horse');
 
   const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
-  await signIn.click();
+  // From the keyboard: Safari does not focus a button on a mouse click.
+  await signIn.focus();
+  await signIn.press('Enter');
   const busy = page.getByRole('button', { name: 'Please wait…' });
   await expect(busy).toHaveAttribute('aria-busy', 'true');
   await expect(busy).toBeFocused();
@@ -211,7 +214,10 @@ test('the shell fits a 360 px screen without sideways scrolling', async ({ page 
   }
 });
 
-test('a learner uploads a clip with progress and sees it in the library', async ({ page }) => {
+test('a learner uploads a clip with progress and sees it in the library', async ({
+  page,
+  browserName,
+}) => {
   const items: object[] = [];
   let putBody = 0;
   await page.route('**/api/v1/**', async (route) => {
@@ -283,7 +289,14 @@ test('a learner uploads a clip with progress and sees it in the library', async 
   await expect(page).toHaveURL('/library');
   const clip = page.getByRole('listitem').filter({ hasText: 'street-trees-talk' });
   await expect(clip).toContainText('Processing');
-  expect(putBody).toBe(256 * 1024);
+  // Playwright's WebKit cannot read a Blob request body, so the size is checked elsewhere.
+  await browserCheck(
+    'uploaded clip body has the selected file size',
+    browserName === 'webkit' ? WEBKIT_BLOB_BODY : undefined,
+    () => {
+      expect(putBody).toBe(256 * 1024);
+    },
+  );
 });
 
 test('a file of the wrong type is refused before it is sent', async ({ page }) => {
@@ -361,7 +374,11 @@ async function fakeStorage(body: Buffer) {
   };
 }
 
-test('a learner opens a ready clip from the library and plays it', async ({ page }) => {
+test('a learner opens a ready clip from the library and plays it', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName === 'webkit', WEBKIT_NO_REDIRECT_MOCK);
   const clip = {
     id: 'content-1',
     title: 'Why cities plant street trees',
