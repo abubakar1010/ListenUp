@@ -139,7 +139,8 @@ async function blind(page: Page, server: PlanState, next: 'Dictation' | null) {
 /** Dictation: play by keyboard, type, submit, confirm. */
 async function dictation(page: Page, steps: number) {
   const text = page.getByRole('textbox', { name: 'Your text' });
-  await expect(text).toBeVisible();
+  // UX-42: arrival at Dictation puts focus on the text box, not the h1.
+  await expect(text).toBeFocused();
   await checkLayout(page, 'on Dictation');
   const player = page.getByRole('region', { name: 'Player' });
   const play = player.getByRole('button', { name: 'Play', exact: true });

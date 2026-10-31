@@ -203,12 +203,52 @@ test('arriving_at_the_next_step_focuses_its_heading', async () => {
   await waitFor(() => expect(heading).toHaveFocus());
 });
 
-test('a step that places focus itself keeps it on arrival', async () => {
-  mockRoutes({ 'GET /sessions/session-1': jsonResponse(200, sessionFixture({ done: 2 })) });
+// UX-42: arriving at Dictation, focus stays on its text box, which the step focused itself;
+// the arrival focus must not move it to the h1, then or when the step finishes loading.
+test('arriving_at_dictation_keeps_focus_on_its_text_box', async () => {
+  let submitted = false;
+  const gist = 'This is the idea. Here is another detail. I heard this too.';
+  const attempt = () =>
+    attemptFixture({
+      listen_complete: true,
+      status: submitted ? 'submitted' : 'active',
+      gist_text: submitted ? gist : null,
+    });
+  mockRoutes({
+    'GET /sessions/session-1': () =>
+      jsonResponse(200, sessionFixture({ entry: 'both', done: submitted ? 1 : 0 })),
+    'GET /sessions/session-1/blind': () => jsonResponse(200, blindStepFixture(attempt())),
+    'POST /blind/attempts/attempt-1/gist': () => {
+      submitted = true;
+      return jsonResponse(201, { attempt: attempt(), open_step: 'dictation', session_version: 1 });
+    },
+    'GET /gists/attempt-1/grade': jsonResponse(200, { status: 'pending', wait_ms: 60_000 }),
+    'POST /sessions/session-1/dictation/attempts': jsonResponse(200, {
+      id: 'dictation-1',
+      session_id: 'session-1',
+      status: 'active',
+      started_at: '2026-10-03T10:00:00Z',
+      resumed: false,
+      draft_text: '',
+      draft_version: 0,
+      draft_updated_at: null,
+      passage: sessionFixture().passage,
+      media_url: '/api/v1/media/media-1',
+    }),
+  });
   renderSession();
-  // Card focuses its own heading when it opens; the session leaves that alone.
-  const own = await screen.findByRole('heading', { level: 2, name: 'Keep a sound you missed' });
-  await waitFor(() => expect(own).toHaveFocus());
+  fireEvent.change(await screen.findByRole('textbox', { name: 'Your gist' }), {
+    target: { value: gist },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Submit gist' }));
+  const next = await screen.findByRole('button', { name: 'Continue to Dictation' });
+  next.focus();
+  fireEvent.click(next);
+
+  const text = await screen.findByRole('textbox', { name: 'Your text' });
+  await waitFor(() => expect(text).toHaveFocus());
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(text).toHaveFocus();
 });
 
 // The arriving step may swap its loading screen for its content, replacing the focused
