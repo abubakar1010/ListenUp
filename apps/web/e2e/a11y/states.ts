@@ -509,6 +509,11 @@ export const STATES: ScanState[] = [
     ready: (page) => page.getByText('Version voice-2026-1'),
   },
   {
+    name: 'accessibility statement',
+    path: '/accessibility',
+    ready: (page) => page.getByRole('heading', { level: 2, name: 'Known limitations' }),
+  },
+  {
     name: 'google error',
     alert: true,
     path: '/auth/google-error?reason=failed&intent=login',
