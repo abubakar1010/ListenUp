@@ -15,6 +15,7 @@ import hashlib
 import time
 from collections import OrderedDict
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
@@ -34,6 +35,11 @@ REUSE_FRACTION = 0.8
 CACHE_SIZE = 10_000
 DELETE_BATCH = 1000  # the S3 limit for one DeleteObjects call
 DOWNLOAD_CHUNK = 1024 * 1024
+WRITE_THREADS = 8
+
+# Uploads have their own threads: the loop's default executor is small on a small host
+# and shared with `asyncio.to_thread` and DNS lookups, which must not queue behind them.
+_write_pool = ThreadPoolExecutor(max_workers=WRITE_THREADS, thread_name_prefix="storage-write")
 
 
 async def _write_to_completion(write: Callable[[], object]) -> None:
@@ -44,7 +50,7 @@ async def _write_to_completion(write: Callable[[], object]) -> None:
     upload was still running (#228 item 2). A plain executor future drained by
     `finish_on_cancel` returns only once the thread has finished.
     """
-    await finish_on_cancel(asyncio.get_running_loop().run_in_executor(None, write))
+    await finish_on_cancel(asyncio.get_running_loop().run_in_executor(_write_pool, write))
 
 
 @dataclass(frozen=True)
