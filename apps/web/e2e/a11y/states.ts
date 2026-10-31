@@ -124,6 +124,13 @@ const TRANSCRIPT = {
       end_ms: 12_000,
       words: [{ index: 3, text: 'Again.', start_ms: 10_000, end_ms: 12_000, edited: false }],
     },
+    {
+      index: 2,
+      start_ms: 14_000,
+      end_ms: 15_000,
+      // A one-letter word: transcript words use the inline-target exception (UX-15).
+      words: [{ index: 4, text: 'a', start_ms: 14_000, end_ms: 15_000, edited: false }],
+    },
   ],
 } satisfies Schema['TranscriptReview'];
 const MARKS: Schema['Mark'][] = [

@@ -280,8 +280,10 @@ function TranscriptWork({
               <p className="text-body-l [overflow-wrap:anywhere]">
                 {item.words.map((word) => (
                   <span key={word.index}>
+                    {/* Words in running text use the inline-target exception (UX-15). */}
                     <button
                       type="button"
+                      data-inline-target
                       ref={(element) => {
                         marking.wordRefs.current[word.index] = element;
                       }}

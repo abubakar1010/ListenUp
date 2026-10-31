@@ -6,10 +6,11 @@ export const TOUCH_TARGET_PX = 44;
 /**
  * Visible controls whose hit area is under 44 px in either direction at a touch width
  * (UX-15, WCAG 2.5.8 at the stricter design size). The hit area is the control's box,
- * or for a checkbox or radio the label that wraps or names it. Exempt, as UX-15 says:
- * links inside running text, and transcript words, which use the inline-target
- * exception with their 32 px line. A control inside a native media element's own
- * controls is the browser's and is not listed.
+ * or for a checkbox or radio the label that wraps or names it. Exempt: transcript
+ * words, which UX-15 gives the inline-target exception with their 32 px line (they carry
+ * `data-inline-target`), and links inside running text (WCAG 2.5.8's inline exception;
+ * UX-15 does not name these, an owner question on #260). A control inside a native media
+ * element's own controls is the browser's and is not listed.
  */
 export async function smallTargets(page: Page): Promise<string[]> {
   return page.evaluate((min) => {
