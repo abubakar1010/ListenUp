@@ -142,8 +142,12 @@ class DeliveryParameters:
 
 
 def _half_up(value: float) -> int:
-    """Nearest integer, halves up, for the nonnegative values scored here."""
-    return math.floor(value + 0.5)
+    """Nearest integer, halves up, for the nonnegative values scored here.
+
+    Rounding to nine places first absorbs binary float error, so a score that is
+    exactly x.5 in decimal arithmetic (77.5, held as 77.4999...) still rounds up.
+    """
+    return math.floor(round(value, 9) + 0.5)
 
 
 def _completeness(reference_word_count: int, recorded: Sequence[Word]) -> Measure:

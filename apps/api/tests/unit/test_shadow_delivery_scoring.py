@@ -174,6 +174,15 @@ def test_a_restart_times_the_restarted_words_at_their_final_attempt():
     assert result.score == 59  # (60 * 0.55 + 20 * 25 / 36) / 80 = 58.61
 
 
+def test_timing_rounds_halves_up_despite_float_error():
+    original = [Word(0, 0.0, 0.3), Word(1, 0.5, 0.8)]  # a 0.2 s gap: no break
+    # Lags 0.4 and 0.6 s: onsets (1 + 0.9) / 2 = 0.95. Ratio 0.7 / 0.5 = 1.4: rate
+    # credit (0.5 - 0.4) / 0.4 = 0.25. (60 * 0.95 + 20 * 0.25) / 80 = 0.775 exactly,
+    # which binary floats put just below 77.5.
+    recorded = [Word(0, 0.4, 0.5), Word(1, 1.1, 1.2)]
+    assert score(recorded, n=2, original=original).measures["timing"].score == 78
+
+
 def test_early_speech_is_off_time_too():
     early = words([i * 0.5 - 1.0 for i in range(10)])
     early = [Word(w.index, max(0.0, w.start), w.end) for w in early]
