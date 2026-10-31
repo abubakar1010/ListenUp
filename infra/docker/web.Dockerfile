@@ -22,7 +22,7 @@ COPY docs/legal /src/docs/legal
 # Vite names every asset after its content hash (assets/<name>-<hash>.js).
 RUN pnpm build
 
-FROM caddy:2.10.2-alpine AS edge
+FROM caddy:2.11.6-alpine AS edge
 COPY infra/caddy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /src/apps/web/dist /srv
 # Fail the build, not the deploy, on a Caddyfile that does not parse.
