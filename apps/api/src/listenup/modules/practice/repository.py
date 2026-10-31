@@ -322,7 +322,12 @@ async def insert_attempt(
 async def get_attempt(session: AsyncSession, attempt_id: uuid.UUID) -> AttemptRow | None:
     row = (
         await session.execute(
-            text(f"SELECT {_ATTEMPT_COLUMNS} FROM practice.attempts WHERE id = :id"),
+            # An attempt of a session being deleted (#90) is gone at once.
+            text(
+                f"SELECT {_ATTEMPT_COLUMNS} FROM practice.attempts WHERE id = :id AND EXISTS "
+                "(SELECT 1 FROM practice.sessions s WHERE s.id = practice.attempts.session_id "
+                "AND s.deleting_at IS NULL)"
+            ),
             {"id": attempt_id},
         )
     ).first()
@@ -355,7 +360,7 @@ async def active_attempts_for_content(
           JOIN practice.sessions s
             ON s.id = a.session_id AND s.user_id = a.user_id
          WHERE s.user_id = :user_id AND s.content_id = :content_id
-           AND a.mode = :mode AND a.status = 'active'
+           AND s.deleting_at IS NULL AND a.mode = :mode AND a.status = 'active'
          ORDER BY a.started_at, a.id
         """),
         {"user_id": user_id, "content_id": content_id, "mode": mode},

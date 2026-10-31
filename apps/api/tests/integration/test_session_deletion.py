@@ -418,3 +418,36 @@ def test_a_cleared_barrier_is_restored_and_the_deletion_still_finishes(
     assert a.get(f"/api/v1/sessions/{sid}").status_code == 200
     run_delete(migrated_url, request)
     assert session_rows(migrated_url, sid)["practice.sessions"] == 0
+
+
+def test_routes_by_attempt_or_card_id_treat_a_deleting_session_as_gone(
+    make_client, migrated_url, storage
+):
+    """Review finding 1 (#263): the barrier also covers routes keyed by an attempt or a
+    card id, so nothing of a session being deleted is read, changed or sent to a
+    provider; and its unfinished Blind listen no longer blocks whole-clip playback."""
+    a = make_client()
+    world = seed_learner_data(migrated_url, uuid.UUID(learner_id(a)))
+    blocked = a.get(f"/api/v1/media/{world.media_id}", follow_redirects=False)
+    assert (blocked.status_code, blocked.json()["code"]) == (409, "blind_in_progress")
+    for stage in ("blind", "dictation", "card"):
+        assert delete(a, world.sessions[stage]).status_code == 202
+    attempt, blind, card = world.dictation_attempt_id, world.blind_attempt_id, world.card_id
+    for method, path, code in (
+        ("GET", f"/api/v1/dictation/attempts/{attempt}", "attempt_not_found"),
+        ("GET", f"/api/v1/dictation/attempts/{attempt}/marks", "attempt_not_found"),
+        ("POST", f"/api/v1/grades/{blind}/retry", "attempt_not_found"),
+        ("DELETE", f"/api/v1/cards/{card}", "card_not_found"),
+        ("GET", f"/api/v1/cards/{card}/reviews", "card_not_found"),
+    ):
+        response = a.request(method, path)
+        assert (response.status_code, response.json()["code"]) == (404, code), path
+    assert one(
+        migrated_url,
+        "SELECT count(*) FROM procrastinate.procrastinate_jobs WHERE task_name LIKE 'grading.%%' "
+        "AND args->>'attempt_id'=%s",
+        str(blind),
+    ) == (0,)
+    assert session_rows(migrated_url, world.sessions["card"])["practice.cards"] == 1
+    playback = a.get(f"/api/v1/media/{world.media_id}", follow_redirects=False)
+    assert playback.status_code == 307, playback.text

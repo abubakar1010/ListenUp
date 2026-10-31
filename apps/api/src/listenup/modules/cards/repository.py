@@ -111,7 +111,12 @@ async def count(db: AsyncSession, session_id: uuid.UUID) -> int:
 async def delete(db: AsyncSession, card_id: uuid.UUID) -> bool:
     return (
         await db.execute(
-            text("DELETE FROM practice.cards WHERE id=:id RETURNING id"), {"id": card_id}
+            text(
+                "DELETE FROM practice.cards c USING practice.sessions s WHERE c.id=:id "
+                "AND s.id=c.session_id AND s.user_id=c.user_id AND s.deleting_at IS NULL "
+                "RETURNING c.id"
+            ),
+            {"id": card_id},
         )
     ).first() is not None
 
