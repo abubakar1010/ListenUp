@@ -19,7 +19,7 @@ ADR 0073 proposes an Arm VM as the stage 0 host. The Release workflow built ever
 
 ## Consequences
 
-- An Arm host can pull `api`, `worker`, `backup`, `signature-update` and `edge`, but it still cannot run the speech worker until #232; the stage 0 benchmarks need that image.
-- Release builds get slower: the arm64 layers are emulated and not cached across releases (a release only reads the CI cache scopes, which hold amd64). The first measured time is recorded in the pull request.
+- Updated 2026-10-29: PR #239 / ADR 0072 added `worker-media` to the five images above, so all six now have Arm build support. Its throwaway Parselmouth wheel stage and native CI runtime checks resolve the old build blocker. This does not verify real Release publication or performance on the actual stage-0 host.
+- Release builds use emulation and may be slower. ADR 0072 added reuse of the Deploy check’s native Arm cache; cache-miss timing and real Release/cache behavior remain unverified by the #16 host-provisioning session.
 - Images pulled on x86 hosts are unchanged; Docker picks the platform from the manifest.
 - The Release workflow itself runs only on `main`, so its merged form is first exercised by the first release after this change; the build commands were run beforehand with QEMU on a development machine, and the YAML is checked by actionlint and by tests that read it as data.

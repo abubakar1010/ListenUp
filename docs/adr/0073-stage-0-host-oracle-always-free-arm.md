@@ -1,7 +1,7 @@
-# ADR 0073: Stage 0 host: Oracle Cloud Always Free Arm VM, with a trial-credit VM for the 4-core measurements
+# ADR 0073: Stage 0 benchmark host: Oracle Always Free Arm, 2 OCPUs and 12 GB
 
-- Status: Proposed (becomes Accepted when the owner has provisioned the VM and recorded its facts, see the runbook)
-- Date: 2026-10-27
+- Status: Proposed; owner approved the two-core selection, but provisioning and team access remain unverified
+- Date: 2026-10-27; owner scope decision recorded 2026-10-29
 - Story: [#16](https://github.com/abubakar1010/ListenUp/issues/16) (spike; stays open until the VM exists)
 - Requirements: NFR-AI-3 (zero cost); [Software Architecture 11](https://claude.ai/code/artifact/6a30920f-b6a0-4131-a486-f2044c71bb13); [System Design 2, 5.2 and 12](https://claude.ai/code/artifact/98274889-96ba-4424-afad-c2cd056206e2); ADRs 0028, 0034, 0039 and 0066
 - Runbook: [`docs/runbooks/stage-0-host.md`](../runbooks/stage-0-host.md)
@@ -12,7 +12,9 @@ Benchmarks B1 to B4 must run on the stage 0 server, and production is one Docker
 
 ### Limits checked on 2026-10-27
 
-Official pages, fetched today. None of Oracle's pages shows an "updated" date, only a 2026 copyright line.
+Historical source inspection from 2026-10-27, preserved below; not re-fetched by
+the 2026-10-29 provisioning session and not proof of tenancy-specific eligibility.
+The original inspection reported no Oracle page update date, only a 2026 copyright line.
 
 | Offer | What the official page says | Fits the 4-core, 16 GB target? |
 | --- | --- | --- |
@@ -23,51 +25,94 @@ Official pages, fetched today. None of Oracle's pages shows an "updated" date, o
 | **Azure free account** ([Microsoft Learn, 2026-03](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/avoid-charges-free-account)) | $200 credit for the first 30 days, then free services for 12 months (it must be upgraded to pay as you go within 30 days). Search results for the free-account page list 750 hours a month each of B1s, B2pts v2 (Arm) and B2ats v2 burstable VMs; the fetched pages did not, so treat that as unconfirmed. Sizes were not checked. | **No.** Burstable 2-vCPU class and expires after 12 months. |
 | **AWS Free Tier** ([aws.amazon.com/free](https://aws.amazon.com/free/)) | Free plan: $100 in credits on sign-up, up to $100 more for tasks, account closes after 6 months or when credits run out. EC2 is listed as available; the page names no instance types. | **No** as a host. Credits could pay for a short 4-vCPU run (instance eligibility unchecked). |
 
-**Oracle cut the free Arm allowance.** Until mid-2026 it was 4 OCPUs and 24 GB. The documentation now says 2 OCPUs and 12 GB. Press and community reports ([InfoQ](https://www.infoq.com/news/2026/07/oracle-cloud-free-tier-limits/), [Linuxiac](https://linuxiac.com/oracle-quietly-cuts-free-tier-ampere-a1-resources-in-half/)) date the change to 2026-06-15, with no announcement, and say over-limit instances were shut down until resized. Oracle's own page carries no change note. The same reports disagree about whether pay-as-you-go accounts are billed above the new allowance. **We could not check Oracle's pay-as-you-go A1 price today** (the price pages return 403), so no price is claimed here.
+**Oracle cut the free Arm allowance.** Until mid-2026 it was 4 OCPUs and 24 GB. The documentation now says 2 OCPUs and 12 GB. Press and community reports ([InfoQ](https://www.infoq.com/news/2026/07/oracle-cloud-free-tier-limits/), [Linuxiac](https://linuxiac.com/oracle-quietly-cuts-free-tier-ampere-a1-resources-in-half/)) date the change to 2026-06-15, with no announcement, and say over-limit instances were shut down until resized. Oracle's own page carries no change note. The same reports disagree about whether pay-as-you-go accounts are billed above the new allowance. **The 2026-10-27 inspection could not check Oracle's pay-as-you-go A1 price** (the price pages return 403), so no price is claimed here.
 
-One Ampere OCPU is one physical core (no SMT), so 2 OCPUs are 2 cores. The free VM therefore has **half the compute** the design assumed (about 75 learners a day by System Design 2.2's arithmetic, which is linear in cores) and **12 GB**, below the 16 GB in `deploy.md`. The media worker's `mem_limit: 18g` in `compose.prod.yml` also exceeds the VM's memory and needs a host override.
+One Ampere OCPU is one physical core (no SMT), so the approved allocation is
+**two cores, not four**, with 12 GB nominal RAM. Record guest-visible RAM and
+usable CPU topology/quota rather than assuming nominal resources are available.
+This is the owner's approved **initial benchmark host** deviation from #16's
+four-core scope and the design's four-core/16 GB assumption. It establishes no
+learner capacity, throughput or latency result. The design and performance targets
+remain unchanged; neither a 75-learner estimate nor linear transfer from x86 is
+accepted evidence. The production media container's `mem_limit: 18g` exceeds this
+host's nominal RAM; its equal `memswap_limit: 18g` prohibits container swap.
+Host swap cannot resolve that mismatch. Later workload sessions must record their
+own reviewed resource budgets; #16 changes no production limits or concurrency.
 
 ### Do our images and the speech stack run on arm64?
 
-Checked against PyPI, the PyTorch CPU index and the repository today. No arm64 machine or Docker daemon was available in this session, so **nothing below was run on arm64**.
+The original 2026-10-27 package inspection was not a host test. Since then,
+[PR #238](https://github.com/abubakar1010/ListenUp/pull/238) and
+[PR #239](https://github.com/abubakar1010/ListenUp/pull/239) merged on 2026-10-28.
+Their evidence and limitations are recorded in [ADR 0071](0071-multi-arch-release-images-built-with-qemu.md)
+and [ADR 0072](0072-parselmouth-wheel-built-in-a-throwaway-stage.md).
 
-| Piece | Finding |
+| Evidence layer | Current finding and limit |
 | --- | --- |
-| `faster-whisper` 1.2.1 | Pure Python (`any` wheel). |
-| `ctranslate2` (locked 4.8.2) | `manylinux_2_27/2_28_aarch64` wheel on PyPI. |
-| `onnxruntime`, `av`, `tokenizers`, `numpy`, `psycopg-binary`, `pydantic-core`, `uvloop`, `cryptography` | Linux aarch64 cp312 wheels in `uv.lock` or on PyPI. |
-| `torch` and `torchaudio` (CPU index, `>=2.4,<2.9`) | cp312 `aarch64` wheels exist for 2.4.1 and 2.8.0 (torch) and 2.4.0 to 2.8.0 (torchaudio). |
-| **`praat-parselmouth` 0.4.7** | **No Linux arm64 wheel in any release** (0.4.0 to 0.4.7, the latest). Only macOS arm64, Linux x86_64 and i686, Windows. The locked sdist builds with CMake and scikit-build. `uv sync --frozen --extra speech` in `backend.Dockerfile` will compile it from source on arm64, which needs a C++ toolchain and CMake that the `python:3.12-slim` base lacks. Whether it compiles, how long it takes and whether results match x86 are **unverified**. |
-| wav2vec2 dynamic int8 (`quantize_dynamic`, `wav2vec2_ctc.py`) | PyTorch's quantized engine differs on Arm (QNNPACK rather than FBGEMM). Untested; accuracy and speed must be re-measured. |
-| Base images (`python:3.12-slim`, `node:22-alpine`, `caddy:2.10.2-alpine`, `haproxy:3.2.4-alpine`), Debian `ffmpeg`, `clamav`, pgdg `postgresql-client-16` | Published for arm64 by their maintainers; not re-inspected here (the runbook has the commands). |
-| **Our release workflow** | `release.yml` builds each image once, on an `ubuntu-latest` (x86_64) runner, with no `platforms` setting. **The images are amd64 only and will not start on an Arm host** ("exec format error"). |
-| Model speed | The speeds in ADR 0034 (0.54 core-s per audio-s for `small.en` int8) are not Arm numbers. B1 to B4 are measured per core-second, so they transfer to a 2-core run; they must be re-run on this VM anyway, which is the point of the spike. |
+| Image build support | All six Release matrix images declare `linux/amd64,linux/arm64`. Deploy check builds them natively on an Arm CI runner. This resolves the old amd64-only build claim; it does not establish a published release's contents. |
+| Parselmouth | Upstream 0.4.7 still lacks a Linux arm64 wheel. The reviewed throwaway toolchain stage now builds it; runtime images omit the compiler. PR #239 records native Arm imports and tone parity. A missing upstream wheel is no longer a repository build blocker. |
+| Speech runtime on CI | PR #239 records a limited wav2vec2 int8/fp32 comparison on Arm; it is not model-quality acceptance or actual-host performance. Int8 quality remains for corrected B2/#233. |
+| Real Release publication | Not verified by this #16 session. Do not claim that a particular immutable release tag contains working Arm manifests without inspecting that release's run and digests. No Release is dispatched here. |
+| Actual-host execution and speed | Unverified: no stage-0 host access exists yet. Neither the development container, QEMU nor the Arm CI runner is the benchmark host. B1–B4, latency, concurrency and capacity need separate real-host evidence. Historical ADR 0034 measurements do not transfer automatically. |
+| Base images | Architecture support from maintainers is distinct from pulling and executing on the chosen host. The runbook records only actual smoke-check image digests; application-image verification belongs to a later session. |
 
 ## Decision
 
-1. **Chosen host: an Oracle Cloud Always Free `VM.Standard.A1.Flex` instance using the whole free allowance: 2 OCPUs, 12 GB memory, a 100 GB boot volume, Ubuntu 24.04 aarch64, one public IPv4 address, in the tenancy's home region.** It is the only always-free VM found that can run the speech models at all, it keeps the MVP at zero cost (NFR-AI-3), and its 10 TB of egress is far above need. It does **not** meet the 4-core target; that is a known deviation, not an oversight.
-2. **Size the stack to the host.** One media process of 2 threads (not two processes), `mem_limit` for `worker-media` lowered in the host's `compose.host.yml`, and a swap file as a safety net. The runbook gives starting values; the benchmarks decide the real ones.
-3. **Run B1 to B4 on this VM** (per-core results transfer) and **run B5 and the capacity commitments in System Design 2 on a short-lived 4-vCPU, 16 GB VM bought with trial credit** (Google Cloud's $300 over 90 days, or AWS's $100 to $200 over 6 months), deleted when the run ends. It costs nothing if the credit is available. If B1 to B4 on the free VM show the 2-core stage 0 is enough for the launch audience, the 4-core run only needs B5.
-4. **Fallback host, in order:**
-   1. **Oracle capacity or account trouble** (out of host capacity in every availability domain, a rejected sign-up, or a reclaimed instance): retry other availability domains over a few days; if it still fails, ask the owner whether to upgrade to pay as you go (Oracle says Always Free resources stay free; reports disagree about A1 above the allowance, so read the billing page first).
-   2. **No free Arm VM is possible**: no other always-free VM found fits, so the fallback is the smallest **paid** VM with at least 4 vCPU and 16 GB (Arm or x86). Its price was not checked here. This changes NFR-AI-3's spirit and needs an explicit owner decision and an ADR superseding this one. An x86 host removes the arm64 work below.
-5. **Idle reclaim.** The VM holds the loaded speech models (about 1.3 GB, preloaded) plus Postgres-free containers, so memory use may stay above 20%, but CPU and network will be low between benchmarks. All three must be under 20% at once for the reclaim rule, but we have not observed this host, so the runbook records memory use and sets a weekly check. Do not rely on a keep-alive load generator; if reclaim becomes a risk, the owner decides on a pay-as-you-go upgrade.
+1. **Owner-approved initial benchmark host:** Oracle Always Free
+   `VM.Standard.A1.Flex`, **2 OCPUs, 12 GB nominal RAM**, 100 GB boot volume,
+   official Ubuntu 24.04 aarch64 image in the tenancy's home region. Verify the
+   account-specific recurring free eligibility, all existing A1/storage allocation,
+   networking costs and live capacity before creation. Public documentation alone
+   does not establish account eligibility. No tenancy or host is verified yet.
+2. **Scope:** provision Docker Engine 28+ and Compose 2.24+, verify team SSH and
+   basic container/resource-limit operation, and record observed hardware. This is
+   a benchmark-host decision, not production deployment approval. Do not configure
+   a production deploy key, application secrets or automatic deployment.
+3. **Benchmark scope:** later sessions may measure feasibility on these two cores.
+   Preserve all existing performance targets and clearly report the smaller host.
+   Do not claim four-core capacity, change workload settings silently, or infer
+   production suitability from a generic Docker smoke check. #17 video measurements
+   and B1–B5 are outside this provisioning session.
+4. **Fallback:** if account eligibility or A1 capacity fails, retry another
+   availability domain in the home region or wait. If still unavailable, stop and
+   ask the owner to select a separately authorized host. No other qualifying
+   always-free host was established by the historical comparison above. Paid VMs,
+   account upgrades and trial credits are **not authorized**. The old trial-credit
+   four-core proposal is withdrawn; any future alternative requires explicit
+   approval and a decision record before provisioning.
+5. **Reclamation:** record an owner and recovery route. Oracle may reclaim idle
+   resources under its published criteria. Do not generate artificial load to
+   evade reclamation or assume loaded model memory prevents it.
 
-## Required follow-ups (not in this change)
+## Completion and follow-ups
 
-These are code changes outside a documentation spike. Without the first, the Arm host cannot run a release.
+- Accept this ADR only after a real host exists, team SSH access is verified,
+  Docker/resource checks pass and the [runbook inventory](../runbooks/stage-0-host.md#5-host-inventory)
+  contains observed evidence. Selection approval alone does not accept the ADR.
+- Keep #16 open until its revised two-core acceptance criteria are satisfied:
+  a team-reachable VM with verified Docker/Compose, documented actual resources,
+  current limits and fallback, and the reviewed host record/ADR merged by the owner.
+- #231/#232 build support landed in PRs #238/#239. Real Release evidence and
+  actual-host application/model checks remain separate. #233 owns real-host
+  speech measurements; #234 owns broader design reconciliation. This record
+  changes no design performance targets.
+- #17 remains blocked until host provisioning/access/checks succeed. No video
+  measurements, YouTube intake, production deployment (#112) or launch validation
+  (#155) are performed by #16. A documentation-only PR cannot complete #16.
 
-1. **Multi-arch release images** ([#231](https://github.com/abubakar1010/ListenUp/issues/231)): build `linux/arm64` (native `ubuntu-24.04-arm` runner or QEMU, whichever is available for this repository) for all six images and publish one manifest per tag, keeping the existing `sha-` and `r<n>` tags. Amd64 stays so the same images run in CI and locally.
-2. **Parselmouth on arm64** ([#232](https://github.com/abubakar1010/ListenUp/issues/232)): add a build stage with a C++ toolchain and CMake for `worker-media` (or ship a wheel we build), and confirm `import parselmouth` and the acoustics tests pass on arm64.
-3. **Re-measure on the host** ([#233](https://github.com/abubakar1010/ListenUp/issues/233)): B1 to B4, with wav2vec2 int8 checked against fp32 on Arm; amend ADR 0034's "indicative" numbers.
-4. **Update the design documents by pull request** ([#234](https://github.com/abubakar1010/ListenUp/issues/234)) (4 cores and 150 learners become the measured stage 0 figures; the source of truth is `docs/design/`), `docs/runbooks/deploy.md` step 1, and this ADR's status once the VM exists.
+## Provisioning observation — 2026-10-29
 
-## Consequences
-
-- Stage 0 capacity is about half the design figure until a 4-core machine is used, which is acceptable for a pre-launch benchmark host and is stated in the benchmark results.
-- The 12 GB host also runs Caddy, the API, the default worker, the signature updater, ClamAV scans and the relay next to the media worker. PostgreSQL and storage stay managed (ADR 0066), so they cost no VM memory; for B1 to B4 a local PostgreSQL container may be used temporarily.
-- SSH from GitHub's runners needs port 22 reachable from the internet (GitHub's address ranges are large and change), so the firewall cannot be limited to the owner's address for deploys; the runbook uses key-only login and an optional non-standard port.
-- This ADR becomes **Accepted** only after the owner has created the account and VM and pasted the host facts (CPU model, cores, memory, disk, `uname -m`, Docker versions, cgroup version) into the runbook's record. If Oracle capacity or the account fails, a new ADR picks the fallback.
+At baseline `86133c5`, the managed environment reported current observations,
+HTTP policy enforced, and no secret bindings, runtime variables or outbound cloud
+identities. OCI CLI/profile, SSH config/known-hosts and SSH agent were absent;
+no authorized host endpoint was supplied. The TCP policy has no destination
+grants. Repository access works but provides no OCI tenancy authorization.
+No cloud create call, remote SSH, package installation or host smoke check was
+attempted. Account eligibility, region, capacity and team reachability are unknown.
+The owner chose the Oracle Console/local-verification route on 2026-10-29.
+Results are pending; this does not confirm an instance exists.
+See the runbook for numbered owner actions and pending inventory. These are access
+blockers, not evidence that Oracle rejected the account or lacked capacity.
 
 ## Sources checked on 2026-10-27
 
