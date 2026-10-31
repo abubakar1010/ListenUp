@@ -70,7 +70,8 @@ export function GistFeedback({
       <h2 ref={heading} tabIndex={takeFocus ? -1 : undefined} className="font-display text-heading">
         Your gist feedback
       </h2>
-      <p aria-live={context === 'blind' ? 'polite' : 'off'}>
+      {/* A late result fills in place with a polite announcement, in both places (UX-04). */}
+      <p aria-live="polite">
         {ready
           ? 'Your gist feedback is ready.'
           : delayed

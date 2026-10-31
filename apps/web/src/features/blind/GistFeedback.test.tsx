@@ -179,3 +179,17 @@ test('the server deadline ends the spinner even when the next read stalls', asyn
     vi.useRealTimers();
   }
 });
+
+// UX-04 (#98): a grade that arrives while the learner is on the screen that shows it is
+// announced politely, beside Transcript as after Blind.
+test.each(['blind', 'transcript'] as const)(
+  'the %s feedback status is a polite live region',
+  async (context) => {
+    mockRoutes({ 'GET /gists/attempt-1/grade': jsonResponse(200, { status: 'pending' }) });
+    renderWithProviders(<GistFeedback attemptId="attempt-1" context={context} />);
+    expect(await screen.findByText('Preparing your gist feedback…')).toHaveAttribute(
+      'aria-live',
+      'polite',
+    );
+  },
+);

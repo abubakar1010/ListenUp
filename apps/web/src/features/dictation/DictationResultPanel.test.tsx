@@ -210,8 +210,8 @@ test('a submission waiting for the transcript says it will be scored when it is 
 
   renderPanel();
 
-  const status = await screen.findByRole('status');
-  expect(status).toHaveTextContent('Scoring when the transcript is ready');
+  const status = await screen.findByText(WAITING);
+  expect(status).toHaveAttribute('role', 'status');
   expect(screen.queryByRole('list', { name: 'Word by word' })).not.toBeInTheDocument();
 });
 
@@ -223,13 +223,16 @@ test('a failed transcript says scoring is unavailable, and a later score replace
   });
   renderPanel();
 
-  const status = await screen.findByRole('status');
-  expect(status).toHaveTextContent('We could not score this Dictation');
+  const status = await screen.findByText(/We could not score this Dictation/);
+  expect(status).toHaveAttribute('role', 'status');
   expect(screen.queryByText(WAITING)).not.toBeInTheDocument();
 
   scored = true;
   await act(async () => FakeEventSource.latest!.emit('dictation.scored', 'attempt-1'));
   expect(await screen.findByText('90%')).toBeInTheDocument();
+  expect(screen.getByTestId('dictation-announcement')).toHaveTextContent(
+    'Your Dictation is scored: 90%.',
+  );
 });
 
 test('the result replaces the waiting message when dictation.scored arrives, without a reload', async () => {
@@ -296,4 +299,32 @@ test('a scored result offers its missed and wrong words for the mark list (FR-DI
 
   expect(await screen.findByRole('heading', { name: 'Add to your marks' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Add “to cool” to marks' })).toBeInTheDocument();
+});
+
+// UX-04, UX-22 (#98): a late score that fills in on screen is announced politely, from
+// a region that was already there, since text in a newly added region is often not read.
+test('a score that arrives while the panel waits is announced', async () => {
+  let scored = false;
+  mockRoutes({
+    [`GET ${PATH}`]: () =>
+      jsonResponse(200, scored ? view('scored', RESULT) : view('waiting_transcript')),
+  });
+  renderPanel();
+  await screen.findByText(WAITING);
+  const region = screen.getByTestId('dictation-announcement');
+  expect(region).toHaveAttribute('role', 'status');
+  expect(region).toBeEmptyDOMElement();
+
+  scored = true;
+  await act(async () => FakeEventSource.latest!.emit('dictation.scored', 'attempt-1'));
+
+  await waitFor(() => expect(region).toHaveTextContent('Your Dictation is scored: 90%.'));
+  expect(screen.getByTestId('dictation-announcement')).toBe(region);
+});
+
+test('a score already there when the panel opens is not announced', async () => {
+  mockRoutes({ [`GET ${PATH}`]: jsonResponse(200, view('scored', RESULT)) });
+  renderPanel();
+  expect(await screen.findByText('90%')).toBeInTheDocument();
+  expect(screen.getByTestId('dictation-announcement')).toBeEmptyDOMElement();
 });
