@@ -23,6 +23,31 @@ measured on one monotonic clock (`performance.now()`). The server stores it on t
 round. The value must be an integer of 0 or more and no longer than the recording;
 the bound goes in the migration.
 
+### Measuring the offset
+
+The fresh-session review of PR #261 found that the first `playing` event alone can
+misplace the original. These rules close those gaps:
+
+- **Recorder start** is the `MediaRecorder` `start` event, not the `start()` call.
+  The microphone opens asynchronously (`getUserMedia`), so recording can begin late.
+- **Playback start** is the round's first `playing` event, corrected for where the
+  media really was: offset = (`playing` time − recorder start) − (`currentTime` at
+  that event − segment start). A seek that lands a little after the segment start
+  then moves the original's words by the same amount.
+- **No offset is reported** (null), and timing is null with a reason, when:
+  - the corrected offset is negative, because playback began before the recorder
+    started; or
+  - a `waiting`, `stalled` or `seeking` event occurs after the first `playing` event
+    and before the segment ends. A buffering stall shifts every later original word on
+    the recording clock, and one offset cannot describe it.
+
+  The round itself is not voided. Its other measures do not use the clock.
+- **Audio output latency is not subtracted.** Browsers do not report it reliably
+  for media elements, and Bluetooth headphones can add 150–300 ms. It biases every
+  onset by the same amount, inside the 0.5 s full-credit window of the version 1
+  parameters. #80's real-device checks measure it. Compensation, if needed, is a
+  later decision.
+
 The round job places the original's words on the recording clock with
 `grading.domain.delivery.place_original` (media time minus the segment start, plus
 the offset; words not wholly inside the segment are dropped). Only timing needs the
@@ -40,3 +65,5 @@ timing score with a reason. It never gets an assumed count-in.
 - The offset is measured in the browser, which `performance.now()` precision and
   audio output latency bound. Playback-start accuracy is not validated here; it joins
   #80's real-device checks.
+- The web recorder must listen for `waiting`, `stalled` and `seeking` during a round.
+  Today's Shadow player handles none of them while it plays.
