@@ -207,6 +207,7 @@ def test_speech_that_keeps_the_originals_pauses_is_fluent():
         "hesitations": 0,
         "long_pauses": 0,
         "restarts": 0,
+        "judged_gaps": 9,
         "events_per_minute": 0.0,
     }
 
@@ -242,6 +243,22 @@ def test_events_beyond_the_zero_rate_floor_at_zero():
     for after in range(9):
         choppy = shifted(choppy, after=after, by=1.5)
     assert fluency(choppy).score == 0  # 9 long pauses = 18 a minute
+
+
+def test_fluency_with_nothing_to_judge_is_unobservable_not_perfect():
+    """ADR 0050: insufficient matched words never become perfect fluency."""
+    one_word = fluency(minute_original()[:1])
+    assert (one_word.score, one_word.reason) == (None, "no_judged_gaps")
+    # Every gap touches a word the original's alignment could not place.
+    every_other = [w for w in minute_original() if w.index % 2 == 0]
+    unplaced = fluency(minute_original(), original=every_other)
+    assert (unplaced.score, unplaced.reason) == (None, "no_judged_gaps")
+
+
+def test_a_restart_alone_is_observed_disfluency():
+    original = minute_original()
+    result = fluency([original[1], Word(0, 7.0, 7.25)])
+    assert (result.score, result.details["restarts"], result.details["judged_gaps"]) == (83, 1, 0)
 
 
 def test_fluency_needs_the_originals_duration():
@@ -319,10 +336,12 @@ def test_overall_is_the_equal_mean_of_the_measures_available():
 
 
 def test_an_unobservable_measure_is_left_out_of_the_overall():
+    # One word said: no timing (two words needed) and no gap to judge fluency on.
     result = score(original_of(1), n=4, original=minute_original())
     assert result.measures["timing"].score is None
-    assert result.overall_basis == ("fluency", "fillers", "completeness")
-    assert result.overall == math.floor((100 + 100 + 25) / 3 + 0.5)  # 75
+    assert result.measures["fluency"].score is None
+    assert result.overall_basis == ("fillers", "completeness")
+    assert result.overall == 63  # (100 + 25) / 2 = 62.5, halves up
 
 
 def test_accent_and_unbuilt_measures_never_enter_the_overall():

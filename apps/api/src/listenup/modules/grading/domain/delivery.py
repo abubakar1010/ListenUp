@@ -261,19 +261,24 @@ def _fluency(
         return Measure(None, "no_original_timing")
     heard = {w.index: w for w in original}
     spoken = sorted(recorded, key=lambda w: (w.start, w.index))
-    hesitations = long_pauses = restarts = 0
+    hesitations = long_pauses = restarts = judged = 0
     for before, after in pairwise(spoken):
         if after.index <= before.index:
             restarts += after.index < before.index
             continue
         if before.index not in heard or after.index not in heard:
             continue  # unknown original gap: not judged (ADR 0050)
+        judged += 1
         expected = heard[after.index].start - heard[before.index].end
         excess = (after.start - before.end) - max(0.0, expected)
         if excess >= section["long_pause_s"]:
             long_pauses += 1
         elif excess >= section["hesitation_s"]:
             hesitations += 1
+    if not judged and not restarts:
+        # Nothing observed is not fluent speech (ADR 0050): one word, or every gap
+        # beside a word the original's alignment could not place.
+        return Measure(None, "no_judged_gaps")
     weights = section["event_weights"]
     events = (
         weights["hesitation"] * hesitations
@@ -287,6 +292,7 @@ def _fluency(
             "hesitations": hesitations,
             "long_pauses": long_pauses,
             "restarts": restarts,
+            "judged_gaps": judged,
             "events_per_minute": round(rate, 3),
         },
     )
