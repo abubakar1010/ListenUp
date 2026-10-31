@@ -318,3 +318,42 @@ it('hides cached transcript after a failed refresh and restores it only after a 
     focusManager.setFocused(undefined);
   }
 });
+
+it('deletes a recording from the round replay; the round still counts as recorded (FR-SH-17)', async () => {
+  let deleted = false;
+  const recorded = (n: number, available: boolean) => ({
+    id: `r${n}`,
+    round: n,
+    transcript_shown: n === 1,
+    playback_status: 'ended',
+    recorded_at: '2026-10-27T10:00:00Z',
+    recording_available: available,
+    feedback: 'unavailable',
+  });
+  const { calls } = mockRoutes({
+    'GET /sessions/s/shadow/rounds': () =>
+      jsonResponse(200, {
+        segment: { start_ms: 0, end_ms: 60000 },
+        current: recorded(1, !deleted),
+        rounds: [recorded(1, !deleted)],
+      }),
+    'GET /contents/c': jsonResponse(200, { media_url: '/audio' }),
+    'DELETE /shadow/rounds/r1/recording': () => {
+      deleted = true;
+      return new Response(null, { status: 204 });
+    },
+  });
+  const onStatus = vi.fn();
+  renderWithProviders(<ShadowRounds sessionId="s" contentId="c" onStatus={onStatus} />);
+  const status = await screen.findByRole('list', { name: 'Round status' });
+  expect(status).toHaveTextContent('Round 1: recorded');
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete recording of round 1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete recording' }));
+  await waitFor(() => expect(onStatus).toHaveBeenCalledWith('Recording of round 1 deleted.'));
+  await waitFor(() =>
+    expect(screen.queryByRole('region', { name: 'Round 1 replay' })).not.toBeInTheDocument(),
+  );
+  expect(status).toHaveTextContent('Round 1: recorded, recording deleted');
+  expect(screen.getByRole('button', { name: 'Start round 2' })).toBeInTheDocument();
+  expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+});

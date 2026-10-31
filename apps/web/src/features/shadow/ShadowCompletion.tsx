@@ -1,15 +1,20 @@
+import { useState } from 'react';
+
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { useContent } from '../content/useContent';
 import type { Session } from '../session/api';
 import { useRounds } from './api';
+import { DeleteRecording } from './DeleteRecording';
 
 /** Recorded rounds remain replayable after the plan completes (FR-SH-6/8/16). */
 export function ShadowCompletion({ session }: { session: Session }) {
   const rounds = useRounds(session.id);
   const content = useContent(session.content_id);
+  const [status, setStatus] = useState('');
   return (
     <section aria-label="Shadow complete" className="flex w-full flex-col gap-3">
       <p>Three Shadow rounds recorded.</p>
+      <p role="status">{status}</p>
       <p>Feedback unavailable.</p>
       {rounds.data?.rounds
         .filter((round) => round.recording_available)
@@ -29,6 +34,12 @@ export function ShadowCompletion({ session }: { session: Session }) {
               preload="none"
               aria-label={`Your recording of round ${round.round}`}
               src={`/api/v1/shadow/rounds/${round.id}/recording`}
+            />
+            <DeleteRecording
+              sessionId={session.id}
+              roundId={round.id}
+              round={round.round}
+              onDeleted={setStatus}
             />
           </section>
         ))}
