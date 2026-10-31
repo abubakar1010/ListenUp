@@ -144,7 +144,9 @@ async def find_session(
     session: AsyncSession, session_id: uuid.UUID
 ) -> tuple[SessionRow, list[StepRow]] | None:
     row = (
-        await session.execute(text(_SESSION_COLUMNS + " WHERE id = :id"), {"id": session_id})
+        await session.execute(
+            text(_SESSION_COLUMNS + " WHERE id = :id AND deleting_at IS NULL"), {"id": session_id}
+        )
     ).first()
     if row is None:
         return None
@@ -235,7 +237,7 @@ async def latest_status_by_content(
         text("""
         SELECT DISTINCT ON (content_id) content_id, status
           FROM practice.sessions
-         WHERE content_id = ANY(:content_ids)
+         WHERE content_id = ANY(:content_ids) AND deleting_at IS NULL
          ORDER BY content_id, created_at DESC, id DESC
         """),
         {"content_ids": content_ids},
@@ -255,7 +257,7 @@ async def list_sessions(
     whole page come in one more query.
     """
     params: dict[str, object] = {"learner": learner, "limit": limit}
-    where = "WHERE user_id = :learner"
+    where = "WHERE user_id = :learner AND deleting_at IS NULL"
     if after is not None:
         where += " AND (updated_at, id) < (:after_at, :after_id)"
         params.update(after_at=after[0], after_id=after[1])
@@ -320,7 +322,12 @@ async def insert_attempt(
 async def get_attempt(session: AsyncSession, attempt_id: uuid.UUID) -> AttemptRow | None:
     row = (
         await session.execute(
-            text(f"SELECT {_ATTEMPT_COLUMNS} FROM practice.attempts WHERE id = :id"),
+            # An attempt of a session being deleted (#90) is gone at once.
+            text(
+                f"SELECT {_ATTEMPT_COLUMNS} FROM practice.attempts WHERE id = :id AND EXISTS "
+                "(SELECT 1 FROM practice.sessions s WHERE s.id = practice.attempts.session_id "
+                "AND s.deleting_at IS NULL)"
+            ),
             {"id": attempt_id},
         )
     ).first()
@@ -353,7 +360,7 @@ async def active_attempts_for_content(
           JOIN practice.sessions s
             ON s.id = a.session_id AND s.user_id = a.user_id
          WHERE s.user_id = :user_id AND s.content_id = :content_id
-           AND a.mode = :mode AND a.status = 'active'
+           AND s.deleting_at IS NULL AND a.mode = :mode AND a.status = 'active'
          ORDER BY a.started_at, a.id
         """),
         {"user_id": user_id, "content_id": content_id, "mode": mode},

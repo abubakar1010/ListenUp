@@ -29,6 +29,12 @@ Read the section for the area you are changing before you change it. The rules e
   registrations, removes storage, then cascades rows. Completed manifests remain
   pointers for hourly late-upload reconciliation; analytics and shared YouTube
   caches survive. The seven-day orphan sweep belongs to #93.
+- Session deletion (#90, ADR 0092) reuses that pattern with `scope = 'session'` and
+  `library.delete_session`. A query that reads `practice.sessions` for the learner
+  must filter `deleting_at IS NULL`, so a deleted session disappears at once.
+  Deleting one Shadow recording reads the round without a lock, deletes the file,
+  then clears the four recording columns conditionally; never call storage while
+  holding a row lock.
 - Conversion PUTs use `content.writes.registered_write` and `store`: register under
   account/content locks, drain cancellation, and retain uncertain registrations.
   Do not infer remote completion from registry age or queue status. Stop and settle

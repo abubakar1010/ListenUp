@@ -3,7 +3,7 @@
 import uuid
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,9 +57,28 @@ async def insert_round(
 async def round_by_id(
     db: AsyncSession, round_id: uuid.UUID, *, lock: bool = False
 ) -> ShadowRound | None:
-    query = select(ShadowRound).where(ShadowRound.id == round_id)
+    query = select(ShadowRound).where(
+        ShadowRound.id == round_id,
+        # A session being deleted (#90) hides its rounds at once.
+        text(
+            "EXISTS (SELECT 1 FROM practice.sessions s WHERE s.id = "
+            "practice.shadow_rounds.session_id AND s.deleting_at IS NULL)"
+        ),
+    )
     # A caller may have read this row before waiting for the parent session lock.
     # Refresh its identity-map entry so a concurrent completed recording is visible.
     return await db.scalar(
         query.with_for_update().execution_options(populate_existing=True) if lock else query
+    )
+
+
+async def clear_recording(db: AsyncSession, round_id: uuid.UUID, key: str) -> None:
+    """Clear the four recording columns together, the one change `check_shadow_round`
+    allows on a recorded round; only while the round still holds this key."""
+    await db.execute(
+        text(
+            "UPDATE practice.shadow_rounds SET recording_key = NULL, recording_mime = NULL, "
+            "recording_bytes = NULL, uploaded_at = NULL WHERE id = :id AND recording_key = :key"
+        ),
+        {"id": round_id, "key": key},
     )

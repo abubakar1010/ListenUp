@@ -66,6 +66,9 @@ class Session(Base):
     created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(Timestamp)
+    deleting_at: Mapped[datetime | None] = mapped_column(Timestamp)
+    """Set when the learner deletes the session (#90): it is hidden at once and removed
+    by `library.delete_session`, storage first."""
 
 
 class SessionStep(Base):

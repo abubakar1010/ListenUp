@@ -972,7 +972,14 @@ export interface paths {
     get: operations['get_session_api_v1_sessions__session_id__get'];
     put?: never;
     post?: never;
-    delete?: never;
+    /**
+     * Delete Session
+     * @description Confirm irreversible deletion of one practice session (FR-SH-17, AT-20).
+     *
+     *     The session disappears at once; its recordings, card snippets and rows are removed
+     *     in the background, storage first. The clip and other sessions stay.
+     */
+    delete: operations['delete_session_api_v1_sessions__session_id__delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -1423,7 +1430,12 @@ export interface paths {
     get: operations['read_recording_api_v1_shadow_rounds__round_id__recording_get'];
     put?: never;
     post?: never;
-    delete?: never;
+    /**
+     * Delete Recording
+     * @description Delete this round's recording for good (FR-SH-17). The round, its time and any
+     *     scores stay. Voice consent is not needed: withdrawing it must not block deletion.
+     */
+    delete: operations['delete_recording_api_v1_shadow_rounds__round_id__recording_delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -5197,6 +5209,48 @@ export interface operations {
       };
     };
   };
+  delete_session_api_v1_sessions__session_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DeleteConfirmation'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeletionAccepted'];
+        };
+      };
+      /** @description `session_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   get_blind_step_api_v1_sessions__session_id__blind_get: {
     parameters: {
       query?: never;
@@ -6413,6 +6467,49 @@ export interface operations {
     responses: {
       /** @description Successful Response */
       307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `round_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `recording_not_ready` */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  delete_recording_api_v1_shadow_rounds__round_id__recording_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        round_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
         headers: {
           [name: string]: unknown;
         };

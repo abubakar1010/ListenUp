@@ -5713,6 +5713,59 @@
       }
     },
     "/api/v1/sessions/{session_id}": {
+      "delete": {
+        "description": "Confirm irreversible deletion of one practice session (FR-SH-17, AT-20).\n\nThe session disappears at once; its recordings, card snippets and rows are removed\nin the background, storage first. The clip and other sessions stay.",
+        "operationId": "delete_session_api_v1_sessions__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteConfirmation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`session_not_found`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Session",
+        "tags": ["library"]
+      },
       "get": {
         "description": "One session with its plan: steps, the open step and the entry lock.",
         "operationId": "get_session_api_v1_sessions__session_id__get",
@@ -7143,6 +7196,45 @@
       }
     },
     "/api/v1/shadow/rounds/{round_id}/recording": {
+      "delete": {
+        "description": "Delete this round's recording for good (FR-SH-17). The round, its time and any\nscores stay. Voice consent is not needed: withdrawing it must not block deletion.",
+        "operationId": "delete_recording_api_v1_shadow_rounds__round_id__recording_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Round Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "`round_not_found`"
+          },
+          "409": {
+            "description": "`recording_not_ready`"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Recording",
+        "tags": ["shadow"]
+      },
       "get": {
         "description": "Check ownership, then redirect to a signed URL that lasts at most 120 s.",
         "operationId": "read_recording_api_v1_shadow_rounds__round_id__recording_get",

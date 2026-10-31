@@ -4,6 +4,8 @@ import { BusyButton } from '../../components/BusyButton';
 import { ErrorPanel } from '../../components/ErrorPanel';
 import { useContent } from '../content/useContent';
 import { RECORDING_MAX_BYTES, useChangeRound, useRounds, useUploadRecording } from './api';
+import { useFocusLater } from '../../lib/useFocusLater';
+import { DeleteRecording } from './DeleteRecording';
 import { useRoundRecorder, type Recording } from './recording';
 import { ShadowReadiness } from './ShadowReadiness';
 import { ShadowRoundPlayer } from './ShadowRoundPlayer';
@@ -30,6 +32,7 @@ export function ShadowRounds({
   const number = current?.round ?? 0;
   const heading = useRef<HTMLHeadingElement>(null);
   const focusRound = useRef(false);
+  const focusHeading = useFocusLater(heading);
   useEffect(() => {
     if (focusRound.current && number) {
       heading.current?.focus();
@@ -93,18 +96,23 @@ export function ShadowRounds({
         {number ? `Round ${number} of 3` : 'Three Shadow rounds'}
       </h2>
       <ol aria-label="Round status" className="flex flex-wrap gap-4">
-        {[1, 2, 3].map((n) => (
-          <li key={n} aria-current={n === number ? 'step' : undefined}>
-            Round {n}:{' '}
-            {state.data.rounds.find((r) => r.round === n)?.recording_available
-              ? 'recorded'
-              : state.data.rounds.find((r) => r.round === n)?.playback_status === 'ended'
-                ? 'playback ended'
-                : n === number
-                  ? 'current'
-                  : 'not started'}
-          </li>
-        ))}
+        {[1, 2, 3].map((n) => {
+          const row = state.data.rounds.find((r) => r.round === n);
+          return (
+            <li key={n} aria-current={n === number ? 'step' : undefined}>
+              Round {n}:{' '}
+              {row?.recorded_at
+                ? row.recording_available
+                  ? 'recorded'
+                  : 'recorded, recording deleted'
+                : row?.playback_status === 'ended'
+                  ? 'playback ended'
+                  : n === number
+                    ? 'current'
+                    : 'not started'}
+            </li>
+          );
+        })}
       </ol>
       <p>
         Three rounds at original speed, each with a short count-in. Read the transcript in round 1;
@@ -177,6 +185,15 @@ export function ShadowRounds({
               src={`/api/v1/shadow/rounds/${r.id}/recording`}
             />
             {r.feedback === 'unavailable' && <p>Feedback unavailable.</p>}
+            <DeleteRecording
+              sessionId={sessionId}
+              roundId={r.id}
+              round={r.round}
+              onDeleted={(message) => {
+                reportStatus(message);
+                focusHeading();
+              }}
+            />
           </section>
         ))}
       {selectionPending && <p>Save your segment before starting a round.</p>}

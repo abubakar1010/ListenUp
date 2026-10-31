@@ -260,6 +260,28 @@ async def recording_url(db: AsyncSession, storage: Storage, round_id: uuid.UUID)
     return storage.signed_download(row.recording_key, ttl_seconds=REPLAY_TTL_SECONDS).url
 
 
+async def delete_recording(db: AsyncSession, storage: Storage, round_id: uuid.UUID) -> None:
+    """Delete one round's recording at the learner's request (FR-SH-17, NFR-SEC-5).
+
+    The file goes first, then the recording columns are cleared; the round keeps
+    `recorded_at`, so the Shadow step stays complete and a grade keyed by the round
+    stays too (ADR 0092). No row lock is held during the storage call: the read takes
+    none and the conditional update runs after it. A recorded round's key never
+    changes, so a crash, a retry or a concurrent retention sweep at worst leaves a key
+    whose file is gone, which the next delete clears.
+    """
+    row = await repository.round_by_id(db, round_id)
+    if row is None:
+        raise _round_not_found()
+    if row.recorded_at is None:
+        raise ProblemError(409, "recording_not_ready", "This round has no saved recording.")
+    key = row.recording_key
+    if key is None:
+        return  # already deleted, by the learner or by retention
+    await storage.delete(key)
+    await repository.clear_recording(db, round_id, key)
+
+
 async def require_round(db: AsyncSession, round_id: uuid.UUID) -> None:
     """404 `round_not_found` unless the round is the signed-in learner's."""
     if await repository.round_by_id(db, round_id) is None:
