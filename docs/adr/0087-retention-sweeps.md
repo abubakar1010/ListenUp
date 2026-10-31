@@ -49,6 +49,10 @@ returns the number of persisted removals and converges safely on repeated runs.
   have no group/other permissions. Markers must be regular, singly linked, owned
   by that user and not writable by other users. Inspection and removal use open
   directory descriptors; replacing the entry pathname cannot redirect deletion.
+  Entries are created with `mkdir(dir_fd=)` and scanned through open descriptors, never
+  `/proc`, and walk trees iteratively, so the scratch module is portable. Isolated media-pool
+  jobs still need Linux (`/proc` accounting in the supervisor and libseccomp); on macOS only
+  default-pool jobs such as export run natively.
   Entry and marker identities are rechecked after scanning and before final unlink.
   Code running as the worker's own Unix user is trusted not to tamper with live
   leases; these checks are not an isolation boundary between same-user processes.
