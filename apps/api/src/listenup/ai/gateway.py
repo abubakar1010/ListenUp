@@ -408,6 +408,11 @@ def get_accounting() -> Accounting:
     return PostgresAccounting(Database(get_settings().database_url))
 
 
+def is_synthetic(provenance: Provenance) -> bool:
+    """True for output a fake provider made up; it is never a learner's result (ADR 0074)."""
+    return provenance.provider in fake_assessment.SYNTHETIC_PROVIDERS
+
+
 @lru_cache
 def get_gateway() -> AIGateway:
     """The process-wide gateway, configured by `LISTENUP_AI_CONFIG` (default `ai.yaml`)."""

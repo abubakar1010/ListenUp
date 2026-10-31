@@ -5,8 +5,8 @@ The round job (after #90) calls these; the domain stays free of `listenup.ai`.
 
 from typing import Any
 
+from listenup.ai.gateway import is_synthetic
 from listenup.ai.ports import SpeechAssessment
-from listenup.ai.providers.fake_assessment import SYNTHETIC_PROVIDERS
 from listenup.modules.grading.domain.delivery import DeliveryParameters, Interval, Word
 
 
@@ -26,7 +26,7 @@ def speech_info(assessment: SpeechAssessment, parameters: DeliveryParameters) ->
         "provider": provenance.provider,
         "model": provenance.model,
         "version": provenance.version,
-        "synthetic": provenance.provider in SYNTHETIC_PROVIDERS,
+        "synthetic": is_synthetic(provenance),
         "parameters_version": parameters.version,
         "parameters_calibrated": parameters.calibrated,
     }
