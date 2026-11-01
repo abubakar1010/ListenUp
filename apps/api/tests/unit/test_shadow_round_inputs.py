@@ -1,5 +1,7 @@
 """Assessment output becomes scoring input and stored provenance (#82, NFR-AI-5)."""
 
+import math
+
 import pytest
 
 from listenup.ai.ports import (
@@ -58,16 +60,7 @@ def test_speech_info_stores_provenance_and_marks_synthetic_output(provider, synt
 
 
 def test_missing_playback_offset_only_disables_timing():
-    from listenup.modules.grading.round_inputs import delivery_result
-
-    result = delivery_result(
-        assessment("fake-assessment"),
-        DeliveryParameters.load(),
-        reference_word_count=2,
-        original=[(0, 10_000, 10_200), (1, 10_300, 10_900)],
-        segment=(10_000, 70_000),
-        playback_offset_ms=None,
-    )
+    result = round_result_of(assessment("fake-assessment"), playback_offset_ms=None)
     assert result["measures"]["timing"] == {
         "score": None,
         "reason": "playback_offset_unknown",
@@ -77,22 +70,121 @@ def test_missing_playback_offset_only_disables_timing():
     assert result["measures"]["fluency"]["score"] is not None
     assert result["filler_count"] == 1
     assert result["speech_info"]["synthetic"] is True
-    assert result["speech_info"]["overall_basis"] == ["fluency", "fillers", "completeness"]
+    assert result["speech_info"]["overall_basis"] == [
+        "pronunciation",
+        "articulation",
+        "fluency",
+        "fillers",
+        "completeness",
+    ]
     assert result["speech_info"]["echo"] == {"status": "unchecked", "message": None}
 
 
-def test_delivery_result_keeps_headphones_warning_and_scores():
-    from listenup.modules.grading.round_inputs import delivery_result
-
-    result = delivery_result(
-        assessment("fake-assessment"),
-        DeliveryParameters.load(),
-        reference_word_count=2,
-        original=[(0, 10_000, 10_200), (1, 10_300, 10_900)],
-        segment=(10_000, 70_000),
-        playback_offset_ms=3_200,
-        leakage=0.5,
-    )
+def test_round_result_keeps_headphones_warning_and_scores():
+    result = round_result_of(assessment("fake-assessment"), leakage=0.5)
     assert result["echo_detected"] is True
     assert result["speech_info"]["echo"] == {"status": "leak", "message": "use_headphones"}
     assert result["measures"]["timing"]["score"] is not None
+
+
+# --- #83: the whole round --------------------------------------------------------
+
+
+def test_reference_frames_become_per_word_prosody():
+    from listenup.modules.grading.domain.speech_measures import Prosody, prosody_from_frames
+
+    # Frames every 20 ms from 10 000 ms; word 0 covers frames 0-4, word 1 frames 5-9.
+    frames: list[int | None] = [6000, 6100, None, 6200, 6300, None, None, None, None, None]
+    result = prosody_from_frames(
+        [(0, 10_000, 10_100), (1, 10_100, 10_200)],
+        frames_start_ms=10_000,
+        frame_step_ms=20,
+        pitch_cents=frames,
+    )
+    assert result == {0: Prosody(0.1, 6150.0), 1: Prosody(0.1, None)}
+
+
+def round_result_of(assessment: SpeechAssessment, **changes: object) -> dict[str, object]:
+    from listenup.modules.grading.domain.speech_measures import Prosody, SpeechParameters
+    from listenup.modules.grading.round_inputs import round_result
+
+    arguments: dict[str, object] = {
+        "reference_words": ["the", "cat"],
+        "original": [(0, 10_000, 10_200), (1, 10_300, 10_900)],
+        "original_prosody": {0: Prosody(0.2, 6000), 1: Prosody(0.6, 6100)},
+        "segment": (10_000, 70_000),
+        "playback_offset_ms": 3_200,
+    }
+    arguments.update(changes)
+    return round_result(
+        assessment,
+        DeliveryParameters.load(),
+        SpeechParameters.load(),
+        **arguments,  # type: ignore[arg-type]
+    )
+
+
+def test_round_result_stores_seven_measures_and_the_overall_over_six():
+    result = round_result_of(assessment())
+    measures = result["measures"]
+    assert set(measures) == {  # type: ignore[arg-type]
+        "timing",
+        "pronunciation",
+        "articulation",
+        "fluency",
+        "fillers",
+        "completeness",
+        "accent",
+    }
+    # "the" has no sounds (word accuracy 0.9), "cat" one sound at 0.8: mean 85.
+    assert measures["pronunciation"]["score"] == 85  # type: ignore[index]
+    assert measures["accent"]["details"]["experimental"] is True  # type: ignore[index]
+    assert measures["accent"]["details"]["compared_with"] == "this_speaker"  # type: ignore[index]
+    info = result["speech_info"]
+    assert "accent" not in info["overall_basis"]  # type: ignore[index]
+    assert info["overall_weights"] == {  # type: ignore[index]
+        "timing": 1,
+        "pronunciation": 1,
+        "articulation": 1,
+        "fluency": 1,
+        "fillers": 1,
+        "completeness": 1,
+    }
+    assert info["speech_parameters_version"] == "1"  # type: ignore[index]
+    assert info["speech_parameters_calibrated"] is False  # type: ignore[index]
+    assert info["parameters_version"] == "1"  # type: ignore[index]
+
+
+def test_round_result_labels_every_segment_word_as_stored_json():
+    words = (
+        WordScore(
+            index=0,
+            text="the",
+            start=3.2,
+            end=3.4,
+            accuracy=0.9,
+            sounds=(SoundScore(label="ð", start=3.2, end=3.4, score=0.1),),
+        ),
+    )
+    lone = assessment().model_copy(update={"words": words})
+    result = round_result_of(lone)
+    assert result["word_labels"] == [
+        {
+            "index": 0,
+            "text": "the",
+            "label": "needs_work",
+            "score": 10,
+            "basis": "sounds",
+            "reasons": [{"sound": "ð", "position": "final", "issue": "dropped", "linking": False}],
+        },
+        {"index": 1, "text": "cat", "label": "missed", "score": None, "basis": None, "reasons": []},
+    ]
+
+
+def test_learner_pitch_is_compared_in_cents_word_by_word():
+    from listenup.modules.grading.round_inputs import spoken_inputs
+
+    spoken, pitch = spoken_inputs(assessment())
+    assert [w.index for w in spoken] == [1, 0]
+    assert spoken[0].sounds[0].label == "k"
+    assert pitch == [(3.2, pytest.approx(1200 * math.log2(110)))]

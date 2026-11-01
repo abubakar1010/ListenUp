@@ -246,7 +246,7 @@ def test_round_job_persists_measures_provenance_and_one_event(migrated_url, reco
         assert db.execute(
             "SELECT count(*) FROM ai.calls WHERE provider='fake-assessment'"
         ).fetchone() == (1,)
-    assert set(measures) == {"timing", "fluency", "fillers", "completeness"}
+    assert {"timing", "fluency", "fillers", "completeness"} <= set(measures)
     assert measures["timing"]["reason"] == "playback_offset_unknown"
     assert measures["completeness"]["score"] == 100
     assert count == 1
@@ -256,6 +256,41 @@ def test_round_job_persists_measures_provenance_and_one_event(migrated_url, reco
     assert info["echo"]["status"] == "unchecked"
     assert calls == ["Hello world. Again."]
     assert published == [(uuid.UUID(learner), EventType.GRADE_READY, round_id)]
+
+
+def test_round_job_stores_seven_measures_and_labels_every_word(migrated_url, recorded, run_round):
+    """#83: FR-SH-9 (seven measures, overall over six), FR-SH-10 (word labels)."""
+    run_round[0]()
+    round_id, _, _ = recorded
+    with psycopg.connect(migrated_url) as db:
+        measures, overall, labels, info = db.execute(
+            "SELECT measures,overall,word_labels,speech_info FROM grading.round_grades "
+            "WHERE round_id=%s",
+            [round_id],
+        ).fetchone()
+    assert set(measures) == {
+        "timing",
+        "pronunciation",
+        "articulation",
+        "fluency",
+        "fillers",
+        "completeness",
+        "accent",
+    }
+    # The fake scores every sound 0.75: pronunciation 75, nothing unclear or dropped.
+    assert measures["pronunciation"]["score"] == 75
+    assert measures["articulation"]["score"] == 100
+    assert measures["accent"]["details"]["experimental"] is True
+    assert "accent" not in info["overall_basis"]
+    basis = [measures[name]["score"] for name in info["overall_basis"]]
+    assert overall == (2 * sum(basis) + len(basis)) // (2 * len(basis))
+    assert info["speech_parameters_version"] == "1"
+    assert set(info["overall_weights"]) == set(info["overall_basis"]) | {"timing"}
+    assert [(w["index"], w["text"], w["label"]) for w in labels] == [
+        (0, "Hello", "good"),
+        (1, "world.", "good"),
+        (2, "Again.", "good"),
+    ]
 
 
 def test_synthetic_grade_is_unavailable_and_retry_is_owned(client, make, recorded, run_round):

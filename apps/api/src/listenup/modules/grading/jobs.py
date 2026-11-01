@@ -290,7 +290,12 @@ async def _grade_round(
     from listenup.ai.policy import CallContext
     from listenup.modules.content import service as content
     from listenup.modules.grading.domain.delivery import DeliveryParameters
-    from listenup.modules.grading.round_inputs import delivery_result
+    from listenup.modules.grading.domain.speech_measures import (
+        Prosody,
+        SpeechParameters,
+        prosody_from_frames,
+    )
+    from listenup.modules.grading.round_inputs import round_result
     from listenup.modules.practice import service as practice
     from listenup.modules.shadow import service as shadow
 
@@ -340,12 +345,24 @@ async def _grade_round(
     if not reference_text.strip():
         raise PermanentError("The segment has no reference words")
     indices = {reference.word_sources[i]: j for j, i in enumerate(chosen)}
-    original = [
-        (indices[(p.passage_transcript_id, index)], start, end)
-        for p in profile.profiles
-        for index, start, end in zip(p.word_indices, p.word_start_ms, p.word_end_ms, strict=True)
-        if (p.passage_transcript_id, index) in indices
-    ]
+    original: list[tuple[int, int, int]] = []
+    original_prosody: dict[int, Prosody] = {}
+    for p in profile.profiles:
+        placed = [
+            (indices[(p.passage_transcript_id, index)], start, end)
+            for index, start, end in zip(
+                p.word_indices, p.word_start_ms, p.word_end_ms, strict=True
+            )
+            if (p.passage_transcript_id, index) in indices
+        ]
+        original += placed
+        # Pitch frames start at the profile's own transcript bounds (media time).
+        original_prosody |= prosody_from_frames(
+            placed,
+            frames_start_ms=p.span[0],
+            frame_step_ms=p.frame_step_ms,
+            pitch_cents=p.pitch_cents,
+        )
     # Fakes do not decode either file. Real reference extraction and inference remain gated.
     with tempfile.TemporaryDirectory(
         prefix="round-", dir=get_settings().media_scratch_dir
@@ -364,11 +381,13 @@ async def _grade_round(
                 audio_seconds=(source.span[1] - source.span[0]) / 1000, round=source.number
             ),
         )
-    values = delivery_result(
+    values = round_result(
         assessment,
         DeliveryParameters.load(),
-        reference_word_count=len(chosen),
+        SpeechParameters.load(),
+        reference_words=[reference.words[i] for i in chosen],
         original=original,
+        original_prosody=original_prosody,
         segment=source.span,
         playback_offset_ms=source.playback_offset_ms,
     )
