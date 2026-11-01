@@ -26,6 +26,7 @@ jobs:
     timeout-minutes: 120
     env:
       BENCHMARK: ${{ inputs.benchmark || 'b3' }}
+      DOCKER_BUILD_RECORD_UPLOAD: 'false'
     steps:
       - uses: actions/checkout@v4
         with:
