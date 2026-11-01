@@ -1,0 +1,40 @@
+{
+  "version": "1",
+  "provisional": true,
+  "calibrated": false,
+  "sounds": {
+    "dropped_below": 0.2,
+    "unclear_below": 0.5,
+    "merged_max_s": 0.03,
+    "linking_gap_s": 0.05
+  },
+  "labels": {"good_from": 0.7},
+  "articulation": {
+    "position_weights": {"initial": 1, "medial": 1, "final": 2},
+    "linking_weight": 2,
+    "issue_weights": {"dropped": 1.0, "merged": 1.0, "unclear": 0.5}
+  },
+  "accent": {
+    "experimental": true,
+    "weights": {"vowels": 40, "stress": 30, "pitch": 30},
+    "min_words": 3,
+    "zero_r": 0.0,
+    "full_r": 0.8,
+    "vowel_labels": [
+      "a", "e", "i", "o", "u", "æ", "ɑ", "ɒ", "ɔ", "ə", "ɚ", "ɛ", "ɜ", "ɝ", "ɪ", "ʊ", "ʌ",
+      "aɪ", "aʊ", "eɪ", "oʊ", "əʊ", "ɔɪ", "iː", "uː", "ɑː", "ɔː", "ɜː"
+    ],
+    "vowel_full_gap": 0.1,
+    "vowel_zero_gap": 0.5
+  },
+  "overall": {
+    "weights": {
+      "timing": 1,
+      "pronunciation": 1,
+      "articulation": 1,
+      "fluency": 1,
+      "fillers": 1,
+      "completeness": 1
+    }
+  }
+}
