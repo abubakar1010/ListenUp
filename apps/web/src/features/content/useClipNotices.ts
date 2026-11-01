@@ -40,6 +40,14 @@ export function noticeFor(item: ContentDetail): ClipNotice | null {
       link: { to: clipPage(item.id), label: 'See why' },
     };
   }
+  if (item.status === 'removed') {
+    // A takedown (#105): the clip's page says why in plain words.
+    return {
+      contentId: item.id,
+      text: `${quoted(item.title)} was removed from ListenUp after a rights complaint.`,
+      link: { to: clipPage(item.id), label: 'See why' },
+    };
+  }
   return null;
 }
 
@@ -63,8 +71,8 @@ export interface ClipNoticesState {
 
 /**
  * Turns `content.ready` events into notices (FR-CI-5, #40): a clip is ready, could not be
- * prepared, or was a copy of one the learner has. Nothing is shown for the clip whose own
- * page is open, since that page says it already.
+ * prepared, was removed after a takedown (#105), or was a copy of one the learner has.
+ * Nothing is shown for the clip whose own page is open, since that page says it already.
  */
 export function useClipNotices(): ClipNoticesState {
   const queryClient = useQueryClient();
