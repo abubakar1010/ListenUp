@@ -55,3 +55,7 @@ The experiment does not demonstrate a single common encoder for all model roles.
 Percentiles use nearest rank: p50 is sorted item 15 and p95 item 29 of 30.
 Spread is maximum minus minimum; the full range is retained. The verdict compares
 the largest per-run p95 with the strict `< 50 s` threshold, without pooling runs.
+
+A successful workflow means that all 30 measurements completed and evidence was
+uploaded. The B3 budget verdict lives in `summary.json` (`pass`) and ADR 0096;
+a completed experiment can report a failed latency target without failing CI.
