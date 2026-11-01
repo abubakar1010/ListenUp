@@ -1,0 +1,74 @@
+name: Speech benchmarks (E4)
+on:
+  workflow_dispatch:
+    inputs:
+      benchmark:
+        description: Benchmark selector (extend registry for future spikes)
+        required: true
+        default: b3
+        type: choice
+        options: [b3]
+  workflow_call:
+    inputs:
+      benchmark:
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - .github/workflows/benchmarks.yml
+      - docs/spikes/shadow21/**
+      - docs/spikes/shadow20/**
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    env:
+      BENCHMARK: ${{ inputs.benchmark || 'b3' }}
+      DOCKER_BUILD_RECORD_UPLOAD: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Record runner facts
+        run: |
+          mkdir -p work/benchmarks/results
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          facts = {cmd: subprocess.check_output(cmd.split(), text=True) for cmd in ['lscpu', 'nproc', 'free -b', 'uname -m']}
+          facts.update(label='CI-runner evidence (E4)', image_os=os.environ.get('ImageOS'), image_version=os.environ.get('ImageVersion'), commit_sha=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), run_id=os.environ['GITHUB_RUN_ID'], attempt=os.environ['GITHUB_RUN_ATTEMPT'])
+          Path('work/benchmarks/results/runner.json').write_text(json.dumps(facts, indent=2))
+          PY
+      - name: Validate selector
+        run: test "$BENCHMARK" = b3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docs/spikes/shadow21/Dockerfile
+          load: true
+          tags: listenup-benchmarks:local
+          cache-from: type=gha,scope=speech-benchmarks-arm
+          cache-to: type=gha,mode=max,scope=speech-benchmarks-arm
+      - name: Test benchmark rules
+        run: |
+          docker run --rm --cpus=2 --memory=8g --memory-swap=8g \
+            -v "$PWD:/repo" listenup-benchmarks:local \
+            python -m unittest discover -s docs/spikes/shadow21 -v
+      - name: Fetch public inputs and run selected benchmark
+        run: |
+          docker run --rm --cpus=2 --memory=8g --memory-swap=8g \
+            -e OMP_NUM_THREADS=2 -e MKL_NUM_THREADS=2 -e OPENBLAS_NUM_THREADS=2 \
+            -v "$PWD:/repo" listenup-benchmarks:local \
+            bash -euc 'python docs/spikes/shadow20/fetch.py work/benchmarks/data --whisper-revision d1d751a5f8271d482d14ca55d9e2deeebbae577f
+            python docs/spikes/shadow21/run.py --data work/benchmarks/data --out work/benchmarks/results'
+      - name: Upload JSON evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ env.BENCHMARK }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: work/benchmarks/results/*.json
+          if-no-files-found: error
