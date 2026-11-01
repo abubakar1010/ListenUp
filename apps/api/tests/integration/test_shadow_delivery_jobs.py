@@ -671,3 +671,38 @@ def test_reference_transcript_wait_reschedules_without_assessment(recorded, run_
     with pytest.raises(Reschedule):
         run_round[0]()
     assert run_round[1] == run_round[2] == []
+
+
+@pytest.mark.parametrize("wait", ["profile", "transcript"])
+def test_a_reference_wait_past_the_deadline_gives_up(
+    migrated_url, recorded, run_round, monkeypatch, wait
+):
+    """The job stops polling once the round's feedback deadline has passed; a learner
+    retry re-admits it with a new deadline."""
+    from listenup.modules.transcript import service as transcript
+    from listenup.platform.errors import ProblemError
+    from listenup.platform.jobs import PermanentError
+
+    async def pending(*args):
+        return transcript.ProfileReadiness("pending", "transcribed")
+
+    async def not_ready(*args):
+        raise ProblemError(409, "transcript_not_ready", "Not ready")
+
+    if wait == "profile":
+        monkeypatch.setattr(transcript, "reference_profile", pending)
+    else:
+        monkeypatch.setattr(transcript, "reference_for_shadow", not_ready)
+    with psycopg.connect(migrated_url) as db:
+        db.execute(
+            "UPDATE grading.round_grades SET feedback_deadline=now() - interval '1 second' "
+            "WHERE round_id=%s",
+            [recorded[0]],
+        )
+    with pytest.raises(PermanentError, match="not ready before the deadline"):
+        run_round[0]()
+    assert run_round[1] == run_round[2] == []
+    with psycopg.connect(migrated_url) as db:
+        assert db.execute(
+            "SELECT status,measures FROM grading.round_grades WHERE round_id=%s", [recorded[0]]
+        ).fetchone() == ("unavailable", None)

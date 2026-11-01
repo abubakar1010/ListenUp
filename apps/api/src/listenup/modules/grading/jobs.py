@@ -2,7 +2,7 @@
 
 import asyncio
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
@@ -271,6 +271,16 @@ async def grade_round(deps: JobDeps, round_id: str, user_id: str, generation: st
         raise
 
 
+def _wait_for_reference(deadline: datetime) -> Exception:
+    """Poll for the transcript or reference profile until the round's deadline, never
+    beyond it: a lost profile job must not keep the speech lane polling. A learner
+    retry admits a new generation with a new deadline (FR-SH-16)."""
+    now = server_now()
+    if now >= deadline:
+        return PermanentError("The reference was not ready before the deadline")
+    return Reschedule(min(now + timedelta(seconds=10), deadline))
+
+
 async def _grade_round(
     deps: JobDeps, round_id: uuid.UUID, learner: uuid.UUID, generation: uuid.UUID
 ) -> None:
@@ -310,11 +320,11 @@ async def _grade_round(
         except ProblemError as error:
             if error.status != 409:
                 raise
-            raise Reschedule(server_now() + timedelta(seconds=10)) from error
+            raise _wait_for_reference(row.feedback_deadline) from error
         if profile.status == "failed":
             raise PermanentError("Reference profile failed")
         if profile.status != "ready":
-            raise Reschedule(server_now() + timedelta(seconds=10))
+            raise _wait_for_reference(row.feedback_deadline)
 
     # E2 must never dispatch to a real provider, including a configured fallback.
     configured = get_gateway()
