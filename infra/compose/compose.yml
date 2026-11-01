@@ -108,6 +108,10 @@ services:
 
   worker:
     <<: *backend
+    # procrastinate waits 30 s (worker.SHUTDOWN_GRACE_SECONDS) for running jobs, then
+    # cancels them; a cancelled upload drains up to 70 s on stalled storage (storage.py).
+    # Docker's default 10 s would kill it first (tests/unit/test_storage_limits.py).
+    stop_grace_period: 2m
     build:
       context: ../..
       dockerfile: infra/docker/backend.Dockerfile
@@ -138,6 +142,10 @@ services:
 
   worker-media:
     <<: *backend
+    # procrastinate waits 30 s (worker.SHUTDOWN_GRACE_SECONDS) for running jobs, then
+    # cancels them; a cancelled upload drains up to 70 s on stalled storage (storage.py).
+    # Docker's default 10 s would kill it first (tests/unit/test_storage_limits.py).
+    stop_grace_period: 2m
     user: "10001:10001"
     init: true
     read_only: true
