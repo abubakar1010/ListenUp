@@ -36,6 +36,26 @@ export function useSessions() {
 }
 
 /**
+ * Delete a plan for good (FR-SH-17): it leaves every list at once, and its recordings,
+ * marks, cards and attempts are removed in the background. The clip stays.
+ */
+export function useDeleteSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<{ request_id: string }>(`/sessions/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        body: { confirm: true },
+      }),
+    onSuccess: () => {
+      for (const queryKey of [SESSIONS_KEY, LIBRARY_KEY, ['cards'], ['review']]) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
+    },
+  });
+}
+
+/**
  * Start a plan. The caller passes one Idempotency-Key per plan it means to start, so a
  * retry after a lost answer returns the same session instead of a second one.
  */

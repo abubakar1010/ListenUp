@@ -113,7 +113,7 @@ async def other_session_ranges(
         text(
             "SELECT m.session_id, m.word_from, m.word_to FROM practice.marks m "
             "JOIN practice.sessions s ON s.id = m.session_id AND s.user_id = m.user_id "
-            "WHERE m.user_id = :learner AND s.created_at < "
+            "WHERE m.user_id = :learner AND s.deleting_at IS NULL AND s.created_at < "
             "(SELECT created_at FROM practice.sessions WHERE id = :session_id) "
             "ORDER BY m.created_at DESC, m.id DESC LIMIT :limit"
         ),
@@ -191,7 +191,8 @@ async def saved_marks(db: AsyncSession, cursor: str | None, limit: int) -> schem
             text("""
         SELECT m.*,s.content_id,'/contents/' || s.content_id || '?at_ms=' || m.at_ms AS source_url
         FROM practice.marks m JOIN practice.sessions s ON s.id=m.session_id AND s.user_id=m.user_id
-        WHERE CAST(:time AS timestamptz) IS NULL OR (m.created_at,m.id)<(:time,:id)
+        WHERE s.deleting_at IS NULL
+        AND (CAST(:time AS timestamptz) IS NULL OR (m.created_at,m.id)<(:time,:id))
         ORDER BY m.created_at DESC,m.id DESC LIMIT :limit
     """),
             {

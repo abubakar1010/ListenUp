@@ -113,3 +113,19 @@ async def delete_content(
 ) -> DeletionAccepted:
     """Confirm irreversible deletion of a clip and its derived data (FR-CI-7)."""
     return DeletionAccepted(request_id=await library.delete_content(session, learner, content_id))
+
+
+@router.delete(
+    "/sessions/{session_id}",
+    status_code=202,
+    responses={404: {"description": "`session_not_found`"}},
+)
+async def delete_session(
+    session_id: uuid.UUID, body: DeleteConfirmation, learner: CurrentLearner, session: DbSession
+) -> DeletionAccepted:
+    """Confirm irreversible deletion of one practice session (FR-SH-17, AT-20).
+
+    The session disappears at once; its recordings, card snippets and rows are removed
+    in the background, storage first. The clip and other sessions stay.
+    """
+    return DeletionAccepted(request_id=await library.delete_session(session, learner, session_id))

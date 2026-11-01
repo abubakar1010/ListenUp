@@ -7,6 +7,7 @@ function here; `tests/integration/test_export.py` fails while any table with a
 """
 
 import uuid
+from dataclasses import replace
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +22,7 @@ from listenup.modules.practice import service as practice
 from listenup.modules.review import service as review
 from listenup.modules.shadow import service as shadow
 from listenup.modules.transcript import service as transcript
-from listenup.platform.export import Contributor, ExportPart, learner_rows
+from listenup.platform.export import Contributor, ExportPart, Row, learner_rows
 
 
 async def _own_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
@@ -62,4 +63,47 @@ CONTRIBUTORS: tuple[Contributor, ...] = (
 
 
 async def collect(session: AsyncSession, learner: uuid.UUID) -> list[ExportPart]:
-    return [await contribute(session, learner) for contribute in CONTRIBUTORS]
+    parts = [await contribute(session, learner) for contribute in CONTRIBUTORS]
+    return _without(parts, set(await practice.deleting_session_ids(session, learner)))
+
+
+# Columns that tie a row to a session or to something that hangs off one.
+_LINKS = ("id", "session_id", "attempt_id", "card_id", "round_id")
+# Analytics events outlive a deleted session by design (ADR 0035).
+_KEPT = frozenset({"ops.analytics_events"})
+
+
+def _without(parts: list[ExportPart], deleting: set[uuid.UUID]) -> list[ExportPart]:
+    """Leave out sessions being deleted and every row under them (#90, ADR 0092).
+
+    The learner asked for them to go, so an export built before the job finishes must
+    not hand them back. A row is dropped when it names such a session, or names a row
+    that does (its attempts, cards, rounds), whichever module exported it.
+    """
+    if not deleting:
+        return parts
+    hidden = set(deleting)
+    for part in parts:
+        for table in part.tables:
+            if table.name not in _KEPT:
+                hidden.update(
+                    row["id"]
+                    for row in table.rows
+                    if row.get("session_id") in hidden and row.get("id") is not None
+                )
+
+    def keep(row: Row) -> bool:
+        return not any(row.get(column) in hidden for column in _LINKS)
+
+    return [
+        replace(
+            part,
+            tables=tuple(
+                table
+                if table.name in _KEPT
+                else replace(table, rows=[row for row in table.rows if keep(row)])
+                for table in part.tables
+            ),
+        )
+        for part in parts
+    ]

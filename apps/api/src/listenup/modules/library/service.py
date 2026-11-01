@@ -47,3 +47,38 @@ async def delete_content(db: AsyncSession, learner: uuid.UUID, target: uuid.UUID
         request_id=str(request),
     )
     return request
+
+
+async def delete_session(db: AsyncSession, learner: uuid.UUID, target: uuid.UUID) -> uuid.UUID:
+    """Hide one practice session and queue its storage-first deletion (#90, ADR 0092).
+
+    The clip and the learner's other sessions stay. The manifest names the session's
+    Shadow recordings and card snippets; the job deletes them before any row.
+    """
+    await practice.mark_for_deletion(db, target)
+    sessions = [target]
+    card_prefixes = await cards.content_deletion_snapshot(db, learner, sessions)
+    prefixes = card_prefixes + await shadow.content_deletion_prefixes(learner, sessions)
+    request = await identity.content_deletion_request(
+        db,
+        learner,
+        target,
+        {
+            "card_prefixes": card_prefixes,
+            "objects_removed": 0,
+            "resource_ids": [
+                str(value)
+                for value in await practice.content_deletion_resource_ids(db, learner, sessions)
+            ],
+        },
+        prefixes,
+        scope="session",
+    )
+    await enqueue(
+        db,
+        jobs.DELETE_SESSION,
+        unique_key=f"session-delete:{request}",
+        lock=f"session-delete:{request}",
+        request_id=str(request),
+    )
+    return request

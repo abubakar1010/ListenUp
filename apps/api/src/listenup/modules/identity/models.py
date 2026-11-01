@@ -116,6 +116,15 @@ class DeletionRequest(Base):
                 "scope='content' AND status IN ('pending','storage_deleted','failed')"
             ),
         ),
+        Index(
+            "deletion_requests_one_open_session_idx",
+            "subject_user_id",
+            "target_id",
+            unique=True,
+            postgresql_where=text(
+                "scope='session' AND status IN ('pending','storage_deleted','failed')"
+            ),
+        ),
         {"schema": "ops"},
     )
 

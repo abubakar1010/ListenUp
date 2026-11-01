@@ -117,3 +117,16 @@ export function useUploadRecording(id: string) {
     onSettled: () => client.invalidateQueries({ queryKey: SESSIONS_KEY }),
   });
 }
+
+/**
+ * Delete one round's recording for good (FR-SH-17). The round stays recorded, so the
+ * plan's progress and any scores stay; only the replay goes.
+ */
+export function useDeleteRecording(sessionId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (roundId: string) =>
+      api(`/shadow/rounds/${encodeURIComponent(roundId)}/recording`, { method: 'DELETE' }),
+    onSuccess: () => client.invalidateQueries({ queryKey: roundsKey(sessionId) }),
+  });
+}
