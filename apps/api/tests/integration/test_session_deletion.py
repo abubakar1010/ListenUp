@@ -451,3 +451,55 @@ def test_routes_by_attempt_or_card_id_treat_a_deleting_session_as_gone(
     assert session_rows(migrated_url, world.sessions["card"])["practice.cards"] == 1
     playback = a.get(f"/api/v1/media/{world.media_id}", follow_redirects=False)
     assert playback.status_code == 307, playback.text
+
+
+def test_a_data_export_leaves_out_sessions_being_deleted(make_client, migrated_url):
+    """Owner decision (review of #263): an export built while a session is being deleted
+    leaves out that session and everything under it (FR-SH-17, DR-2). Analytics events
+    are the ADR 0035 exception and stay."""
+    from listenup.modules.export.collect import collect
+
+    a = make_client()
+    world = seed_learner_data(migrated_url, uuid.UUID(learner_id(a)))
+    with psycopg.connect(migrated_url) as db:
+        db.execute(
+            "INSERT INTO practice.card_reviews(id,card_id,user_id,result) VALUES "
+            "(%s,%s,%s,'heard')",
+            [uuid.uuid4(), world.card_id, world.user_id],
+        )
+        db.execute(
+            "INSERT INTO grading.gist_grades(attempt_id,user_id) VALUES (%s,%s)",
+            [world.blind_attempt_id, world.user_id],
+        )
+    for stage in ("card", "blind", "shadow"):
+        assert delete(a, world.sessions[stage]).status_code == 202
+    gone = {
+        world.sessions["card"],
+        world.sessions["blind"],
+        world.sessions["shadow"],
+        world.blind_attempt_id,
+        world.card_id,
+        world.shadow_round_id,
+    }
+
+    async def build():
+        database = Database(conninfo_to_url(migrated_url))
+        try:
+            async with database.transaction() as db:
+                return await collect(db, world.user_id)
+        finally:
+            await database.dispose()
+
+    tables = {table.name: table.rows for part in asyncio.run(build()) for table in part.tables}
+    for name, rows in tables.items():
+        if name == "ops.analytics_events":
+            continue
+        for row in rows:
+            named = {row.get(c) for c in ("id", "session_id", "attempt_id", "card_id", "round_id")}
+            assert not named & gone, (name, row)
+    kept = {row["id"] for row in tables["practice.sessions"]}
+    assert kept == {s for k, s in world.sessions.items() if k not in ("card", "blind", "shadow")}
+    assert world.dictation_attempt_id in {
+        r["attempt_id"] for r in tables["practice.dictation_attempts"]
+    }
+    assert world.mark_id in {row["id"] for row in tables["practice.marks"]}

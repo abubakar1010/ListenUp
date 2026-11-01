@@ -704,3 +704,21 @@ async def remove_deleted_session(
         text("DELETE FROM practice.sessions WHERE id = :id AND user_id = :user"),
         {"id": session_id, "user": learner},
     )
+
+
+async def deleting_session_ids(db: AsyncSession, learner: uuid.UUID) -> list[uuid.UUID]:
+    """The learner's sessions being deleted and their attempts, for the export (#90)."""
+    from sqlalchemy import text
+
+    sessions = list(
+        (
+            await db.scalars(
+                text(
+                    "SELECT id FROM practice.sessions WHERE user_id=:user "
+                    "AND deleting_at IS NOT NULL"
+                ),
+                {"user": learner},
+            )
+        ).all()
+    )
+    return await content_deletion_resource_ids(db, learner, sessions) if sessions else []
