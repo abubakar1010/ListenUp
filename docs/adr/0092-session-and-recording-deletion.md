@@ -40,6 +40,14 @@ found that storage calls must never run while a row lock is held.
   never recorded answers 409 `recording_not_ready`. A round already cleared, by
   the learner or by retention, answers 204. A failed storage call leaves the key
   for a retry. Voice consent is not required, so withdrawing it never blocks deletion.
+- **Audit and a second sweep for one recording** (owner decision on the #263 review,
+  2026-11-01). The same request writes an `ops.deletion_requests` row with
+  `scope = 'recordings'`, the round as `target_id`, the key in `report.keys` and
+  status `storage_deleted`, due once `LISTENUP_SIGNED_URL_TTL_SECONDS` has passed. A
+  signed upload URL issued before the delete can still put the object back until then.
+  The existing reconciler then queues `library.delete_recordings`, which deletes the key
+  again, with no transaction open, and completes the request. A completed recording
+  request is never swept again.
 - **Trigger rule.** No trigger change is needed. `check_shadow_round` (migration
   `93_shadow_retention`) already accepts exactly one change to a recorded round:
   clearing all four recording columns together while `recorded_at` is unchanged.
@@ -57,6 +65,10 @@ found that storage calls must never run while a row lock is held.
   (ADR 0069) and recording upload (ADR 0070) refuse with 403
   `voice_consent_required` until the current consent is given again, and a pending
   upload is discarded at completion.
+- **Data export** (owner decision, 2026-11-01). An export built while a session is
+  being deleted leaves it out with every row that names it, its attempts, cards or
+  rounds, whichever module exported the row. `export.collect` applies this once for
+  all contributors. Analytics events stay, as ADR 0035 allows.
 - **Browser.** "Delete plan" in Your plans and "Delete recording" beside each replay
   open a confirmation dialog with the safe action focused. A failure keeps the
   dialog open with the error and a retry. Results are announced in a polite status
@@ -67,4 +79,5 @@ found that storage calls must never run while a row lock is held.
 Learners control their recordings individually and per session. Like content
 deletion, a session deletion is asynchronous, but the session is hidden at once.
 Downgrading `90_session_deletion` drops the barrier, so a pending session reappears
-until an upgrade, after which its open request finishes.
+until an upgrade, after which its open request finishes. The owner accepted this on
+2026-11-01 instead of a downgrade that refuses while a deletion is open.

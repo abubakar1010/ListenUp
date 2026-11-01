@@ -34,7 +34,9 @@ Read the section for the area you are changing before you change it. The rules e
   must filter `deleting_at IS NULL`, so a deleted session disappears at once.
   Deleting one Shadow recording reads the round without a lock, deletes the file,
   then clears the four recording columns conditionally; never call storage while
-  holding a row lock.
+  holding a row lock. It writes a `scope = 'recordings'` deletion request that
+  `library.delete_recordings` sweeps once more after the signed-URL lifetime.
+  `export.collect` drops rows tied to a session being deleted.
 - Conversion PUTs use `content.writes.registered_write` and `store`: register under
   account/content locks, drain cancellation, and retain uncertain registrations.
   Do not infer remote completion from registry age or queue status. Stop and settle
