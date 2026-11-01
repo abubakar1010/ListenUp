@@ -19,7 +19,8 @@ export function SessionsSection() {
   const sessions = useSessions();
   const deletion = useDeleteSession();
   const [selected, setSelected] = useState<Session | null>(null);
-  const [notice, setNotice] = useState('');
+  // `count` keys each message, so a repeat of the same text is still a new node.
+  const [notice, setNotice] = useState({ text: '', count: 0 });
   const heading = useRef<HTMLHeadingElement>(null);
   const focusHeading = useFocusLater(heading);
   const items = sessions.data?.pages.flatMap((page) => page.items) ?? [];
@@ -31,7 +32,10 @@ export function SessionsSection() {
         onSuccess: () => {
           setSelected(null);
           // Naming the plan keeps two deletions in a row distinct for screen readers.
-          setNotice(`Plan on ${title} deleted. Its recordings, marks and cards are being removed.`);
+          setNotice((last) => ({
+            text: `Plan on ${title} deleted. Its recordings, marks and cards are being removed.`,
+            count: last.count + 1,
+          }));
           focusHeading();
         },
       });
@@ -49,7 +53,7 @@ export function SessionsSection() {
     );
   }
   // After a deletion the section stays, with its status region, even when it is empty.
-  if (items.length === 0 && !notice) return null;
+  if (items.length === 0 && !notice.text) return null;
   // Plans come newest activity first: only the latest unfinished one gets the primary
   // Resume, so the page keeps one primary action (#197).
   const leadId = items.find((session) => session.status === 'active')?.id;
@@ -64,7 +68,7 @@ export function SessionsSection() {
       >
         Your plans
       </h2>
-      <p role="status">{notice}</p>
+      <p role="status">{notice.text && <span key={notice.count}>{notice.text}</span>}</p>
       {selected && (
         <ConfirmDialog
           title={`Delete this plan on ${selected.content_title}?`}

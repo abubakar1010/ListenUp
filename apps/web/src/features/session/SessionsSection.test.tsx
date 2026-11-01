@@ -166,3 +166,40 @@ test('deleting the last plan keeps the same status region and heading', async ()
   expect(status).toHaveTextContent('Plan on Only talk deleted.');
   await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Your plans' })).toHaveFocus());
 });
+
+test('a second deletion with the same message is announced as a new message', async () => {
+  // Two plans on one clip share a title, so their messages match. A screen reader
+  // announces only a change, so each message must arrive as a new node (review #263).
+  const remaining = new Set(['s1', 's2']);
+  const remove = (id: string) => () => {
+    remaining.delete(id);
+    return jsonResponse(202, { request_id: `r-${id}` });
+  };
+  mockRoutes({
+    'GET /sessions': () =>
+      jsonResponse(200, {
+        items: [...remaining].map((id) => sessionFixture({ id, content_title: 'Same talk' })),
+        next_cursor: null,
+      }),
+    'DELETE /sessions/s1': remove('s1'),
+    'DELETE /sessions/s2': remove('s2'),
+  });
+  renderWithProviders(<SessionsSection />);
+
+  const section = await screen.findByRole('region', { name: 'Your plans' });
+  const status = within(section).getByRole('status');
+  async function deleteFirst() {
+    const rows = within(section).getAllByRole('listitem').length;
+    fireEvent.click(within(section).getAllByRole('button', { name: 'Delete plan Same talk' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete plan' }));
+    await vi.waitFor(() =>
+      expect(within(section).queryAllByRole('listitem')).toHaveLength(rows - 1),
+    );
+    expect(status).toHaveTextContent('Plan on Same talk deleted.');
+    return status.firstChild;
+  }
+  const first = await deleteFirst();
+  const second = await deleteFirst();
+  expect(second).not.toBe(first);
+  expect(screen.getByRole('status')).toBe(status);
+});
