@@ -270,6 +270,9 @@ for (const variant of ['browser default', 'WebM refused (older Safari)'] as cons
       }
       if (/^\/shadow\/rounds\/round-\d\/recording$/.test(path))
         return route.fulfill({ contentType: 'audio/wav', body: wav() });
+      // E2: every round grade is unavailable to learners (ADR 0074, 0099).
+      if (/^\/shadow\/rounds\/round-\d\/grade$/.test(path))
+        return route.fulfill({ json: { status: 'unavailable' } });
       if (path.startsWith(root + '/') && request.method() === 'POST') {
         const number = Number(path.split('/').at(-2));
         if (path.endsWith('/start')) {
@@ -422,9 +425,9 @@ for (const variant of ['browser default', 'WebM refused (older Safari)'] as cons
       const replay = page.getByRole('region', { name: `Round ${number} replay` });
       await expect(replay.getByLabel(`Your recording of round ${number}`)).toBeVisible();
       await expect(replay.getByLabel(`Original, round ${number} segment`)).toBeVisible();
+      await expect(replay.getByText('Feedback unavailable.')).toBeVisible();
     }
     await expect(page.getByRole('button', { name: 'Start round 4' })).toHaveCount(0);
-    await expect(page.getByText('Feedback unavailable.')).toBeVisible();
     await page.reload();
     await expect(page.getByText('All 4 steps finished')).toBeVisible();
     await expect(page.getByLabel('Your recording of round 3')).toBeVisible();
