@@ -235,9 +235,19 @@ async def read_recording(
     },
 )
 async def delete_recording(
-    round_id: uuid.UUID, learner: CurrentLearner, db: DbSession, uploads: UploadsDep
+    round_id: uuid.UUID,
+    request: Request,
+    learner: CurrentLearner,
+    db: DbSession,
+    uploads: UploadsDep,
 ) -> Response:
     """Delete this round's recording for good (FR-SH-17). The round, its time and any
     scores stay. Voice consent is not needed: withdrawing it must not block deletion."""
-    await service.delete_recording(db, uploads.storage, round_id)
+    await service.delete_recording(
+        db,
+        uploads.storage,
+        learner,
+        round_id,
+        request.app.state.settings.signed_url_ttl_seconds,
+    )
     return Response(status_code=204, headers=_NO_STORE)

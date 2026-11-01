@@ -717,7 +717,7 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
     )
 
 
-DeletionScope = Literal["content", "session"]
+DeletionScope = Literal["content", "session", "recordings"]
 """The learner-requested deletions that share one storage-first manifest (ADR 0085, 0092)."""
 
 
@@ -813,6 +813,54 @@ async def fail_content_deletion(
 ) -> None:
     if await content_deletion_state(db, request_id, scope) is not None:
         await repository.mark_deletion_failed(db, request_id)
+
+
+async def recording_deletion_request(
+    db: AsyncSession, learner: uuid.UUID, round_id: uuid.UUID, key: str, delay_seconds: int
+) -> uuid.UUID:
+    """Audit one deleted Shadow recording whose file is already gone (#90, ADR 0092).
+
+    It waits at `storage_deleted` until a signed upload URL issued before the delete
+    has expired; the reconciler then deletes the key once more and completes it.
+    """
+    request = uuid.uuid4()
+    await db.execute(
+        text(
+            "INSERT INTO ops.deletion_requests"
+            "(id,subject_user_id,scope,target_id,status,report,due_at) "
+            "VALUES (:id,:user,'recordings',:target,'storage_deleted',CAST(:report AS jsonb),"
+            "now() + make_interval(secs => :delay))"
+        ),
+        {
+            "id": request,
+            "user": learner,
+            "target": round_id,
+            "report": json.dumps({"keys": [key], "objects_removed": 1}),
+            "delay": delay_seconds,
+        },
+    )
+    return request
+
+
+async def recording_deletions_due(db: AsyncSession) -> list[uuid.UUID]:
+    """Recording deletions whose upload links have expired and are not yet completed."""
+    return list(
+        (
+            await db.scalars(
+                text(
+                    "SELECT id FROM ops.deletion_requests WHERE scope='recordings' "
+                    "AND status IN ('storage_deleted','failed') AND due_at <= now() "
+                    "ORDER BY due_at,id LIMIT 1000"
+                )
+            )
+        ).all()
+    )
+
+
+async def complete_recording_deletion(
+    db: AsyncSession, request_id: uuid.UUID, report: dict[str, Any]
+) -> None:
+    await repository.update_deletion_request(db, request_id, status="completed", report=report)
 
 
 async def _deletion_export_rows(

@@ -14,6 +14,7 @@ from listenup.platform.storage import get_storage
 
 DELETE_CONTENT = "library.delete_content"
 DELETE_SESSION = "library.delete_session"
+DELETE_RECORDINGS = "library.delete_recordings"
 
 identity.on_account_purge(content.require_no_media_writes)
 
@@ -97,6 +98,15 @@ async def reconcile_content_deletions(deps: JobDeps, timestamp: int | None = Non
                 lock=f"content-delete:{request}",
                 request_id=str(request),
             )
+        # A deleted recording is swept once more after its upload link expired (#90).
+        for request in await identity.recording_deletions_due(db):
+            await enqueue(
+                db,
+                DELETE_RECORDINGS,
+                unique_key=f"recordings-delete:{request}",
+                lock=f"recordings-delete:{request}",
+                request_id=str(request),
+            )
         # Session deletions (#90) keep their manifests the same way.
         for request in await identity.content_deletions_to_reconcile(db, "session"):
             await enqueue(
@@ -171,3 +181,29 @@ async def delete_session(deps: JobDeps, request_id: str) -> dict[str, Any] | Non
         await cards.settle_content_deletion(db, learner, report.get("card_prefixes", []))
         await identity.store_content_deletion(db, request, "completed", report, prefixes)
     return report
+
+
+async def give_up_recordings(deps: JobDeps, request_id: str) -> None:
+    async with deps.database.transaction() as db:
+        await identity.fail_content_deletion(db, uuid.UUID(request_id), "recordings")
+
+
+@job(Lane.BACKGROUND, DELETE_RECORDINGS, on_give_up=give_up_recordings)
+async def delete_recordings(deps: JobDeps, request_id: str) -> None:
+    """Delete a deleted recording's key again once its upload link expired (ADR 0092).
+
+    The first delete already ran in the request. This one removes an object a late
+    signed PUT may have put back, then completes the audit. Deleting a missing key is
+    not an error, so a retry is harmless.
+    """
+    request = uuid.UUID(request_id)
+    async with deps.database.transaction() as db:
+        state = await identity.content_deletion_state(db, request, "recordings")
+        if state is None or state["status"] == "completed":
+            return
+        report = dict(state["report"] or {})
+    storage = get_storage()
+    for key in report.get("keys", []):
+        await storage.delete(key)
+    async with deps.database.transaction() as db:
+        await identity.complete_recording_deletion(db, request, report)

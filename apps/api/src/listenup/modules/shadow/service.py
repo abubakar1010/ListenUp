@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.modules.identity import service as identity
 from listenup.modules.practice import service as practice
 from listenup.modules.review import service as review
 from listenup.modules.shadow import repository, schemas
@@ -260,7 +261,13 @@ async def recording_url(db: AsyncSession, storage: Storage, round_id: uuid.UUID)
     return storage.signed_download(row.recording_key, ttl_seconds=REPLAY_TTL_SECONDS).url
 
 
-async def delete_recording(db: AsyncSession, storage: Storage, round_id: uuid.UUID) -> None:
+async def delete_recording(
+    db: AsyncSession,
+    storage: Storage,
+    learner: uuid.UUID,
+    round_id: uuid.UUID,
+    upload_link_seconds: int,
+) -> None:
     """Delete one round's recording at the learner's request (FR-SH-17, NFR-SEC-5).
 
     The file goes first, then the recording columns are cleared; the round keeps
@@ -268,7 +275,9 @@ async def delete_recording(db: AsyncSession, storage: Storage, round_id: uuid.UU
     stays too (ADR 0092). No row lock is held during the storage call: the read takes
     none and the conditional update runs after it. A recorded round's key never
     changes, so a crash, a retry or a concurrent retention sweep at worst leaves a key
-    whose file is gone, which the next delete clears.
+    whose file is gone, which the next delete clears. An `ops.deletion_requests` row
+    audits the delete; after `upload_link_seconds` the reconciler deletes the key again,
+    so a signed PUT issued before the delete cannot leave voice data behind.
     """
     row = await repository.round_by_id(db, round_id)
     if row is None:
@@ -280,6 +289,7 @@ async def delete_recording(db: AsyncSession, storage: Storage, round_id: uuid.UU
         return  # already deleted, by the learner or by retention
     await storage.delete(key)
     await repository.clear_recording(db, round_id, key)
+    await identity.recording_deletion_request(db, learner, round_id, key, upload_link_seconds)
 
 
 async def require_round(db: AsyncSession, round_id: uuid.UUID) -> None:

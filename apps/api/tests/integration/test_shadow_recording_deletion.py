@@ -203,3 +203,82 @@ def test_withdrawn_voice_consent_blocks_rounds_until_given_again(
     assert granted.status_code == 200
     record_round(client, storage, sid, 2)
     assert len(client.get(base(sid)).json()["rounds"]) == 2
+
+
+def test_a_deleted_recording_is_audited_and_deleted_again_after_its_upload_link_expires(
+    client, migrated_url, api_role_url, storage
+):
+    """Owner decision (review of #263): deleting one recording writes an
+    `ops.deletion_requests` row (scope 'recordings'). After the signed upload URL has
+    expired, the reconciler deletes the key once more, so a late retried PUT cannot
+    leave voice data behind, and then completes the request."""
+    import asyncio
+
+    from listenup.modules.library import jobs
+    from listenup.platform.database import Database
+    from listenup.platform.jobs import JobDeps, run_handler
+    from listenup.platform.storage import use_storage
+
+    sid = setup(client, migrated_url, api_role_url)
+    body = record_round(client, storage, sid, 1)
+    rid, key = body["round_id"], key_of(body["upload"])
+    assert delete_recording(client, rid).status_code == 204
+    assert delete_recording(client, rid).status_code == 204  # no second request
+    ttl = client.app.state.settings.signed_url_ttl_seconds
+    with psycopg.connect(migrated_url) as db:
+        rows = db.execute(
+            "SELECT id, status, report->'keys', due_at - requested_at "
+            "FROM ops.deletion_requests WHERE scope='recordings' AND target_id=%s",
+            [rid],
+        ).fetchall()
+    assert len(rows) == 1
+    request, status, keys, delay = rows[0]
+    assert (status, keys) == ("storage_deleted", [key])
+    assert delay.total_seconds() >= ttl
+    storage.arrive(key, 200_000, "audio/webm")  # a stale signed PUT lands late
+
+    async def run(handler, **args):
+        database = Database(conninfo_to_url(migrated_url))
+        try:
+            return await handler(database)
+        finally:
+            await database.dispose()
+
+    def todo():
+        with psycopg.connect(migrated_url) as db:
+            return db.execute(
+                "SELECT count(*) FROM procrastinate.procrastinate_jobs WHERE "
+                "task_name='library.delete_recordings' AND args->>'request_id'=%s "
+                "AND status='todo'",
+                [str(request)],
+            ).fetchone()[0]
+
+    reconcile = lambda database: jobs.reconcile_content_deletions(JobDeps(database, None, 1))  # noqa: E731
+    asyncio.run(run(reconcile))
+    assert todo() == 0  # not before the upload link has expired
+    with psycopg.connect(migrated_url) as db:
+        db.execute("UPDATE ops.deletion_requests SET due_at=requested_at WHERE id=%s", [request])
+    asyncio.run(run(reconcile))
+    assert todo() == 1
+    use_storage(storage)
+    try:
+        asyncio.run(
+            run(
+                lambda database: run_handler(
+                    "library.delete_recordings", JobDeps(database, None, 1), request_id=str(request)
+                )
+            )
+        )
+    finally:
+        use_storage(None)
+    assert key not in storage.objects
+    with psycopg.connect(migrated_url) as db:
+        assert db.execute(
+            "SELECT status FROM ops.deletion_requests WHERE id=%s", [request]
+        ).fetchone() == ("completed",)
+        db.execute(
+            "DELETE FROM procrastinate.procrastinate_jobs WHERE args->>'request_id'=%s",
+            [str(request)],
+        )
+    asyncio.run(run(reconcile))
+    assert todo() == 0  # a completed recording deletion is not swept again
