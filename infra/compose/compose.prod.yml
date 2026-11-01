@@ -126,6 +126,10 @@ services:
   # Default pool: lanes ai and background (email, exports, deletion, telemetry relay).
   worker:
     <<: *hardened
+    # procrastinate waits 30 s (worker.SHUTDOWN_GRACE_SECONDS) for running jobs, then
+    # cancels them; a cancelled upload drains up to 70 s on stalled storage (storage.py).
+    # Docker's default 10 s would kill it first (tests/unit/test_storage_limits.py).
+    stop_grace_period: 2m
     image: ${LISTENUP_REGISTRY:?set in .env}/listenup-worker:${LISTENUP_IMAGE_TAG:?set by deploy.sh}
     environment:
       <<: *app-env
@@ -162,6 +166,10 @@ services:
   # infra/compose/compose.yml, unchanged (tests/unit/test_compose_prod.py compares them).
   worker-media:
     image: ${LISTENUP_REGISTRY:?set in .env}/listenup-worker-media:${LISTENUP_IMAGE_TAG:?set by deploy.sh}
+    # procrastinate waits 30 s (worker.SHUTDOWN_GRACE_SECONDS) for running jobs, then
+    # cancels them; a cancelled upload drains up to 70 s on stalled storage (storage.py).
+    # Docker's default 10 s would kill it first (tests/unit/test_storage_limits.py).
+    stop_grace_period: 2m
     restart: unless-stopped
     user: "10001:10001"
     init: true

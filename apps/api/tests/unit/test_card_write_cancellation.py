@@ -40,7 +40,7 @@ async def test_upload_error_keeps_storage_uncertainty(tmp_path, monkeypatch):
     def lost_response(*args, **kwargs):
         raise OSError("response lost")
 
-    monkeypatch.setattr(storage._client, "upload_file", lost_response)
+    monkeypatch.setattr(storage._writer, "upload_file", lost_response)
     with pytest.raises(StorageWriteUncertain):
         await storage.put_file("users/test/cards/test/snippet.m4a", tmp_path / "input", "audio/mp4")
 

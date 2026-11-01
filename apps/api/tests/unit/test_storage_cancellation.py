@@ -45,8 +45,8 @@ async def test_cancelled_upload_waits_for_the_thread_even_after_repeated_cancell
         finally:
             finished.set()
 
-    monkeypatch.setattr(storage._client, "upload_file", upload)
-    monkeypatch.setattr(storage._client, "put_object", upload)
+    monkeypatch.setattr(storage._writer, "upload_file", upload)
+    monkeypatch.setattr(storage._writer, "put_object", upload)
     path = tmp_path / "file"
     path.write_bytes(b"data")
     operation = (
@@ -82,7 +82,7 @@ async def test_upload_failure_is_reported_when_the_caller_was_not_cancelled(
     def fail(**kwargs: Any) -> None:
         raise RuntimeError("upload refused")
 
-    monkeypatch.setattr(storage._client, "put_object", fail)
+    monkeypatch.setattr(storage._writer, "put_object", fail)
     with pytest.raises(RuntimeError) as raised:
         await storage.put("users/1/file", b"data", "audio/mp4")
     assert str(raised.value) == "upload refused"
@@ -101,8 +101,8 @@ async def test_uploads_run_in_their_own_thread_pool(
     def upload(*args: Any, **kwargs: Any) -> None:
         threads.append(threading.current_thread().name)
 
-    monkeypatch.setattr(storage._client, "upload_file", upload)
-    monkeypatch.setattr(storage._client, "put_object", upload)
+    monkeypatch.setattr(storage._writer, "upload_file", upload)
+    monkeypatch.setattr(storage._writer, "put_object", upload)
     path = tmp_path / "file"
     path.write_bytes(b"data")
     if file_upload:
