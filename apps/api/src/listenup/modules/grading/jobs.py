@@ -277,8 +277,6 @@ async def _grade_round(
     import tempfile
     from pathlib import Path
 
-    from listenup.ai.config import AIConfig
-    from listenup.ai.gateway import AIGateway
     from listenup.ai.policy import CallContext
     from listenup.modules.content import service as content
     from listenup.modules.grading.domain.delivery import DeliveryParameters
@@ -319,13 +317,10 @@ async def _grade_round(
             raise Reschedule(server_now() + timedelta(seconds=10))
 
     # E2 must never dispatch to a real provider, including a configured fallback.
-    entry = get_gateway().entry(Role.SPEECH_ASSESSMENT)
-    if entry.provider != "fake-assessment":
+    configured = get_gateway()
+    if configured.entry(Role.SPEECH_ASSESSMENT).provider != "fake-assessment":
         raise PermanentError("E2 requires the fake-assessment provider")
-    gateway = AIGateway(
-        AIConfig(version=1, roles={Role.SPEECH_ASSESSMENT: (entry,)}),
-        environment=get_settings().environment,
-    )
+    gateway = configured.only(Role.SPEECH_ASSESSMENT)
     chosen = [
         i
         for i, (start, end) in enumerate(zip(reference.start_ms, reference.end_ms, strict=True))

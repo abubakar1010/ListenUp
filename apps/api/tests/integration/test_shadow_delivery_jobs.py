@@ -109,6 +109,7 @@ def test_assessment_source_authorizes_round_and_uses_original_words(migrated_url
 
 @pytest.fixture
 def run_round(migrated_url, recorded, storage, monkeypatch):
+    from listenup.ai.accounting import PostgresAccounting
     from listenup.ai.config import AIConfig, ProviderEntry
     from listenup.ai.gateway import AIGateway
     from listenup.ai.ports import Role
@@ -120,23 +121,21 @@ def run_round(migrated_url, recorded, storage, monkeypatch):
     from tests.integration.conftest import conninfo_to_url
 
     round_id, learner, sid = recorded
-    gateway = AIGateway(
-        AIConfig(
-            version=1,
-            roles={
-                Role.SPEECH_ASSESSMENT: (
-                    ProviderEntry(
-                        provider="fake-assessment",
-                        model="synthetic-v1",
-                        accepted=True,
-                        local=True,
-                        trains_on_inputs=False,
-                    ),
-                )
-            },
-        )
+    configured = jobs.get_gateway
+    config = AIConfig(
+        version=1,
+        roles={
+            Role.SPEECH_ASSESSMENT: (
+                ProviderEntry(
+                    provider="fake-assessment",
+                    model="synthetic-v1",
+                    accepted=True,
+                    local=True,
+                    trains_on_inputs=False,
+                ),
+            )
+        },
     )
-    monkeypatch.setattr(jobs, "get_gateway", lambda: gateway)
     monkeypatch.setattr(jobs, "get_storage", lambda: storage)
     calls, published = [], []
     assess = FakeAssessment.assess
@@ -205,6 +204,16 @@ def run_round(migrated_url, recorded, storage, monkeypatch):
 
     async def run(generation_override=None):
         database = Database(conninfo_to_url(migrated_url))
+        # AI calls are metered in the database under test, not the settings database.
+        # A test that installed its own gateway keeps it.
+        if jobs.get_gateway is configured or getattr(jobs.get_gateway, "fixture", False):
+            gateway = AIGateway(config, accounting=PostgresAccounting(database))
+
+            def fixture_gateway() -> AIGateway:
+                return gateway
+
+            fixture_gateway.fixture = True  # type: ignore[attr-defined]
+            monkeypatch.setattr(jobs, "get_gateway", fixture_gateway)
         try:
             await jobs.grade_round(
                 JobDeps(database, None, 1),
@@ -232,6 +241,11 @@ def test_round_job_persists_measures_provenance_and_one_event(migrated_url, reco
             [round_id],
         ).fetchone()
     assert status == "scored"
+    with psycopg.connect(migrated_url) as db:
+        # Metered in the database the job runs against, once; the rerun is a no-op.
+        assert db.execute(
+            "SELECT count(*) FROM ai.calls WHERE provider='fake-assessment'"
+        ).fetchone() == (1,)
     assert set(measures) == {"timing", "fluency", "fillers", "completeness"}
     assert measures["timing"]["reason"] == "playback_offset_unknown"
     assert measures["completeness"]["score"] == 100

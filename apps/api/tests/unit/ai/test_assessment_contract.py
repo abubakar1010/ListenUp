@@ -167,3 +167,46 @@ async def test_second_fake_is_a_gateway_fallback_when_first_is_unavailable(fake_
     assert result.provenance.provider == "fake-assessment"
     assert result.words[0].sounds[0].score == 0.75
     assert [row["outcome"] for row in fake_accounting.calls] == ["quota", "ok"]
+
+
+@pytest.mark.anyio
+async def test_a_single_provider_gateway_keeps_accounting_and_never_falls_back(
+    tmp_path, monkeypatch
+):
+    """E2 jobs call only the admitted provider, metered by the caller's accounting."""
+    from listenup.ai.config import ProviderEntry
+    from listenup.ai.errors import TransientProviderError
+    from listenup.ai.providers.fake_assessment import FakeAssessment
+    from tests.unit.ai.accounting_fake import FakeAccounting
+
+    synthetic = ProviderEntry(
+        provider="fake-assessment",
+        model="synthetic-v1",
+        accepted=True,
+        local=True,
+        trains_on_inputs=False,
+    )
+    fallback = load_config(FAKE_CONFIG).providers(Role.SPEECH_ASSESSMENT)[0]
+    config = load_config(FAKE_CONFIG)
+    config = config.model_copy(update={"roles": {Role.SPEECH_ASSESSMENT: (synthetic, fallback)}})
+    accounting = FakeAccounting()
+    gateway = AIGateway(config, accounting=accounting, sleep=_no_sleep)
+    only = gateway.only(Role.SPEECH_ASSESSMENT)
+
+    async def fail(self, *args):
+        raise TransientProviderError("down")
+
+    monkeypatch.setattr(FakeAssessment, "assess", fail)
+    recording, original = tmp_path / "recording", tmp_path / "original"
+    recording.write_bytes(b"r")
+    original.write_bytes(b"o")
+    with pytest.raises(AIUnavailable):
+        await only.assess(recording, "hello world", original)
+    assert accounting.calls and {c["provider"] for c in accounting.calls} == {"fake-assessment"}
+    # The full gateway would have fallen back to the other provider.
+    await gateway.assess(recording, "hello world", original)
+    assert "fake" in {c["provider"] for c in accounting.calls}
+
+
+async def _no_sleep(_: float) -> None:
+    return None
