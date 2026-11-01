@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Protocol
 
 import anyio.to_thread
 import boto3
+from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
@@ -36,19 +37,46 @@ CACHE_SIZE = 10_000
 DELETE_BATCH = 1000  # the S3 limit for one DeleteObjects call
 DOWNLOAD_CHUNK = 1024 * 1024
 
-# One request waits at most (1 + MAX_RETRIES) * (CONNECT_TIMEOUT + READ_TIMEOUT) = 26 s. A write
-# is drained on cancellation, and the pool's threads are joined at exit, so a stalled
-# request must end inside the worker's shutdown grace (worker.SHUTDOWN_GRACE_SECONDS, 30 s).
-# botocore's defaults (60 s each, legacy retries) could hold a stopping worker for minutes.
-CONNECT_TIMEOUT_SECONDS = 3
-READ_TIMEOUT_SECONDS = 10
+# Writes are drained on cancellation and the write pool's threads are joined at exit, so
+# a stopping worker waits for them. procrastinate waits worker.SHUTDOWN_GRACE_SECONDS for
+# running jobs, then cancels them and waits for them without a limit, so the container's
+# stop timeout (`stop_grace_period` in infra/compose) must cover the grace plus the drain.
+# Only the write client has these bounds; reads, deletes and signing keep botocore's
+# defaults (60 s timeouts, five attempts), because nothing waits for them at shutdown.
+#
+# They are idle bounds. Each attempt can wait out the connect timeout, botocore's wait
+# for `100 Continue`, a stalled body send (urllib3 sends under the connect timeout) and
+# the read timeout; the one retry first sleeps up to a second. A server that keeps
+# trickling bytes is not stalled and holds a write longer: only the stop timeout ends it.
+CONNECT_TIMEOUT_SECONDS: float = 3
+READ_TIMEOUT_SECONDS: float = 10
 MAX_RETRIES = 1  # botocore counts retries after the first attempt
+EXPECT_CONTINUE_SECONDS = 1  # botocore waits this long for `100 Continue` before a body
+RETRY_BACKOFF_SECONDS = 1  # the most botocore sleeps before its first retry
+# A multipart upload is several requests, but once one has failed the parts not yet sent
+# are skipped, so at most two wait in turn: the stalled request (a part, or the request
+# that completes the upload) and the abort that follows it.
+STALLED_WRITE_REQUESTS = 2
+TRANSFER_CONFIG = TransferConfig()
+
+
+def stalled_request_seconds() -> float:
+    """The longest one write request waits on storage that has stopped answering."""
+    attempt = 2 * CONNECT_TIMEOUT_SECONDS + EXPECT_CONTINUE_SECONDS + READ_TIMEOUT_SECONDS
+    return (1 + MAX_RETRIES) * attempt + MAX_RETRIES * RETRY_BACKOFF_SECONDS
+
+
+def write_drain_seconds() -> float:
+    """The longest a cancelled write waits on storage that has stopped answering (70 s)."""
+    return STALLED_WRITE_REQUESTS * stalled_request_seconds()
+
 
 # Uploads have their own threads: the loop's default executor is small on a small host
 # and shared with `asyncio.to_thread` and DNS lookups, which must not queue behind them.
-# Eight matches the widest worker lane (the AI lane runs 8 jobs); more uploads wait for a
-# thread. A queued upload cannot be withdrawn: it runs even if its caller is cancelled,
-# so a stopping process also waits for the queue.
+# Uploads come from intake and background jobs, one at a time per worker pool, so eight
+# threads leave room; more uploads wait for a thread. A queued upload cannot be
+# withdrawn: it runs even if its caller is cancelled, so a stopping process also waits
+# for the queue.
 WRITE_THREADS = 8
 _write_pool = ThreadPoolExecutor(max_workers=WRITE_THREADS, thread_name_prefix="storage-write")
 
@@ -121,13 +149,23 @@ class S3Storage:
         self._clock = clock
         self._cache: OrderedDict[tuple[str, str | None], SignedUrl] = OrderedDict()
         self._client = self._make_client(settings, settings.s3_endpoint_url)
+        self._writer = self._make_client(settings, settings.s3_endpoint_url, bounded=True)
         # Signed URLs must name the host the browser can reach.
         self._signer = self._make_client(
             settings, settings.s3_public_endpoint_url or settings.s3_endpoint_url
         )
 
     @staticmethod
-    def _make_client(settings: Settings, endpoint_url: str) -> "S3Client":
+    def _make_client(settings: Settings, endpoint_url: str, bounded: bool = False) -> "S3Client":
+        config = Config(signature_version="s3v4", s3={"addressing_style": "path"})
+        if bounded:
+            config = config.merge(
+                Config(
+                    connect_timeout=CONNECT_TIMEOUT_SECONDS,
+                    read_timeout=READ_TIMEOUT_SECONDS,
+                    retries={"max_attempts": MAX_RETRIES, "mode": "standard"},
+                )
+            )
         return boto3.client(
             "s3",
             endpoint_url=endpoint_url,
@@ -135,13 +173,7 @@ class S3Storage:
             aws_access_key_id=settings.s3_access_key,
             aws_secret_access_key=settings.s3_secret_key.get_secret_value(),
             # Path-style addressing works with every S3-compatible server.
-            config=Config(
-                signature_version="s3v4",
-                s3={"addressing_style": "path"},
-                connect_timeout=CONNECT_TIMEOUT_SECONDS,
-                read_timeout=READ_TIMEOUT_SECONDS,
-                retries={"max_attempts": MAX_RETRIES, "mode": "standard"},
-            ),
+            config=config,
         )
 
     def signed_upload(
@@ -200,7 +232,7 @@ class S3Storage:
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         check_key(key)
         await _write_to_completion(
-            lambda: self._client.put_object(
+            lambda: self._writer.put_object(
                 Bucket=self.bucket, Key=key, Body=data, ContentType=content_type
             )
         )
@@ -211,8 +243,12 @@ class S3Storage:
 
         def upload() -> None:
             try:
-                self._client.upload_file(
-                    str(path), self.bucket, key, ExtraArgs={"ContentType": content_type}
+                self._writer.upload_file(
+                    str(path),
+                    self.bucket,
+                    key,
+                    ExtraArgs={"ContentType": content_type},
+                    Config=TRANSFER_CONFIG,
                 )
             except Exception as error:
                 raise StorageWriteUncertain(
