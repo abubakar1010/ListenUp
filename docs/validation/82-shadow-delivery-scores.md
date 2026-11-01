@@ -252,3 +252,20 @@ quality result. OpenAPI export and `pnpm api:generate` completed successfully.
 No quality acceptance is implied by these checks: real-sample AT-17, B4 filler
 recall/count accuracy, p95 50 s and real leakage reliability remain **not met**.
 Browser offset capture and persistence remain with their owners (ADR 0093).
+
+## Review of the full pipeline (2026-11-01)
+
+The second fresh-session review (posted on PR #261) covered the pipeline commits
+through `f29c4c5`. Its findings, fixed test-first:
+
+| Finding | Red (observed) | Green (observed) |
+| --- | --- | --- |
+| N2: the E2 gateway ignored the caller's accounting, so calls were metered in the settings database | `test_a_single_provider_gateway_keeps_accounting_and_never_falls_back`: `AttributeError: 'AIGateway' object has no attribute 'only'`. `test_round_job_persists_measures_provenance_and_one_event` with an `ai.calls` check: `assert (0,) == (1,)` | 23 contract tests and 25 round-job tests passed. The round-job tests also passed with `LISTENUP_DATABASE_URL` on an unmigrated database, where 7 had failed with `ai.quota_usage` missing |
+| N1: the job polled every 10 s, without bound, for a reference that was not ready | `test_a_reference_wait_past_the_deadline_gives_up` (profile and transcript): `Reschedule: job is not due yet` | 27 passed |
+| N4: `delivery_result` recomputed the overall score outside the domain | `test_an_unknown_recording_clock_leaves_only_timing_unobservable`: `TypeError: unexpected keyword argument 'clock_known'` | 82 passed, including `test_missing_playback_offset_only_disables_timing` |
+
+Not changed: N5 (`assert` for type narrowing). The API uses that pattern in 31 places
+and never runs with `-O`. N3 (Database Design §6 does not list `generation`,
+`feedback_deadline`, the composite foreign key and the `speech_info` check, and its
+export note) needs the design owner. Q5 (whether exports carry synthetic round
+evidence) is open for the owner.
