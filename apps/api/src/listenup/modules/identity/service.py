@@ -842,16 +842,21 @@ async def recording_deletion_request(
     return request
 
 
-async def recording_deletions_due(db: AsyncSession) -> list[uuid.UUID]:
-    """Recording deletions whose upload links have expired and are not yet completed."""
+async def recording_deletions_due(db: AsyncSession, retry_after: timedelta) -> list[uuid.UUID]:
+    """Recording deletions whose upload links have expired and are not yet completed.
+
+    A request whose sweep gave up ('failed') is due again `retry_after` after it failed.
+    """
     return list(
         (
             await db.scalars(
                 text(
                     "SELECT id FROM ops.deletion_requests WHERE scope='recordings' "
-                    "AND status IN ('storage_deleted','failed') AND due_at <= now() "
+                    "AND due_at <= now() AND (status = 'storage_deleted' OR "
+                    "(status = 'failed' AND failed_at <= now() - :retry_after)) "
                     "ORDER BY due_at,id LIMIT 1000"
-                )
+                ),
+                {"retry_after": retry_after},
             )
         ).all()
     )

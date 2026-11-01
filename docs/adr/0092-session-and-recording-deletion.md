@@ -47,7 +47,10 @@ found that storage calls must never run while a row lock is held.
   signed upload URL issued before the delete can still put the object back until then.
   The existing reconciler then queues `library.delete_recordings`, which deletes the key
   again, with no transaction open, and completes the request. A completed recording
-  request is never swept again.
+  request is never swept again. Only the request whose conditional clear changed the
+  round writes the row, so two racing deletes are audited once. A sweep that gives up
+  marks the row `failed`; the reconciler tries it again an hour after it failed
+  (`RECORDINGS_RETRY_AFTER`), as account purge does.
 - **Trigger rule.** No trigger change is needed. `check_shadow_round` (migration
   `93_shadow_retention`) already accepts exactly one change to a recorded round:
   clearing all four recording columns together while `recorded_at` is unchanged.

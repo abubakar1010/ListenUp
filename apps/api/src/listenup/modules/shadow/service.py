@@ -276,8 +276,9 @@ async def delete_recording(
     none and the conditional update runs after it. A recorded round's key never
     changes, so a crash, a retry or a concurrent retention sweep at worst leaves a key
     whose file is gone, which the next delete clears. An `ops.deletion_requests` row
-    audits the delete; after `upload_link_seconds` the reconciler deletes the key again,
-    so a signed PUT issued before the delete cannot leave voice data behind.
+    audits the delete, written only by the request that cleared the round. After
+    `upload_link_seconds` the reconciler deletes the key again, so a signed PUT issued
+    before the delete cannot leave voice data behind.
     """
     row = await repository.round_by_id(db, round_id)
     if row is None:
@@ -288,8 +289,9 @@ async def delete_recording(
     if key is None:
         return  # already deleted, by the learner or by retention
     await storage.delete(key)
-    await repository.clear_recording(db, round_id, key)
-    await identity.recording_deletion_request(db, learner, round_id, key, upload_link_seconds)
+    # Only the delete that cleared the round audits it, so a race writes one row (#263).
+    if await repository.clear_recording(db, round_id, key):
+        await identity.recording_deletion_request(db, learner, round_id, key, upload_link_seconds)
 
 
 async def require_round(db: AsyncSession, round_id: uuid.UUID) -> None:

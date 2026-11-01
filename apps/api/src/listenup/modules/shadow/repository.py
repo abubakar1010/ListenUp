@@ -72,13 +72,16 @@ async def round_by_id(
     )
 
 
-async def clear_recording(db: AsyncSession, round_id: uuid.UUID, key: str) -> None:
+async def clear_recording(db: AsyncSession, round_id: uuid.UUID, key: str) -> bool:
     """Clear the four recording columns together, the one change `check_shadow_round`
-    allows on a recorded round; only while the round still holds this key."""
-    await db.execute(
+    allows on a recorded round; only while the round still holds this key. False when
+    another delete or retention cleared it first."""
+    cleared = await db.scalar(
         text(
             "UPDATE practice.shadow_rounds SET recording_key = NULL, recording_mime = NULL, "
-            "recording_bytes = NULL, uploaded_at = NULL WHERE id = :id AND recording_key = :key"
+            "recording_bytes = NULL, uploaded_at = NULL WHERE id = :id AND recording_key = :key "
+            "RETURNING id"
         ),
         {"id": round_id, "key": key},
     )
+    return cleared is not None

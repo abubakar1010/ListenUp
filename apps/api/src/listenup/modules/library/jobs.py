@@ -1,6 +1,7 @@
 """Storage-first content cleanup with durable retry manifests (DR-2, ADR 0085)."""
 
 import uuid
+from datetime import timedelta
 from typing import Any
 
 from listenup.modules.cards import service as cards
@@ -15,6 +16,8 @@ from listenup.platform.storage import get_storage
 DELETE_CONTENT = "library.delete_content"
 DELETE_SESSION = "library.delete_session"
 DELETE_RECORDINGS = "library.delete_recordings"
+# A recording sweep that gave up is tried again this long after it failed (#263 review).
+RECORDINGS_RETRY_AFTER = timedelta(hours=1)
 
 identity.on_account_purge(content.require_no_media_writes)
 
@@ -99,7 +102,7 @@ async def reconcile_content_deletions(deps: JobDeps, timestamp: int | None = Non
                 request_id=str(request),
             )
         # A deleted recording is swept once more after its upload link expired (#90).
-        for request in await identity.recording_deletions_due(db):
+        for request in await identity.recording_deletions_due(db, RECORDINGS_RETRY_AFTER):
             await enqueue(
                 db,
                 DELETE_RECORDINGS,

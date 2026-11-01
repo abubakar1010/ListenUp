@@ -282,3 +282,100 @@ def test_a_deleted_recording_is_audited_and_deleted_again_after_its_upload_link_
         )
     asyncio.run(run(reconcile))
     assert todo() == 0  # a completed recording deletion is not swept again
+
+
+def recording_requests(url, round_id):
+    with psycopg.connect(url) as db:
+        return db.execute(
+            "SELECT id, status FROM ops.deletion_requests WHERE scope='recordings' "
+            "AND target_id=%s",
+            [round_id],
+        ).fetchall()
+
+
+def test_a_delete_that_another_one_beat_writes_no_second_audit_row(
+    client, migrated_url, api_role_url, storage, monkeypatch
+):
+    """Review of #263: when a concurrent delete (or retention) clears the round while
+    this request deletes the file, only the request that cleared it audits the delete."""
+    sid = setup(client, migrated_url, api_role_url)
+    body = record_round(client, storage, sid, 1)
+    original = storage.delete
+
+    async def raced(key):
+        await original(key)
+        with psycopg.connect(migrated_url, autocommit=True) as db:
+            db.execute(
+                "UPDATE practice.shadow_rounds SET recording_key=NULL, recording_mime=NULL, "
+                "recording_bytes=NULL, uploaded_at=NULL WHERE id=%s",
+                [body["round_id"]],
+            )
+
+    monkeypatch.setattr(storage, "delete", raced)
+    assert delete_recording(client, body["round_id"]).status_code == 204
+    assert recording_requests(migrated_url, body["round_id"]) == []
+
+
+def test_a_recording_sweep_that_gave_up_is_retried_after_a_wait(
+    client, migrated_url, api_role_url, storage
+):
+    """Review of #263: an exhausted `library.delete_recordings` marks its request failed;
+    the reconciler retries it only after `RECORDINGS_RETRY_AFTER`, then completes it."""
+    import asyncio
+
+    from listenup.modules.library import jobs
+    from listenup.platform.database import Database
+    from listenup.platform.jobs import JobDeps, run_handler
+    from listenup.platform.storage import use_storage
+
+    sid = setup(client, migrated_url, api_role_url)
+    body = record_round(client, storage, sid, 1)
+    rid, key = body["round_id"], key_of(body["upload"])
+    assert delete_recording(client, rid).status_code == 204
+    [(request, _)] = recording_requests(migrated_url, rid)
+
+    async def run(handler):
+        database = Database(conninfo_to_url(migrated_url))
+        try:
+            return await handler(JobDeps(database, None, 1))
+        finally:
+            await database.dispose()
+
+    def queued():
+        with psycopg.connect(migrated_url) as db:
+            return db.execute(
+                "SELECT count(*) FROM procrastinate.procrastinate_jobs WHERE "
+                "task_name='library.delete_recordings' AND args->>'request_id'=%s "
+                "AND status='todo'",
+                [str(request)],
+            ).fetchone()[0]
+
+    with psycopg.connect(migrated_url) as db:
+        db.execute("UPDATE ops.deletion_requests SET due_at=requested_at WHERE id=%s", [request])
+    asyncio.run(run(lambda deps: jobs.give_up_recordings(deps, str(request))))
+    assert recording_requests(migrated_url, rid) == [(request, "failed")]
+    asyncio.run(run(jobs.reconcile_content_deletions))
+    assert queued() == 0  # not straight away
+    with psycopg.connect(migrated_url) as db:
+        db.execute(
+            "UPDATE ops.deletion_requests SET failed_at = failed_at - %s WHERE id=%s",
+            [jobs.RECORDINGS_RETRY_AFTER, request],
+        )
+    asyncio.run(run(jobs.reconcile_content_deletions))
+    assert queued() == 1
+    storage.arrive(key, 200_000, "audio/webm")
+    use_storage(storage)
+    try:
+        asyncio.run(
+            run(
+                lambda deps: run_handler("library.delete_recordings", deps, request_id=str(request))
+            )
+        )
+    finally:
+        use_storage(None)
+    assert key not in storage.objects
+    assert recording_requests(migrated_url, rid) == [(request, "completed")]
+    # A completed request makes the job a no-op.
+    asyncio.run(
+        run(lambda deps: run_handler("library.delete_recordings", deps, request_id=str(request)))
+    )
