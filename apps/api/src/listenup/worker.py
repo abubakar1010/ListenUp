@@ -57,7 +57,9 @@ JOB_MODULES: list[str] = [
 ]
 
 
-# How long a stopping worker waits for its running jobs. S3 timeouts are sized to fit it.
+# How long a stopping worker waits for its running jobs before cancelling them. A cancelled
+# upload still drains (storage.write_drain_seconds), so the containers' stop_grace_period
+# in infra/compose covers both.
 SHUTDOWN_GRACE_SECONDS = 30
 
 
