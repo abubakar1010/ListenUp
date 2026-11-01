@@ -22,3 +22,36 @@ word model, fp32 phone model, small.en int8 beam 5. Each recording makes one
 shared phoneme traversal, with bounded windows, used by both GOP measures.
 Separate word-alignment and Whisper traversals are included in the timer.
 No real provider, learner grading, calibration or B4 quality pass is implied.
+
+## Workload and timing boundaries
+
+For each of bdl, slt and clb, take the lexicographically sorted common prompts
+and append whole utterances, without new silence, until duration reaches 75 s.
+Start the next round at the next utterance; stop after ten rounds per speaker.
+References use slt, clb and bdl respectively and the exact same prompt sequence.
+Utterances are neither repeated within a speaker's ten rounds nor time-stretched.
+Final utterances remain intact, so round lengths exceed 75 s slightly. The
+artifact manifest records all source names, texts, durations and waveform hashes.
+These are independent read-speech proxies, not natural learner shadows.
+
+All reference decode/alignment/GOP/pitch/transcript work finishes before timing;
+references remain in memory. A complete candidate round warms every model and
+transform. Thirty candidates then run serially with a monotonic wall timer.
+The timer starts before ffmpeg decode and ends after the complete `assess` result,
+including VAD, phonemization, CTC alignment, ASR, pitch, echo and measure transforms.
+JSON artifact writing, model loading, downloads and feedback generation are outside
+that boundary. No failed or missing recording is dropped from the percentile.
+
+Silero VAD selects speech with 400 ms padding, splitting retained intervals into
+at most 30 s acoustic windows. Both word and phone models traverse those windows
+once each; GOP pronunciation and articulation share the phone logits. Inference
+outputs are placed on the recording's 20 ms grid; skipped gaps contain blank-only
+logits. The window's final incomplete convolution frame is also blank. This
+preserves the clock for the existing CTC/pitch measures, but window seams and VAD
+are unvalidated quality changes. Whisper uses its own default VAD padding and is
+included in full. There is no per-utterance oracle alignment in the timed path.
+The experiment does not demonstrate a single common encoder for all model roles.
+
+Percentiles use nearest rank: p50 is sorted item 15 and p95 item 29 of 30.
+Spread is maximum minus minimum; the full range is retained. The verdict compares
+the largest per-run p95 with the strict `< 50 s` threshold, without pooling runs.
