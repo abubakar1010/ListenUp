@@ -374,7 +374,10 @@ def score_round(
     recorded: Sequence[Word],
     fillers: Sequence[Interval],
     leakage: float | None,
+    clock_known: bool = True,
 ) -> DeliveryScores:
+    """`clock_known=False` when the playback offset is unknown (ADR 0093): timing is
+    null, never assumed; fluency, fillers and completeness do not use the clock."""
     echo = _echo(parameters.raw["echo"], leakage)
     matched = [w for w in recorded if 0 <= w.index < reference_word_count]
     unobservable = (
@@ -388,7 +391,11 @@ def score_round(
         empty = {name: Measure(None, unobservable) for name in MEASURES}
         return DeliveryScores(empty, None, (), len(fillers), echo, parameters.version)
     measures = {
-        "timing": _timing(parameters.raw["timing"], matched, original),
+        "timing": (
+            _timing(parameters.raw["timing"], matched, original)
+            if clock_known
+            else Measure(None, "playback_offset_unknown")
+        ),
         "fluency": _fluency(parameters.raw["fluency"], matched, original),
         "fillers": _fillers(parameters.raw["fillers"], fillers, original),
         "completeness": _completeness(reference_word_count, recorded),

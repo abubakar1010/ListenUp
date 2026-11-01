@@ -3,7 +3,7 @@
 The round job calls these; the domain stays free of `listenup.ai`.
 """
 
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from typing import Any
 
 from listenup.ai.gateway import is_synthetic
@@ -11,7 +11,6 @@ from listenup.ai.ports import SpeechAssessment
 from listenup.modules.grading.domain.delivery import (
     DeliveryParameters,
     Interval,
-    Measure,
     Word,
     place_original,
     score_round,
@@ -61,13 +60,8 @@ def delivery_result(
         recorded=words,
         fillers=fillers,
         leakage=leakage,
+        clock_known=playback_offset_ms is not None,
     )
-    if playback_offset_ms is None:
-        measures = {**scores.measures, "timing": Measure(None, "playback_offset_unknown")}
-        basis = tuple(name for name in scores.overall_basis if name != "timing")
-        total = sum(measures[name].score or 0 for name in basis)
-        overall = (2 * total + len(basis)) // (2 * len(basis)) if basis else None
-        scores = replace(scores, measures=measures, overall=overall, overall_basis=basis)
     return {
         "measures": {name: asdict(value) for name, value in scores.measures.items()},
         "overall": scores.overall,

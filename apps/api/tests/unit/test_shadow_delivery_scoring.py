@@ -399,6 +399,18 @@ def test_an_unobservable_measure_is_left_out_of_the_overall():
     assert result.overall == 63  # (100 + 25) / 2 = 62.5, halves up
 
 
+def test_an_unknown_recording_clock_leaves_only_timing_unobservable():
+    """ADR 0093: with no playback offset, timing is null and never assumed; the
+    other measures do not use the clock."""
+    result = score(minute_original(), original=minute_original(), clock_known=False)
+    assert (result.measures["timing"].score, result.measures["timing"].reason) == (
+        None,
+        "playback_offset_unknown",
+    )
+    assert result.overall_basis == ("fluency", "fillers", "completeness")
+    assert result.overall == 100
+
+
 def test_accent_and_unbuilt_measures_never_enter_the_overall():
     result = score(original_of(10))
     built = ("timing", "fluency", "fillers", "completeness")
