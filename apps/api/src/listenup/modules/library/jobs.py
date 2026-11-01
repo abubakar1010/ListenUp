@@ -128,7 +128,7 @@ async def give_up_session(deps: JobDeps, request_id: str) -> None:
 
 @job(Lane.BACKGROUND, DELETE_SESSION, on_give_up=give_up_session)
 async def delete_session(deps: JobDeps, request_id: str) -> dict[str, Any] | None:
-    """Delete one session's objects, then its rows (AT-20, FR-SH-17, ADR 0092).
+    """Delete one session's objects, then its rows (AT-20, FR-SH-17, ADR 0100).
 
     Like content deletion: the manifest commits first, storage runs with no transaction
     (so no row lock is held), and a short second transaction removes the rows.
@@ -140,7 +140,7 @@ async def delete_session(deps: JobDeps, request_id: str) -> dict[str, Any] | Non
         if state is None:
             return None
         learner, target = state["subject_user_id"], state["target_id"]
-        # Re-hide in case a schema rollback dropped the barrier (ADR 0092).
+        # Re-hide in case a schema rollback dropped the barrier (ADR 0100).
         await practice.hide_for_deletion(db, target)
         sessions = [target]
         report = dict(state["report"] or {})
@@ -193,7 +193,7 @@ async def give_up_recordings(deps: JobDeps, request_id: str) -> None:
 
 @job(Lane.BACKGROUND, DELETE_RECORDINGS, on_give_up=give_up_recordings)
 async def delete_recordings(deps: JobDeps, request_id: str) -> None:
-    """Delete a deleted recording's key again once its upload link expired (ADR 0092).
+    """Delete a deleted recording's key again once its upload link expired (ADR 0100).
 
     The first delete already ran in the request. This one removes an object a late
     signed PUT may have put back, then completes the audit. Deleting a missing key is
