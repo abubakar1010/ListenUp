@@ -322,6 +322,100 @@ def invoke(url, action):
     return asyncio.run(run())
 
 
+def _pretend_real(migrated_url, round_id):
+    """Stand-in for real-provider evidence, which E2 cannot produce (ADR 0074)."""
+    with psycopg.connect(migrated_url) as db:
+        db.execute(
+            "UPDATE grading.round_grades SET speech_info = speech_info || "
+            "'{\"synthetic\": false}'::jsonb WHERE round_id=%s",
+            [round_id],
+        )
+
+
+def test_learner_grades_stay_unreleased_under_e2(client, migrated_url, recorded, run_round):
+    """#83 keeps #82's gate: even non-synthetic, scored evidence reads unavailable."""
+    from listenup.modules.grading import service
+
+    assert service.LEARNER_GRADES_RELEASED is False
+    round_id, _, _ = recorded
+    run_round[0]()
+    _pretend_real(migrated_url, round_id)
+    response = client.get(f"/api/v1/shadow/rounds/{round_id}/grade")
+    assert response.json() == {"status": "unavailable"}
+
+
+def test_synthetic_labels_are_never_shown_even_once_released(
+    client, recorded, run_round, monkeypatch
+):
+    from listenup.modules.grading import service
+
+    monkeypatch.setattr(service, "LEARNER_GRADES_RELEASED", True)
+    round_id, _, _ = recorded
+    run_round[0]()
+    response = client.get(f"/api/v1/shadow/rounds/{round_id}/grade")
+    assert response.json() == {"status": "unavailable"}
+
+
+def test_a_released_grade_shows_word_labels_and_accent_apart_from_the_score(
+    client, make, migrated_url, recorded, run_round, monkeypatch
+):
+    """The projection the release will use (FR-SH-9, FR-SH-10, FR-SH-15, UX-33)."""
+    from listenup.modules.grading import service
+
+    monkeypatch.setattr(service, "LEARNER_GRADES_RELEASED", True)
+    round_id, _, _ = recorded
+    run_round[0]()
+    _pretend_real(migrated_url, round_id)
+    path = f"/api/v1/shadow/rounds/{round_id}/grade"
+    body = client.get(path).json()
+    assert body["status"] == "scored"
+    assert set(body["measures"]) == {
+        "timing",
+        "pronunciation",
+        "articulation",
+        "fluency",
+        "fillers",
+        "completeness",
+    }
+    assert body["measures"]["timing"] == {"score": None, "reason": "playback_offset_unknown"}
+    assert body["measures"]["pronunciation"] == {"score": 75, "reason": None}
+    assert body["accent"] == {
+        "score": body["accent"]["score"],
+        "reason": body["accent"]["reason"],
+        "experimental": True,
+        "compared_with": "this_speaker",
+        "in_overall": False,
+    }
+    assert isinstance(body["overall"], int)
+    assert [(w["index"], w["text"], w["label"], w["reasons"]) for w in body["word_labels"]] == [
+        (0, "Hello", "good", []),
+        (1, "world.", "good", []),
+        (2, "Again.", "good", []),
+    ]
+    refused = make().get(path)
+    assert refused.status_code == 404 and refused.json()["code"] == "round_not_found"
+
+
+def test_a_released_grade_without_all_seven_measures_is_unavailable(
+    client, migrated_url, recorded, run_round, monkeypatch
+):
+    """An #82-era row (four measures) is never projected with invented values."""
+    from listenup.modules.grading import service
+
+    monkeypatch.setattr(service, "LEARNER_GRADES_RELEASED", True)
+    round_id, _, _ = recorded
+    run_round[0]()
+    _pretend_real(migrated_url, round_id)
+    with psycopg.connect(migrated_url) as db:
+        db.execute(
+            "UPDATE grading.round_grades SET measures = measures - 'accent' - "
+            "'pronunciation' - 'articulation' WHERE round_id=%s",
+            [round_id],
+        )
+    response = client.get(f"/api/v1/shadow/rounds/{round_id}/grade")
+    assert response.json() == {"status": "unavailable"}
+
+
 def test_provider_failure_keeps_recording_and_retry_can_score(
     migrated_url, recorded, run_round, monkeypatch
 ):

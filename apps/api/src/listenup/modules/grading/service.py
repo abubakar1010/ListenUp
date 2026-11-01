@@ -239,6 +239,13 @@ async def _enqueue_round(
     return True
 
 
+# Learners see no Shadow grade yet (E2, ADR 0074 and 0099): turning grading on waits
+# on #21, #22, #106, #107, #109 and #110. This is a reviewed code change, never a
+# setting. Synthetic evidence stays unavailable even after release.
+LEARNER_GRADES_RELEASED = False
+SCORED_MEASURES = ("timing", "pronunciation", "articulation", "fluency", "fillers", "completeness")
+
+
 async def read_round_grade(
     db: AsyncSession, learner: uuid.UUID, round_id: uuid.UUID
 ) -> dict[str, Any]:
@@ -247,7 +254,47 @@ async def read_round_grade(
 
     await shadow.require_owned_round(db, learner, round_id)
     await repository.expire_round(db, learner, round_id, server_now())
-    return {"status": "unavailable"}
+    if not LEARNER_GRADES_RELEASED:
+        return {"status": "unavailable"}
+    row = await repository.round_grade(db, learner, round_id)
+    if (
+        row is None
+        or row.status not in ("scored", "ready")
+        or row.measures is None
+        or not {*SCORED_MEASURES, "accent"} <= set(row.measures)  # an #82-era row
+        or row.speech_info is None
+        or row.speech_info.get("synthetic") is not False
+    ):
+        return {"status": "unavailable"}
+    return _round_projection(row.overall, row.measures, row.word_labels or [])
+
+
+def _round_projection(
+    overall: int | None, measures: dict[str, Any], labels: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Six scored measures with the overall; accent apart, as guidance compared with
+    this speaker that is not in the score (FR-SH-15, UX-33); every word's marker."""
+
+    accent = measures["accent"]
+    return {
+        "status": "scored",
+        "overall": overall,
+        "measures": {
+            name: {"score": measures[name]["score"], "reason": measures[name]["reason"]}
+            for name in SCORED_MEASURES
+        },
+        "accent": {
+            "score": accent["score"],
+            "reason": accent["reason"],
+            "experimental": accent["details"]["experimental"],
+            "compared_with": "this_speaker",
+            "in_overall": False,
+        },
+        "word_labels": [
+            {key: label[key] for key in ("index", "text", "label", "score", "reasons")}
+            for label in labels
+        ],
+    }
 
 
 async def retry_round(db: AsyncSession, learner: uuid.UUID, round_id: uuid.UUID) -> None:
