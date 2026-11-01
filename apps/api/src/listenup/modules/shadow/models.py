@@ -51,6 +51,7 @@ class ShadowSegment(Base):
 class ShadowRound(Base):
     __tablename__ = "shadow_rounds"
     __table_args__ = (
+        UniqueConstraint("id", "user_id", name="shadow_rounds_id_user_uq"),
         CheckConstraint("round BETWEEN 1 AND 3"),
         CheckConstraint("playback_status IN ('ready','ended')"),
         UniqueConstraint("session_id", "round"),

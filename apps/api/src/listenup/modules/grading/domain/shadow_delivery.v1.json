@@ -1,0 +1,26 @@
+{
+  "version": "1",
+  "provisional": true,
+  "calibrated": false,
+  "timing": {
+    "min_matched_words": 2,
+    "onset_full_credit_s": 0.5,
+    "onset_zero_credit_s": 1.5,
+    "rate_tolerance": 0.1,
+    "rate_zero": 0.5,
+    "break_s": 0.3,
+    "weights": {"onsets": 60, "rate": 20, "phrasing": 20}
+  },
+  "fluency": {
+    "hesitation_s": 0.3,
+    "long_pause_s": 1.0,
+    "event_weights": {"hesitation": 1, "long_pause": 2, "restart": 2},
+    "zero_events_per_minute": 12
+  },
+  "fillers": {
+    "free_per_minute": 1,
+    "zero_per_minute": 10,
+    "count_validated": false
+  },
+  "echo": {"leakage_threshold": 0.5}
+}
