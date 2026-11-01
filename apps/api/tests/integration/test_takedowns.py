@@ -245,6 +245,7 @@ def test_a_second_takedown_of_the_same_file_is_refused(
         {"fingerprint": "youtube:dQw4w9WgXcQ"},  # YouTube waits for #38
         {"grounds": "boring"},
         {"reason": ""},
+        {"reason": "   "},  # blank
         {"reason": "x" * 2001},
     ],
 )
@@ -413,6 +414,10 @@ def test_removal_waits_for_a_conversion_still_writing_the_file(
 
     apply(migrated_url, takedown)
     assert not any(key in storage.objects for key in mine.keys)
+
+
+def test_a_job_for_a_takedown_that_does_not_exist_does_nothing(migrated_url: str) -> None:
+    assert apply(migrated_url, str(uuid.uuid4())) is None
 
 
 def test_unfinished_takedowns_are_queued_again(
