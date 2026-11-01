@@ -57,6 +57,7 @@ class AIGateway:
     ) -> None:
         self._accounting = accounting if accounting is not None else get_accounting()
         self._config = config
+        self._environment = environment
         self._registry = registry
         self._sleep = sleep
         self._adapters: dict[tuple[Role, str], Any] = {}
@@ -114,6 +115,20 @@ class AIGateway:
         if not providers:
             raise AIUnavailable(role, "no provider configured")
         return providers[0]
+
+    def only(self, role: Role) -> "AIGateway":
+        """A gateway for this role's current provider alone, never a fallback.
+
+        It keeps this gateway's accounting, registry and environment checks, so every
+        call is still metered and refused where this gateway would refuse it.
+        """
+        return AIGateway(
+            AIConfig(version=self._config.version, roles={role: (self.entry(role),)}),
+            environment=self._environment,
+            registry=self._registry,
+            accounting=self._accounting,
+            sleep=self._sleep,
+        )
 
     def deployment_provenance(self, role: Role) -> Provenance:
         """Trusted configured identity before inference, for versioned cache lookups.
@@ -406,6 +421,11 @@ class AIGateway:
 
 def get_accounting() -> Accounting:
     return PostgresAccounting(Database(get_settings().database_url))
+
+
+def is_synthetic(provenance: Provenance) -> bool:
+    """True for output a fake provider made up; it is never a learner's result (ADR 0074)."""
+    return provenance.provider in fake_assessment.SYNTHETIC_PROVIDERS
 
 
 @lru_cache

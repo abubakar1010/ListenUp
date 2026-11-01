@@ -2406,6 +2406,18 @@
         "title": "RetriedJob",
         "type": "object"
       },
+      "RetryAccepted": {
+        "properties": {
+          "status": {
+            "const": "accepted",
+            "default": "accepted",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "RetryAccepted",
+        "type": "object"
+      },
       "ReviewHistory": {
         "properties": {
           "reviews": {
@@ -2492,6 +2504,18 @@
           "feedback"
         ],
         "title": "Round",
+        "type": "object"
+      },
+      "RoundFeedback": {
+        "properties": {
+          "status": {
+            "const": "unavailable",
+            "default": "unavailable",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "RoundFeedback",
         "type": "object"
       },
       "Rounds": {
@@ -7140,6 +7164,94 @@
         },
         "summary": "Complete Recording",
         "tags": ["shadow"]
+      }
+    },
+    "/api/v1/shadow/rounds/{round_id}/grade": {
+      "get": {
+        "operationId": "read_round_api_v1_shadow_rounds__round_id__grade_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Round Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoundFeedback"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "round_not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Round",
+        "tags": ["grading"]
+      }
+    },
+    "/api/v1/shadow/rounds/{round_id}/grade/retry": {
+      "post": {
+        "operationId": "retry_round_api_v1_shadow_rounds__round_id__grade_retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Round Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "round_not_found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Round",
+        "tags": ["grading"]
       }
     },
     "/api/v1/shadow/rounds/{round_id}/recording": {

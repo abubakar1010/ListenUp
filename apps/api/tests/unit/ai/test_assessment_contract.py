@@ -7,8 +7,8 @@ import pytest
 from listenup.ai.config import DEFAULT_CONFIG, FAKE_CONFIG, load_config, parse_config
 from listenup.ai.errors import AIConfigError, AIUnavailable
 from listenup.ai.evals.runner import uses_synthetic_provider
-from listenup.ai.gateway import AIGateway, get_gateway
-from listenup.ai.ports import Role, SpeechAssessment, SpeechAssessmentPort
+from listenup.ai.gateway import AIGateway, get_gateway, is_synthetic
+from listenup.ai.ports import Provenance, Role, SpeechAssessment, SpeechAssessmentPort
 from listenup.ai.providers.fake_assessment import SYNTHETIC_PROVIDERS
 from listenup.ai.registry import DEFAULT_REGISTRY
 from listenup.ai.validation import validate_assessment
@@ -121,6 +121,14 @@ def test_every_synthetic_provider_is_recognised_as_synthetic():
     assert not uses_synthetic_provider(set())
 
 
+@pytest.mark.parametrize(
+    ("provider", "synthetic"), [("fake", True), ("fake-assessment", True), ("local-speech", False)]
+)
+def test_callers_tell_synthetic_output_from_the_gateway(provider, synthetic):
+    """Modules ask the gateway, not a provider adapter, whether a result is synthetic."""
+    assert is_synthetic(Provenance(provider=provider, model="m", version="1")) is synthetic
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     "change",
@@ -159,3 +167,46 @@ async def test_second_fake_is_a_gateway_fallback_when_first_is_unavailable(fake_
     assert result.provenance.provider == "fake-assessment"
     assert result.words[0].sounds[0].score == 0.75
     assert [row["outcome"] for row in fake_accounting.calls] == ["quota", "ok"]
+
+
+@pytest.mark.anyio
+async def test_a_single_provider_gateway_keeps_accounting_and_never_falls_back(
+    tmp_path, monkeypatch
+):
+    """E2 jobs call only the admitted provider, metered by the caller's accounting."""
+    from listenup.ai.config import ProviderEntry
+    from listenup.ai.errors import TransientProviderError
+    from listenup.ai.providers.fake_assessment import FakeAssessment
+    from tests.unit.ai.accounting_fake import FakeAccounting
+
+    synthetic = ProviderEntry(
+        provider="fake-assessment",
+        model="synthetic-v1",
+        accepted=True,
+        local=True,
+        trains_on_inputs=False,
+    )
+    fallback = load_config(FAKE_CONFIG).providers(Role.SPEECH_ASSESSMENT)[0]
+    config = load_config(FAKE_CONFIG)
+    config = config.model_copy(update={"roles": {Role.SPEECH_ASSESSMENT: (synthetic, fallback)}})
+    accounting = FakeAccounting()
+    gateway = AIGateway(config, accounting=accounting, sleep=_no_sleep)
+    only = gateway.only(Role.SPEECH_ASSESSMENT)
+
+    async def fail(self, *args):
+        raise TransientProviderError("down")
+
+    monkeypatch.setattr(FakeAssessment, "assess", fail)
+    recording, original = tmp_path / "recording", tmp_path / "original"
+    recording.write_bytes(b"r")
+    original.write_bytes(b"o")
+    with pytest.raises(AIUnavailable):
+        await only.assess(recording, "hello world", original)
+    assert accounting.calls and {c["provider"] for c in accounting.calls} == {"fake-assessment"}
+    # The full gateway would have fallen back to the other provider.
+    await gateway.assess(recording, "hello world", original)
+    assert "fake" in {c["provider"] for c in accounting.calls}
+
+
+async def _no_sleep(_: float) -> None:
+    return None
