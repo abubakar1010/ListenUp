@@ -471,6 +471,14 @@ def test_a_data_export_leaves_out_sessions_being_deleted(make_client, migrated_u
             "INSERT INTO grading.gist_grades(attempt_id,user_id) VALUES (%s,%s)",
             [world.blind_attempt_id, world.user_id],
         )
+        events = {
+            row[0]
+            for row in db.execute(
+                "SELECT id FROM ops.analytics_events WHERE session_id = ANY(%s)",
+                [[world.sessions[k] for k in ("card", "blind", "shadow")]],
+            )
+        }
+    assert events  # the seeded plans recorded events for the sessions being deleted
     for stage in ("card", "blind", "shadow"):
         assert delete(a, world.sessions[stage]).status_code == 202
     gone = {
@@ -503,3 +511,5 @@ def test_a_data_export_leaves_out_sessions_being_deleted(make_client, migrated_u
         r["attempt_id"] for r in tables["practice.dictation_attempts"]
     }
     assert world.mark_id in {row["id"] for row in tables["practice.marks"]}
+    # ADR 0035: analytics events naming the deleting sessions stay.
+    assert events <= {row["id"] for row in tables["ops.analytics_events"]}
