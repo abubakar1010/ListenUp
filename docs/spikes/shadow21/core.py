@@ -41,3 +41,16 @@ def summary(values):
         spread_s=ordered[-1] - ordered[0],
         **{"pass": p95 < 50},
     )
+
+
+def validate_budget(cpu, memory, swap, threads, interop):
+    quota, period = cpu.split()
+    if (
+        quota == "max"
+        or int(quota) != 2 * int(period)
+        or memory != "8589934592"
+        or swap != "0"
+        or threads != 2
+        or interop != 2
+    ):
+        raise ValueError("E4 requires two CPUs/threads, 8 GiB and no swap")

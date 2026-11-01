@@ -36,3 +36,19 @@ class BenchmarkTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BudgetTests(unittest.TestCase):
+    def test_budget_refuses_extra_cpu_swap_or_threads(self):
+        from core import validate_budget
+
+        validate_budget("200000 100000", "8589934592", "0", 2, 2)
+        for bad in [
+            ("max 100000", "8589934592", "0", 2, 2),
+            ("300000 100000", "8589934592", "0", 2, 2),
+            ("200000 100000", "max", "0", 2, 2),
+            ("200000 100000", "8589934592", "1024", 2, 2),
+            ("200000 100000", "8589934592", "0", 3, 2),
+        ]:
+            with self.assertRaises(ValueError):
+                validate_budget(*bad)

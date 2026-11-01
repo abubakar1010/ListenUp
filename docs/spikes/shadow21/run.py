@@ -15,7 +15,7 @@ import experiment as e
 import numpy as np
 import pyarrow.parquet as pq
 import torch
-from core import pack, summary, windows
+from core import pack, summary, validate_budget, windows
 from faster_whisper.vad import VadOptions, get_speech_timestamps
 from inference import Windowed
 
@@ -112,6 +112,17 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     torch.set_num_threads(2)
     torch.set_num_interop_threads(2)
+    cgroup = {
+        p: Path("/sys/fs/cgroup", p).read_text().strip()
+        for p in ["cpu.max", "memory.max", "memory.swap.max"]
+    }
+    validate_budget(
+        cgroup["cpu.max"],
+        cgroup["memory.max"],
+        cgroup["memory.swap.max"],
+        torch.get_num_threads(),
+        torch.get_num_interop_threads(),
+    )
     records = prepare(args.data, args.out)
     models = e.Models(args.data)
     models.word = torch.ao.quantization.quantize_dynamic(

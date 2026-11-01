@@ -28,3 +28,21 @@ class WindowTests(unittest.TestCase):
         wrapped.labels = 4
         result, _ = wrapped(torch.zeros(1, 16000))
         self.assertTrue(torch.all(result.argmax(-1) == 0))
+
+    def test_phone_output_keeps_original_clock(self):
+        from types import SimpleNamespace
+
+        def fake(*, input_values):
+            return SimpleNamespace(logits=torch.ones((1, 49, 4)))
+
+        wrapped = Windowed(fake, phone=True)
+        wrapped.spans = [(16000, 32000)]
+        output = wrapped(input_values=torch.zeros(1, 48000)).logits
+        self.assertEqual(output.shape, (1, 150, 4))
+        self.assertEqual(output[0, 0].argmax().item(), 0)
+        self.assertTrue(torch.equal(output[0, 50], torch.ones(4)))
+
+    def test_silence_without_inventory_fails_explicitly(self):
+        wrapped = Windowed(None, phone=False)
+        with self.assertRaises(ValueError):
+            wrapped(torch.zeros(1, 16000))
