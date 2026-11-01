@@ -16,6 +16,7 @@ from listenup.modules.practice import service as practice
 from listenup.modules.review import service as review
 from listenup.platform.database import Database
 from listenup.platform.errors import ProblemError
+from listenup.platform.events import EventType, publish
 from listenup.platform.export import ExportFile, ExportPart, learner_rows
 from listenup.platform.ids import uuid7
 from listenup.platform.jobs import enqueue
@@ -315,3 +316,48 @@ async def content_deletion_snapshot(
         {"user": learner, "sessions": sessions},
     )
     return [f"users/{learner}/cards/{card}/" for card in rows]
+
+
+# -- Takedowns (#105, ADR 0098) -------------------------------------------------------
+# Worker-only. A card's snippet is cut from the clip, so a takedown removes it too; the
+# card itself, its phrase and its review history stay.
+
+
+async def withdraw_media_audio(db: AsyncSession, media_ids: list[uuid.UUID]) -> None:
+    """Make the audio of every card cut from these media objects unavailable at once.
+
+    A snippet writer holds the card's row while it stores the file, so this waits for
+    it, and a writer that starts later finds the card no longer pending.
+    """
+    rows = (
+        await db.execute(
+            text(
+                "UPDATE practice.cards SET audio_status='unavailable', snippet_key=NULL, "
+                "audio_generation=NULL WHERE media_object_id=ANY(:media) "
+                "AND audio_status<>'unavailable' RETURNING user_id, session_id"
+            ),
+            {"media": media_ids},
+        )
+    ).all()
+    for learner, session_id in {(row.user_id, row.session_id) for row in rows}:
+        await publish(db, learner, EventType.CARD_AUDIO_UPDATED, session_id)
+
+
+async def media_audio_prefixes(db: AsyncSession, media_ids: list[uuid.UUID]) -> list[str]:
+    """Where the snippets of cards cut from these media objects are; waits
+    (`Reschedule`) while a snippet writer of one of them is still registered."""
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id, user_id FROM practice.cards WHERE media_object_id=ANY(:media) "
+                "ORDER BY id"
+            ),
+            {"media": media_ids},
+        )
+    ).all()
+    by_learner: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for row in rows:
+        by_learner.setdefault(row.user_id, []).append(row.id)
+    for learner, cards in by_learner.items():
+        await _require_no_content_writes(db, learner, cards)
+    return [f"users/{row.user_id}/cards/{row.id}/" for row in rows]

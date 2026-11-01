@@ -28,7 +28,7 @@ class LibraryItem(BaseModel):
     id: uuid.UUID
     title: str
     source: Literal["upload", "youtube"]
-    status: Literal["pending", "downloading", "playable", "failed", "expired"] = Field(
+    status: Literal["pending", "downloading", "playable", "failed", "expired", "removed"] = Field(
         description="Processing status of the clip's media"
     )
     duration_ms: int | None
