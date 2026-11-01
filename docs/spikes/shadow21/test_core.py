@@ -11,6 +11,11 @@ class BenchmarkTests(unittest.TestCase):
         names = [name for r in rounds for name, _ in r]
         self.assertEqual(len(names), len(set(names)))
 
+    def test_pack_rejects_invalid_duration(self):
+        for duration in [0, -1, float("nan")]:
+            with self.assertRaises(ValueError):
+                pack([("invalid", duration)])
+
     def test_pack_rejects_insufficient_data(self):
         with self.assertRaises(ValueError):
             pack([("one", 3.0)], count=30)

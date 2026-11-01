@@ -19,7 +19,8 @@ class WindowTests(unittest.TestCase):
         result, _ = wrapped(torch.zeros(1, 75 * 16000))
         self.assertEqual(calls, [480000, 160000])
         self.assertEqual(result.shape, (1, 3750, 4))
-        self.assertEqual(result[0, 0].argmax().item(), 0)
+        self.assertGreater(result[0, 0].softmax(-1)[0].item(), 0.999)
+        self.assertLess(result[0, 0].softmax(-1)[1:].max().item(), 1e-6)
         self.assertTrue(torch.equal(result[0, 50], torch.ones(4)))
         self.assertEqual(result[0, -1].argmax().item(), 0)
 
@@ -27,7 +28,7 @@ class WindowTests(unittest.TestCase):
         wrapped = Windowed(lambda x: self.fail("silence inferred"), phone=False)
         wrapped.labels = 4
         result, _ = wrapped(torch.zeros(1, 16000))
-        self.assertTrue(torch.all(result.argmax(-1) == 0))
+        self.assertTrue(torch.all(result.softmax(-1)[..., 0] > 0.999))
 
     def test_phone_output_keeps_original_clock(self):
         from types import SimpleNamespace
