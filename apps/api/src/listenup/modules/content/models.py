@@ -31,7 +31,15 @@ class MediaObject(Base):
         CheckConstraint("char_length(source_ref) <= 64"),
         CheckConstraint("char_length(title) <= 300"),
         CheckConstraint("duration_ms > 0"),
-        CheckConstraint("status IN ('pending', 'downloading', 'playable', 'failed', 'expired')"),
+        CheckConstraint(
+            "status IN ('pending', 'downloading', 'playable', 'failed', 'expired', 'removed')",
+            name="media_objects_status_check",
+        ),
+        # Removed only by a takedown, which stays named (#105, ADR 0098).
+        CheckConstraint(
+            "(status = 'removed') = (takedown_id IS NOT NULL)",
+            name="media_objects_removed_by_takedown",
+        ),
         CheckConstraint("ref_count >= 0"),
         CheckConstraint("(source = 'upload') = (uploaded_by IS NOT NULL)"),
         Index(
@@ -40,6 +48,11 @@ class MediaObject(Base):
             postgresql_where=text("status = 'playable' AND source = 'youtube'"),
         ),
         Index("media_objects_orphan_idx", "updated_at", postgresql_where=text("ref_count = 0")),
+        Index(
+            "media_objects_takedown_idx",
+            "takedown_id",
+            postgresql_where=text("takedown_id IS NOT NULL"),
+        ),
         Index(
             "media_objects_uploader_idx",
             "uploaded_by",
@@ -70,6 +83,10 @@ class MediaObject(Base):
     last_used_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(Timestamp, server_default=func.now())
+    # The takedown that removed this media object (migration 105, ADR 0098).
+    takedown_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ops.takedowns.id", ondelete="RESTRICT")
+    )
 
 
 class Content(Base):
