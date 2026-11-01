@@ -29,7 +29,7 @@ Read the section for the area you are changing before you change it. The rules e
   registrations, removes storage, then cascades rows. Completed manifests remain
   pointers for hourly late-upload reconciliation; analytics and shared YouTube
   caches survive. The seven-day orphan sweep belongs to #93.
-- Session deletion (#90, ADR 0092) reuses that pattern with `scope = 'session'` and
+- Session deletion (#90, ADR 0100) reuses that pattern with `scope = 'session'` and
   `library.delete_session`. A query that reads `practice.sessions` for the learner
   must filter `deleting_at IS NULL`, so a deleted session disappears at once.
   Deleting one Shadow recording reads the round without a lock, deletes the file,

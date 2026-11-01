@@ -74,7 +74,7 @@ _KEPT = frozenset({"ops.analytics_events"})
 
 
 def _without(parts: list[ExportPart], deleting: set[uuid.UUID]) -> list[ExportPart]:
-    """Leave out sessions being deleted and every row under them (#90, ADR 0092).
+    """Leave out sessions being deleted and every row under them (#90, ADR 0100).
 
     The learner asked for them to go, so an export built before the job finishes must
     not hand them back. A row is dropped when it names such a session, or names a row

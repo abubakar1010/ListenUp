@@ -1,4 +1,4 @@
-"""A learner deletes one practice session: barrier and one open request (#90, ADR 0092)."""
+"""A learner deletes one practice session: barrier and one open request (#90, ADR 0100)."""
 
 from alembic import op
 
@@ -20,7 +20,7 @@ CREATE UNIQUE INDEX deletion_requests_one_open_session_idx
 
 def downgrade() -> None:
     # Open session requests stay in ops.deletion_requests; after upgrading again the
-    # reconciler resumes them and the job hides each session again (ADR 0092).
+    # reconciler resumes them and the job hides each session again (ADR 0100).
     op.execute("""
 DROP INDEX ops.deletion_requests_one_open_session_idx;
 ALTER TABLE practice.sessions DROP COLUMN deleting_at;
