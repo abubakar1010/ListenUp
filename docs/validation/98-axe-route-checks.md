@@ -139,6 +139,11 @@ Red, then green:
 
 ## Still open in #98
 
+Part 2 ([98-keyboard-and-statement.md](98-keyboard-and-statement.md)) adds the keyboard
+runs of the plan paths, the 360 px target check, the live-region fixes, the
+accessibility statement and the owner's [screen-reader checklist](98-screen-reader-checklist.md).
+The list below is as part 1 left it.
+
 - Manual keyboard and screen-reader passes (one desktop and one mobile reader)
   through all three plan paths, including marks, cards and Shadow rounds (AT-7).
 - Live regions for status, grading and voiding, checked with a screen reader.

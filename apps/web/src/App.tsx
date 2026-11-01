@@ -25,6 +25,9 @@ const DeleteAccountPage = lazy(() => import('./features/account/DeleteAccountPag
 const JobsPage = lazy(() => import('./features/admin/JobsPage'));
 const UsagePage = lazy(() => import('./features/admin/UsagePage'));
 const LegalPage = lazy(() => import('./features/legal/LegalPage'));
+const AccessibilityStatementPage = lazy(
+  () => import('./features/legal/AccessibilityStatementPage'),
+);
 const NotFoundPage = lazy(() => import('./app/NotFoundPage'));
 const AccountDeletedPage = lazy(() => import('./features/account/AccountDeletedPage'));
 const PasswordResetRequestPage = lazy(() =>
@@ -68,6 +71,8 @@ export function App() {
           <Route path="/terms" element={<LegalPage document="terms" />} />
           <Route path="/privacy" element={<LegalPage document="privacy" />} />
           <Route path="/voice-consent" element={<LegalPage document="voice_recording" />} />
+          {/* #98: public, so it can be read before an account exists. */}
+          <Route path="/accessibility" element={<AccessibilityStatementPage />} />
           {/* Outside RedirectIfSignedIn: a reset link must also work while signed in. */}
           <Route
             path="/forgot-password"

@@ -18,11 +18,18 @@ const PARTS: Record<string, string> = {
 export function GistFeedback({
   attemptId,
   context,
+  takeFocus = false,
 }: {
   attemptId: string;
   context: 'blind' | 'transcript';
+  /** Focus the heading when shown: it replaces the submitted form (WCAG 2.4.3, #98). */
+  takeFocus?: boolean;
 }) {
   const queryClient = useQueryClient();
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (takeFocus) heading.current?.focus();
+  }, [takeFocus]);
   const retrying = useRef(false);
   const [expiredRead, setExpiredRead] = useState<number | null>(null);
   const query = useQuery({
@@ -54,21 +61,30 @@ export function GistFeedback({
     query.isError;
   const delayed = grade?.status === 'delayed';
   const ready = grade?.status === 'ready';
+  const statusText = ready
+    ? 'Your gist feedback is ready.'
+    : delayed
+      ? 'Feedback delayed'
+      : unavailable
+        ? 'Feedback unavailable'
+        : 'Preparing your gist feedback…';
+  // A grade that arrives while the panel waits is announced (UX-04): the line turns polite
+  // once a read has found the grade not ready, before its text changes. A grade already
+  // there when the panel opens is only shown, so arriving at Transcript does not repeat a
+  // grade heard after Blind or talk over the step's heading (UX-22).
+  const [waited, setWaited] = useState(false);
+  if (grade && !ready && !waited) setWaited(true);
   return (
     <section
       aria-label="Gist feedback"
       aria-busy={!ready && !unavailable && !delayed}
       className="flex min-w-0 flex-col gap-3 rounded-md border border-line bg-surface-raised p-4 [overflow-wrap:anywhere]"
     >
-      <h2 className="font-display text-heading">Your gist feedback</h2>
-      <p aria-live={context === 'blind' ? 'polite' : 'off'}>
-        {ready
-          ? 'Your gist feedback is ready.'
-          : delayed
-            ? 'Feedback delayed'
-            : unavailable
-              ? 'Feedback unavailable'
-              : 'Preparing your gist feedback…'}
+      <h2 ref={heading} tabIndex={takeFocus ? -1 : undefined} className="font-display text-heading">
+        Your gist feedback
+      </h2>
+      <p aria-live={waited ? 'polite' : 'off'} data-testid="gist-status">
+        {statusText}
       </p>
       {(unavailable || delayed) && (
         <p>

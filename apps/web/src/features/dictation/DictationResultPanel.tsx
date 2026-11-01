@@ -1,6 +1,7 @@
 import { ApiError } from '../../api/client';
 import { useState } from 'react';
 import { ErrorPanel } from '../../components/ErrorPanel';
+import { formatAccuracy } from './accuracy';
 import { type DiffItem, type OpenMarkList, useDictationResult } from './api';
 import { CorrectionDialog } from './CorrectionDialog';
 import { DictationDiff } from './DictationDiff';
@@ -21,11 +22,15 @@ export function DictationResultPanel({
 }) {
   const result = useDictationResult(sessionId);
   const [editing, setEditing] = useState<DiffItem | null>(null);
+  // A score that arrives while the panel waits is announced (UX-04, UX-22); one already
+  // there when the panel opens is simply shown.
+  const [waited, setWaited] = useState(false);
+  const view = result.data;
+  if (view && !view.result && view.scoring_status !== null && !waited) setWaited(true);
   if (result.isError) {
     if (result.error instanceof ApiError && result.error.code === 'attempt_not_found') return null;
     return <ErrorPanel error={result.error} onRetry={() => void result.refetch()} />;
   }
-  const view = result.data;
   if (!view || view.scoring_status === null) return null;
   return (
     <section
@@ -58,6 +63,11 @@ export function DictationResultPanel({
           Scoring when the transcript is ready. The result will appear here.
         </p>
       )}
+      <p role="status" className="sr-only" data-testid="dictation-announcement">
+        {waited && view.result
+          ? `Your Dictation is scored: ${formatAccuracy(view.result.accuracy)}.`
+          : ''}
+      </p>
     </section>
   );
 }

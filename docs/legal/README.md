@@ -8,6 +8,8 @@ The Terms of Service, Privacy Policy and voice-recording consent notice (#103). 
 | Privacy Policy | `privacy-2026-2` | `LISTENUP_PRIVACY_VERSION` | [privacy-2026-2.md](privacy-2026-2.md) | `/privacy` |
 | Voice recording consent | `voice-2026-2` | `LISTENUP_VOICE_CONSENT_VERSION` | [voice-2026-2.md](voice-2026-2.md) | `/voice-consent` |
 
+The accessibility statement (#98) also lives here, in [accessibility-statement.md](accessibility-statement.md), shown at `/accessibility`. It is not a consent text: it has no version label or setting, and the page always shows the file's current text. It is a draft too, and its contact must be completed before launch.
+
 ## Status: drafts, not legally reviewed
 
 All three are drafts. They have **not** been reviewed by a legal adviser, and each says so at the top. Issue #103 stays open until the review (ideally by the OQ-6 adviser) is done. Bracketed text (`[... to be completed ...]`) marks what the adviser or the owner must supply.

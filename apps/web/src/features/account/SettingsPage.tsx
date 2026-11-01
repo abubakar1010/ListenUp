@@ -1,3 +1,5 @@
+import { Link } from 'react-router';
+
 import { usePageTitle } from '../../app/usePageTitle';
 import { ConsentsSection } from './ConsentsSection';
 import { DataExportSection } from './DataExportSection';
@@ -17,6 +19,17 @@ export default function SettingsPage() {
       </div>
       <ConsentsSection />
       <DeleteAccountSection />
+      <section aria-labelledby="settings-accessibility" className="flex flex-col gap-2">
+        <h2 id="settings-accessibility" className="font-display text-heading">
+          Accessibility
+        </h2>
+        <p>
+          What ListenUp supports, what has been checked and how to report a problem:{' '}
+          <Link to="/accessibility" className="inline-flex min-h-11 items-center font-bold">
+            Accessibility statement
+          </Link>
+        </p>
+      </section>
     </main>
   );
 }

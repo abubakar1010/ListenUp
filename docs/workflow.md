@@ -119,6 +119,10 @@ Keep sessions focused; delegate only when the owner requests it.
 Story: #<number> <title>. Read the issue first.
 Tool: <Claude Code or Codex>. Branch: <compliant named branch, or create one from main>.
 Area: <module and directories>. Do not change: <areas owned by other open work>.
+ADR range: <owner-assigned range, or none if no new ADR is needed>.
+The session prompt controls ADR assignments; #119 records them. Follow
+docs/adr/README.md: check open PRs and unmerged branches before using a number.
+If no range is assigned, ask the owner before work requiring a new ADR.
 Plan first: <yes or no>. If yes, stop after the plan and wait for approval.
 Read CLAUDE.md and docs/workflow.md; in Codex also follow AGENTS.md.
 Read docs/conventions.md for the areas you touch. Read the design documents only

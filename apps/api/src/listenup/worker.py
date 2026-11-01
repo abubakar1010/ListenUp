@@ -57,6 +57,10 @@ JOB_MODULES: list[str] = [
 ]
 
 
+# How long a stopping worker waits for its running jobs. S3 timeouts are sized to fit it.
+SHUTDOWN_GRACE_SECONDS = 30
+
+
 @dataclass(frozen=True)
 class WorkerSpec:
     name: str
@@ -129,7 +133,7 @@ async def run_pool(pool: str) -> None:
                         queues=[lane.value for lane in spec.lanes],
                         concurrency=spec.concurrency,
                         install_signal_handlers=False,
-                        shutdown_graceful_timeout=30,
+                        shutdown_graceful_timeout=SHUTDOWN_GRACE_SECONDS,
                     )
                 )
                 for spec in POOLS[pool]

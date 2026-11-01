@@ -21,7 +21,7 @@ export default function GoogleErrorPage() {
         <Link to="/register" className={buttonClass('primary')}>
           Create an account
         </Link>
-        <Link to="/sign-in" className="font-bold text-accent">
+        <Link to="/sign-in" className="inline-flex min-h-11 items-center font-bold text-accent">
           Back to sign in
         </Link>
       </main>
@@ -51,7 +51,10 @@ export default function GoogleErrorPage() {
       >
         Continue with Google
       </a>
-      <Link to={reauth ? '/settings/delete-account' : '/sign-in'} className="font-bold text-accent">
+      <Link
+        to={reauth ? '/settings/delete-account' : '/sign-in'}
+        className="inline-flex min-h-11 items-center font-bold text-accent"
+      >
         {reauth ? 'Back to account deletion' : 'Back to sign in'}
       </Link>
     </main>

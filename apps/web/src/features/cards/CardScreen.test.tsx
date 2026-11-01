@@ -1,4 +1,6 @@
-import { fireEvent, screen, within, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, within, waitFor } from '@testing-library/react';
+import { useState } from 'react';
+import { useMarks } from '../review/api';
 import { jsonResponse, problem, renderWithProviders } from '../../test-utils';
 import { sessionFixture } from '../session/fixtures';
 import { mockRoutes } from '../session/testApi';
@@ -297,6 +299,50 @@ test('an uncertain save stays blocked until the failed list read recovers', asyn
   await waitFor(() => expect(save).toHaveAttribute('aria-disabled', 'false'));
   expect(calls.filter((call) => call.path === listPath)).toHaveLength(2);
   expect(screen.getByRole('textbox', { name: 'Heard form' })).toHaveValue('kuduv');
+});
+
+// #98: Transcript reads the marks once and then keeps its own working copy, so the cached
+// read is the list as Transcript opened. Card opens in the same render that closes
+// Transcript, and must still show the marks made since.
+test('card_lists_marks_made_in_transcript_when_it_replaces_transcript', async () => {
+  let saved: (typeof mark)[] = [];
+  mockRoutes({
+    [`GET /sessions/${session.id}/marks`]: () => jsonResponse(200, { marks: saved }),
+    [`GET /sessions/${session.id}/transcript`]: jsonResponse(200, {
+      lines: [
+        {
+          words: [
+            { index: 0, text: 'could' },
+            { index: 1, text: 'have' },
+          ],
+        },
+      ],
+    }),
+    [`GET ${listPath}`]: jsonResponse(200, { cards: [], remaining: 2, next_cursor: null }),
+  });
+  function TranscriptStandIn() {
+    const marks = useMarks(session.id);
+    return <p>{marks.data ? `Transcript with ${marks.data.marks.length} saved marks` : '…'}</p>;
+  }
+  function Step({ open }: { open: 'transcript' | 'card' }) {
+    return open === 'transcript' ? (
+      <TranscriptStandIn />
+    ) : (
+      <CardScreen session={session} progress={null} />
+    );
+  }
+  let setOpen: (open: 'transcript' | 'card') => void = () => undefined;
+  function Plan() {
+    const [open, set] = useState<'transcript' | 'card'>('transcript');
+    setOpen = set;
+    return <Step open={open} />;
+  }
+  renderWithProviders(<Plan />);
+  await screen.findByText('Transcript with 0 saved marks');
+  saved = [mark]; // the learner marks a phrase; Transcript keeps it locally and saves it
+  act(() => setOpen('card'));
+  expect(await screen.findByRole('option', { name: /could have/ })).toBeInTheDocument();
+  expect(screen.queryByText(/No marks in this session/)).not.toBeInTheDocument();
 });
 
 test('empty marks and unavailable transcript still allow finishing', async () => {

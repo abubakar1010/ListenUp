@@ -80,39 +80,45 @@ def _make_entry(namespace: int, prefix: str) -> str:
     raise FileExistsError(f"no free scratch name for prefix {prefix!r}")
 
 
-def _newest_mtime(descriptor: int) -> float:
-    """Newest modification time of a directory and everything below it, read through
-    open descriptors so a replaced pathname is never followed. Iterative, so a deeply
-    nested tree cannot exhaust the recursion limit; the caller keeps `descriptor`."""
-    newest = os.fstat(descriptor).st_mtime
-    pending: list[int] = []
-    current = descriptor
+def _open_descendant(root: int, parts: tuple[str, ...]) -> int:
+    """Return an owned descriptor, checking every component without following links.
+
+    Reopening from the pinned root trades extra opens for constant descriptor use;
+    joining the names into one path would let intermediate symlinks be followed.
+    """
+    current = os.dup(root)
     try:
-        while True:
+        for name in parts:
+            inner = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=current)
+            os.close(current)
+            current = inner
+        return current
+    except BaseException:
+        os.close(current)
+        raise
+
+
+def _newest_mtime(descriptor: int) -> float:
+    """Scan through descriptors without recursion or retaining ancestor handles."""
+    newest = os.fstat(descriptor).st_mtime
+    pending: list[tuple[str, ...]] = [()]
+    while pending:
+        parts = pending.pop()
+        try:
+            current = _open_descendant(descriptor, parts)
+        except FileNotFoundError:
+            continue
+        try:
+            newest = max(newest, os.fstat(current).st_mtime)
             with os.scandir(current) as children:
                 for child in children:
-                    newest = max(newest, child.stat(follow_symlinks=False).st_mtime)
-                    if not child.is_dir(follow_symlinks=False):
-                        continue
-                    try:
-                        pending.append(
-                            os.open(
-                                child.name,
-                                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                                dir_fd=current,
-                            )
-                        )
-                    except FileNotFoundError:
-                        continue
-            if current != descriptor:
-                os.close(current)
-            if not pending:
-                return newest
-            current = pending.pop()
-    except BaseException:
-        for leftover in (*pending, *([current] if current != descriptor else [])):
-            os.close(leftover)
-        raise
+                    info = child.stat(follow_symlinks=False)
+                    newest = max(newest, info.st_mtime)
+                    if child.is_dir(follow_symlinks=False):
+                        pending.append((*parts, child.name))
+        finally:
+            os.close(current)
+    return newest
 
 
 @contextmanager
@@ -168,7 +174,9 @@ def _sweep(namespace: int, max_age_seconds: int) -> int:
                     removed += _remove(namespace, name, entry, marker.fileno())
         except FileNotFoundError:
             continue
-        except (OSError, RecursionError):  # e.g. a tree too deep to remove safely
+        except (OSError, RecursionError):
+            # Some Python versions recurse in shutil.rmtree; one deep entry must
+            # not prevent cleanup of the other owned entries.
             logger.exception("scratch entry not removed", extra={"path": name})
     return removed
 

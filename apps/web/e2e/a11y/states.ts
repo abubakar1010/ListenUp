@@ -55,7 +55,14 @@ const LIBRARY: Schema['LibraryItem'][] = [
     stage: 'converting',
     queue_position: null,
   },
-  { ...CLIP, id: 'clip-3', title: 'Interview', status: 'failed', duration_ms: null },
+  // An upload titled by its file name: one long word must still wrap at 360 px (UI-4).
+  {
+    ...CLIP,
+    id: 'clip-3',
+    title: 'interview_recording_2026_10_31_final_version_two_with_the_questions.mp3',
+    status: 'failed',
+    duration_ms: null,
+  },
 ];
 const DETAIL = {
   ...ITEM,
@@ -116,6 +123,13 @@ const TRANSCRIPT = {
       start_ms: 10_000,
       end_ms: 12_000,
       words: [{ index: 3, text: 'Again.', start_ms: 10_000, end_ms: 12_000, edited: false }],
+    },
+    {
+      index: 2,
+      start_ms: 14_000,
+      end_ms: 15_000,
+      // A one-letter word: transcript words use the inline-target exception (UX-15).
+      words: [{ index: 4, text: 'a', start_ms: 14_000, end_ms: 15_000, edited: false }],
     },
   ],
 } satisfies Schema['TranscriptReview'];
@@ -507,6 +521,11 @@ export const STATES: ScanState[] = [
     name: 'voice consent',
     path: '/voice-consent',
     ready: (page) => page.getByText('Version voice-2026-1'),
+  },
+  {
+    name: 'accessibility statement',
+    path: '/accessibility',
+    ready: (page) => page.getByRole('heading', { level: 2, name: 'Known limitations' }),
   },
   {
     name: 'google error',
