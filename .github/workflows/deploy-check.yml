@@ -12,6 +12,8 @@ on:
       - docs/legal/**
       - .github/workflows/release.yml
       - .github/workflows/deploy-check.yml
+      - .github/workflows/speech-benchmarks.yml
+      - spikes/ci/**
   pull_request:
     paths:
       - infra/**
@@ -19,6 +21,8 @@ on:
       - docs/legal/**
       - .github/workflows/release.yml
       - .github/workflows/deploy-check.yml
+      - .github/workflows/speech-benchmarks.yml
+      - spikes/ci/**
 
 permissions:
   contents: read
@@ -39,11 +43,12 @@ jobs:
             --env-file infra/deploy/env.example -f infra/compose/compose.prod.yml \
             --profile ops config --quiet
       - name: Deploy scripts pass shellcheck
-        run: shellcheck infra/deploy/deploy.sh infra/deploy/rollback.sh infra/deploy/provision-host.sh infra/deploy/host-facts.sh
+        run: shellcheck infra/deploy/deploy.sh infra/deploy/rollback.sh infra/deploy/provision-host.sh infra/deploy/host-facts.sh spikes/ci/runner-facts.sh spikes/ci/run-benchmark.sh
       - name: Workflows pass actionlint
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 \
-            -no-color .github/workflows/release.yml .github/workflows/deploy-check.yml
+            -no-color .github/workflows/release.yml .github/workflows/deploy-check.yml \
+            .github/workflows/speech-benchmarks.yml
 
   edge-image:
     name: Edge image (Caddy and web build)

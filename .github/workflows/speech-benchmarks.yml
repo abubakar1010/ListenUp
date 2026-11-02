@@ -1,0 +1,76 @@
+# Speech benchmarks on GitHub's Arm runner, under owner exception E4
+# (https://github.com/abubakar1010/ListenUp/issues/119#issuecomment-6559104401).
+# B4 (#22) runs here now; B3 (#21) and the B1 to B4 rerun (#233) add their own choices.
+#
+# This repository is public, so logs and artifacts are public too. Inputs are openly
+# licensed audio fetched at run time (AMI, CC BY 4.0, for B4). Audio stays inside the
+# container's /tmp; only numbers, text and runner facts are uploaded. Never add learner,
+# golden-set (#106, #107), YouTube or voice-consent audio here.
+#
+# Results count only when labelled "CI-runner evidence (E4)" and taken from at least three
+# separate runs of the same benchmark (judge each criterion by the worst run's figure).
+name: Speech benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      benchmark:
+        description: >-
+          b4-ami-manifest writes ami-windows.json (commit it to spikes/b4/);
+          b4 measures filler recall on those windows
+        type: choice
+        options:
+          - b4
+          - b4-ami-manifest
+        default: b4
+      model:
+        description: faster-whisper model for B4
+        type: string
+        default: small.en
+
+permissions:
+  contents: read
+
+# One run at a time: shared runners are noisy, and the corpus host is a university server.
+concurrency:
+  group: speech-benchmarks
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: ${{ inputs.benchmark }} (CI-runner evidence, E4)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record the runner facts
+        run: bash spikes/ci/runner-facts.sh results/runner-facts.txt
+
+      # The stage 0 media process shape: 2 CPUs, 2 threads, no swap. The runner has
+      # 16 GB, so memory is capped at 12 GB rather than stage 0's 18 GB.
+      - name: Run the benchmark in a 2-CPU container without swap
+        env:
+          BENCHMARK: ${{ inputs.benchmark }}
+          MODEL: ${{ inputs.model }}
+        run: |
+          docker run --rm --cpus=2 --memory=12g --memory-swap=12g \
+            -e OMP_NUM_THREADS=2 -e BENCHMARK -e MODEL -e RESULTS=/repo/results \
+            -v "$PWD:/repo" -w /repo/spikes \
+            python:3.12-slim-bookworm bash ci/run-benchmark.sh
+
+      - name: Refuse to upload audio
+        run: |
+          audio=$(find results -type f \( -iname '*.wav' -o -iname '*.flac' -o -iname '*.mp3' \
+            -o -iname '*.m4a' -o -iname '*.ogg' -o -iname '*.webm' \))
+          if [ -n "$audio" ]; then
+            echo "::error::audio in results: $audio"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.benchmark }}-run-${{ github.run_id }}
+          path: results/
+          if-no-files-found: error
+          retention-days: 90
