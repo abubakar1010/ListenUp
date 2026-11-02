@@ -116,7 +116,20 @@ def test_match_fillers_reports_no_rate_without_any_fillers() -> None:
     assert (result.recall, result.precision) == (None, None)
 
 
-def test_match_fillers_takes_the_nearest_so_a_later_mark_keeps_its_own() -> None:
+def test_match_fillers_pairs_as_many_as_possible() -> None:
     # The mark at 1.0 s could take either; taking the farther one would leave 2.1 s unmatched.
     result = match_fillers([hes(1.0), hes(2.1)], [hes(1.0), hes(1.6)])["hesitation"]
     assert (result.hits, result.missed, result.extra) == (2, 0, 0)
+    # Nearest-first would give the 1.45 s filler to the first mark and strand the second
+    # (review of #280): clustered hesitations must still all pair up.
+    marks = [FillerMark(1.0, 1.1, "hesitation", "uh"), FillerMark(1.9, 2.0, "hesitation", "uh")]
+    found = [FillerMark(0.55, 0.6, "hesitation", "uh"), FillerMark(1.45, 1.5, "hesitation", "um")]
+    result = match_fillers(marks, found)["hesitation"]
+    assert (result.hits, result.missed, result.extra) == (2, 0, 0)
+
+
+def test_match_fillers_does_not_depend_on_the_order_fillers_are_listed() -> None:
+    marks = [FillerMark(1.0, 1.1, "hesitation", "uh"), FillerMark(1.9, 2.0, "hesitation", "uh")]
+    found = [FillerMark(1.45, 1.5, "hesitation", "um"), FillerMark(0.55, 0.6, "hesitation", "uh")]
+    assert match_fillers(marks, found)["hesitation"].hits == 2
+    assert match_fillers(marks[::-1], found)["hesitation"].hits == 2

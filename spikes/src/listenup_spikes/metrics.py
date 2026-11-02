@@ -127,31 +127,45 @@ class FillerCounts:
         return self.hits / (self.hits + self.extra) if self.hits + self.extra else None
 
 
+def _near(ref: FillerMark, hyp: FillerMark, tolerance_s: float) -> bool:
+    return round(hyp.start, 6) <= round(ref.end + tolerance_s, 6) and round(hyp.end, 6) >= round(
+        ref.start - tolerance_s, 6
+    )
+
+
+def _max_pairs(refs: Sequence[FillerMark], hyps: Sequence[FillerMark], tolerance_s: float) -> int:
+    """Size of a maximum matching between reference and transcript fillers, each used once
+    (augmenting paths; a 75 s window holds a few dozen fillers)."""
+    options = [[j for j, h in enumerate(hyps) if _near(r, h, tolerance_s)] for r in refs]
+    owner: dict[int, int] = {}
+
+    def assign(i: int, seen: set[int]) -> bool:
+        for j in options[i]:
+            if j in seen:
+                continue
+            seen.add(j)
+            if j not in owner or assign(owner[j], seen):
+                owner[j] = i
+                return True
+        return False
+
+    return sum(assign(i, set()) for i in range(len(refs)))
+
+
 def match_fillers(
     reference: Sequence[FillerMark],
     hypothesis: Sequence[FillerMark],
     tolerance_s: float = MATCH_TOLERANCE_S,
 ) -> dict[str, FillerCounts]:
-    """Pair each reference filler, in time order, with the nearest unused transcript filler
-    of the same kind within tolerance_s of its ends. Spellings within a kind are
-    interchangeable (AMI writes every vowel hesitation "uh")."""
+    """Pair reference and transcript fillers of the same kind whose times are within
+    tolerance_s of each other, as many pairs as possible, each filler used once. Spellings
+    within a kind are interchangeable (AMI writes every vowel hesitation "uh")."""
     results: dict[str, FillerCounts] = {}
     for kind in ("hesitation", "discourse"):
-        refs = sorted((m for m in reference if m.kind == kind), key=lambda m: m.start)
-        free = sorted((m for m in hypothesis if m.kind == kind), key=lambda m: m.start)
-        hits = 0
-        for ref in refs:
-            near = [
-                h
-                for h in free
-                if round(h.start, 6) <= round(ref.end + tolerance_s, 6)
-                and round(h.end, 6) >= round(ref.start - tolerance_s, 6)
-            ]
-            if near:
-                middle = (ref.start + ref.end) / 2
-                free.remove(min(near, key=lambda h: abs((h.start + h.end) / 2 - middle)))
-                hits += 1
-        results[kind] = FillerCounts(hits, len(refs) - hits, len(free))
+        refs = [m for m in reference if m.kind == kind]
+        hyps = [m for m in hypothesis if m.kind == kind]
+        hits = _max_pairs(refs, hyps, tolerance_s)
+        results[kind] = FillerCounts(hits, len(refs) - hits, len(hyps) - hits)
     results["all"] = FillerCounts(
         *(sum(getattr(r, f) for r in results.values()) for f in ("hits", "missed", "extra"))
     )
