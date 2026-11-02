@@ -3,7 +3,15 @@
 import json
 from pathlib import Path
 
-from listenup_spikes.b4_fillers import load_items, summarize_setting
+import pytest
+
+from listenup_spikes.b4_fillers import (
+    Item,
+    load_items,
+    matching_mode,
+    speed_summary,
+    summarize_setting,
+)
 from listenup_spikes.metrics import FillerCounts, FillerMark
 
 
@@ -76,3 +84,20 @@ def test_summarize_setting_pools_recordings_per_kind_and_checks_the_target() -> 
         )["p discourse recall"]
         is None
     )
+
+
+def test_matching_mode_is_timed_or_count_level_never_a_silent_mix() -> None:
+    timed = Item(Path("a.wav"), 1, [FillerMark(1.0, 1.2, "hesitation", "uh")])
+    counted = Item(Path("b.wav"), 1, None)
+    assert matching_mode([timed, timed]) == "timed"
+    assert matching_mode([counted]) == "count"
+    with pytest.raises(SystemExit, match="mix"):
+        matching_mode([timed, counted])
+
+
+def test_speed_summary_reports_p50_and_p95_core_seconds() -> None:
+    speeds = [0.1 * i for i in range(1, 21)]  # 0.1 to 2.0
+    assert speed_summary("plain", speeds) == {
+        "plain core-s per audio-s p50": 1.0,
+        "plain core-s per audio-s p95": 1.9,
+    }

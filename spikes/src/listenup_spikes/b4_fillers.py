@@ -59,6 +59,24 @@ def load_items(data: Path) -> list[Item]:
     return items
 
 
+def matching_mode(items: Sequence[Item]) -> str:
+    """ "timed" when every recording has timed marks, "count" when none has; a mix would
+    pool two different measures, so it is refused."""
+    timed = [item.marks is not None for item in items]
+    if all(timed):
+        return "timed"
+    if not any(timed):
+        return "count"
+    raise SystemExit("the data folder mixes timed marks and bare counts: use one kind")
+
+
+def speed_summary(setting: str, speeds: Sequence[float]) -> dict[str, float]:
+    return {
+        f"{setting} core-s per audio-s p50": round(percentile(speeds, 50), 3),
+        f"{setting} core-s per audio-s p95": round(percentile(speeds, 95), 3),
+    }
+
+
 def _rate(value: float | None) -> float | None:
     return None if value is None else round(value, 3)
 
@@ -99,9 +117,12 @@ def main() -> None:
     items = load_items(args.data)
     if not items:
         raise SystemExit(f"no audio + .fillers pairs in {args.data}")
-    timed = all(item.marks is not None for item in items)
+    timed = matching_mode(items) == "timed"
 
     model = WhisperModel(args.model, device="cpu", compute_type="int8", cpu_threads=args.threads)
+    # One untimed transcription first, so no setting pays for a cold model (E4: warm models).
+    warm_up, _ = model.transcribe(decode(items[0].audio), language="en", word_timestamps=timed)
+    list(warm_up)  # segments are lazy: consume them so the model really runs
     report = Report(
         "spike-22-b4-fillers",
         ["setting", "recording", "true", "found", "hits", "missed", "extra", "core_s_per_audio_s"],
@@ -151,7 +172,7 @@ def main() -> None:
             report.summary[f"{setting} recall"] = round(rp.recall, 3)
             report.summary[f"{setting} precision"] = round(rp.precision, 3)
             report.summary[f"{setting} meets 80% recall"] = rp.recall >= TARGET_RECALL
-        report.summary[f"{setting} core-s per audio-s p95"] = round(percentile(speeds, 95), 3)
+        report.summary |= speed_summary(setting, speeds)
     print(f"wrote {report.write(args.out)}")
 
 
