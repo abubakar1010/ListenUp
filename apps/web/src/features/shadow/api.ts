@@ -130,3 +130,16 @@ export function useDeleteRecording(sessionId: string) {
     onSuccess: () => client.invalidateQueries({ queryKey: roundsKey(sessionId) }),
   });
 }
+
+export type RoundGrade = components['schemas']['RoundFeedbackScored'];
+/** Under `sessions`, so account changes clear it; `grade.ready` refreshes it. */
+export const ROUND_GRADE_KEY = [...SESSIONS_KEY, 'round-grade'] as const;
+export function useRoundGrade(roundId: string) {
+  return useQuery({
+    queryKey: [...ROUND_GRADE_KEY, roundId],
+    queryFn: () =>
+      api<components['schemas']['RoundFeedbackUnavailable'] | RoundGrade>(
+        `/shadow/rounds/${encodeURIComponent(roundId)}/grade`,
+      ),
+  });
+}

@@ -107,13 +107,21 @@ test('a recorded Shadow completion shows unavailable feedback after reload', asy
       rounds: [1, 2, 3].map((round) => ({
         id: `round-${round}`,
         round,
+        recorded_at: '2026-11-01T10:00:00Z',
         recording_available: true,
       })),
     }),
+    ...Object.fromEntries(
+      [1, 2, 3].map((round) => [
+        `GET /shadow/rounds/round-${round}/grade`,
+        jsonResponse(200, { status: 'unavailable' }),
+      ]),
+    ),
   });
   renderSession();
   expect(await screen.findByText('All 4 steps finished')).toBeInTheDocument();
-  expect(screen.getByText('Feedback unavailable.')).toBeInTheDocument();
+  // One notice per recorded round; under E2 every round grade is unavailable.
+  await waitFor(() => expect(screen.getAllByText('Feedback unavailable.')).toHaveLength(3));
   expect(screen.queryByText("The clip's player will show here.")).not.toBeInTheDocument();
   for (const round of [1, 2, 3]) {
     expect(await screen.findByLabelText(`Your recording of round ${round}`)).toHaveAttribute(

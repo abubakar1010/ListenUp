@@ -6,6 +6,7 @@ import { useContent } from '../content/useContent';
 import { RECORDING_MAX_BYTES, useChangeRound, useRounds, useUploadRecording } from './api';
 import { useFocusLater } from '../../lib/useFocusLater';
 import { DeleteRecording } from './DeleteRecording';
+import { RoundFeedback } from './RoundFeedback';
 import { useRoundRecorder, type Recording } from './recording';
 import { ShadowReadiness } from './ShadowReadiness';
 import { ShadowRoundPlayer } from './ShadowRoundPlayer';
@@ -87,6 +88,8 @@ export function ShadowRounds({
       <p role={onStatus ? undefined : 'status'}>Loading rounds…</p>
     );
   const ended = current?.playback_status === 'ended';
+  // Rounds 2 and 3 are shadowed without text, so no marked transcript shows mid-round.
+  const playing = current !== undefined && current !== null && !ended;
   return (
     <section
       aria-label="Shadow rounds"
@@ -164,36 +167,45 @@ export function ShadowRounds({
         your account. Playback alone does not complete Shadow.
       </p>
       {state.data.rounds
-        .filter((r) => r.recording_available && content.data?.media_url)
+        .filter((r) => r.recorded_at)
         .map((r) => (
           <section
             key={r.round}
-            aria-label={`Round ${r.round} replay`}
+            aria-label={r.recording_available ? `Round ${r.round} replay` : `Round ${r.round}`}
             className="flex flex-col gap-2"
           >
-            <h3 className="font-display text-body">Round {r.round}: compare</h3>
-            <audio
-              controls
-              preload="none"
-              aria-label={`Original, round ${r.round} segment`}
-              src={`${content.data?.media_url}#t=${state.data.segment.start_ms / 1000},${state.data.segment.end_ms / 1000}`}
-            />
-            <audio
-              controls
-              preload="none"
-              aria-label={`Your recording of round ${r.round}`}
-              src={`/api/v1/shadow/rounds/${r.id}/recording`}
-            />
-            {r.feedback === 'unavailable' && <p>Feedback unavailable.</p>}
-            <DeleteRecording
-              sessionId={sessionId}
-              roundId={r.id}
-              round={r.round}
-              onDeleted={(message) => {
-                reportStatus(message);
-                focusHeading();
-              }}
-            />
+            <h3 className="font-display text-body">
+              {r.recording_available ? `Round ${r.round}: compare` : `Round ${r.round}`}
+            </h3>
+            {r.recording_available && content.data?.media_url && (
+              <>
+                <audio
+                  controls
+                  preload="none"
+                  aria-label={`Original, round ${r.round} segment`}
+                  src={`${content.data.media_url}#t=${state.data.segment.start_ms / 1000},${state.data.segment.end_ms / 1000}`}
+                />
+                <audio
+                  controls
+                  preload="none"
+                  aria-label={`Your recording of round ${r.round}`}
+                  src={`/api/v1/shadow/rounds/${r.id}/recording`}
+                />
+              </>
+            )}
+            {/* Grades and word labels outlive the recording (D7). */}
+            <RoundFeedback roundId={r.id} round={r.round} showMarkers={!playing} />
+            {r.recording_available && (
+              <DeleteRecording
+                sessionId={sessionId}
+                roundId={r.id}
+                round={r.round}
+                onDeleted={(message) => {
+                  reportStatus(message);
+                  focusHeading();
+                }}
+              />
+            )}
           </section>
         ))}
       {selectionPending && <p>Save your segment before starting a round.</p>}

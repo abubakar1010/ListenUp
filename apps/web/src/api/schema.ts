@@ -1546,6 +1546,29 @@ export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
     /**
+     * AccentGuidance
+     * @description Guidance compared with this speaker, never correctness, and not in the
+     *     overall score (FR-SH-15, D11, UX-33).
+     */
+    AccentGuidance: {
+      /**
+       * Compared With
+       * @constant
+       */
+      compared_with: 'this_speaker';
+      /** Experimental */
+      experimental: boolean;
+      /**
+       * In Overall
+       * @constant
+       */
+      in_overall: false;
+      /** Reason */
+      reason: string | null;
+      /** Score */
+      score: number | null;
+    };
+    /**
      * Action
      * @enum {string}
      */
@@ -2604,6 +2627,16 @@ export interface components {
        */
       id: string;
     };
+    /**
+     * MeasureScore
+     * @description 0 to 100, or null with the reason it could not be observed.
+     */
+    MeasureScore: {
+      /** Reason */
+      reason: string | null;
+      /** Score */
+      score: number | null;
+    };
     /** NewCard */
     NewCard: {
       /** Heard Form */
@@ -2853,12 +2886,25 @@ export interface components {
       /** Transcript Shown */
       transcript_shown: boolean;
     };
-    /** RoundFeedback */
-    RoundFeedback: {
+    /** RoundFeedbackScored */
+    RoundFeedbackScored: {
+      accent: components['schemas']['AccentGuidance'];
+      measures: components['schemas']['ScoredMeasures'];
+      /** Overall */
+      overall: number;
       /**
-       * Status
-       * @default unavailable
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      status: 'scored';
+      /** Word Labels */
+      word_labels: components['schemas']['WordLabel'][];
+    };
+    /** RoundFeedbackUnavailable */
+    RoundFeedbackUnavailable: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
        */
       status: 'unavailable';
     };
@@ -2948,6 +2994,15 @@ export interface components {
       marks: components['schemas']['SavedMark'][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** ScoredMeasures */
+    ScoredMeasures: {
+      articulation: components['schemas']['MeasureScore'];
+      completeness: components['schemas']['MeasureScore'];
+      fillers: components['schemas']['MeasureScore'];
+      fluency: components['schemas']['MeasureScore'];
+      pronunciation: components['schemas']['MeasureScore'];
+      timing: components['schemas']['MeasureScore'];
     };
     /** Segment */
     Segment: {
@@ -3087,6 +3142,23 @@ export interface components {
        * @description The session `version` the client last saw
        */
       version: number;
+    };
+    /** SoundReason */
+    SoundReason: {
+      /**
+       * Issue
+       * @enum {string}
+       */
+      issue: 'dropped' | 'merged' | 'unclear' | 'inaccurate';
+      /** Linking */
+      linking: boolean;
+      /**
+       * Position
+       * @enum {string}
+       */
+      position: 'initial' | 'medial' | 'final';
+      /** Sound */
+      sound: string;
     };
     /** StartSession */
     StartSession: {
@@ -3289,6 +3361,25 @@ export interface components {
     /** WithdrawConsent */
     WithdrawConsent: {
       kind: components['schemas']['ConsentKind'];
+    };
+    /**
+     * WordLabel
+     * @description One segment word's marker (FR-SH-10); missed words have no score.
+     */
+    WordLabel: {
+      /** Index */
+      index: number;
+      /**
+       * Label
+       * @enum {string}
+       */
+      label: 'good' | 'needs_work' | 'missed';
+      /** Reasons */
+      reasons: components['schemas']['SoundReason'][];
+      /** Score */
+      score: number | null;
+      /** Text */
+      text: string;
     };
   };
   responses: never;
@@ -6523,7 +6614,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['RoundFeedback'];
+          'application/json':
+            | components['schemas']['RoundFeedbackUnavailable']
+            | components['schemas']['RoundFeedbackScored'];
         };
       };
       /** @description round_not_found */

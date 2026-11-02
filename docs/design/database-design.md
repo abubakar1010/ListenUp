@@ -658,14 +658,20 @@ CREATE TABLE grading.round_grades (
                 CHECK (status IN ('pending', 'scored', 'ready', 'unavailable')),
                 -- scored = numbers shown; ready = written feedback added too
   measures      jsonb,   -- {timing, pronunciation, accent, articulation, fluency, fillers, completeness}
-  overall       int2 CHECK (overall BETWEEN 0 AND 100),  -- equal weights of the measures except accent
-                                                          -- (accent is guidance only, FR-SH-15)
-  word_labels   jsonb,   -- per word: good | needs_work | missed, with the sound-level reasons
+  overall       int2 CHECK (overall BETWEEN 0 AND 100),  -- weighted mean of the six measures except accent,
+                                                          -- weights versioned per grade (equal in v1);
+                                                          -- accent is guidance only, FR-SH-15
+  word_labels   jsonb,   -- every segment word, in order: [{index, text, label: good | needs_work | missed,
+                         --   score (null when missed), basis: sounds | word | null,
+                         --   reasons: [{sound, position: initial | medial | final,
+                         --   issue: dropped | merged | unclear | inaccurate, linking}]}] (ADR 0099)
   filler_count  int2 CHECK (filler_count >= 0),
   feedback      text CHECK (char_length(feedback) <= 1500),
   top_fixes     jsonb,   -- up to 3
   feedback_mode text CHECK (feedback_mode IN ('ai', 'template')),
-  speech_info   jsonb,   -- speech provider, models, versions
+  speech_info   jsonb,   -- speech provider, models, versions, synthetic; parameters_version and
+                         -- speech_parameters_version with their calibrated flags; overall_weights,
+                         -- overall_basis, echo (ADR 0092, 0099)
   text_info     jsonb,   -- text AI provider, model, prompt version
   echo_detected boolean NOT NULL DEFAULT false,
   created_at    timestamptz NOT NULL DEFAULT now(),

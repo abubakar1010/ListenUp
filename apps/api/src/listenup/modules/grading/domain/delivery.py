@@ -162,16 +162,16 @@ class DeliveryParameters:
             raise ValueError("Invalid delivery parameter status")
         _validate(data)
         # A frozen copy, so nothing changes the values after they were validated.
-        return cls(version, data["provisional"], data["calibrated"], _frozen(data))
+        return cls(version, data["provisional"], data["calibrated"], frozen_copy(data))
 
 
-def _frozen(value: Any) -> Any:
+def frozen_copy(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return MappingProxyType({key: _frozen(item) for key, item in value.items()})
+        return MappingProxyType({key: frozen_copy(item) for key, item in value.items()})
     return value
 
 
-def _half_up(value: float) -> int:
+def half_up(value: float) -> int:
     """Nearest integer, halves up, for the nonnegative values scored here.
 
     Rounding to nine places first absorbs binary float error, so a score that is
@@ -266,7 +266,7 @@ def _timing(
     total = sum(weights[name] for name in components)
     value = sum(weights[name] * credit for name, credit in components.items()) / total
     return Measure(
-        _half_up(100 * value),
+        half_up(100 * value),
         details={
             "matched": len(pairs),
             "mean_lag_s": round(sum(lags) / len(lags), 3),
@@ -321,7 +321,7 @@ def _fluency(
     )
     rate = events / minutes
     return Measure(
-        _half_up(100 * _credit(rate, 0, section["zero_events_per_minute"])),
+        half_up(100 * _credit(rate, 0, section["zero_events_per_minute"])),
         details={
             "hesitations": hesitations,
             "long_pauses": long_pauses,
@@ -343,7 +343,7 @@ def _fillers(
     rate = len(fillers) / minutes
     credit = _credit(rate, section["free_per_minute"], section["zero_per_minute"])
     return Measure(
-        _half_up(100 * credit),
+        half_up(100 * credit),
         details={
             "count": len(fillers),
             "per_minute": round(rate, 3),
@@ -400,12 +400,25 @@ def score_round(
         "fillers": _fillers(parameters.raw["fillers"], fillers, original),
         "completeness": _completeness(reference_word_count, recorded),
     }
-    # FR-SH-9's equal weights over what is observable; accent is never included
-    # (FR-SH-15) and #83 adds pronunciation and articulation (ADR 0092).
-    basis = tuple(name for name in MEASURES if measures[name].score is not None)
-    total = sum(measures[name].score or 0 for name in basis)
-    overall = (2 * total + len(basis)) // (2 * len(basis)) if basis else None
+    overall, basis = overall_score(measures, dict.fromkeys(MEASURES, 1))
     return DeliveryScores(measures, overall, basis, len(fillers), echo, parameters.version)
+
+
+def overall_score(
+    measures: Mapping[str, Measure], weights: Mapping[str, int]
+) -> tuple[int | None, tuple[str, ...]]:
+    """The one overall-score rule (FR-SH-9, D3, D11): the weighted mean, halves up,
+    of the weighted measures that are observable, and that basis.
+
+    Only measures named in `weights` count, so accent, which no weight set may
+    name (FR-SH-15), can never change the overall. An unobservable measure is left
+    out, never counted as 0 or 100 (ADR 0092); with none observable there is none.
+    """
+    basis = tuple(name for name in weights if name in measures and measures[name].score is not None)
+    total = sum(weights[name] * (measures[name].score or 0) for name in basis)
+    weight = sum(weights[name] for name in basis)
+    # Positive integer arithmetic: nearest integer, halves rounded up.
+    return ((2 * total + weight) // (2 * weight) if basis else None), basis
 
 
 def place_original(
