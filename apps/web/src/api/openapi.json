@@ -1,6 +1,52 @@
 {
   "components": {
     "schemas": {
+      "AccentGuidance": {
+        "description": "Guidance compared with this speaker, never correctness, and not in the\noverall score (FR-SH-15, D11, UX-33).",
+        "properties": {
+          "compared_with": {
+            "const": "this_speaker",
+            "title": "Compared With",
+            "type": "string"
+          },
+          "experimental": {
+            "title": "Experimental",
+            "type": "boolean"
+          },
+          "in_overall": {
+            "const": false,
+            "title": "In Overall",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "required": ["score", "reason", "experimental", "compared_with", "in_overall"],
+        "title": "AccentGuidance",
+        "type": "object"
+      },
       "Action": {
         "enum": ["continue", "resume", "stop"],
         "title": "Action",
@@ -2030,6 +2076,38 @@
         "title": "Me",
         "type": "object"
       },
+      "MeasureScore": {
+        "description": "0 to 100, or null with the reason it could not be observed.",
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "required": ["score", "reason"],
+        "title": "MeasureScore",
+        "type": "object"
+      },
       "NewCard": {
         "additionalProperties": false,
         "properties": {
@@ -2535,7 +2613,38 @@
         "title": "Round",
         "type": "object"
       },
-      "RoundFeedback": {
+      "RoundFeedbackScored": {
+        "properties": {
+          "accent": {
+            "$ref": "#/components/schemas/AccentGuidance"
+          },
+          "measures": {
+            "$ref": "#/components/schemas/ScoredMeasures"
+          },
+          "overall": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Overall",
+            "type": "integer"
+          },
+          "status": {
+            "const": "scored",
+            "title": "Status",
+            "type": "string"
+          },
+          "word_labels": {
+            "items": {
+              "$ref": "#/components/schemas/WordLabel"
+            },
+            "title": "Word Labels",
+            "type": "array"
+          }
+        },
+        "required": ["status", "overall", "measures", "accent", "word_labels"],
+        "title": "RoundFeedbackScored",
+        "type": "object"
+      },
+      "RoundFeedbackUnavailable": {
         "properties": {
           "status": {
             "const": "unavailable",
@@ -2544,7 +2653,7 @@
             "type": "string"
           }
         },
-        "title": "RoundFeedback",
+        "title": "RoundFeedbackUnavailable",
         "type": "object"
       },
       "Rounds": {
@@ -2732,6 +2841,38 @@
         },
         "required": ["marks", "next_cursor"],
         "title": "SavedMarkList",
+        "type": "object"
+      },
+      "ScoredMeasures": {
+        "properties": {
+          "articulation": {
+            "$ref": "#/components/schemas/MeasureScore"
+          },
+          "completeness": {
+            "$ref": "#/components/schemas/MeasureScore"
+          },
+          "fillers": {
+            "$ref": "#/components/schemas/MeasureScore"
+          },
+          "fluency": {
+            "$ref": "#/components/schemas/MeasureScore"
+          },
+          "pronunciation": {
+            "$ref": "#/components/schemas/MeasureScore"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/MeasureScore"
+          }
+        },
+        "required": [
+          "timing",
+          "pronunciation",
+          "articulation",
+          "fluency",
+          "fillers",
+          "completeness"
+        ],
+        "title": "ScoredMeasures",
         "type": "object"
       },
       "Segment": {
@@ -3014,6 +3155,31 @@
         },
         "required": ["version"],
         "title": "SkipStep",
+        "type": "object"
+      },
+      "SoundReason": {
+        "properties": {
+          "issue": {
+            "enum": ["dropped", "merged", "unclear", "inaccurate"],
+            "title": "Issue",
+            "type": "string"
+          },
+          "linking": {
+            "title": "Linking",
+            "type": "boolean"
+          },
+          "position": {
+            "enum": ["initial", "medial", "final"],
+            "title": "Position",
+            "type": "string"
+          },
+          "sound": {
+            "title": "Sound",
+            "type": "string"
+          }
+        },
+        "required": ["sound", "position", "issue", "linking"],
+        "title": "SoundReason",
         "type": "object"
       },
       "StartSession": {
@@ -3426,6 +3592,48 @@
         },
         "required": ["kind"],
         "title": "WithdrawConsent",
+        "type": "object"
+      },
+      "WordLabel": {
+        "description": "One segment word's marker (FR-SH-10); missed words have no score.",
+        "properties": {
+          "index": {
+            "minimum": 0.0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "label": {
+            "enum": ["good", "needs_work", "missed"],
+            "title": "Label",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/SoundReason"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": ["index", "text", "label", "score", "reasons"],
+        "title": "WordLabel",
         "type": "object"
       }
     }
@@ -7405,7 +7613,22 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RoundFeedback"
+                  "discriminator": {
+                    "mapping": {
+                      "scored": "#/components/schemas/RoundFeedbackScored",
+                      "unavailable": "#/components/schemas/RoundFeedbackUnavailable"
+                    },
+                    "propertyName": "status"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/RoundFeedbackUnavailable"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RoundFeedbackScored"
+                    }
+                  ],
+                  "title": "Response Read Round Api V1 Shadow Rounds  Round Id  Grade Get"
                 }
               }
             },

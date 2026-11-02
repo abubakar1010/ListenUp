@@ -6,5 +6,6 @@
   "src/features/session/testApi.ts",
   "src/features/session/fixtures.ts",
   "src/features/blind/fixtures.ts",
+  "src/features/shadow/fixtures.ts",
   "src/api/schema.ts"
 ]

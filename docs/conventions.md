@@ -506,3 +506,32 @@ Read the section for the area you are changing before you change it. The rules e
   transcript cache identities map profile words to assessment indices; learner text
   corrections never become the scoring reference. Echo stays `unchecked` without a
   detector signal, regardless of `echo_detected=false`.
+
+## Shadow speech measures and word labels (ADR 0099, #83)
+
+- `grading/domain/speech_measures.py` computes pronunciation, articulation, accent,
+  word labels and the whole round (`grade_round`) as pure code over plain `Sound`,
+  `SpokenWord` and `Prosody` values; `round_inputs.round_result` converts the
+  assessment and stores the result. Thresholds and weights live in
+  `shadow_speech.v<N>.json`; change a value only in a new version. Store both
+  `parameters_version` and `speech_parameters_version`, plus the overall weights.
+- `delivery.overall_score(measures, weights)` is the only overall rule. The overall
+  weight set must name exactly the six scored measures, so accent can never enter it
+  (D11); unobservable measures are left out, never 0 or 100.
+- Articulation and the word markers share one sound annotation; add a new sound
+  issue there so both flag the same sounds. Compare times and lengths after
+  rounding to nine places. Reference profile pitch frames are centred
+  (`prosody_from_frames`). Accent stays `experimental` and
+  "compared with this speaker"; its vowel component is null until the reference
+  profile has phone scores (#80).
+- Learner projection: `grading.service.LEARNER_GRADES_RELEASED` stays `False` until
+  the owner turns grading on (#21, #22, #106, #107, #109, #110); it is a code
+  constant, never a setting. Even when on, only non-synthetic `scored`/`ready`
+  rows with all seven measures, graded with calibrated delivery and speech
+  parameters, are shown. Tests that need the projection monkeypatch the constant.
+- Web: `features/shadow/RoundFeedback.tsx` reads each recorded round's grade (also
+  after its recording is deleted) and keeps "Feedback unavailable." for an
+  unavailable or failed read. Word markers use a line style or glyph plus a hidden
+  label and a plain-words reason list, never colour alone (UX-01, UX-12), and hide
+  from when the next round opens until its playback ends. `grade.ready` refreshes `ROUND_GRADE_KEY`. E2E fakes
+  answer `GET /shadow/rounds/{id}/grade` with `unavailable`.
