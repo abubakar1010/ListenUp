@@ -14,7 +14,7 @@
 - **Enough material for B4.** All 40 speakers in those meetings have at least one 75 s window in which they speak most of the time and at least 5 of the B4 fillers occur.
 - **Run-time fetch is small.** Fetching the 20 windows takes about 48 MB of byte-range requests plus a 23 MB annotation zip.
 
-One owner decision remains. #22 says "teacher-marked" fillers, but AMI's fillers were marked by trained corpus transcribers and annotators, not language teachers. If the owner requires teacher marking, the cheapest path is option B below: a teacher checks the same 20 open windows (about 5 to 6 hours).
+**Owner decision, 2026-11-02: option A** (AMI as is, with its trained-annotator marks as the reference). #22 says "teacher-marked"; AMI's fillers were marked by trained corpus transcribers and annotators. Option B (a teacher checks the same windows) stays available.
 
 ## Requirement used
 
@@ -50,38 +50,38 @@ Non-commercial (NC) licences are also rejected. B4 decides whether a product fea
 **Proposed 20 windows.** The selection rule is fixed before B4 runs and does not maximise filler counts:
 
 1. Consider 75 s windows that start at a word onset. In each, the target speaker speaks for at least 60% of the time, and at least 5 B4 fillers occur (*uh*, *um*, *er*, and `dm`-tagged *like* or *you know*).
-2. Per speaker, take the window with the least speech from other speakers (crosstalk). On a tie, take the one with more own speech.
-3. Take speakers in order of crosstalk, with at most 4 TNO (Dutch) speakers.
+2. Per speaker, take the window with the least speech from other speakers (crosstalk), compared in steps of 1% of the window (0.75 s). On a tie, take the one with more own speech, then the earliest.
+3. Take speakers in the same order, with at most 4 TNO (Dutch) speakers.
 
-Running the rule on `ami_public_manual_1.6.2` gives 215 marked fillers: 197 *uh*/*um* and 18 *like*/*you know*. It gives 10 women and 10 men.
+Running the rule on `ami_public_manual_1.6.2` gives 230 marked fillers: 222 *uh*/*um* and 8 *like*/*you know*. It gives 9 women and 11 men. The table comes from the implementation (`spikes/src/listenup_spikes/ami.py`, branch `feat/22-b4-benchmark-workflow`); the committed manifest that the B4 workflow generates is the final list.
 
 | # | Speaker | First language / region | Meeting | File | Start (s) | Own speech | Crosstalk | uh/um | like/you know |
 | - | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | FIO089 | Swiss German / America | IS1009b | Headset-3 | 479.65 | 0.99 | 0.00 | 5 | 0 |
-| 2 | MTD017PM | Dutch (TNO) | TS3005a | Headset-0 | 213.85 | 0.99 | 0.00 | 16 | 0 |
-| 3 | MTD022ID | Dutch (TNO) | TS3006c | Headset-2 | 403.97 | 0.99 | 0.00 | 11 | 1 |
-| 4 | MTD026UID | Dutch (TNO) | TS3007b | Headset-2 | 668.85 | 0.99 | 0.00 | 21 | 1 |
-| 5 | FIO084 | Telugu / Scotland | IS1009c | Headset-2 | 999.82 | 0.98 | 0.00 | 5 | 0 |
-| 6 | MEO020 | Hindi / UK | ES2005b | Headset-1 | 183.96 | 0.97 | 0.00 | 8 | 1 |
-| 7 | MEO022 | English / India | ES2006b | Headset-0 | 290.46 | 0.97 | 0.00 | 15 | 0 |
-| 8 | FEE030 | English / USA | ES2008b | Headset-1 | 1010.92 | 0.97 | 0.00 | 5 | 1 |
+| 1 | FIO089 | Swiss German / America | IS1009c | Headset-3 | 1386.41 | 1.00 | 0.00 | 9 | 1 |
+| 2 | MTD026UID | Dutch (TNO) | TS3007d | Headset-2 | 258.13 | 1.00 | 0.00 | 19 | 0 |
+| 3 | MTD025PM | Dutch (TNO) | TS3007b | Headset-0 | 83.15 | 0.99 | 0.00 | 28 | 0 |
+| 4 | MTD017PM | Dutch (TNO) | TS3005a | Headset-0 | 209.01 | 0.99 | 0.00 | 15 | 0 |
+| 5 | MTD022ID | Dutch (TNO) | TS3006c | Headset-2 | 403.97 | 0.99 | 0.00 | 11 | 1 |
+| 6 | FIO084 | Telugu / Scotland | IS1009c | Headset-2 | 986.39 | 0.98 | 0.00 | 5 | 0 |
+| 7 | FEE030 | English / USA | ES2008b | Headset-1 | 1010.66 | 0.97 | 0.00 | 5 | 1 |
+| 8 | MEO022 | English / India | ES2006b | Headset-0 | 290.46 | 0.97 | 0.00 | 15 | 0 |
 | 9 | MEE031 | English / England | ES2008b | Headset-2 | 720.05 | 0.97 | 0.00 | 7 | 1 |
-| 10 | FTD019UID | Dutch (TNO) | TS3005b | Headset-1 | 461.66 | 0.97 | 0.00 | 16 | 0 |
-| 11 | MEE008 | English / Canada | ES2002c | Headset-3 | 356.81 | 0.94 | 0.00 | 10 | 1 |
-| 12 | FEE029 | English / USA | ES2008a | Headset-0 | 32.93 | 0.93 | 0.00 | 7 | 0 |
-| 13 | MIO043 | French | IS1001a | Headset-0 | 149.79 | 0.88 | 0.00 | 5 | 0 |
-| 14 | FIE088 | English (region not recorded) | IS1009c | Headset-0 | 57.30 | 0.88 | 0.00 | 9 | 0 |
+| 10 | MEO020 | Hindi / UK | ES2005b | Headset-1 | 169.56 | 0.97 | 0.00 | 10 | 1 |
+| 11 | MEE008 | English / Canada | ES2002c | Headset-3 | 356.72 | 0.94 | 0.00 | 10 | 1 |
+| 12 | FEE029 | English / USA | ES2008a | Headset-0 | 32.58 | 0.93 | 0.00 | 7 | 0 |
+| 13 | FIE088 | English | IS1009d | Headset-0 | 134.85 | 0.93 | 0.00 | 5 | 0 |
+| 14 | MIO043 | French | IS1001c | Headset-0 | 48.31 | 0.89 | 0.00 | 13 | 0 |
 | 15 | FIO087 | Tamil | IS1009b | Headset-1 | 1415.28 | 0.84 | 0.00 | 8 | 0 |
-| 16 | FIO017 | French / England | IS1003a | Headset-0 | 85.57 | 0.75 | 0.00 | 9 | 0 |
-| 17 | MIO035 | Chinese | IS1003b | Headset-3 | 199.56 | 0.72 | 0.00 | 8 | 0 |
+| 16 | MIO035 | Chinese | IS1003b | Headset-3 | 181.17 | 0.76 | 0.00 | 9 | 0 |
+| 17 | FIO017 | French / England | IS1003a | Headset-0 | 85.57 | 0.75 | 0.00 | 9 | 0 |
 | 18 | FEE021 | English / Australia | ES2006a | Headset-2 | 920.53 | 0.63 | 0.00 | 5 | 0 |
-| 19 | MEE006 | English / Singapore, Canada | ES2002c | Headset-0 | 966.92 | 0.98 | 0.01 | 19 | 2 |
-| 20 | FEE024 | English / England | ES2006b | Headset-1 | 1358.79 | 0.98 | 0.01 | 8 | 10 |
+| 19 | FEO023 | Estonian / UK | ES2006b | Headset-3 | 802.18 | 0.99 | 0.01 | 13 | 0 |
+| 20 | MEE006 | English / Singapore, Canada | ES2002c | Headset-0 | 957.91 | 0.98 | 0.01 | 19 | 2 |
 
 "File" uses the speaker's `channel` from `corpusResources/meetings.xml`. Before measuring, the B4 workflow should confirm that this channel's energy is higher than the other headsets' during the speaker's own words.
 
 **Limits B4 must state:**
-- **Too few *like* and *you know* for a separate figure.** There are 18 in the selection, so recall for those two words will have a wide interval. Report *uh*/*um* and *like*/*you know* separately, as well as the total.
+- **Too few *like* and *you know* for a separate figure.** There are only 8 in the selection: a figure for those two words is indicative only, not a measurement. Report *uh*/*um* and *like*/*you know* separately, as well as the total. Discourse markers are rare in AMI (681 against 7,266 hesitations), so a better *like*/*you know* test would need a supplementary set; the rule was not tuned to raise the count.
 - **Annotators were not teachers.** See the owner decision above.
 - **Not phone audio.** The recordings are headset audio from 2005 with crosstalk near zero. They are cleaner than a learner's phone, so recall may be optimistic.
 - **Meetings, not shadowing.** Shadowing repeats a model passage; these speakers produce their own words. Filler behaviour is natural, but the content differs.
@@ -152,7 +152,7 @@ Not examined in detail: LibriSpeech, TED-LIUM, VoxPopuli and GigaSpeech. They ho
 
 ## Reproducing this research
 
-The analysis read only the text annotations. The scripts were scratch work and are not committed. To rebuild the window table:
+The analysis read only the text annotations. The rule is implemented and tested in `spikes/src/listenup_spikes/ami.py` (`spike-ami manifest`). By hand, the steps are:
 1. Download `ami_public_manual_1.6.2.zip`.
 2. For each `disfluency/*.xml` meeting and agent, expand the `dsfl` children of types `ami_dsfl_5` and `ami_dsfl_3` to word ids.
 3. Keep words whose text is *uh*, *um*, *er* or *erm* (hesitation) or *like* or *know* (discourse marker; *you know* counts once).
