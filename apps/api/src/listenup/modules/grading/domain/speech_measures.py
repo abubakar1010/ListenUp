@@ -232,8 +232,11 @@ def _issue(section: Mapping[str, Any], good_from: float, sound: Sound) -> Issue 
     if sound.score < section["dropped_below"]:
         return "dropped"
     if sound.score < section["unclear_below"]:
-        # A sound squeezed into its neighbour: too short to stand on its own.
-        return "merged" if sound.end - sound.start < section["merged_max_s"] else "unclear"
+        # A sound squeezed into its neighbour: too short to stand on its own. The
+        # length is rounded to nine places, as the linking gap is, so a sound of
+        # exactly `merged_max_s` in decimals is never merged by binary error.
+        short = round(sound.end - sound.start, 9) < section["merged_max_s"]
+        return "merged" if short else "unclear"
     if sound.score < good_from:
         return "inaccurate"
     return None

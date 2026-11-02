@@ -179,6 +179,15 @@ def test_a_very_short_unclear_sound_is_merged_but_a_short_clear_one_is_not():
     assert (result.details["merged"], result.details["unclear"]) == (1, 0)
 
 
+@pytest.mark.parametrize("start", [0.30, 0.33, 1.27])
+def test_an_unclear_sound_of_exactly_merged_max_s_is_unclear_wherever_it_sits(start):
+    """30 ms in decimals is never merged, whatever binary error the subtraction has
+    (0.36 - 0.33 is 0.0299...): the boundary is rounded as the linking gap is."""
+    unclear = Sound("t", start, round(start + 0.03, 2), 0.4)
+    labels = label_words(speech(), ["cat"], [word(0, [unclear])])
+    assert [reason.issue for reason in labels[0].reasons] == ["unclear"]
+
+
 @pytest.mark.parametrize(
     ("score", "issue"), [(0.19, "dropped"), (0.2, "unclear"), (0.49, "unclear"), (0.5, None)]
 )
