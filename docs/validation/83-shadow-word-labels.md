@@ -105,6 +105,22 @@ Gate mutants, caught by the integration tests:
 - the seven-measure check is removed;
 - `LEARNER_GRADES_RELEASED` is set to `True`.
 
+## Review fixes (#279 review, 2026-11-02)
+
+A fresh-session review found the issues below; the owner asked for them to be fixed
+and for the open questions to be settled with the reviewer's recommendations (ADR
+0099, "Owner decisions"). Commands are from `apps/api`.
+
+| Finding | Red (observed) | Green (observed) |
+| --- | --- | --- |
+| The merged check had no rounding: a 30 ms unclear sound was merged or unclear depending on where it sat | `test_an_unclear_sound_of_exactly_merged_max_s_is_unclear_wherever_it_sits`: 1 failed (`['merged'] == ['unclear']` at 0.33 s; 0.30 s and 1.27 s passed) | length rounded to nine places; 93 passed (speech) |
+| Reference pitch frames were placed at their start, not their centre | `test_reference_frames_become_per_word_prosody`, rewritten so frame 4 (centre 10 090 ms) belongs to word 1: 1 failed (word 1 pitch `None`, not 6300) | frames placed at `(i + 1/2) × step`; 103 passed (two unit files) |
+| The release gate ignored calibration | `test_a_grade_from_uncalibrated_parameters_is_never_shown_even_once_released[parameters_calibrated]` and `[speech_parameters_calibrated]`: 2 failed (`status: scored` projected) | both flags required; 34 passed (job integration) |
+| The accent assertion compared values with themselves; needs-work and missed words never went through the job | Characterization: the pinned accent (0, reason null) and `test_needs_work_and_missed_words_are_stored_and_projected_with_their_reasons` passed at once, because the behavior already existed | 35 passed (job integration) |
+
+Tests that need the projection now also mark the row calibrated
+(`_pretend_calibrated`), as they mark it non-synthetic.
+
 ## Checks
 
 Backend, from `apps/api`:
