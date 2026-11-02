@@ -37,7 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.analytics import service as analytics
 from listenup.modules.content import jobs, repository
-from listenup.modules.content.domain import admission
+from listenup.modules.content.domain import admission, takedown
 from listenup.modules.content.domain import cursor as cursors
 from listenup.modules.content.domain.files import (
     check_file,
@@ -46,9 +46,10 @@ from listenup.modules.content.domain.files import (
     format_size,
     normalized_type,
 )
-from listenup.modules.content.domain.media import failure_message
+from listenup.modules.content.domain.media import failure_message, media_prefix
 from listenup.platform.config import Settings
 from listenup.platform.errors import ProblemError
+from listenup.platform.events import EventType, publish
 from listenup.platform.export import ExportFile, ExportPart, ExportTable, learner_rows, select_rows
 from listenup.platform.ids import uuid7
 from listenup.platform.rate_limit import Limit, RateLimiter, ip_key, user_key, window_count
@@ -82,12 +83,20 @@ class ContentSummary:
     id: uuid.UUID
     title: str
     source: str  # 'upload' or 'youtube'
-    status: str  # the media object's: pending, downloading, playable, failed, expired
+    status: str  # the media object's: pending, downloading, playable, failed, expired, removed
     duration_ms: int | None
     created_at: datetime
     # While it is prepared: queued, waiting, downloading, checking, converting, saving.
     stage: str | None
     queue_position: int | None  # 1 = next of the learner's queued clips to start
+
+
+@dataclass(frozen=True)
+class Removal:
+    """Why a takedown removed the clip, as its page tells the learner (#105, NFR-USE-3)."""
+
+    grounds: str
+    message: str
 
 
 @dataclass(frozen=True)
@@ -107,6 +116,7 @@ class ContentDetail:
     keep_video: bool
     error_code: str | None
     error_detail: str | None
+    removal: Removal | None = None
 
 
 @dataclass(frozen=True)
@@ -405,6 +415,9 @@ async def get_content(
         row.keep_video,
         row.error_code if row.status == "failed" else None,
         failure_message(row.error_code) if row.status == "failed" else None,
+        Removal(row.removal_grounds, takedown.removal_message(row.removal_grounds))
+        if row.status == "removed" and row.removal_grounds is not None
+        else None,
     )
 
 
@@ -431,6 +444,8 @@ async def media_url(
     if files is None:
         raise ProblemError(404, "media_not_found", "This clip is not in your library.")
     key = files.playback_key if file == "playback" else files.peaks_key
+    if files.status == "removed":
+        raise ProblemError(410, "media_removed", takedown.UNAVAILABLE_MESSAGE)
     if files.status != "playable" or key is None:
         raise ProblemError(
             409,
@@ -548,7 +563,8 @@ SELECT m.id, m.playback_key FROM content.media_objects m
 _EXPORT_ORIGINALS = """
 SELECT u.storage_key FROM content.uploads u
   LEFT JOIN content.media_objects m ON m.id = u.media_object_id
- WHERE u.user_id = :learner AND (m.id IS NULL OR m.status NOT IN ('playable', 'failed'))
+ WHERE u.user_id = :learner
+   AND (m.id IS NULL OR m.status NOT IN ('playable', 'failed', 'removed'))
  ORDER BY u.created_at, u.id
 """
 
@@ -727,3 +743,89 @@ async def remove_deleted_content(
             ),
             {"media": media_id, "user": learner},
         )
+
+
+# -- Takedowns (#105, SRS 2.2, ADR 0098) ----------------------------------------------
+# Worker-only: a takedown acts for every learner, so these run as `listenup_worker`.
+# The media object's row stays, so the learners' sessions, marks and cards stay with it.
+
+RemovalGrounds = takedown.Grounds
+source_fingerprint = takedown.source_fingerprint
+
+
+@dataclass(frozen=True)
+class RemovedMedia:
+    """A media object a takedown removed, and where its files are."""
+
+    media_id: uuid.UUID
+    learner: uuid.UUID
+    prefixes: list[str]
+    keys: list[str]
+
+
+async def remove_taken_down_media(
+    db: AsyncSession, takedown_id: uuid.UUID, fingerprint: str
+) -> list[uuid.UUID]:
+    """Make every learner's upload of this file unavailable at once: status `removed`,
+    no file keys. Each learner with an item on it is told (`content.ready`) when the
+    transaction commits. Returns the ids of every media object this takedown removed,
+    in this run or an earlier one; the files are deleted afterwards."""
+    sha = fingerprint.removeprefix("upload:")
+    newly = (
+        await db.scalars(
+            text("""
+        UPDATE content.media_objects
+           SET status = 'removed', takedown_id = :takedown, stage = NULL, error_code = NULL,
+               playback_key = NULL, peaks_key = NULL, video_key = NULL, updated_at = now()
+         WHERE source = 'upload' AND takedown_id IS NULL
+           AND fingerprint LIKE 'upload:%:' || :sha
+        RETURNING id
+        """),
+            {"takedown": takedown_id, "sha": sha},
+        )
+    ).all()
+    for media_id in newly:
+        for learner, content_id in await repository.media_content_owners(db, media_id):
+            await publish(db, learner, EventType.CONTENT_READY, content_id)
+    return list(
+        (
+            await db.scalars(
+                text(
+                    "SELECT id FROM content.media_objects WHERE takedown_id = :takedown ORDER BY id"
+                ),
+                {"takedown": takedown_id},
+            )
+        ).all()
+    )
+
+
+async def taken_down_files(db: AsyncSession, takedown_id: uuid.UUID) -> list[RemovedMedia]:
+    """Where the removed media objects' files are: the playback and peaks prefix and any
+    original still in storage. Waits (`Reschedule`) while a conversion still writes
+    one of them; its registration is never presumed dead (ADR 0085)."""
+    rows = (
+        await db.execute(
+            text("""
+        SELECT m.id, m.uploaded_by,
+               coalesce(array_agg(u.storage_key) FILTER (WHERE u.id IS NOT NULL), '{}') AS keys
+          FROM content.media_objects m
+          LEFT JOIN content.uploads u ON u.media_object_id = m.id
+         WHERE m.takedown_id = :takedown
+         GROUP BY m.id, m.uploaded_by
+         ORDER BY m.id
+        """),
+            {"takedown": takedown_id},
+        )
+    ).all()
+    removed = []
+    for row in rows:
+        await require_no_media_writes(db, row.uploaded_by, row.id)
+        removed.append(
+            RemovedMedia(
+                row.id,
+                row.uploaded_by,
+                [media_prefix(row.uploaded_by, row.id)],
+                sorted(row.keys),
+            )
+        )
+    return removed

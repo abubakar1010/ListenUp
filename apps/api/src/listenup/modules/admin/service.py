@@ -1,4 +1,5 @@
-"""Administration: the job view and retries (#100, SRS 2.2, Architecture 9.2: Admin).
+"""Administration: the job view, retries and takedowns (#100, #105, SRS 2.2,
+Architecture 9.2: Admin).
 
 The public face of the admin module. `CurrentAdmin` lets in only administrators
 (ADR 0045); anyone else signed in gets the same 404 as a path that does not exist, so
@@ -15,25 +16,35 @@ from typing import Annotated
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.modules.admin import jobs as admin_jobs
 from listenup.modules.admin import repository
 from listenup.modules.admin.domain.roles import is_admin
 from listenup.modules.admin.usage import usage_overview
+from listenup.modules.content import service as content
 from listenup.modules.identity import service as identity
 from listenup.modules.identity.service import CurrentLearner
 from listenup.platform import jobs
 from listenup.platform.database import DbSession
 from listenup.platform.errors import ProblemError
+from listenup.platform.ids import uuid7
 from listenup.platform.jobs import Lane
 
 __all__ = [
     "CurrentAdmin",
     "FailedJob",
+    "Grounds",
     "JobsOverview",
     "LaneBacklog",
+    "RecordedTakedown",
     "jobs_overview",
+    "record_takedown",
     "retry",
+    "source_fingerprint",
     "usage_overview",
 ]
+
+Grounds = content.RemovalGrounds
+source_fingerprint = content.source_fingerprint
 
 FAILED_SHOWN = 50
 
@@ -114,3 +125,31 @@ async def retry(session: AsyncSession, job_id: int) -> int:
             "The same work is already waiting in the queue, so this job was not queued again.",
         )
     return new_id
+
+
+@dataclass(frozen=True)
+class RecordedTakedown:
+    id: uuid.UUID
+    fingerprint: str
+    grounds: str
+    received_at: datetime
+    actioned_at: datetime | None
+
+
+async def record_takedown(
+    session: AsyncSession, fingerprint: str, grounds: str, reason: str
+) -> RecordedTakedown:
+    """Record a takedown of a source (#105, ADR 0098) and queue its removal for every
+    learner, in the same transaction. A source is taken down once: a second request
+    answers 409 `takedown_exists` with the first one's id."""
+    row = await repository.insert_takedown(session, uuid7(), fingerprint, grounds, reason)
+    if row is None:
+        existing = await repository.takedown_by_fingerprint(session, fingerprint)
+        raise ProblemError(
+            409,
+            "takedown_exists",
+            "This file is already taken down; its removal is recorded once.",
+            takedown_id=str(existing.id) if existing else None,
+        )
+    await admin_jobs.queue_takedown(session, row.id)
+    return RecordedTakedown(row.id, row.fingerprint, row.grounds, row.received_at, row.actioned_at)

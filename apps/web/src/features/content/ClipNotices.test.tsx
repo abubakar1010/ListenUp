@@ -94,6 +94,29 @@ test('a failed clip is announced with a link to the reason', async () => {
   );
 });
 
+test('a clip removed after a takedown is announced with a link to why (#105)', async () => {
+  mockApi({
+    '/contents/content-1': jsonResponse(200, {
+      ...READY,
+      status: 'removed',
+      removal: { grounds: 'copyright', message: 'We removed this clip because…' },
+      media_url: null,
+      peaks_url: null,
+    }),
+  });
+  renderWithProviders(<Harness />, { route: '/library' });
+
+  act(() => send(ready()));
+
+  expect(
+    await screen.findByText('“Morning news” was removed from ListenUp after a rights complaint.'),
+  ).toBeVisible();
+  expect(screen.getByRole('link', { name: 'See why' })).toHaveAttribute(
+    'href',
+    '/contents/content-1',
+  );
+});
+
 test('a removed copy points at the clip the learner already has', async () => {
   mockApi({
     '/contents/content-2': problem(410, 'duplicate_upload', 'You already have this clip.', {

@@ -623,6 +623,17 @@
             "description": "For a `queued` item: 1 when it is the next of the learner's clips to start",
             "title": "Queue Position"
           },
+          "removal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Removal"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the clip was removed after a takedown; null unless `removed`"
+          },
           "source": {
             "enum": ["upload", "youtube"],
             "title": "Source",
@@ -642,7 +653,7 @@
             "title": "Stage"
           },
           "status": {
-            "enum": ["pending", "downloading", "playable", "failed", "expired"],
+            "enum": ["pending", "downloading", "playable", "failed", "expired", "removed"],
             "title": "Status",
             "type": "string"
           },
@@ -723,7 +734,7 @@
             "title": "Stage"
           },
           "status": {
-            "enum": ["pending", "downloading", "playable", "failed", "expired"],
+            "enum": ["pending", "downloading", "playable", "failed", "expired", "removed"],
             "title": "Status",
             "type": "string"
           },
@@ -1823,7 +1834,7 @@
           },
           "status": {
             "description": "Processing status of the clip's media",
-            "enum": ["pending", "downloading", "playable", "failed", "expired"],
+            "enum": ["pending", "downloading", "playable", "failed", "expired", "removed"],
             "title": "Status",
             "type": "string"
           },
@@ -2459,6 +2470,24 @@
         },
         "required": ["email", "password"],
         "title": "Registration",
+        "type": "object"
+      },
+      "Removal": {
+        "description": "A takedown removed the clip (#105). Its sessions, marks and cards are kept.",
+        "properties": {
+          "grounds": {
+            "enum": ["copyright", "other_rights", "unlawful"],
+            "title": "Grounds",
+            "type": "string"
+          },
+          "message": {
+            "description": "Why, in plain words, as the learner reads it",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": ["grounds", "message"],
+        "title": "Removal",
         "type": "object"
       },
       "RestoreGoogle": {
@@ -3253,6 +3282,71 @@
         "title": "SubmitDictation",
         "type": "object"
       },
+      "Takedown": {
+        "properties": {
+          "actioned_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When every learner's copy was removed; null while the job runs",
+            "title": "Actioned At"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "grounds": {
+            "enum": ["copyright", "other_rights", "unlawful"],
+            "title": "Grounds",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          }
+        },
+        "required": ["id", "fingerprint", "grounds", "received_at", "actioned_at"],
+        "title": "Takedown",
+        "type": "object"
+      },
+      "TakedownRequest": {
+        "properties": {
+          "fingerprint": {
+            "description": "The taken-down source: `upload:<sha256>`, the SHA-256 in hex of the file the rights holder identified (`sha256sum`). YouTube links follow with #38",
+            "maxLength": 200,
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "grounds": {
+            "description": "Why, as affected learners are told: copyright, other rights or the law",
+            "enum": ["copyright", "other_rights", "unlawful"],
+            "title": "Grounds",
+            "type": "string"
+          },
+          "reason": {
+            "description": "The administrator's note on the notice. Never shown to a learner",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["fingerprint", "grounds", "reason"],
+        "title": "TakedownRequest",
+        "type": "object"
+      },
       "TranscriptLine": {
         "properties": {
           "end_ms": {
@@ -3617,6 +3711,72 @@
           }
         },
         "summary": "Retry Job",
+        "tags": ["admin"]
+      }
+    },
+    "/api/v1/admin/takedowns": {
+      "post": {
+        "description": "Record a takedown (SRS 2.2, #105). A background job removes the file and its\nplayback files for every learner who has it, keeps their sessions, marks and cards,\ntells them why, and intake refuses the file afterwards.",
+        "operationId": "record_takedown_api_v1_admin_takedowns_post",
+        "parameters": [
+          {
+            "description": "Retry-safe key for this submission",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key for this submission",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakedownRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Takedown"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Not an administrator (`not_found`)"
+          },
+          "409": {
+            "description": "This source is already taken down (`takedown_exists`)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Takedown",
         "tags": ["admin"]
       }
     },
@@ -5770,6 +5930,9 @@
           "409": {
             "description": "Not playable yet (`media_not_ready`) or blocked by an unfinished Blind listen (`blind_in_progress`)"
           },
+          "410": {
+            "description": "Removed after a takedown (`media_removed`, #105)"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5810,6 +5973,9 @@
           },
           "409": {
             "description": "Not playable yet (`media_not_ready`) or blocked by an unfinished Blind listen (`blind_in_progress`)"
+          },
+          "410": {
+            "description": "Removed after a takedown (`media_removed`, #105)"
           },
           "422": {
             "content": {

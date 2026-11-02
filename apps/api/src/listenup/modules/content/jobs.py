@@ -9,7 +9,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.content import ffmpeg, repository, scanner, writes
-from listenup.modules.content.domain import admission, media
+from listenup.modules.content.domain import admission, media, takedown
 from listenup.platform.config import get_settings
 from listenup.platform.database import Database
 from listenup.platform.errors import ProblemError
@@ -183,15 +183,26 @@ async def _convert(
                 storage.put(peaks, media.peaks_json(converted.peaks), "application/json")
             )
             size = target.stat().st_size
-            stored = await repository.mark_media_playable(
-                session,
-                media_id,
-                duration_ms=probe.duration_ms,
-                has_video=video,
-                playback_key=playback,
-                peaks_key=peaks,
-                playback_bytes=size,
-            )
+            # Checked again here: a takedown may have committed after the file was
+            # hashed, and its job may not have seen this media object yet (ADR 0098).
+            taken_down = await repository.source_taken_down(session, downloaded.sha256)
+            if taken_down:
+                stored = False
+                changed, _ = await repository.mark_media_failed(
+                    session, media_id, takedown.REFUSED_CODE
+                )
+                if changed:
+                    await _announce(session, media_id)
+            else:
+                stored = await repository.mark_media_playable(
+                    session,
+                    media_id,
+                    duration_ms=probe.duration_ms,
+                    has_video=video,
+                    playback_key=playback,
+                    peaks_key=peaks,
+                    playback_bytes=size,
+                )
             if stored:
                 await _announce(session, media_id)
                 await add_to_window(
@@ -202,9 +213,12 @@ async def _convert(
                 )
             await _conversion_ended(session, state.learner)
     if not stored:
-        # The learner deleted the item while it converted; nothing refers to the files.
+        # The learner deleted the item, or a takedown named the file, while it converted;
+        # nothing refers to the files.
         await storage.delete_prefix(media.media_prefix(state.learner, media_id))
     await storage.delete(state.source_key)
+    if taken_down:
+        raise PermanentError(takedown.REFUSED_MESSAGE)
     logger.info(
         "upload converted",
         extra={"media": str(media_id), "duration_ms": probe.duration_ms, "bytes": size},
@@ -237,6 +251,9 @@ async def _claim_fingerprint(
         return _Claim.OURS  # a repeated run
     orphan: uuid.UUID | None = None
     async with database.transaction() as session:
+        if await repository.source_taken_down(session, sha256):
+            # Before the duplicate check: a removed copy must not take the new item in.
+            raise _Refused(takedown.REFUSED_CODE, takedown.REFUSED_MESSAGE)
         owner = await repository.fingerprint_owner(session, fingerprint, state.learner)
         if owner is not None and owner.learner_content_id is not None:
             # Same file, already in this library: keep the older item, which may have

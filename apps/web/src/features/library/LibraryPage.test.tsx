@@ -58,6 +58,7 @@ test('clips show title, source, length and status', async () => {
           last_session_status: 'completed',
         }),
         item(3, { title: 'Friends clip', status: 'failed' }),
+        item(4, { title: 'Taken-down talk', status: 'removed' }),
       ],
       next_cursor: null,
     }),
@@ -66,7 +67,7 @@ test('clips show title, source, length and status', async () => {
 
   const list = await screen.findByRole('list');
   const rows = within(list).getAllByRole('listitem');
-  expect(rows).toHaveLength(3);
+  expect(rows).toHaveLength(4);
   expect(rows[0]).toHaveTextContent('Why cities plant street trees');
   expect(rows[0]).toHaveTextContent('Upload · Added 3 Oct');
   expect(rows[0]).toHaveTextContent('Processing');
@@ -74,6 +75,9 @@ test('clips show title, source, length and status', async () => {
   expect(rows[1]).toHaveTextContent('Ready');
   expect(rows[1]).toHaveTextContent('Last session: Completed');
   expect(rows[2]).toHaveTextContent('Could not be processed');
+  // A takedown removed it (#105): no plan can start, and its page says why.
+  expect(rows[3]).toHaveTextContent('Removed');
+  expect(within(rows[3]).queryByRole('link', { name: /Start a plan/ })).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Add a clip' })).toHaveAttribute('href', '/library/add');
   expect(
     within(rows[0]).getByRole('link', { name: 'Why cities plant street trees' }),

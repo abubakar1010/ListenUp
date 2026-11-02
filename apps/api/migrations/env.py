@@ -13,6 +13,7 @@ from alembic import context
 from sqlalchemy import create_engine, text
 
 from listenup.ai import models as _ai_models  # noqa: F401
+from listenup.modules.admin import models as _admin_models  # noqa: F401
 from listenup.modules.analytics import models as _analytics_models  # noqa: F401
 from listenup.modules.blind import models as _blind_models  # noqa: F401
 from listenup.modules.cards import models as _cards_models  # noqa: F401

@@ -166,6 +166,32 @@ test('a failed clip shows the reason', async () => {
   expect(screen.queryByLabelText(/^Play /)).not.toBeInTheDocument();
 });
 
+test('a clip removed after a takedown says why, keeps practice and has no player (#105)', async () => {
+  const message =
+    "We removed this clip because its copyright owner asked us to. It can't be played or " +
+    'added to ListenUp again. Your sessions, marks and cards are kept.';
+  mockApi({
+    '/contents/content-1': jsonResponse(
+      200,
+      clip({
+        status: 'removed',
+        removal: { grounds: 'copyright', message },
+        media_url: null,
+        peaks_url: null,
+      }),
+    ),
+  });
+  renderPage();
+
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('This clip was removed');
+  expect(alert).toHaveTextContent(message);
+  expect(screen.getByRole('link', { name: 'Your marks' })).toHaveAttribute('href', '/marks');
+  expect(screen.getByRole('link', { name: 'Your cards' })).toHaveAttribute('href', '/cards');
+  expect(screen.queryByRole('link', { name: 'Add another file' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/^Play /)).not.toBeInTheDocument();
+});
+
 test('a clip that is not in the library leads back to it', async () => {
   mockApi({
     '/contents/content-1': problem(

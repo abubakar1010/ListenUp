@@ -1,19 +1,22 @@
-"""HTTP routes of the admin module (#100, Architecture 9.2: Admin, ADR 0045).
+"""HTTP routes of the admin module (#100, #105, Architecture 9.2: Admin, ADR 0045, 0098).
 
 Every route takes `CurrentAdmin`: a learner who is not an administrator gets 404.
 """
 
+import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Request, Response
-from pydantic import BaseModel, Field
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator
 
 from listenup.modules.admin import service
 from listenup.modules.admin.service import CurrentAdmin
 from listenup.modules.admin.usage import UsageOverview
 from listenup.platform.clock import server_now
 from listenup.platform.database import DbSession
+from listenup.platform.idempotency import IdempotencyKeyHeader, request_fingerprint, run_once
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -99,3 +102,79 @@ async def retry_job(job_id: int, admin: CurrentAdmin, session: DbSession) -> Ret
     """Queue a failed job again, with fresh attempts. A job is retried once; a second
     retry of the same job answers 404 `job_not_found`."""
     return RetriedJob(job_id=await service.retry(session, job_id))
+
+
+class TakedownRequest(BaseModel):
+    fingerprint: str = Field(
+        max_length=200,
+        description=(
+            "The taken-down source: `upload:<sha256>`, the SHA-256 in hex of the file the "
+            "rights holder identified (`sha256sum`). YouTube links follow with #38"
+        ),
+    )
+    grounds: service.Grounds = Field(
+        description="Why, as affected learners are told: copyright, other rights or the law"
+    )
+    reason: str = Field(
+        min_length=1,
+        max_length=2000,
+        description="The administrator's note on the notice. Never shown to a learner",
+    )
+
+    @field_validator("fingerprint")
+    @classmethod
+    def _source(cls, value: str) -> str:
+        stored = service.source_fingerprint(value)
+        if stored is None:
+            raise ValueError("expected upload:<sha256 in hex>")
+        return stored
+
+    @field_validator("reason")
+    @classmethod
+    def _note(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("the reason must not be blank")
+        return value
+
+
+class Takedown(BaseModel):
+    id: uuid.UUID
+    fingerprint: str
+    grounds: service.Grounds
+    received_at: datetime
+    actioned_at: datetime | None = Field(
+        description="When every learner's copy was removed; null while the job runs"
+    )
+
+
+@router.post(
+    "/takedowns",
+    status_code=202,
+    response_model=Takedown,
+    responses={
+        **NOT_FOUND,
+        409: {"description": "This source is already taken down (`takedown_exists`)"},
+    },
+)
+async def record_takedown(
+    body: TakedownRequest,
+    request: Request,
+    admin: CurrentAdmin,
+    session: DbSession,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> JSONResponse:
+    """Record a takedown (SRS 2.2, #105). A background job removes the file and its
+    playback files for every learner who has it, keeps their sessions, marks and cards,
+    tells them why, and intake refuses the file afterwards."""
+
+    async def handle() -> tuple[int, Any]:
+        recorded = await service.record_takedown(
+            session, body.fingerprint, body.grounds, body.reason
+        )
+        return 202, Takedown.model_validate(recorded, from_attributes=True).model_dump(mode="json")
+
+    answer = await run_once(
+        session, admin, idempotency_key, await request_fingerprint(request), handle
+    )
+    answer.headers["Cache-Control"] = "private, no-store"
+    return answer

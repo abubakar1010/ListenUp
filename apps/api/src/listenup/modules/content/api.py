@@ -175,6 +175,7 @@ _MEDIA_RESPONSES: dict[int | str, dict[str, Any]] = {
             "(`blind_in_progress`)"
         )
     },
+    410: {"description": "Removed after a takedown (`media_removed`, #105)"},
 }
 
 

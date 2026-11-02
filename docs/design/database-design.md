@@ -157,7 +157,8 @@ CREATE TABLE content.media_objects (
   duration_ms    int4 CHECK (duration_ms > 0),
   has_video      boolean NOT NULL DEFAULT false,
   status         text NOT NULL DEFAULT 'pending'
-                 CHECK (status IN ('pending', 'downloading', 'playable', 'failed', 'expired')),
+                 CHECK (status IN ('pending', 'downloading', 'playable', 'failed', 'expired',
+                                   'removed')),  -- removed by a takedown (ADR 0098)
   error_code     text,
   stage          text CHECK (stage IN ('checking', 'converting', 'saving')), -- ADR 0027
   playback_key   text,                     -- object storage keys
@@ -168,7 +169,10 @@ CREATE TABLE content.media_objects (
   last_used_at   timestamptz NOT NULL DEFAULT now(),
   created_at     timestamptz NOT NULL DEFAULT now(),
   updated_at     timestamptz NOT NULL DEFAULT now(),
-  CHECK ((source = 'upload') = (uploaded_by IS NOT NULL))
+  takedown_id    uuid REFERENCES ops.takedowns ON DELETE RESTRICT,  -- migration 105
+  CHECK ((source = 'upload') = (uploaded_by IS NOT NULL)),
+  CONSTRAINT media_objects_removed_by_takedown
+    CHECK ((status = 'removed') = (takedown_id IS NOT NULL))
 );
 CREATE INDEX media_objects_expiry_idx ON content.media_objects (last_used_at)
   WHERE status = 'playable' AND source = 'youtube';
@@ -857,19 +861,26 @@ CREATE TABLE ops.deletion_requests (
   completed_at     timestamptz
 );
 
+-- A taken-down source (#105, ADR 0098). No user_id and no learner data.
 CREATE TABLE ops.takedowns (
-  id              uuid PRIMARY KEY,
-  media_object_id uuid REFERENCES content.media_objects ON DELETE SET NULL,
-  fingerprint     text NOT NULL,     -- kept so the same source can be refused later
-  reason          text NOT NULL CHECK (char_length(reason) <= 2000),
-  received_at     timestamptz NOT NULL DEFAULT now(),
-  actioned_at     timestamptz
+  id          uuid PRIMARY KEY,
+  fingerprint text NOT NULL          -- kept so the same source can be refused later
+              CHECK (fingerprint ~ '^upload:[0-9a-f]{64}$'),  -- #38 adds 'youtube:<id>'
+  grounds     text NOT NULL CHECK (grounds IN ('copyright', 'other_rights', 'unlawful')),
+  reason      text NOT NULL CHECK (char_length(reason) BETWEEN 1 AND 2000),  -- internal
+  received_at timestamptz NOT NULL DEFAULT now(),
+  actioned_at timestamptz,           -- every copy removed
+  report      jsonb                  -- counts only
 );
-CREATE INDEX takedowns_fingerprint_idx ON ops.takedowns (fingerprint);
+CREATE UNIQUE INDEX takedowns_fingerprint_idx ON ops.takedowns (fingerprint);
+CREATE INDEX takedowns_unactioned_idx ON ops.takedowns (received_at) WHERE actioned_at IS NULL;
+-- The media objects a takedown removed point back to it:
+--   content.media_objects.takedown_id uuid REFERENCES ops.takedowns ON DELETE RESTRICT,
+--   with status 'removed' exactly when takedown_id is set.
 ```
 
 - **Idempotency keys** expire after 24 hours (a scheduled delete using the age index).
-- **Takedowns** block re-adding the same source: intake checks `ops.takedowns` by fingerprint before downloading.
+- **Takedowns** block re-adding the same source. An upload's takedown names the file's SHA-256 without a learner id (`upload:<sha256>`), so it removes every learner's copy (each has its own `upload:<user id>:<sha256>` media object) and the conversion job refuses the file once it has hashed it (`source_taken_down`). Removed media objects keep their rows with status `removed`, so sessions, marks and cards stay; their files and card snippets are deleted ([ADR 0098](../adr/0098-upload-takedowns-by-file-hash.md)). For YouTube (#38), intake will check before downloading.
 - **Analytics events** are inserted through `analytics.service` in the source transaction; retries use `ON CONFLICT DO NOTHING`. Properties contain only typed metadata, never learner text or identifying account fields. Mark patterns use a dedicated secret and learner-scoped HMAC. Dictation counts the first media `playing` signal; Blind abandonment follows the recovery deadline in ADR 0024. Replay, mark, card and Shadow recording functions are available, but their feature callers remain deferred. The read-only script computes the PRD 2 metrics and refuses a reporting range extending beyond `--as-of` ([ADR 0035](../adr/0035-product-analytics-events-in-postgres.md)).
 
 ## 8. Integrity rules
