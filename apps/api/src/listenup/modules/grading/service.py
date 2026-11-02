@@ -241,7 +241,8 @@ async def _enqueue_round(
 
 # Learners see no Shadow grade yet (E2, ADR 0074 and 0099): turning grading on waits
 # on #21, #22, #106, #107, #109 and #110. This is a reviewed code change, never a
-# setting. Synthetic evidence stays unavailable even after release.
+# setting. Synthetic evidence, and any grade made with uncalibrated parameters,
+# stays unavailable even after release (ADR 0050, ADR 0099 D7).
 LEARNER_GRADES_RELEASED = False
 SCORED_MEASURES = ("timing", "pronunciation", "articulation", "fluency", "fillers", "completeness")
 
@@ -264,6 +265,9 @@ async def read_round_grade(
         or not {*SCORED_MEASURES, "accent"} <= set(row.measures)  # an #82-era row
         or row.speech_info is None
         or row.speech_info.get("synthetic") is not False
+        # Placeholder parameters are not scoring policy: both files must be calibrated.
+        or row.speech_info.get("parameters_calibrated") is not True
+        or row.speech_info.get("speech_parameters_calibrated") is not True
     ):
         return {"status": "unavailable"}
     return _round_projection(row.overall, row.measures, row.word_labels or [])

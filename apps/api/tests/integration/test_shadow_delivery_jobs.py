@@ -332,6 +332,17 @@ def _pretend_real(migrated_url, round_id):
         )
 
 
+def _pretend_calibrated(migrated_url, round_id):
+    """Stand-in for a grade made with calibrated parameters, which #107/#110 own."""
+    with psycopg.connect(migrated_url) as db:
+        db.execute(
+            "UPDATE grading.round_grades SET speech_info = speech_info || "
+            '\'{"parameters_calibrated": true, "speech_parameters_calibrated": true}\'::jsonb '
+            "WHERE round_id=%s",
+            [round_id],
+        )
+
+
 def test_learner_grades_stay_unreleased_under_e2(client, migrated_url, recorded, run_round):
     """#83 keeps #82's gate: even non-synthetic, scored evidence reads unavailable."""
     from listenup.modules.grading import service
@@ -340,6 +351,30 @@ def test_learner_grades_stay_unreleased_under_e2(client, migrated_url, recorded,
     round_id, _, _ = recorded
     run_round[0]()
     _pretend_real(migrated_url, round_id)
+    _pretend_calibrated(migrated_url, round_id)
+    response = client.get(f"/api/v1/shadow/rounds/{round_id}/grade")
+    assert response.json() == {"status": "unavailable"}
+
+
+@pytest.mark.parametrize("flag", ["parameters_calibrated", "speech_parameters_calibrated"])
+def test_a_grade_from_uncalibrated_parameters_is_never_shown_even_once_released(
+    client, migrated_url, recorded, run_round, monkeypatch, flag
+):
+    """Placeholder parameters are not scoring policy (ADR 0050, 0099 Q5): a row graded
+    before calibration stays unavailable when the release flips."""
+    from listenup.modules.grading import service
+
+    monkeypatch.setattr(service, "LEARNER_GRADES_RELEASED", True)
+    round_id, _, _ = recorded
+    run_round[0]()
+    _pretend_real(migrated_url, round_id)
+    _pretend_calibrated(migrated_url, round_id)
+    with psycopg.connect(migrated_url) as db:
+        db.execute(
+            "UPDATE grading.round_grades SET speech_info = jsonb_set(speech_info, %s, 'false') "
+            "WHERE round_id=%s",
+            [[flag], round_id],
+        )
     response = client.get(f"/api/v1/shadow/rounds/{round_id}/grade")
     assert response.json() == {"status": "unavailable"}
 
@@ -366,6 +401,7 @@ def test_a_released_grade_shows_word_labels_and_accent_apart_from_the_score(
     round_id, _, _ = recorded
     run_round[0]()
     _pretend_real(migrated_url, round_id)
+    _pretend_calibrated(migrated_url, round_id)
     path = f"/api/v1/shadow/rounds/{round_id}/grade"
     body = client.get(path).json()
     assert body["status"] == "scored"
@@ -406,6 +442,7 @@ def test_a_released_grade_without_all_seven_measures_is_unavailable(
     round_id, _, _ = recorded
     run_round[0]()
     _pretend_real(migrated_url, round_id)
+    _pretend_calibrated(migrated_url, round_id)
     with psycopg.connect(migrated_url) as db:
         db.execute(
             "UPDATE grading.round_grades SET measures = measures - 'accent' - "
