@@ -1,6 +1,6 @@
 # ADR 0099: Provisional Shadow pronunciation, articulation, accent and word labels
 
-- Status: Proposed (owner review on the #83 pull request)
+- Status: Accepted (the owner delegated the open questions to the #279 review, 2026-11-02)
 - Story: #83. Related: ADRs 0010, 0050, 0074, 0092, 0093; #80, #21, #22, #82, #107, #110
 - Requirements: FR-SH-4, FR-SH-9, FR-SH-10, FR-SH-15, FR-SH-18; D3, D11; UX-01, UX-12, UX-33
 
@@ -45,7 +45,9 @@ the words said:
 
 - A sound under `dropped_below` is **dropped**.
 - A sound under `unclear_below` is **merged** when it is shorter than
-  `merged_max_s` (squeezed into a neighbour), otherwise **unclear**.
+  `merged_max_s` (squeezed into a neighbour), otherwise **unclear**. Its length is
+  rounded to nine places first, so a sound of exactly `merged_max_s` is never
+  merged by binary error.
 - Word endings weigh `position_weights.final`. A sound on a **linking** boundary
   weighs at least `linking_weight`: the last sound of a word, or the first sound of
   the next word, when the next reference word follows with less than
@@ -66,7 +68,8 @@ and still work when the playback offset is unknown:
   words the speaker leans on. The contract has no syllables, so this is
   phrase-level prominence, not lexical stress inside a word.
 - **pitch**: the Pearson correlation of each word's median voiced pitch (cents),
-  i.e. the contour. A correlation does not depend on either speaker's register,
+  i.e. the contour. The original's pitch comes from the profile's frames, which are
+  centred: frame i of a span counts at `span start + (i + 1/2) × frame_step_ms`. A correlation does not depend on either speaker's register,
   range or pace.
 
 A correlation needs `min_words` words (at least 3) in both speakers. A flat original
@@ -99,7 +102,10 @@ Version 1 weighs the six measures equally (D3, D11). The delivery-only overall i
 answers `unavailable` to every learner. The service now holds the release as the
 code constant `LEARNER_GRADES_RELEASED = False`. Turning it on is a reviewed code
 change, never a setting. Even when it is on, a grade is projected only when it is
-`scored` or `ready`, its evidence is not synthetic, and it has all seven measures.
+`scored` or `ready`, its evidence is not synthetic, it has all seven measures, and
+both parameter files behind it were calibrated (`parameters_calibrated` and
+`speech_parameters_calibrated` are true). Rows graded with the provisional files stay
+unavailable after the release; they are not exposed (Q5 below).
 The OpenAPI schema describes the scored projection (`RoundFeedbackScored`), so the
 web client has typed markers. Integration tests turn the constant on to prove the
 projection, and they prove that synthetic evidence stays unavailable.
@@ -119,7 +125,8 @@ circle and muted text (UX-12). Every marked word carries a visually hidden label
 and a "words to work on" list says each reason in plain words, so no marker relies
 on colour (UX-01, WCAG 1.4.1). Markers show for every round, including rounds 2 and
 3, after it ends, on the round's section and on the completion screen. They hide
-while any round is being shadowed, because rounds 2 and 3 are spoken without text.
+from the moment the next round is opened until its playback ends, because rounds 2
+and 3 are spoken without text.
 
 ### Starting values (version 1, provisional)
 
@@ -151,17 +158,32 @@ validated.
   needs reference phone scores (#80, #107, #110). The PR uses "Refs #83".
 - A new parameter set is a new file version, so stored grades stay comparable.
 - `round_grades` rows written by #82 have four measures; they are never projected.
+- Release precondition: the grade route answers only `unavailable` or `scored`, so
+  before `LEARNER_GRADES_RELEASED` is turned on it needs a pending state, or a grade
+  still being made will read "Feedback unavailable." (FR-SH-16).
 
-## Open questions for the owner
+## Owner decisions
 
-These do not change version 1.
+The owner asked the #279 reviewer to settle these with its recommendations. None
+changes version 1's values.
 
-1. Should a word without sound detail be labelled from its word accuracy (today),
-   or hold a fourth "not judged" state that FR-SH-10 does not have?
-2. Is word-duration agreement an acceptable stand-in for stress until the contract
-   carries syllables, or should stress stay null like vowels?
-3. Showing round 2's markers before round 3 shows the segment text between rounds.
-   The story asks for markers after rounds 2 and 3; they are hidden only while a
-   round is playing. Should they instead wait until round 3 is recorded?
-4. Database Design §6 should document the `word_labels` shape and the two parameter
-   versions in `speech_info` (design owner).
+1. **A word without sound detail** is labelled from its word accuracy, with
+   `basis: "word"` stored. FR-SH-10 has three states, and the basis keeps the
+   fallback auditable. Revisit when #80 shows how often real providers omit sounds.
+2. **Word-duration agreement stays as the stress stand-in** until the contract
+   carries syllables. It is documented as phrase-level prominence, it sits inside
+   accent, which is experimental and never in the overall, and #110's fairness check
+   can turn it off with a new parameter version.
+3. **Markers show between rounds** (after round 2 ends and before round 3 opens),
+   as the story asks, and hide from when the next round opens until it ends.
+4. **Database Design §6** now documents the `word_labels` shape and the `speech_info`
+   keys (versions, calibration flags, overall weights and basis).
+5. **Release requires calibrated parameters.** A grade is shown only if both
+   parameter files behind it were calibrated (D7). Rows graded earlier stay
+   unavailable rather than being regraded silently.
+6. **One sound under `good_from` marks its word "needs work"**, even when the word's
+   average is good. The reason list names the sound, so the learner sees what to
+   practise. Calibration (#110) may move `good_from`, not this rule.
+7. **The pronunciation measure uses word accuracy** for a word without sound detail,
+   as the label does (decision 1). `word_accuracy_only` counts those words, so the
+   golden set can measure the fallback's effect.
