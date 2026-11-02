@@ -2,13 +2,16 @@
 # (https://github.com/abubakar1010/ListenUp/issues/119#issuecomment-6559104401).
 # B4 (#22) runs here now; B3 (#21) and the B1 to B4 rerun (#233) add their own choices.
 #
-# This repository is public, so logs and artifacts are public too. Inputs are openly
-# licensed audio fetched at run time (AMI, CC BY 4.0, for B4). Audio stays inside the
-# container's /tmp; only numbers, text and runner facts are uploaded. Never add learner,
-# golden-set (#106, #107), YouTube or voice-consent audio here.
+# This repository is public, so logs, artifacts and caches are public too. Inputs are
+# openly licensed audio fetched at run time (AMI, CC BY 4.0, for B4); only numbers, text
+# and runner facts are uploaded, and the B4 audio is cached between runs so the corpus
+# host is asked once. Never add learner, golden-set (#106, #107), YouTube or voice-consent
+# audio here.
 #
 # Results count only when labelled "CI-runner evidence (E4)" and taken from at least three
 # separate runs of the same benchmark (judge each criterion by the worst run's figure).
+# Start each run after the previous one has finished: with one concurrency group, GitHub
+# keeps a single pending run and cancels an older pending one when another is queued.
 name: Speech benchmarks
 
 on:
@@ -43,30 +46,39 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The checkout is mounted into a container that installs third-party packages.
+          persist-credentials: false
+
+      # The 20 AMI windows (CC BY 4.0, openly redistributable), keyed on the manifest that
+      # pins their SHA-256s; spike-ami fetch re-checks every file and fetches only misses.
+      - name: Restore the B4 audio cache
+        if: inputs.benchmark == 'b4'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/b4-audio
+          key: b4-ami-audio-${{ hashFiles('spikes/b4/ami-windows.json') }}
 
       - name: Record the runner facts
         run: bash spikes/ci/runner-facts.sh results/runner-facts.txt
 
       # The stage 0 media process shape: 2 CPUs, 2 threads, no swap. The runner has
-      # 16 GB, so memory is capped at 12 GB rather than stage 0's 18 GB.
+      # 16 GB, so memory is capped at 12 GB rather than stage 0's 18 GB. The container
+      # writes its own cgroup limits to results/container-facts.txt.
       - name: Run the benchmark in a 2-CPU container without swap
         env:
           BENCHMARK: ${{ inputs.benchmark }}
           MODEL: ${{ inputs.model }}
         run: |
+          mkdir -p "$RUNNER_TEMP/b4-audio"
           docker run --rm --cpus=2 --memory=12g --memory-swap=12g \
             -e OMP_NUM_THREADS=2 -e BENCHMARK -e MODEL -e RESULTS=/repo/results \
+            -e AUDIO_DIR=/audio -v "$RUNNER_TEMP/b4-audio:/audio" \
             -v "$PWD:/repo" -w /repo/spikes \
             python:3.12-slim-bookworm bash ci/run-benchmark.sh
 
-      - name: Refuse to upload audio
-        run: |
-          audio=$(find results -type f \( -iname '*.wav' -o -iname '*.flac' -o -iname '*.mp3' \
-            -o -iname '*.m4a' -o -iname '*.ogg' -o -iname '*.webm' \))
-          if [ -n "$audio" ]; then
-            echo "::error::audio in results: $audio"
-            exit 1
-          fi
+      - name: Upload only numbers and text
+        run: bash spikes/ci/check-results.sh results
 
       - uses: actions/upload-artifact@v7
         with:
