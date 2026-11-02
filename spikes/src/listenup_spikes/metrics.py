@@ -76,6 +76,103 @@ def count_fillers(text: str) -> int:
 
 
 @dataclass(frozen=True)
+class FillerMark:
+    """One filler in a recording, in seconds. kind is "hesitation" (uh, um, er) or
+    "discourse" (like, you know)."""
+
+    start: float
+    end: float
+    kind: str
+    text: str
+
+
+# B4's fillers as a transcript spells them. "hmm" and "mm" are not B4 fillers, and the AMI
+# reference leaves them out too, so they count neither way.
+HESITATION_SPELLINGS = frozenset({"uh", "uhh", "um", "umm", "uhm", "er", "erm", "ah"})
+MATCH_TOLERANCE_S = 0.5
+
+
+def hypothesis_fillers(words: Sequence[tuple[str, float, float]]) -> list[FillerMark]:
+    """B4 fillers in timed transcript words: hesitations, every "like" and "you know".
+    Every "like" counts, as a filler counter that cannot tell the verb apart would."""
+    tokens = [(re.sub(r"[^a-z']", "", text.lower()), start, end) for text, start, end in words]
+    marks: list[FillerMark] = []
+    i = 0
+    while i < len(tokens):
+        text, start, end = tokens[i]
+        if text == "you" and i + 1 < len(tokens) and tokens[i + 1][0] == "know":
+            marks.append(FillerMark(start, tokens[i + 1][2], "discourse", "you know"))
+            i += 2
+            continue
+        if text in HESITATION_SPELLINGS:
+            marks.append(FillerMark(start, end, "hesitation", text))
+        elif text == "like":
+            marks.append(FillerMark(start, end, "discourse", "like"))
+        i += 1
+    return marks
+
+
+@dataclass(frozen=True)
+class FillerCounts:
+    hits: int
+    missed: int
+    extra: int
+
+    @property
+    def recall(self) -> float | None:
+        return self.hits / (self.hits + self.missed) if self.hits + self.missed else None
+
+    @property
+    def precision(self) -> float | None:
+        return self.hits / (self.hits + self.extra) if self.hits + self.extra else None
+
+
+def _near(ref: FillerMark, hyp: FillerMark, tolerance_s: float) -> bool:
+    return round(hyp.start, 6) <= round(ref.end + tolerance_s, 6) and round(hyp.end, 6) >= round(
+        ref.start - tolerance_s, 6
+    )
+
+
+def _max_pairs(refs: Sequence[FillerMark], hyps: Sequence[FillerMark], tolerance_s: float) -> int:
+    """Size of a maximum matching between reference and transcript fillers, each used once
+    (augmenting paths; a 75 s window holds a few dozen fillers)."""
+    options = [[j for j, h in enumerate(hyps) if _near(r, h, tolerance_s)] for r in refs]
+    owner: dict[int, int] = {}
+
+    def assign(i: int, seen: set[int]) -> bool:
+        for j in options[i]:
+            if j in seen:
+                continue
+            seen.add(j)
+            if j not in owner or assign(owner[j], seen):
+                owner[j] = i
+                return True
+        return False
+
+    return sum(assign(i, set()) for i in range(len(refs)))
+
+
+def match_fillers(
+    reference: Sequence[FillerMark],
+    hypothesis: Sequence[FillerMark],
+    tolerance_s: float = MATCH_TOLERANCE_S,
+) -> dict[str, FillerCounts]:
+    """Pair reference and transcript fillers of the same kind whose times are within
+    tolerance_s of each other, as many pairs as possible, each filler used once. Spellings
+    within a kind are interchangeable (AMI writes every vowel hesitation "uh")."""
+    results: dict[str, FillerCounts] = {}
+    for kind in ("hesitation", "discourse"):
+        refs = [m for m in reference if m.kind == kind]
+        hyps = [m for m in hypothesis if m.kind == kind]
+        hits = _max_pairs(refs, hyps, tolerance_s)
+        results[kind] = FillerCounts(hits, len(refs) - hits, len(hyps) - hits)
+    results["all"] = FillerCounts(
+        *(sum(getattr(r, f) for r in results.values()) for f in ("hits", "missed", "extra"))
+    )
+    return results
+
+
+@dataclass(frozen=True)
 class RecallPrecision:
     recall: float
     precision: float
