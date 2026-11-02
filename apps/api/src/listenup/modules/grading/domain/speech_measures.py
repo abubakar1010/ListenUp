@@ -408,9 +408,15 @@ def prosody_from_frames(
     pitch_cents: Sequence[int | None],
 ) -> dict[int, Prosody]:
     """The original's `(index, start ms, end ms)` words, in media time, with the
-    median voiced pitch of the reference profile's frames inside each word."""
+    median voiced pitch of the reference profile's frames inside each word.
+
+    `frames_start_ms` is where the profile's span starts. Its frames are centred,
+    frame i at `frames_start_ms + (i + 1/2) * frame_step_ms` (the acoustics
+    extractor's fixed frame centres), so each frame counts for the word its centre
+    falls in.
+    """
     points = [
-        (frames_start_ms + i * frame_step_ms, None if cents is None else float(cents))
+        (frames_start_ms + (i + 0.5) * frame_step_ms, None if cents is None else float(cents))
         for i, cents in enumerate(pitch_cents)
     ]
     return {

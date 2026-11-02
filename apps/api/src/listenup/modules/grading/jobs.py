@@ -356,7 +356,8 @@ async def _grade_round(
             if (p.passage_transcript_id, index) in indices
         ]
         original += placed
-        # Pitch frames start at the profile's own transcript bounds (media time).
+        # The profile's span starts at its transcript bounds (media time); its frames
+        # are centred within it (prosody_from_frames).
         original_prosody |= prosody_from_frames(
             placed,
             frames_start_ms=p.span[0],

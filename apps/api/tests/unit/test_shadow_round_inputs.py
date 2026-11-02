@@ -93,15 +93,17 @@ def test_round_result_keeps_headphones_warning_and_scores():
 def test_reference_frames_become_per_word_prosody():
     from listenup.modules.grading.domain.speech_measures import Prosody, prosody_from_frames
 
-    # Frames every 20 ms from 10 000 ms; word 0 covers frames 0-4, word 1 frames 5-9.
+    # The profile's frames are centred: frame i of a span starting at 10 000 ms sits
+    # at 10 000 + 20 i + 10 ms (parselmouth_acoustics). Word 0 [10 000, 10 090)
+    # holds frames 0-3; frame 4, centred at 10 090, is word 1's first frame.
     frames: list[int | None] = [6000, 6100, None, 6200, 6300, None, None, None, None, None]
     result = prosody_from_frames(
-        [(0, 10_000, 10_100), (1, 10_100, 10_200)],
+        [(0, 10_000, 10_090), (1, 10_090, 10_200)],
         frames_start_ms=10_000,
         frame_step_ms=20,
         pitch_cents=frames,
     )
-    assert result == {0: Prosody(0.1, 6150.0), 1: Prosody(0.1, None)}
+    assert result == {0: Prosody(0.09, 6100.0), 1: Prosody(0.11, 6300.0)}
 
 
 def round_result_of(assessment: SpeechAssessment, **changes: object) -> dict[str, object]:
