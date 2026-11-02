@@ -46,7 +46,7 @@ the results documents in `docs/spikes/` quote them and keep the JSON next to the
 | #19 B2 alignment | `spike-b2 data/passages --model MMS_FA --window-s 0` (one run per setting), then `spike-compare` | the same passages; hand labels for 3 windows (`docs/spikes/b2-labels/`) | <= 0.2 core-s per audio-s; boundary error small enough for Transcript sync |
 | #20 Shadow measures | `spike-shadow data/shadow --fillers-model small.en` | 10 folders, each with `original.<audio>`, `original.txt`, `good.<audio>` and `poor.<audio>` (mumbled, late) recorded by consenting team members, not learners | good beats poor on most measures; each measure rated works / weak / fails |
 | #21 B3 round latency | same command, 30 learner recordings | as #20 | p95 analysis <= 50 s per round |
-| #22 B4 fillers | `spike-b4 data/fillers --model small.en` | 20 recordings, each with `NAME.fillers` holding the teacher-marked filler count | recall >= 80% for the chosen setting |
+| #22 B4 fillers | `spike-ami fetch data/fillers`, then `spike-b4 data/fillers --model small.en` (on the Arm runner: the speech-benchmarks workflow, below) | none: 20 AMI windows (CC BY 4.0) fetched from [`b4/ami-windows.json`](b4/ami-windows.json); or your own `NAME.<audio>` with `NAME.fillers` (count) and optional `NAME.marks.json` (timed marks) | recall >= 80% for the chosen setting |
 | #94 B5 load test | `spike-b5 --out results/b5-<host>` (add `--stage0` only on the stage-0 server) | none: seeds its own learners | read p95 < 200 ms, write p95 < 300 ms, server CPU < 30% at 15 req/s plus 20 Blind learners |
 
 Build the B1/B2 passages (licence-safe: LibriSpeech is LibriVox public-domain audio with
@@ -67,6 +67,57 @@ spike-passages voxpopuli data/raw/vp_en_test.parquet data/passages --set vp-en -
 spike-passages voxpopuli data/raw/vp_acc_test_0.parquet data/raw/vp_acc_test_1.parquet \
     data/passages --set vp-accented --count 3
 ```
+
+## Speech benchmarks on the GitHub Arm runner (exception E4)
+
+The owner's exception E4 ([#119](https://github.com/abubakar1010/ListenUp/issues/119#issuecomment-6559104401))
+moves B1 to B4 to GitHub's `ubuntu-24.04-arm` runner. The `Speech benchmarks` workflow
+([`.github/workflows/speech-benchmarks.yml`](../.github/workflows/speech-benchmarks.yml)) is
+started by hand (Actions, "Run workflow"). It:
+
+1. records the runner facts E4 asks for ([`ci/runner-facts.sh`](ci/runner-facts.sh): `lscpu`,
+   `nproc`, `free -b`, `uname -m`, the runner image and the commit);
+2. runs [`ci/run-benchmark.sh`](ci/run-benchmark.sh) in `python:3.12-slim-bookworm` with
+   `--cpus=2`, `OMP_NUM_THREADS=2` and no swap (memory 12 GB, the runner's limit);
+3. refuses to upload any audio, then uploads `results/` (numbers, text, runner facts).
+
+**The repository is public, so its workflow logs and artifacts are public.** Use only
+openly licensed audio that may be redistributed, fetched at run time. Never commit audio,
+and never use learner, golden-set (#106, #107), YouTube or voice-consent recordings.
+
+A result counts only from **at least three separate runs**: report p50, p95 and the
+spread, judge each pass criterion by the worst run, and label it "CI-runner evidence
+(E4)" in `docs/spikes/` and the ADR. B3 (#21) and the #233 rerun add their own
+`benchmark` choices to the workflow and to `run-benchmark.sh`.
+
+### B4 data: AMI windows
+
+B4's reference is the AMI Meeting Corpus (CC BY 4.0;
+[licence](https://groups.inf.ed.ac.uk/ami/corpus/license.shtml)), chosen in
+[`docs/spikes/22-filler-corpus-options.md`](../docs/spikes/22-filler-corpus-options.md).
+Its manual annotations tag hesitations and discourse markers on time-stamped words, so
+`spike-b4` matches each transcribed filler to a marked one (0.5 s tolerance; uh, um and er
+are one kind, "like" and "you know" the other) and reports recall and precision per kind.
+Every transcribed "like" counts, as a counter that cannot tell the verb apart would.
+
+`ami.py` picks one 75 s window per speaker by a fixed rule, before any model is run:
+windows starting at a word onset where the speaker talks at least 60% of the time and at
+least five B4 fillers fall inside; the least crosstalk (in steps of 1% of the window), then
+the most own speech, then the earliest start; one window per speaker, at most four TNO
+(Dutch) speakers, 20 windows. Filler counts are a floor, never maximised.
+
+1. Run the workflow with `b4-ami-manifest`. It downloads the annotation zip (SHA-256 pinned
+   in `ami.py`), applies the rule and records each window's audio SHA-256. Commit the
+   artifact's `ami-windows.json` as `spikes/b4/ami-windows.json` in a pull request.
+2. Run the workflow with `b4` three or more times. Each run fetches the 20 windows by HTTP
+   range request (about 48 MB, a 2 s pause between requests), checks every checksum, and
+   runs `spike-b4`. The audio stays in the container's `/tmp`.
+
+Attribution: AMI Consortium, AMI Meeting Corpus, CC BY 4.0; the runs use 75 s excerpts of
+the headset audio and the manual word and disfluency annotations. AMI's host refuses
+Python's built-in HTTP client, so requests go through curl, a command-line download like the
+wget command AMI's download page recommends for its large video files. curl keeps its own
+identity, and an HTTP error stops the run: no retries or workarounds.
 
 ## B5 load test (#94)
 
