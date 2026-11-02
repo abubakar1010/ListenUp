@@ -23,7 +23,6 @@ from pathlib import Path, PurePosixPath
 from listenup_spikes.metrics import FillerMark
 
 NITE = "{http://nite.sourceforge.net/}"
-HESITATION_TYPE = "ami_dsfl_5"
 DISCOURSE_TYPE = "ami_dsfl_3"
 HESITATION_WORDS = frozenset({"uh", "um", "er", "erm"})
 _CHILD = re.compile(r"id\(([^)]+)\)(?:\.\.id\(([^)]+)\))?")
@@ -66,25 +65,35 @@ def _spans(disfluency_xml: bytes) -> list[tuple[str, list[tuple[str, str | None]
     return spans
 
 
-def filler_marks(words: list[Word], disfluency_xml: bytes) -> list[FillerMark]:
-    """B4 fillers the annotators tagged, sorted by start time."""
-    index = {word.id: i for i, word in enumerate(words)}
-    marks = []
+def _word_ids(xml: bytes) -> list[str]:
+    """Every w element's id in file order, punctuation and untimed words included: NXT
+    spans may start or end on any of them."""
+    return [e.get(f"{NITE}id", "") for e in ET.fromstring(xml) if e.tag == "w"]
+
+
+def filler_marks(words_xml: bytes, disfluency_xml: bytes) -> list[FillerMark]:
+    """B4 fillers, sorted by start time. Hesitations: every timed uh, um, er or erm the
+    transcribers wrote (AMI's rules make them write each one; a fifth carry no hesitation
+    tag). Discourse markers: "like" and "you know" only where annotators tagged a discourse
+    marker, since both are also ordinary words."""
+    words = parse_words(words_xml)
+    timed = {w.id: w for w in words}
+    order = _word_ids(words_xml)
+    position = {word_id: i for i, word_id in enumerate(order)}
+    marks = [
+        FillerMark(w.start, w.end, "hesitation", w.text)
+        for w in words
+        if w.text in HESITATION_WORDS
+    ]
     for kind, children in _spans(disfluency_xml):
-        if kind not in (HESITATION_TYPE, DISCOURSE_TYPE):
+        if kind != DISCOURSE_TYPE:
             continue
         for first, last in children:
-            if first not in index or (last is not None and last not in index):
-                continue  # the span starts or ends on an untimed word
-            span = words[index[first] : index[last or first] + 1]
-            marks += _hesitations(span) if kind == HESITATION_TYPE else _discourse(span)
+            if first not in position or (last is not None and last not in position):
+                raise ValueError(f"disfluency span refers to an unknown word: {first}..{last}")
+            ids = order[position[first] : position[last or first] + 1]
+            marks += _discourse([timed[i] for i in ids if i in timed])
     return sorted(marks, key=lambda m: (m.start, m.end))
-
-
-def _hesitations(span: list[Word]) -> list[FillerMark]:
-    return [
-        FillerMark(w.start, w.end, "hesitation", w.text) for w in span if w.text in HESITATION_WORDS
-    ]
 
 
 def _discourse(span: list[Word]) -> list[FillerMark]:
@@ -122,6 +131,7 @@ class Track:
     words: list[Word]
     marks: list[FillerMark]
     others: list[tuple[float, float]]
+    duration: float  # seconds, from meetings.xml: no window may run past the recording
 
 
 @dataclass(frozen=True)
@@ -167,6 +177,8 @@ def best_window(track: Track, length: float = WINDOW_S) -> Window | None:
     best: tuple[tuple[float, float, float], Window] | None = None
     for word in track.words:
         start, end = word.start, word.start + length
+        if end > track.duration:
+            continue
         lo, hi = bisect_left(mark_starts, start), bisect_left(mark_starts, end)
         inside = [m for m in marks[lo:hi] if m.end <= end]
         if len(inside) < MIN_FILLERS:
@@ -217,13 +229,17 @@ def choose_windows(windows: list[Window], count: int = 20) -> list[Window]:
     return chosen
 
 
-def _channels(archive: zipfile.ZipFile) -> dict[tuple[str, str], tuple[str, int]]:
-    """(meeting, agent) -> (speaker id, headset channel), from corpusResources/meetings.xml."""
+def _channels(archive: zipfile.ZipFile) -> dict[tuple[str, str], tuple[str, int, float]]:
+    """(meeting, agent) -> (speaker id, headset channel, meeting duration in seconds), from
+    corpusResources/meetings.xml."""
     out = {}
     for meeting in ET.fromstring(archive.read("corpusResources/meetings.xml")):
+        if not meeting.get("duration"):
+            raise ValueError(f"{meeting.get('observation')}: meetings.xml gives no duration")
+        duration = float(meeting.get("duration", ""))
         for speaker in meeting:
             key = (meeting.get("observation", ""), speaker.get("nxt_agent", ""))
-            out[key] = (speaker.get("global_name", ""), int(speaker.get("channel", "-1")))
+            out[key] = (speaker.get("global_name", ""), int(speaker.get("channel", "-1")), duration)
     return out
 
 
@@ -259,10 +275,12 @@ def tracks_from_zip(archive: zipfile.ZipFile) -> list[Track]:
             layer = f"disfluency/{meeting}.{agent}.disfluency.xml"
             if layer not in names or (meeting, agent) not in channels:
                 continue
-            speaker, channel = channels[(meeting, agent)]
+            speaker, channel, duration = channels[(meeting, agent)]
             others = sorted((w.start, w.end) for a, ws in agents.items() if a != agent for w in ws)
-            marks = filler_marks(words, archive.read(layer))
-            tracks.append(Track(meeting, agent, speaker, channel, words, marks, others))
+            marks = filler_marks(
+                archive.read(f"words/{meeting}.{agent}.words.xml"), archive.read(layer)
+            )
+            tracks.append(Track(meeting, agent, speaker, channel, words, marks, others, duration))
     return tracks
 
 
@@ -325,6 +343,8 @@ def range_get(url: str, first: int, last: int, run: Callable[[list[str]], bytes]
             "=https",
             "--max-time",
             "300",
+            "--max-filesize",
+            str(last - first + 1),
             "--range",
             f"{first}-{last}",
             url,
@@ -363,11 +383,15 @@ def window_pcm(url: str, start: float, length: float, get: RangeGet = range_get)
 def fetch_window(entry: dict, out_dir: Path, get: RangeGet = range_get) -> Path:
     """Write NAME.wav, NAME.fillers (the count spike-b4 reads) and NAME.marks.json (timed
     marks for matching), after checking the format and the manifest's SHA-256."""
-    pcm = window_pcm(entry["audio_url"], entry["start"], entry["length"], get)
+    wav_path = out_dir / f"{entry['name']}.wav"
+    cached = wav_path.read_bytes()[HEADER_BYTES:] if wav_path.exists() else b""
+    if hashlib.sha256(cached).hexdigest() == entry["pcm_sha256"]:
+        pcm = cached  # restored by the workflow cache and unchanged: no request to the host
+    else:
+        pcm = window_pcm(entry["audio_url"], entry["start"], entry["length"], get)
     if hashlib.sha256(pcm).hexdigest() != entry["pcm_sha256"]:
         raise ValueError(f"{entry['name']}: audio checksum does not match the manifest")
     out_dir.mkdir(parents=True, exist_ok=True)
-    wav_path = out_dir / f"{entry['name']}.wav"
     wav_path.write_bytes(wav_file(pcm))
     (out_dir / f"{entry['name']}.fillers").write_text(f"{len(entry['marks'])}\n")
     (out_dir / f"{entry['name']}.marks.json").write_text(json.dumps(entry["marks"], indent=1))
@@ -380,6 +404,7 @@ ANNOTATIONS_URL = "https://groups.inf.ed.ac.uk/ami/AMICorpusAnnotations/ami_publ
 ANNOTATIONS_SHA256 = "b56e5babb2496b8795deeeda7e71178d7fbc9963f94276cf2a3f4b56ebbc9f9d"
 MANIFEST = Path(__file__).resolve().parents[2] / "b4" / "ami-windows.json"
 WINDOW_COUNT = 20
+SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 
 
 def manifest_entry(window: Window, people: dict[str, dict[str, str]], pcm_sha256: str) -> dict:
@@ -407,7 +432,7 @@ def manifest_entry(window: Window, people: dict[str, dict[str, str]], pcm_sha256
     }
 
 
-def validate_manifest(manifest: dict, count: int = WINDOW_COUNT) -> None:
+def validate_manifest(manifest: dict, count: int = WINDOW_COUNT, length: float = WINDOW_S) -> None:
     windows = manifest.get("windows", [])
     if len(windows) != count:
         raise ValueError(f"expected {count} windows, found {len(windows)}")
@@ -415,6 +440,12 @@ def validate_manifest(manifest: dict, count: int = WINDOW_COUNT) -> None:
     if len(set(speakers_seen)) != len(speakers_seen):
         raise ValueError("a speaker appears in more than one window")
     for w in windows:
+        if not SAFE_NAME.fullmatch(w["name"]):
+            raise ValueError(f"{w['name']!r}: name must be a plain file name")
+        if w["length"] != length:
+            raise ValueError(f"{w['name']}: length must be {length} s")
+        if w["start"] < 0:
+            raise ValueError(f"{w['name']}: start must not be negative")
         if not w["audio_url"].startswith("https://groups.inf.ed.ac.uk/"):
             raise ValueError(f"{w['name']}: audio must come from the AMI host")
         if len(w["pcm_sha256"]) != 64:
@@ -431,8 +462,9 @@ def fetch_all(
     get: RangeGet = range_get,
     sleep: Callable[[float], None] = time.sleep,
     count: int = WINDOW_COUNT,
+    length: float = WINDOW_S,
 ) -> list[Path]:
-    validate_manifest(manifest, count=count)
+    validate_manifest(manifest, count=count, length=length)
     polite = paced(get, sleep)
     return [fetch_window(entry, out_dir, polite) for entry in manifest["windows"]]
 

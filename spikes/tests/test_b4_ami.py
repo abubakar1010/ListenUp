@@ -97,15 +97,31 @@ def test_parse_words_keeps_timed_words_and_drops_punctuation() -> None:
     assert (words[0].id, words[0].start, words[0].end) == ("X.A.words0", 1.0, 1.3)
 
 
-def test_filler_marks_take_only_b4_fillers_the_annotators_tagged() -> None:
-    marks = filler_marks(parse_words(WORDS), DISFLUENCY)
+def test_filler_marks_take_every_hesitation_word_and_tagged_discourse_markers() -> None:
+    marks = filler_marks(WORDS, DISFLUENCY)
     assert marks == [
         FillerMark(1.0, 1.3, "hesitation", "um"),
         FillerMark(1.4, 1.8, "discourse", "you know"),  # one mark for the pair
         FillerMark(2.7, 2.9, "discourse", "like"),  # the tagged "like", not the verb at 2.0
+        # Transcribers wrote it, so it was spoken: a hesitation even though the annotators
+        # tagged it as an omission (20% of AMI's hesitation words carry no hesitation tag).
+        FillerMark(3.1, 3.3, "hesitation", "uh"),
     ]
-    # Not marks: "mm" (hesitation but not a B4 filler), "so" (a discourse marker outside
-    # B4's list), "uh" tagged as an omission, and the untimed "er".
+    # Not marks: "mm" (not a B4 filler), "so" (a discourse marker outside B4's list) and
+    # the untimed "er".
+
+
+def test_a_discourse_span_ending_on_punctuation_still_counts() -> None:
+    words = b"""<nite:root xmlns:nite="http://nite.sourceforge.net/">
+   <w nite:id="Y.words0" starttime="4.0" endtime="4.2">you</w>
+   <w nite:id="Y.words1" starttime="4.2" endtime="4.4">know</w>
+   <w nite:id="Y.words2" starttime="4.4" endtime="4.4" punc="true">,</w>
+</nite:root>"""
+    span = b"""<nite:root xmlns:nite="http://nite.sourceforge.net/"><dsfl nite:id="d">
+   <nite:pointer role="dsfl-type" href="dsfl-types.xml#id(ami_dsfl_3)"/>
+   <nite:child href="Y.words.xml#id(Y.words0)..id(Y.words2)"/>
+</dsfl></nite:root>"""
+    assert filler_marks(words, span) == [FillerMark(4.0, 4.4, "discourse", "you know")]
 
 
 def track(
@@ -113,13 +129,14 @@ def track(
     word_every_s: float = 1.0,
     filler_times: tuple[float, ...] = (10, 20, 30, 40, 50, 100, 110, 120, 130, 140),
     others: tuple[tuple[float, float], ...] = ((0.0, 60.0),),
+    duration: float = 200.0,
 ) -> Track:
     words, t = [], 0.0
     while t < 200:
         words.append(Word(f"w{t}", t, t + 0.8, "word"))
         t += word_every_s
     marks = [FillerMark(t, t + 0.3, "hesitation", "um") for t in filler_times]
-    return Track("ES2002a", "A", speaker, 0, words, marks, list(others))
+    return Track("ES2002a", "A", speaker, 0, words, marks, list(others), duration)
 
 
 def test_best_window_prefers_no_crosstalk_then_the_earliest_start() -> None:
@@ -136,6 +153,14 @@ def test_best_window_prefers_no_crosstalk_then_the_earliest_start() -> None:
 def test_best_window_counts_crosstalk_when_every_window_has_some() -> None:
     window = best_window(track(others=((0.0, 200.0),)))
     assert window is not None and window.crosstalk == 1.0
+
+
+def test_best_window_ends_before_the_recording_does() -> None:
+    # The recording ends at 140.5 s, so no window can reach the fillers at 100 to 140 s;
+    # the best one left covers 10 to 50 s, despite its crosstalk.
+    window = best_window(track(duration=140.5))
+    assert window is not None
+    assert window.start == 10.0 and window.start + window.length <= 140.5
 
 
 def test_best_window_needs_five_fillers() -> None:
@@ -180,7 +205,7 @@ def test_choose_windows_caps_the_dutch_tno_speakers() -> None:
 
 MEETINGS = b"""<?xml version="1.0" encoding="ISO-8859-1" standalone="yes"?>
 <nite:root nite:id="meet.00" xmlns:nite="http://nite.sourceforge.net/">
-   <meeting nite:id="m1" observation="X">
+   <meeting nite:id="m1" observation="X" duration="1490">
       <speaker nite:id="X_1" channel="2" nxt_agent="A" global_name="FEE005"/>
       <speaker nite:id="X_2" channel="0" nxt_agent="B" global_name="MIO012"/>
    </meeting>
@@ -221,7 +246,7 @@ def test_tracks_come_only_from_channels_with_a_disfluency_layer() -> None:
     with zipfile.ZipFile(io.BytesIO(annotation_zip())) as archive:
         tracks = tracks_from_zip(archive)
     assert [(t.meeting, t.agent, t.speaker, t.channel) for t in tracks] == [("X", "A", "FEE005", 2)]
-    assert len(tracks[0].marks) == 3
+    assert len(tracks[0].marks) == 4  # three hesitation-word or tagged marks plus "uh"
     assert tracks[0].others == [(5.0, 6.0)]  # agent B's speech is crosstalk for A
 
 
@@ -387,6 +412,9 @@ def test_range_get_uses_curl_as_is_and_fails_on_http_errors() -> None:
             "=https",
             "--max-time",
             "300",
+            # A server that ignored the range would send the whole WAV: curl stops first.
+            "--max-filesize",
+            "44",
             "--range",
             "0-43",
             "https://groups.inf.ed.ac.uk/a.wav",
@@ -398,7 +426,12 @@ def test_fetch_all_pauses_between_requests_to_the_corpus_host(tmp_path: Path) ->
     server, pauses = FakeServer(), []
     second = entry(speaker="MEE006")
     paths = fetch_all(
-        {"windows": [entry(), second]}, tmp_path, get=server, sleep=pauses.append, count=2
+        {"windows": [entry(), second]},
+        tmp_path,
+        get=server,
+        sleep=pauses.append,
+        count=2,
+        length=0.08,
     )
     assert [p.name for p in paths] == ["ES2002a-FEE005.wav", "ES2002a-MEE006.wav"]
     assert len(server.calls) == 4 and pauses == [2.0, 2.0, 2.0]  # one pause between requests
@@ -411,7 +444,7 @@ def test_best_window_puts_no_crosstalk_before_more_own_speech() -> None:
         Word(w.id, w.start, w.start + (0.95 if w.start < 70 else 0.8), w.text) for w in base.words
     ]
     busier = Track(
-        base.meeting, base.agent, base.speaker, base.channel, words, base.marks, base.others
+        base.meeting, base.agent, base.speaker, base.channel, words, base.marks, base.others, 200.0
     )
     window = best_window(busier)
     assert window is not None and (window.start, window.crosstalk) == (66.0, 0.0)
@@ -435,3 +468,38 @@ def test_fetch_annotations_keeps_the_zip_only_when_its_checksum_matches(tmp_path
             tmp_path / "bad.zip", run=download(b"changed"), expected=ANNOTATIONS_SHA256
         )
     assert not (tmp_path / "bad.zip").exists()
+
+
+def test_validate_manifest_refuses_a_wrong_length_a_negative_start_or_an_unsafe_name() -> None:
+    marks = [{"start": 1.0, "end": 1.2, "kind": "hesitation", "text": "um"}] * 5
+    item = {
+        "name": "M-FEE001",
+        "speaker": "FEE001",
+        "length": 75.0,
+        "pcm_sha256": "0" * 64,
+        "audio_url": "https://groups.inf.ed.ac.uk/x.wav",
+        "start": 0.0,
+        "marks": marks,
+    }
+    validate_manifest({"windows": [item]}, count=1)
+    for bad, message in (
+        ({"length": 60.0}, "length"),
+        ({"start": -1.0}, "start"),
+        ({"name": "../M-FEE001"}, "name"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            validate_manifest({"windows": [{**item, **bad}]}, count=1)
+
+
+def test_fetch_window_reuses_a_cached_window_only_when_its_audio_matches(tmp_path: Path) -> None:
+    fetch_window(entry(), tmp_path, get=FakeServer())
+    unused = FakeServer()
+    fetch_window(entry(), tmp_path, get=unused)
+    assert unused.calls == []  # restored from the workflow cache: no request to the host
+    wav = tmp_path / "ES2002a-FEE005.wav"
+    damaged = bytearray(wav.read_bytes())
+    damaged[-1] ^= 0xFF  # one changed sample: the cached copy must not be trusted
+    wav.write_bytes(bytes(damaged))
+    again = FakeServer()
+    fetch_window(entry(), tmp_path, get=again)
+    assert len(again.calls) == 2
