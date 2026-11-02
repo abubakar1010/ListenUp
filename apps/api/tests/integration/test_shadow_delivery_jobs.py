@@ -415,9 +415,12 @@ def test_a_released_grade_shows_word_labels_and_accent_apart_from_the_score(
     }
     assert body["measures"]["timing"] == {"score": None, "reason": "playback_offset_unknown"}
     assert body["measures"]["pronunciation"] == {"score": 75, "reason": None}
+    # The fixture profile has no pitch frames and the fake speaks every word for 0.4 s:
+    # pitch is unobserved and stress correlates a flat learner with a varied original,
+    # which is no agreement, so accent is 0 with its reason left to its details.
     assert body["accent"] == {
-        "score": body["accent"]["score"],
-        "reason": body["accent"]["reason"],
+        "score": 0,
+        "reason": None,
         "experimental": True,
         "compared_with": "this_speaker",
         "in_overall": False,
@@ -430,6 +433,70 @@ def test_a_released_grade_shows_word_labels_and_accent_apart_from_the_score(
     ]
     refused = make().get(path)
     assert refused.status_code == 404 and refused.json()["code"] == "round_not_found"
+
+
+def test_needs_work_and_missed_words_are_stored_and_projected_with_their_reasons(
+    client, migrated_url, recorded, run_round, monkeypatch
+):
+    """FR-SH-10 through the job, the stored JSON and the projection, beyond the fake's
+    all-good words: a dropped final sound, an unclear one, and a word never said."""
+    from listenup.ai.ports import PitchPoint, Provenance, SoundScore, SpeechAssessment, WordScore
+    from listenup.ai.providers.fake_assessment import FakeAssessment
+    from listenup.modules.grading import service
+
+    def said(index, text, start, scores):
+        sounds = tuple(
+            SoundScore(label=label, start=start + 0.1 * i, end=start + 0.1 * (i + 1), score=v)
+            for i, (label, v) in enumerate(scores)
+        )
+        return WordScore(
+            index=index, text=text, start=start, end=sounds[-1].end, accuracy=0.5, sounds=sounds
+        )
+
+    async def assess(self, recording, reference_text, reference_audio):
+        assert reference_text.split() == ["Hello", "world.", "Again."]
+        return SpeechAssessment(
+            provenance=Provenance(provider="fake-assessment", model="synthetic-v1", version="1"),
+            words=(
+                said(0, "Hello", 0.0, [("h", 0.9), ("l", 0.9)]),
+                said(1, "world.", 1.0, [("w", 0.4), ("d", 0.1)]),
+            ),
+            pauses=(),
+            fillers=(),
+            pitch=(PitchPoint(time=0.0, hertz=120),),
+        )
+
+    monkeypatch.setattr(FakeAssessment, "assess", assess)
+    monkeypatch.setattr(service, "LEARNER_GRADES_RELEASED", True)
+    round_id, _, _ = recorded
+    run_round[0]()
+    with psycopg.connect(migrated_url) as db:
+        (stored,) = db.execute(
+            "SELECT word_labels FROM grading.round_grades WHERE round_id=%s", [round_id]
+        ).fetchone()
+    assert [(w["label"], w["score"], w["basis"]) for w in stored] == [
+        ("good", 90, "sounds"),
+        ("needs_work", 25, "sounds"),
+        ("missed", None, None),
+    ]
+    _pretend_real(migrated_url, round_id)
+    _pretend_calibrated(migrated_url, round_id)
+    body = client.get(f"/api/v1/shadow/rounds/{round_id}/grade").json()
+    assert body["word_labels"] == [
+        {"index": 0, "text": "Hello", "label": "good", "score": 90, "reasons": []},
+        {
+            "index": 1,
+            "text": "world.",
+            "label": "needs_work",
+            "score": 25,
+            "reasons": [
+                {"sound": "w", "position": "initial", "issue": "unclear", "linking": False},
+                {"sound": "d", "position": "final", "issue": "dropped", "linking": False},
+            ],
+        },
+        {"index": 2, "text": "Again.", "label": "missed", "score": None, "reasons": []},
+    ]
+    assert body["measures"]["completeness"]["score"] is not None
 
 
 def test_a_released_grade_without_all_seven_measures_is_unavailable(
