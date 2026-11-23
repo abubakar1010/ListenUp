@@ -1,6 +1,8 @@
-# ADR 0092: Deleting a practice session or one Shadow recording
+# ADR 0100: Deleting a practice session or one Shadow recording
 
 - Status: Accepted (owner-approved plan, 2026-10-31)
+- Number: first merged as 0092, a number #119 had assigned to #82; renumbered to
+  0100 by owner decision (2026-11-01, #119)
 - Related: #90; SRS FR-SH-17, AT-20, NFR-SEC-5; ADRs 0029, 0069, 0070, 0085 and 0087
 
 ## Context

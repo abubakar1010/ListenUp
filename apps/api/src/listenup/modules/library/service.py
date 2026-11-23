@@ -50,7 +50,7 @@ async def delete_content(db: AsyncSession, learner: uuid.UUID, target: uuid.UUID
 
 
 async def delete_session(db: AsyncSession, learner: uuid.UUID, target: uuid.UUID) -> uuid.UUID:
-    """Hide one practice session and queue its storage-first deletion (#90, ADR 0092).
+    """Hide one practice session and queue its storage-first deletion (#90, ADR 0100).
 
     The clip and the learner's other sessions stay. The manifest names the session's
     Shadow recordings and card snippets; the job deletes them before any row.

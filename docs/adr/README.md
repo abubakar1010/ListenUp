@@ -10,6 +10,8 @@ Three numbers were used twice and are kept as they are; do not renumber any ADR,
 - 0052: [admin usage through a separate read-only connection](0052-admin-usage-through-a-separate-readonly-connection.md) and [ai-evals runner and report format](0052-ai-evals-runner-and-report-format.md)
 - 0057: [Shadow segment proposals](0057-shadow-segment-proposals.md) and [uniform sign-in lockout](0057-uniform-sign-in-lockout.md)
 
+A fourth duplicate, 0092, was found after both #82 and #90 merged. #119 had assigned 0092 and 0093 to #82, so [provisional Shadow delivery scores](0092-provisional-shadow-delivery-scores.md) keeps 0092, and #90's decision was renumbered once, by owner decision, to [ADR 0100: deleting a practice session or one Shadow recording](0100-session-and-recording-deletion.md). Every link in the repository was updated with it. The rule above still holds for 0039, 0052 and 0057.
+
 Some numbers were reserved for parallel sessions and never used. They stay unused for good, so that a link or a branch from the time they were reserved cannot point to a different decision:
 
 - 0075 to 0079
