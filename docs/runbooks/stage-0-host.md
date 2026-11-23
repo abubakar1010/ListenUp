@@ -75,6 +75,15 @@ vmstat 5 12
 | Internal network | `Internal=true` and `gateway_mode_ipv4` `isolated` |
 | CPU steal | the `st` column of `vmstat` near 0 (see section 5 for load) |
 
+### 3.1 Snapshot first, clean up afterwards
+
+The 2026-11-23 verification left no trace of the project on the host, at the owner's request. The host is now dedicated to ListenUp (#119, 2026-11-23), so #17 and #112 do not need this, but any future check that must leave the host as it was follows the same steps:
+
+1. **Before any change**, save on your own machine (not the host): `dpkg -l | grep -Ei 'docker|containerd'`, `ls /etc/apt/sources.list.d /etc/apt/keyrings`, `systemctl is-enabled docker containerd`, `docker images`, `docker ps -a`, `docker network ls`, `docker volume ls` (if Docker exists), the `PasswordAuthentication` setting and `ls -la /root`.
+2. **While checking**, run each command as a one-off `ssh root@<host> "<command>"` so nothing enters the shell history, give test objects generic names (for example the network `stage0-check`), and write outputs only on your own machine. Never edit or delete system logs.
+3. **Afterwards**, remove what the check added: the pulled images (`hello-world`, `ubuntu:24.04`) unless they were there before, any container, network or volume, and any file. If the check installed Docker and it is not to stay, purge the packages it installed, run `apt-get autoremove`, and delete the Docker apt source and key it added, `/var/lib/docker` and `/var/lib/containerd`.
+4. **Prove it**: `grep -ril listenup /root /etc /opt /srv /home /tmp 2>/dev/null` prints nothing, and the package list, `/root` listing and (if kept) Docker lists match the snapshot.
+
 ## 4. Host record, 2026-11-23
 
 Filled only from the output of section 3, run over SSH from the owner's machine on 2026-11-23 between 08:40 and 08:41 UTC. A value that was not observed is marked so.
@@ -94,6 +103,7 @@ Filled only from the output of section 3, run over SSH from the owner's machine 
 | Host key | The ED25519 key trusted was the one already in the owner's `known_hosts`: `SHA256:COxdhMdZdQOPUjxaG4bV9y6B3Vkz0XOmO2ezDcMpRrg`. The owner compared it with the fingerprint in Hostinger's browser terminal (step 1.3) on 2026-11-23: **it matches** |
 | Other software noticed | Hostinger's Monarx apt source (`monarx.list`). Whether its agent runs was not checked |
 | Firewall, ports, users | Not checked and not changed: they belong to #112 |
+| State after verification | **Returned to its pre-check state, Docker removed** (owner-confirmed, 2026-11-23). The checks were followed by the clean-up in section 3.1, and the owner chose to remove Docker. The host has **no Docker** now: #112 installs it with `provision-host.sh`, and #17 installs only what its spike needs. The Docker rows above record what was verified, not what is installed today |
 
 | Check | Result |
 | --- | --- |
@@ -106,6 +116,8 @@ Filled only from the output of section 3, run over SSH from the owner's machine 
 | Limits print `100000 100000`, `268435456`, `0`, `64`, `Seccomp: 2` | **Pass**, all five as expected |
 | Internal network `Internal=true`, isolated gateway | **Pass** (`{"com.docker.network.bridge.gateway_mode_ipv4":"isolated"}`); the network was removed afterwards |
 | CPU steal near 0 | **Pass while idle**: `st` 0 in all 12 samples over 60 s. Not yet measured under load (section 5) |
+
+The Docker version, limits and network results above stay valid as evidence that this host and kernel support what ADR 0049 needs. A reinstall must show Engine 28+ and Compose 2.24+ again (section 2).
 
 Open items from this record:
 
