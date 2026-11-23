@@ -684,6 +684,14 @@ const ROUTES: [string, Handler][] = [
     },
   ],
   ['GET /shadow/rounds/:round/recording', ({ route }) => media(route)],
+  // E2: learners get no Shadow grade yet (ADR 0074, 0099).
+  [
+    'GET /shadow/rounds/:round/grade',
+    ({ route }) =>
+      route.fulfill({
+        json: { status: 'unavailable' } satisfies Schema['RoundFeedbackUnavailable'],
+      }),
+  ],
 ];
 
 function consents(state: PlanState): Schema['Consents'] {
