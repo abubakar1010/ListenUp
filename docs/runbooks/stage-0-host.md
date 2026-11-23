@@ -91,7 +91,7 @@ Filled only from the output of section 3, run over SSH from the owner's machine 
 | Docker | Engine 29.10.0 (API 1.57), containerd v2.4.2, runc 1.5.3; Compose v5.8.0; buildx v0.39.1; packages `5:29.10.0-1~ubuntu.26.04~resolute` from Docker's apt repository |
 | Docker security options | apparmor, seccomp (builtin), cgroupns, no-new-privileges |
 | SSH | `passwordauthentication no`, `permitrootlogin prohibit-password`, `pubkeyauthentication yes`; key login worked on every connection. Already set when checked, so nothing was changed |
-| Host key | The ED25519 key trusted was the one already in the owner's `known_hosts`: `SHA256:COxdhMdZdQOPUjxaG4bV9y6B3Vkz0XOmO2ezDcMpRrg`. **Not yet compared** with the fingerprint shown in Hostinger's browser terminal (step 1.3); the owner waived that check for this session |
+| Host key | The ED25519 key trusted was the one already in the owner's `known_hosts`: `SHA256:COxdhMdZdQOPUjxaG4bV9y6B3Vkz0XOmO2ezDcMpRrg`. The owner compared it with the fingerprint in Hostinger's browser terminal (step 1.3) on 2026-11-23: **it matches** |
 | Other software noticed | Hostinger's Monarx apt source (`monarx.list`). Whether its agent runs was not checked |
 | Firewall, ports, users | Not checked and not changed: they belong to #112 |
 
@@ -109,7 +109,6 @@ Filled only from the output of section 3, run over SSH from the owner's machine 
 
 Open items from this record:
 
-- **Compare the host-key fingerprint** in the browser terminal (step 1.3). Do it before #112 stores `DEPLOY_SSH_KNOWN_HOSTS`.
 - **Measure steal under load** (section 5).
 - **Review the Monarx agent** before learner data reaches the host (ADR 0101).
 
