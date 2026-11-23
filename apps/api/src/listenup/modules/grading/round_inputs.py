@@ -1,8 +1,9 @@
-"""Turn an assessment into delivery-scoring input and stored provenance (#82).
+"""Turn an assessment into round-grading input and stored provenance (#82, #83).
 
 The round job calls these; the domain stays free of `listenup.ai`.
 """
 
+from collections.abc import Mapping
 from dataclasses import asdict
 from typing import Any
 
@@ -13,7 +14,14 @@ from listenup.modules.grading.domain.delivery import (
     Interval,
     Word,
     place_original,
-    score_round,
+)
+from listenup.modules.grading.domain.speech_measures import (
+    Prosody,
+    Sound,
+    SpeechParameters,
+    SpokenWord,
+    grade_round,
+    hertz_to_cents,
 )
 
 
@@ -39,37 +47,68 @@ def speech_info(assessment: SpeechAssessment, parameters: DeliveryParameters) ->
     }
 
 
-def delivery_result(
+def spoken_inputs(
     assessment: SpeechAssessment,
-    parameters: DeliveryParameters,
+) -> tuple[list[SpokenWord], list[tuple[float, float | None]]]:
+    """Words with their sounds, and the learner's pitch in cents (#83)."""
+    spoken = [
+        SpokenWord(
+            w.index,
+            w.start,
+            w.end,
+            w.accuracy,
+            tuple(Sound(s.label, s.start, s.end, s.score) for s in w.sounds),
+        )
+        for w in assessment.words
+    ]
+    return spoken, [(p.time, hertz_to_cents(p.hertz)) for p in assessment.pitch]
+
+
+def round_result(
+    assessment: SpeechAssessment,
+    delivery: DeliveryParameters,
+    parameters: SpeechParameters,
     *,
-    reference_word_count: int,
+    reference_words: list[str],
     original: list[tuple[int, int, int]],
+    original_prosody: Mapping[int, Prosody],
     segment: tuple[int, int],
     playback_offset_ms: int | None,
     leakage: float | None = None,
 ) -> dict[str, Any]:
-    """Persistable evidence, including explicit unknown clock and leakage states."""
-    words, fillers = recorded_inputs(assessment)
-    scores = score_round(
+    """Persistable evidence: seven measures, word labels and the versions and
+    weights behind the overall, with explicit unknown clock and leakage states."""
+    spoken, pitch = spoken_inputs(assessment)
+    _, fillers = recorded_inputs(assessment)
+    grade = grade_round(
+        delivery,
         parameters,
-        reference_word_count=reference_word_count,
+        reference_words=reference_words,
         original=place_original(
             original, segment=segment, playback_offset_ms=playback_offset_ms or 0
         ),
-        recorded=words,
+        spoken=spoken,
         fillers=fillers,
         leakage=leakage,
         clock_known=playback_offset_ms is not None,
+        learner_pitch=pitch,
+        original_prosody=original_prosody,
     )
     return {
-        "measures": {name: asdict(value) for name, value in scores.measures.items()},
-        "overall": scores.overall,
-        "filler_count": scores.filler_count,
-        "echo_detected": scores.echo.status == "leak",
+        "measures": {name: asdict(value) for name, value in grade.measures.items()},
+        "overall": grade.overall,
+        "word_labels": [
+            {**asdict(label), "reasons": [asdict(reason) for reason in label.reasons]}
+            for label in grade.word_labels
+        ],
+        "filler_count": grade.filler_count,
+        "echo_detected": grade.echo.status == "leak",
         "speech_info": {
-            **speech_info(assessment, parameters),
-            "overall_basis": list(scores.overall_basis),
-            "echo": asdict(scores.echo),
+            **speech_info(assessment, delivery),
+            "speech_parameters_version": parameters.version,
+            "speech_parameters_calibrated": parameters.calibrated,
+            "overall_basis": list(grade.overall_basis),
+            "overall_weights": dict(grade.overall_weights),
+            "echo": asdict(grade.echo),
         },
     }

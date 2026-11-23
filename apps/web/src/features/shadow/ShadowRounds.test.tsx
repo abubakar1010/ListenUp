@@ -12,6 +12,7 @@ import { roundsKey } from './api';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { jsonResponse, renderWithProviders } from '../../test-utils';
 import { mockRoutes } from '../session/testApi';
+import { roundFixture, SCORED_ROUND } from './fixtures';
 import { ShadowRounds } from './ShadowRounds';
 
 it('discloses round 1 text only, advances explicitly, and never completes a round without an upload', async () => {
@@ -357,4 +358,60 @@ it('deletes a recording from the round replay; the round still counts as recorde
   await waitFor(() => expect(screen.getByRole('heading', { name: 'Round 1 of 3' })).toHaveFocus());
   expect(screen.getByRole('button', { name: 'Start round 2' })).toBeInTheDocument();
   expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+});
+
+describe('word markers after each round (#83, FR-SH-10)', () => {
+  const segment = {
+    session_id: 's',
+    start_ms: 0,
+    end_ms: 60000,
+    chosen_by: 'system',
+    mark_count: 0,
+    locked_at: 'now',
+  };
+  function serve(current: unknown, rounds: unknown[]) {
+    return mockRoutes({
+      'GET /sessions/s/shadow/rounds': jsonResponse(200, { segment, current, rounds }),
+      'GET /contents/c': jsonResponse(200, { media_url: '/audio' }),
+      'GET /shadow/rounds/r1/grade': jsonResponse(200, SCORED_ROUND),
+      'GET /shadow/rounds/r2/grade': jsonResponse(200, SCORED_ROUND),
+    });
+  }
+  afterEach(() => vi.restoreAllMocks());
+
+  it('shows the markers of every recorded round once it ends, round 2 included', async () => {
+    serve(roundFixture(2), [roundFixture(1), roundFixture(2)]);
+    renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
+    expect(await screen.findByRole('region', { name: 'Round 2 word markers' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Round 1 word markers' })).toBeVisible();
+  });
+
+  it('hides every marker while the next round is shadowed without text', async () => {
+    const playing = roundFixture(3, { playback_status: 'ready', recorded_at: null });
+    serve(playing, [roundFixture(1), roundFixture(2)]);
+    renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
+    expect(await screen.findByText('Round 2 score: 75 / 100')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Segment transcript with word markers')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Word markers come back when the current round ends.')).toHaveLength(
+      2,
+    );
+  });
+
+  it("keeps a round's feedback after its recording is deleted (D7)", async () => {
+    serve(roundFixture(1, { recording_available: false }), [
+      roundFixture(1, { recording_available: false, feedback: null }),
+    ]);
+    renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
+    expect(await screen.findByRole('region', { name: 'Round 1 word markers' })).toBeVisible();
+    expect(screen.queryByLabelText('Your recording of round 1')).not.toBeInTheDocument();
+  });
+
+  it('asks for no grade before a round is recorded', async () => {
+    const { calls } = serve(roundFixture(1, { recorded_at: null, feedback: null }), [
+      roundFixture(1, { recorded_at: null, feedback: null }),
+    ]);
+    renderWithProviders(<ShadowRounds sessionId="s" contentId="c" />);
+    await screen.findByText('Round 1 of 3');
+    expect(calls.some((c) => c.path.endsWith('/grade'))).toBe(false);
+  });
 });

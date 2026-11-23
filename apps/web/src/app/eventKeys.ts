@@ -9,6 +9,7 @@ import { CONTENTS_KEY, contentKey } from '../features/content/useContent';
 import { DICTATION_RESULT_KEY } from '../features/dictation/api';
 import { LIBRARY_KEY, UPLOAD_USAGE_KEY } from '../features/library/useLibrary';
 import { REVIEW_KEY, transcriptKey } from '../features/review/api';
+import { ROUND_GRADE_KEY } from '../features/shadow/api';
 
 const NO_KEYS: readonly QueryKey[] = [];
 
@@ -41,7 +42,8 @@ export function queryKeysForEvent(event: LiveEvent, queryClient: QueryClient): r
     case 'profile.failed':
       return [['sessions']];
     case 'grade.ready':
-      return [GIST_GRADE_KEY];
+      // The id names a gist attempt or a Shadow round (#82); refresh both kinds.
+      return [GIST_GRADE_KEY, ROUND_GRADE_KEY];
     case 'dictation.scored':
       // Re-scoring may follow a private correction: other tabs refresh Transcript too.
       return [DICTATION_RESULT_KEY, REVIEW_KEY];
