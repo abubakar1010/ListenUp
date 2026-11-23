@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from listenup.modules.content.domain import takedown
 from listenup.modules.content.domain.files import MAX_FILENAME_LENGTH, MAX_TITLE_LENGTH
 
 
@@ -60,7 +61,7 @@ class ConfirmUpload(BaseModel):
 
 ContentSource = Literal["upload", "youtube"]
 MediaStatus = Literal["pending", "downloading", "playable", "failed", "expired", "removed"]
-RemovalGrounds = Literal["copyright", "other_rights", "unlawful"]
+RemovalGrounds = takedown.Grounds  # one list of grounds, in the domain (ADR 0098)
 IntakeStage = Literal["queued", "waiting", "downloading", "checking", "converting", "saving"]
 
 

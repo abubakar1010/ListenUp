@@ -46,15 +46,6 @@ def upload_fingerprint(sha256: str) -> str:
     return f"upload:{sha256.lower()}"
 
 
-def upload_hash(media_fingerprint: str) -> str | None:
-    """The SHA-256 in a hashed upload's media fingerprint (`upload:<user id>:<sha256>`);
-    None for a provisional one or another source."""
-    parts = media_fingerprint.split(":")
-    if len(parts) == 3 and parts[0] == "upload" and _UPLOAD.fullmatch(f"upload:{parts[2]}"):
-        return parts[2].lower()
-    return None
-
-
 def removal_message(grounds: str) -> str:
     """Why the clip was removed, as the learner reads it."""
     return REMOVAL_MESSAGES.get(grounds, REMOVAL_MESSAGES["other_rights"])
