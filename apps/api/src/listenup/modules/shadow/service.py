@@ -276,7 +276,7 @@ async def delete_recording(
 
     The file goes first, then the recording columns are cleared; the round keeps
     `recorded_at`, so the Shadow step stays complete and a grade keyed by the round
-    stays too (ADR 0092). No row lock is held during the storage call: the read takes
+    stays too (ADR 0100). No row lock is held during the storage call: the read takes
     none and the conditional update runs after it. A recorded round's key never
     changes, so a crash, a retry or a concurrent retention sweep at worst leaves a key
     whose file is gone, which the next delete clears. An `ops.deletion_requests` row

@@ -718,7 +718,7 @@ async def export_data(session: AsyncSession, learner: uuid.UUID) -> ExportPart:
 
 
 DeletionScope = Literal["content", "session", "recordings"]
-"""The learner-requested deletions that share one storage-first manifest (ADR 0085, 0092)."""
+"""The learner-requested deletions that share one storage-first manifest (ADR 0085, 0100)."""
 
 
 async def content_deletion_request(
@@ -818,7 +818,7 @@ async def fail_content_deletion(
 async def recording_deletion_request(
     db: AsyncSession, learner: uuid.UUID, round_id: uuid.UUID, key: str, delay_seconds: int
 ) -> uuid.UUID:
-    """Audit one deleted Shadow recording whose file is already gone (#90, ADR 0092).
+    """Audit one deleted Shadow recording whose file is already gone (#90, ADR 0100).
 
     It waits at `storage_deleted` until a signed upload URL issued before the delete
     has expired; the reconciler then deletes the key once more and completes it.
