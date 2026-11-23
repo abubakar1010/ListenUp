@@ -549,3 +549,41 @@ def test_a_learner_whose_copy_was_removed_is_refused_rather_than_merged(
     detail = client.get(f"/api/v1/contents/{again.content_id}")
     assert detail.status_code == 200
     assert detail.json()["error_code"] == "source_taken_down"
+
+
+# -- After the removal (#278 review) ---------------------------------------------------
+
+
+def test_a_card_cut_after_the_takedown_has_no_audio_rather_than_a_failure(
+    accounts: AdminFactory,  # noqa: F811
+    make_client: ClientFactory,
+    storage: FakeStorage,
+    migrated_url: str,
+) -> None:
+    """A card made on a removed clip (Card is not gated on the media) must end with
+    `unavailable` audio, not `failed`, which would offer a retry that can never work."""
+    from listenup.modules.cards import jobs as card_jobs
+
+    mine = Library(migrated_url, storage, make_client())
+    apply(migrated_url, record(accounts()))
+    generation = uuid.uuid4()
+    with psycopg.connect(migrated_url, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE practice.cards SET audio_status = 'pending', audio_generation = %s "
+            "WHERE id = %s",
+            [generation, mine.seed.card_id],
+        )
+
+    run(
+        migrated_url,
+        card_jobs.GENERATE,
+        card_id=str(mine.seed.card_id),
+        user_id=str(mine.user),
+        generation_id=str(generation),
+    )
+
+    with psycopg.connect(migrated_url) as conn:
+        assert conn.execute(
+            "SELECT audio_status, snippet_key, audio_generation FROM practice.cards WHERE id = %s",
+            [mine.seed.card_id],
+        ).fetchone() == ("unavailable", None, None)
