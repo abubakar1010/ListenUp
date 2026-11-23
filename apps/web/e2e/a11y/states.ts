@@ -2,6 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 
 import type { components } from '../../src/api/schema';
 import { sessionFixture } from '../../src/features/session/fixtures';
+import { SCORED_ROUND } from '../../src/features/shadow/fixtures';
 import { ISSUE } from './allowlist';
 import { LEARNER, problem, type Answers } from './fakeApi';
 
@@ -102,6 +103,15 @@ const COMPLETED_SHADOW: Schema['Rounds'] = {
   current: RECORDED_ROUNDS[2],
   rounds: RECORDED_ROUNDS,
 };
+/** Round grades as E2 serves them (unavailable), or with round 3 released (#83). */
+function roundGrades(released = false): Answers {
+  return Object.fromEntries(
+    RECORDED_ROUNDS.map(({ id, round }) => [
+      `/shadow/rounds/${id}/grade`,
+      { json: released && round === 3 ? SCORED_ROUND : { status: 'unavailable' } },
+    ]),
+  );
+}
 
 const TRANSCRIPT = {
   session_id: 'session-1',
@@ -824,10 +834,23 @@ export const STATES: ScanState[] = [
     answers: session(
       'dictation',
       4,
-      { '/sessions/session-1/shadow/rounds': { json: COMPLETED_SHADOW } },
+      { '/sessions/session-1/shadow/rounds': { json: COMPLETED_SHADOW }, ...roundGrades() },
       {},
     ),
     ready: (page) => page.getByText(/All 4 steps finished/),
+  },
+  {
+    // The released projection (#83): markers in words and line styles, accent apart.
+    name: 'shadow word markers',
+    path: '/sessions/session-1',
+    signedIn: true,
+    answers: session(
+      'dictation',
+      4,
+      { '/sessions/session-1/shadow/rounds': { json: COMPLETED_SHADOW }, ...roundGrades(true) },
+      {},
+    ),
+    ready: (page) => page.getByRole('region', { name: 'Round 3 word markers' }),
   },
 
   // Screens other open stories are changing: scanned, tracked there.
