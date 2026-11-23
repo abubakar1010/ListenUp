@@ -311,3 +311,42 @@ test('arrival focus follows the heading when the step finishes loading', async (
     expect(heading).toHaveFocus();
   });
 });
+
+// #105: a takedown removed the clip while the plan was open. Every step needs its audio,
+// so the session says why instead of showing a player that cannot load (410).
+test('a session on a clip removed after a takedown says why instead of opening the step', async () => {
+  const message =
+    "We removed this clip because its copyright owner asked us to. It can't be played or " +
+    'added to ListenUp again. Your sessions, marks and cards are kept.';
+  mockRoutes({
+    'GET /sessions/session-1': jsonResponse(200, sessionFixture({ entry: 'dictation' })),
+    'GET /contents/clip-1': jsonResponse(200, {
+      id: 'clip-1',
+      title: 'Why cities plant street trees',
+      source: 'upload',
+      status: 'removed',
+      duration_ms: 600_000,
+      created_at: '2026-10-03T09:00:00Z',
+      error_code: null,
+      error_detail: null,
+      removal: { grounds: 'copyright', message },
+      has_video: false,
+      keep_video: false,
+      media_object_id: 'm-1',
+      media_url: null,
+      peaks_url: null,
+    }),
+  });
+  renderSession();
+
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('This clip was removed');
+  expect(alert).toHaveTextContent(message);
+  expect(screen.getByRole('link', { name: 'Your marks' })).toHaveAttribute('href', '/marks');
+  expect(screen.getByRole('link', { name: 'Your cards' })).toHaveAttribute('href', '/cards');
+  expect(
+    screen.getByRole('heading', { level: 1, name: 'Dictation: Why cities plant street trees' }),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole('textbox', { name: 'Your text' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/^Play /)).not.toBeInTheDocument();
+});

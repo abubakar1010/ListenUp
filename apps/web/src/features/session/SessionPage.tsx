@@ -14,6 +14,8 @@ import { DictationScreen } from '../dictation/DictationScreen';
 import { TranscriptScreen } from '../review/TranscriptScreen';
 import { ShadowCompletion } from '../shadow/ShadowCompletion';
 import { ShadowScreen } from '../shadow/ShadowScreen';
+import { RemovedNotice } from '../content/RemovedNotice';
+import { useContent, type ContentDetail } from '../content/useContent';
 import { useSession, useSkipStep, type Session } from './api';
 import { ChangeEntryPanel } from './ChangeEntryPanel';
 import { PracticeLayout } from './PracticeLayout';
@@ -45,6 +47,13 @@ export default function SessionPage() {
 function SessionView({ session }: { session: Session }) {
   const open = session.open_step;
   useArrivalFocus(open);
+  // Every step plays the clip: once it shows that a takedown removed the clip (#105), the
+  // step gives way to why. The step is not held back for this check, and a failed check
+  // leaves practice as it is: the steps report their own errors.
+  const clip = useContent(session.content_id);
+  if (open && clip.data?.status === 'removed') {
+    return <RemovedSession session={session} clip={clip.data} />;
+  }
   if (open === 'blind')
     return <BlindStep session={session} progress={<Progress session={session} />} />;
   // The session opens at its current step (#50); each mode fills its own screen.
@@ -81,6 +90,25 @@ function SessionView({ session }: { session: Session }) {
         <DictationResultPanel sessionId={session.id} />
       )}
       {open ? <OpenStep session={session} /> : <Finished session={session} />}
+    </PracticeLayout>
+  );
+}
+
+/** The open step's place, explaining that the clip was removed (#105, NFR-USE-3). */
+function RemovedSession({ session, clip }: { session: Session; clip: ContentDetail }) {
+  const open = session.open_step;
+  return (
+    <PracticeLayout
+      heading={`${open ? STEP_NAMES[open] : 'Plan complete'}: ${session.content_title}`}
+      clipTitle={session.content_title}
+      clipMeta={`Passage ${formatClock(session.passage.start_ms)} to ${formatClock(session.passage.end_ms)}`}
+      back={{ to: '/library', label: 'Library' }}
+      progress={<Progress session={session} />}
+      player={null}
+      rule="This clip can no longer be played."
+      workLabel={open ? STEP_NAMES[open] : 'Plan complete'}
+    >
+      <RemovedNotice item={clip} />
     </PracticeLayout>
   );
 }

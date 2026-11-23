@@ -143,6 +143,26 @@ test('AT-8: a second browser signs in and resumes Transcript with saved marks', 
         Object.assign(mark!, request.postDataJSON());
         return route.fulfill({ json: mark });
       }
+      if (path === '/contents/c-57')
+        // The session checks that a takedown has not removed the clip (#105).
+        return route.fulfill({
+          json: {
+            id: 'c-57',
+            title: SESSION.content_title,
+            source: 'upload',
+            status: 'playable',
+            duration_ms: 12000,
+            created_at: '2026-10-23T00:00:00Z',
+            error_code: null,
+            error_detail: null,
+            removal: null,
+            has_video: false,
+            keep_video: false,
+            media_object_id: 'm-57',
+            media_url: '/api/v1/media/m-57',
+            peaks_url: null,
+          },
+        });
       if (path === '/media/m-57') return route.fulfill({ contentType: 'audio/wav', body: AUDIO });
       if (path === '/events')
         return route.fulfill({ contentType: 'text/event-stream', body: ': connected\n\n' });
