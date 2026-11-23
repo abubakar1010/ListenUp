@@ -38,7 +38,8 @@ Owner decisions of 2026-10-28 (backlog index #119):
   in scope for launch behind that flag (D10) and the repository default stays off.
 - Other open dependencies keep the Ready rule above. In particular the YouTube
   chain runs in order (#17, #37, #38, then #46 and the YouTube halves of #93 and #105, then #40 and #113), and Shadow grading
-  (#80, then #82 to #86) waits on #21 and #22, which need the Arm host (#16).
+  (#80, then #82 to #86) waits on #21 and #22. Under exception E4 below, #21 and
+  #22 run on GitHub's Arm runners and no longer wait for the host (#16).
 
 Run two or three sessions at once on stories that touch different areas. Each has its own branch and pull request, so nothing needs merging by hand.
 
@@ -48,6 +49,21 @@ without #21 or #22. The real-model local provider and B3 budget criterion still
 wait for both. #82–#86 may be built against the fake provider only after the port
 is merged; other dependencies still apply. This does not close #80. See
 [ADR 0074](adr/0074-speech-assessment-contract-split.md).
+
+Owner exception E4 (approved 2026-11-01, [#119 comment](https://github.com/abubakar1010/ListenUp/issues/119#issuecomment-6559104401))
+moves the speech benchmarks off the stage 0 host: #21 (B3), #22 (B4), the B1 to
+B4 rerun in #233 and the open #232 criteria run on the GitHub-hosted
+`ubuntu-24.04-arm` runner from a `workflow_dispatch` workflow, in parallel with
+#16 and outside the host lock. The method in that comment is required: record the
+runner facts, limit each run to 2 threads in a `--cpus=2` container without swap,
+run each benchmark on at least 3 workflow runs and judge the worst run's p95, and
+label every result "CI-runner evidence (E4)". The repository is public, so only
+openly licensed or consented-for-release audio may be used, never learner,
+golden-set, YouTube or voice-consent recordings; #22 stops and asks the owner if
+no suitable open corpus exists. #17, B5 and the load test (#94, #216), the gate
+#155, the deploy #112, and #233's B5 run, `mem_limit` and learner capacity stay on
+the real host; one spot check there confirms or replaces the runner figures once
+the host exists. E4 amends ADR 0073 decision 3.
 
 Each cloud task already has an isolated checkout; use it without creating a
 worktree unless the owner asks. Start a new story from current `main` on one

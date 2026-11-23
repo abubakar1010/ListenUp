@@ -1,6 +1,6 @@
 # ADR 0073: Stage 0 host: Oracle Cloud Always Free Arm VM, with a trial-credit VM for the 4-core measurements
 
-- Status: Proposed (becomes Accepted when the owner has provisioned the VM and recorded its facts, see the runbook)
+- Status: Superseded by [ADR 0101](0101-stage-0-host-hostinger-kvm-4-vps.md) (2026-11-23). Never accepted: Oracle refused the owner's card at sign-up, so no Oracle VM was created; the stage 0 host is a Hostinger KVM 4 VPS (owner exception E6). The text below is kept as the record of the 2026-10-27 analysis.
 - Date: 2026-10-27
 - Story: [#16](https://github.com/abubakar1010/ListenUp/issues/16) (spike; stays open until the VM exists)
 - Requirements: NFR-AI-3 (zero cost); [Software Architecture 11](https://claude.ai/code/artifact/6a30920f-b6a0-4131-a486-f2044c71bb13); [System Design 2, 5.2 and 12](https://claude.ai/code/artifact/98274889-96ba-4424-afad-c2cd056206e2); ADRs 0028, 0034, 0039 and 0066

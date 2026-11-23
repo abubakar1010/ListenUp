@@ -157,7 +157,7 @@ def test_withdrawn_voice_consent_does_not_block_deleting_a_recording(
 def test_a_recorded_round_accepts_only_clearing_the_whole_recording(
     client, migrated_url, api_role_url, storage
 ):
-    """The `check_shadow_round` rule the learner's delete relies on (ADR 0092)."""
+    """The `check_shadow_round` rule the learner's delete relies on (ADR 0100)."""
     sid = setup(client, migrated_url, api_role_url)
     body = record_round(client, storage, sid, 1)
     rid, key = body["round_id"], key_of(body["upload"])

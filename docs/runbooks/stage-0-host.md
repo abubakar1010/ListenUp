@@ -1,151 +1,191 @@
-# Stage 0 host: provision and record (spike #16)
+# Stage 0 host: provision and verify (#16)
 
-For the owner. About 30 minutes if Oracle has capacity. Choice and limits: [ADR 0073](../adr/0073-stage-0-host-oracle-always-free-arm.md) (Proposed until step 9 is done). What runs on the host afterwards: [deploy.md](deploy.md). Nothing secret goes into the repository: private keys stay on your machine and in GitHub's secret store; only public keys and host facts are pasted anywhere.
+For the owner. This covers the Hostinger KVM 4 VPS chosen in [ADR 0101](../adr/0101-stage-0-host-hostinger-kvm-4-vps.md) (owner exception E6): the OS, SSH and firewall settings in hPanel, Docker, the read-only checks, and the record of what was observed. The application itself is set up by [deploy.md](deploy.md) under #112. The speech benchmarks B1 to B4 do not run here: they run on GitHub's Arm runners (E4).
 
-**Read first.** Oracle's free Arm allowance is now **2 OCPUs and 12 GB** (checked 2026-10-27), not the 4 cores and 16 GB the design assumed. The release workflow also builds **amd64 images only**, so this VM cannot run a release until the follow-ups in ADR 0073 are done. The VM is still the right place to run benchmarks B1 to B4 now (build the media image on the VM, step 8).
+**Nothing secret goes into this repository, and the repository is public.**
 
-## 1. Account (10 minutes)
+- **Leave out of the repository:** the server's IP address, the hPanel account, root credentials and private keys. Do not paste them into issues or pull requests either.
+- **Where the team finds the endpoint:**
+  - in hPanel, under VPS → Overview (owner access);
+  - once #112 sets it, in the `production` environment secret `DEPLOY_HOST` on GitHub;
+  - team members who need SSH get it from the owner privately.
 
-1. Sign up at [oracle.com/cloud/free](https://www.oracle.com/cloud/free/) with a card (identity check; Always Free resources are not billed). Use one email you control for recovery.
-2. **Choose the home region carefully.** It cannot be changed, and Always Free VMs and volumes can only be created there. Pick a region you can reach with low latency; for a US audience a region other than the busiest ones is more likely to have Arm capacity (capacity is not guaranteed anywhere). Do not pick South Korea North (Chuncheon): no free A1 there.
-3. Turn on multi-factor sign-in for the account.
-4. In **Billing → Cost analysis**, check the account shows no paid resources. Do not upgrade to pay as you go unless step 4's capacity problem needs it (ADR 0073, fallback 1).
+## 1. hPanel: operating system, SSH key, firewall
 
-## 2. SSH keys (3 minutes, on your machine)
+Menu names are as hPanel showed them in November 2026 and may move.
 
-Make one key for you and one for the release workflow. Keys never enter the repository.
+1. **OS.** hPanel → VPS → **OS & Panel → Operating system**: plain **Ubuntu 26.04 LTS**, without a control panel. Reinstalling the OS wipes the disk and gives the host a new SSH host key (then update `known_hosts` and `DEPLOY_SSH_KNOWN_HOSTS`).
+2. **SSH key.** hPanel → VPS → **Settings → SSH keys**: add your own public key (`ssh-keygen -t ed25519 -C "listenup-owner" -f ~/.ssh/listenup_owner`, then paste `listenup_owner.pub`). Only the `.pub` file is pasted anywhere. The release workflow's own key is created in #112 (deploy.md step 3).
+3. **Host key, before the first login.** Open hPanel's **browser terminal** and run `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`. Keep that fingerprint. On the first `ssh` from your machine, accept the key only if the ED25519 fingerprint it shows is the same.
+4. **SSH login.** Key login only: `PasswordAuthentication no` and `PermitRootLogin prohibit-password` (check with `sshd -T | grep -iE '^(passwordauthentication|permitrootlogin)'`). If password login is still on, turn it off only after a key login has worked: set `PasswordAuthentication no` in `/etc/ssh/sshd_config`, run `systemctl restart ssh`, then confirm a **new** key login works before closing the old session.
+5. **Firewall (in #112, not in this runbook's checks).** hPanel → VPS → **Security → Firewall**: allow inbound TCP 22, TCP 80, TCP 443 and UDP 443, and nothing else (deploy.md step 2). GitHub's runners connect from changing addresses, so port 22 cannot be limited to your own address. Do not open web ports before #112's first deploy.
+
+## 2. Docker
+
+The KVM 4 came with Docker installed from Docker's own apt repository (packages `docker-ce`, `docker-ce-cli`, `containerd.io`, `docker-buildx-plugin`, `docker-compose-plugin`; `/etc/apt/sources.list.d/docker.list`). `deploy.md` needs **Engine 28 or later and Compose 2.24 or later** (ADR 0049's isolated bridge). Check with:
 
 ```sh
-ssh-keygen -t ed25519 -C "listenup-owner"      -f ~/.ssh/listenup_owner   # your login
-ssh-keygen -t ed25519 -C "listenup-release"    -f ~/.ssh/listenup_release -N ""   # GitHub's key, no passphrase
+docker version --format '{{.Server.Version}}'; docker compose version
 ```
 
-Keep `listenup_release` (private) only for step 7. You will paste the two **`.pub`** files below.
+If Docker is missing or too old, install it from Docker's apt repository (as root; the codename comes from the OS, so this works on 26.04):
 
-## 3. Network: security list (3 minutes)
+```sh
+apt-get update && apt-get install -y ca-certificates curl
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+. /etc/os-release
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable" \
+  > /etc/apt/sources.list.d/docker.list
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
 
-Console → Networking → Virtual cloud networks → your VCN → the public subnet's **Security list** → add **ingress rules** (source `0.0.0.0/0`, stateful):
+Do not install Ubuntu's `docker.io` package next to these.
 
-| Protocol | Port | Why |
-| --- | --- | --- |
-| TCP | 22 | SSH. GitHub's runners connect from changing addresses, so it cannot be limited to your own address; key-only login and fail2ban protect it. To reduce scanning, set another port and `LISTENUP_DEPLOY_SSH_PORT` (deploy.md step 11). |
-| TCP | 80 | HTTP, redirected to HTTPS; ACME challenge. |
-| TCP | 443 | HTTPS. |
-| UDP | 443 | HTTP/3. |
+## 3. Checks (read-only, about 2 minutes)
 
-Nothing else. If you create the VM from the wizard's default VCN, it already has an ingress rule for 22. Egress stays at the default allow-all.
+Run as root over SSH. The block writes its output to `~/stage0-report.txt`. It pulls `hello-world` and `ubuntu:24.04`, and creates and removes one Docker network; it changes nothing else. Keep the report out of the repository: it holds the host's details but not secrets. Put its results into the record in section 4.
 
-## 4. Create the VM (5 minutes)
+```sh
+{
+date -u; cat /etc/os-release; uname -srmo; lscpu; nproc; free -b; swapon --show --bytes
+lsblk; df -B1 / /var/lib/docker; stat -fc %T /sys/fs/cgroup
+docker version; docker compose version; docker buildx version
+docker info --format 'Architecture={{.Architecture}} CPUs={{.NCPU}} Memory={{.MemTotal}} CgroupVersion={{.CgroupVersion}} CgroupDriver={{.CgroupDriver}}'
+docker run --rm hello-world
+docker run --rm --cpus=1 --memory=256m --memory-swap=256m --pids-limit=64 ubuntu:24.04 sh -c \
+  'cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory.swap.max /sys/fs/cgroup/pids.max; grep ^Seccomp: /proc/self/status'
+docker network create --driver bridge --internal -o com.docker.network.bridge.gateway_mode_ipv4=isolated listenup-stage0-check
+docker network inspect listenup-stage0-check --format 'Internal={{.Internal}} Options={{json .Options}}'
+docker network rm listenup-stage0-check
+vmstat 5 12
+} > ~/stage0-report.txt 2>&1
+```
 
-Console → Compute → Instances → **Create instance**.
-
-| Field | Value |
+| Check | Pass when |
 | --- | --- |
-| Name | `listenup-stage0` |
-| Placement | Your home region. Any availability domain; if you get "out of host capacity", try the other availability domains, then wait and retry later in the day. |
-| Image | **Canonical Ubuntu 24.04** (aarch64 build; the wizard picks the right one for an Ampere shape) |
-| Shape | Change shape → Ampere → **VM.Standard.A1.Flex**, **2 OCPUs, 12 GB** (the whole free allowance). Total A1 across the tenancy must stay at 2 OCPUs and 12 GB: check Compute → Instances for old instances first. |
-| Networking | The public subnet, **assign a public IPv4 address** |
-| SSH keys | Paste `~/.ssh/listenup_owner.pub` |
-| Boot volume | **Specify a custom size: 100 GB** (Always Free storage is 200 GB in total for boot and block volumes) |
-| Advanced → Cloud-init | Paste the script below (or leave empty and run `provision-host.sh` by hand in step 5) |
+| Architecture | `x86_64` |
+| CPUs | `nproc` and Docker's `CPUs` are 4 |
+| Memory | about 16 GB (`free -b` total) |
+| cgroup | `cgroup2fs` |
+| Docker | Engine 28 or later, Compose 2.24 or later |
+| Container limits | `100000 100000`, `268435456`, `0`, `64`, and `Seccomp: 2` |
+| Internal network | `Internal=true` and `gateway_mode_ipv4` `isolated` |
+| CPU steal | the `st` column of `vmstat` near 0 (see section 5 for load) |
 
-Cloud-init (user data). Replace `<RELEASE_PUBLIC_KEY>` with the single line from `~/.ssh/listenup_release.pub`. It is a public key, so it is safe to paste.
+### 3.1 Snapshot first, clean up afterwards
+
+The 2026-11-23 verification left no trace of the project on the host, at the owner's request. The host is now dedicated to ListenUp (#119, 2026-11-23), so #17 and #112 do not need this, but any future check that must leave the host as it was follows the same steps:
+
+1. **Before any change**, save on your own machine (not the host): `dpkg -l | grep -Ei 'docker|containerd'`, `ls /etc/apt/sources.list.d /etc/apt/keyrings`, `systemctl is-enabled docker containerd`, `docker images`, `docker ps -a`, `docker network ls`, `docker volume ls` (if Docker exists), the `PasswordAuthentication` setting and `ls -la /root`.
+2. **While checking**, run each command as a one-off `ssh root@<host> "<command>"` so nothing enters the shell history, give test objects generic names (for example the network `stage0-check`), and write outputs only on your own machine. Never edit or delete system logs.
+3. **Afterwards**, remove what the check added: the pulled images (`hello-world`, `ubuntu:24.04`) unless they were there before, any container, network or volume, and any file. If the check installed Docker and it is not to stay, purge the packages it installed, run `apt-get autoremove`, and delete the Docker apt source and key it added, `/var/lib/docker` and `/var/lib/containerd`.
+4. **Prove it**: `grep -ril listenup /root /etc /opt /srv /home /tmp 2>/dev/null` prints nothing, and the package list, `/root` listing and (if kept) Docker lists match the snapshot.
+
+## 4. Host record, 2026-11-23
+
+Filled only from the output of section 3, run over SSH from the owner's machine on 2026-11-23 between 08:40 and 08:41 UTC. A value that was not observed is marked so.
+
+| Fact | Observed |
+| --- | --- |
+| Provider, plan, data center | Hostinger, KVM 4, France (owner-stated; the data center is not visible from inside the VM) |
+| Price | USD 114 for 12 months, paid yearly: USD 9.50 a month (owner-stated) |
+| Architecture, OS, kernel | `x86_64`; Ubuntu 26.04.1 LTS (`resolute`); Linux 7.0.0-38-generic |
+| CPU | AMD EPYC 9354P 32-Core Processor, KVM guest (full virtualisation); 4 vCPUs, 1 thread per core, 1 socket |
+| Memory, swap | 16,763,596,800 bytes (15.6 GiB) total, 14.8 GiB available at check time; **no swap** |
+| Disk | 200 GB disk; root `/dev/sda1` 207,071,854,592 bytes, 3% used. `/var/lib/docker` is on the root filesystem |
+| cgroup | `cgroup2fs`; Docker CgroupVersion 2, CgroupDriver `systemd` |
+| Docker | Engine 29.10.0 (API 1.57), containerd v2.4.2, runc 1.5.3; Compose v5.8.0; buildx v0.39.1; packages `5:29.10.0-1~ubuntu.26.04~resolute` from Docker's apt repository |
+| Docker security options | apparmor, seccomp (builtin), cgroupns, no-new-privileges |
+| SSH | `passwordauthentication no`, `permitrootlogin prohibit-password`, `pubkeyauthentication yes`; key login worked on every connection. Already set when checked, so nothing was changed |
+| Host key | The ED25519 key trusted was the one already in the owner's `known_hosts`: `SHA256:COxdhMdZdQOPUjxaG4bV9y6B3Vkz0XOmO2ezDcMpRrg`. The owner compared it with the fingerprint in Hostinger's browser terminal (step 1.3) on 2026-11-23: **it matches** |
+| Other software noticed | Hostinger's Monarx apt source (`monarx.list`). Whether its agent runs was not checked |
+| Firewall, ports, users | Not checked and not changed: they belong to #112 |
+| State after verification | **Returned to its pre-check state, Docker removed** (owner-confirmed, 2026-11-23). The checks were followed by the clean-up in section 3.1, and the owner chose to remove Docker. The host has **no Docker** now: #112 installs it with `provision-host.sh`, and #17 installs only what its spike needs. The Docker rows above record what was verified, not what is installed today |
+
+| Check | Result |
+| --- | --- |
+| `x86_64` | **Pass** |
+| 4 CPUs | **Pass** (`nproc` 4, Docker `CPUs=4`) |
+| About 16 GB memory | **Pass** (15.6 GiB) |
+| `cgroup2fs` | **Pass** |
+| Engine 28+, Compose 2.24+ | **Pass** (29.10.0, v5.8.0) |
+| `docker run --rm hello-world` | **Pass** |
+| Limits print `100000 100000`, `268435456`, `0`, `64`, `Seccomp: 2` | **Pass**, all five as expected |
+| Internal network `Internal=true`, isolated gateway | **Pass** (`{"com.docker.network.bridge.gateway_mode_ipv4":"isolated"}`); the network was removed afterwards |
+| CPU steal near 0 | **Pass while idle**: `st` 0 in all 12 samples over 60 s. Not yet measured under load (section 5) |
+
+The Docker version, limits and network results above stay valid as evidence that this host and kernel support what ADR 0049 needs. A reinstall must show Engine 28+ and Compose 2.24+ again (section 2).
+
+Open items from this record:
+
+- **Measure steal under load** (section 5).
+- **Review the Monarx agent** before learner data reaches the host (ADR 0101).
+
+## 5. Watching CPU steal
+
+The vCPUs are shared with other tenants (ADR 0101). Run `vmstat 5 60` and note the `st` column:
+
+- during the first real media jobs after #112's cutover;
+- next to every #155 performance run (a result without its steal reading does not count);
+- once a week.
+
+| Average `st` under load | Do |
+| --- | --- |
+| up to 5% | Nothing. |
+| above 5% over 5 minutes | Note it in #155 and measure again. |
+| above 10% for an hour, or on most weekly checks | Raise it with Hostinger support, and ask the owner whether to move to a dedicated-CPU plan or another host (ADR 0101). |
+
+## 6. Fitting the stack to 4 vCPUs and 16 GB
+
+`infra/compose/compose.prod.yml` gives `worker-media` `cpus: 2`, `mem_limit: 18g` and `memswap_limit: 18g`. ADR 0049 sized the 18 GiB for two job slots of up to 8 GiB each (`LISTENUP_MEDIA_JOB_MEMORY_MB`, default 8192) plus the worker process. **18 GiB is more than this host's 15.6 GiB, and the host has no swap.** If the media worker really grew to 18 GiB, the kernel's out-of-memory killer would pick from every process on the host, possibly the API or Docker itself, instead of the cgroup stopping the media worker alone.
+
+In #112, create **`/opt/listenup/compose.host.yml`** on the host. `deploy.sh` loads it after `compose.prod.yml` when it exists, and it is never in the repository:
 
 ```yaml
-#cloud-config
-package_update: true
-packages: [git]
-runcmd:
-  - [bash, -c, "git clone --depth 1 https://github.com/abubakar1010/ListenUp.git /root/listenup-src && LISTENUP_DEPLOY_PUBKEY='<RELEASE_PUBLIC_KEY>' bash /root/listenup-src/infra/deploy/provision-host.sh > /var/log/listenup-provision.log 2>&1"]
+# Hostinger KVM 4: 4 vCPU, 15.6 GiB, no swap (ADR 0101, stage-0-host.md section 6).
+services:
+  worker-media:
+    mem_limit: 12g
+    memswap_limit: 12g
 ```
 
-The clone works only while the repository is public. If it is private, leave cloud-init empty and copy `infra/deploy/provision-host.sh` over in step 5.
+Check the merge with `LISTENUP_IMAGE_TAG=r1 docker compose -p listenup --env-file .env -f compose.prod.yml -f compose.host.yml config | grep -A3 'worker-media:' -m1` and the memory lines under it.
 
-If creation fails with "out of host capacity" for every availability domain over a few days, stop and see ADR 0073 (fallback). A third-party retry script exists but is not reviewed or endorsed here.
+Why these values:
 
-## 5. First login and provisioning (5 minutes)
-
-```sh
-ssh -i ~/.ssh/listenup_owner ubuntu@<public ip>
-tail -f /var/log/listenup-provision.log      # if you used cloud-init; ends with the Docker versions
-```
-
-Without cloud-init, copy the script and run it (the default user `ubuntu` has sudo):
-
-```sh
-scp -i ~/.ssh/listenup_owner infra/deploy/provision-host.sh ubuntu@<public ip>:
-ssh -i ~/.ssh/listenup_owner ubuntu@<public ip> \
-  "LISTENUP_DEPLOY_PUBKEY='$(cat ~/.ssh/listenup_release.pub)' sudo -E bash provision-host.sh"
-```
-
-What the script does (read it first: `infra/deploy/provision-host.sh`): installs Docker Engine and the Compose plugin from Docker's apt repository (deploy.md needs Engine 28+ and Compose 2.24+), creates the `deploy` user in the `docker` group with only the release **public** key, turns off password and root SSH, adds a 4 GB swap file, opens ports 80, 443/tcp and 443/udp in the host's iptables (Oracle's Ubuntu image rejects everything but SSH there, in addition to the security list), and enables fail2ban and unattended upgrades. It creates `/opt/listenup`. It does not create `.env` (deploy.md step 9).
-
-**Check.** From your machine, `ssh -i ~/.ssh/listenup_release deploy@<public ip> docker version` prints Client and Server versions; Engine must be 28 or later. Ports: `nc -vz <public ip> 443` fails until Caddy runs, but is **not** "filtered"; test again after the first deploy.
-
-## 6. Record the host facts (2 minutes)
-
-From your machine:
-
-```sh
-scp -i ~/.ssh/listenup_owner infra/deploy/host-facts.sh ubuntu@<public ip>:
-ssh -i ~/.ssh/listenup_owner ubuntu@<public ip> bash host-facts.sh
-```
-
-It prints the date, architecture, OS, kernel, **CPU model, cores, threads per core, memory, swap, disk**, cgroup version (the deploy rehearsal ran on cgroup v1; this host should be v2), Docker and Compose versions, and the Arm CPU feature flags. It reads nothing secret. Paste the output into the table below in a pull request (or a comment on #16), with these two extra checks:
-
-```sh
-docker run --rm --platform linux/arm64 python:3.12-slim python -c "import platform; print(platform.machine())"   # aarch64
-for i in python:3.12-slim node:22-alpine caddy:2.10.2-alpine haproxy:3.2.4-alpine; do
-  echo "$i: $(docker buildx imagetools inspect "$i" | grep -c 'linux/arm64')"; done   # each must be 1 or more
-```
-
-| Fact | Value |
-| --- | --- |
-| Date, UTC | _to fill_ |
-| Cloud, region, availability domain, shape | _Oracle, ?, ?, VM.Standard.A1.Flex_ |
-| Architecture, OS, kernel | _to fill_ |
-| CPU model, cores, threads per core | _to fill_ |
-| Memory, swap | _to fill_ (expect 12 GiB) |
-| Disk (root total, free) | _to fill_ (expect about 100 GB) |
-| cgroup, Docker, Compose | _to fill_ |
-| `arm64` manifests for the four base images | _to fill_ |
-
-## 7. Give the GitHub deploy workflow access (5 minutes)
-
-Settings → Environments → **production** (create it; optionally add yourself as required reviewer). Add:
-
-| Kind | Name | Value |
+| | Value | Reason |
 | --- | --- | --- |
-| Secret | `DEPLOY_HOST` | the VM's public IP or DNS name |
-| Secret | `DEPLOY_USER` | `deploy` |
-| Secret | `DEPLOY_SSH_KEY` | the **private** key file `~/.ssh/listenup_release` (the whole file, as the secret value) |
-| Secret | `DEPLOY_SSH_KNOWN_HOSTS` | the output of `ssh-keyscan -t ed25519 <public ip>`. First check its fingerprint (`ssh-keygen -lf` on that line) equals `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` run on the VM over your own login |
-| Variable | `LISTENUP_PUBLIC_URL` | `https://<domain>` once DNS exists |
+| `worker-media` CPU | `cpus: 2`, unchanged | Half the 4 vCPUs. The API, default worker, Caddy, backups and the OS keep the other 2. Matches System Design 5.2 (fixed threads, no oversubscription). |
+| `worker-media` memory | **12 GiB** (`mem_limit` and `memswap_limit` equal, so it never swaps) | ADR 0034 measured about 2.8 GB per media process at its peak (`small.en` plus the aligner), about 5.6 GB for two, so 12 GiB leaves room for ClamAV scans and conversions. It leaves about 3.6 GiB for the OS and Docker (0.8 GiB used on the idle host) and the small containers: Caddy, the API, the default worker, the signature updater, the relay and the backup job. |
+| Job limit `LISTENUP_MEDIA_JOB_MEMORY_MB` | 8192, unchanged | It sets each job's address-space limit (`RLIMIT_AS`) as well as its RSS limit, and the real speech adapters were validated at 8 GiB. Lowering it could break them. Two jobs both near 8 GiB would now hit the container's 12 GiB first, and the cgroup stops the media worker alone, not the rest of the host. |
+| Swap | none added here | Out of scope (#112). If `provision-host.sh` later adds its 4 GB swap file, the media worker still never swaps (`memswap_limit` = `mem_limit`), and the other containers gain a cushion. |
 
-Do **not** set `LISTENUP_DEPLOY_ENABLED` to `true` yet: the images are amd64 only (ADR 0073 follow-up 1, [#231](https://github.com/abubakar1010/ListenUp/issues/231)) and the database, storage, SMTP and DNS steps of [deploy.md](deploy.md) come first. Test the SSH access by hand with the release key (step 5's check) and delete the private key from your machine once it is in GitHub, or keep it in a password manager. Rotation: deploy.md, "Secrets and their rotation".
+These are starting values. #112 records the real peak with `docker stats --no-stream` while media jobs run, and adjusts the override. Change `compose.prod.yml` itself only by a pull request that also updates ADR 0049 and `tests/unit/test_compose_prod.py`.
 
-## 8. Run the benchmarks on this VM (outside this runbook's 30 minutes)
+## 7. Hand-off to deploy.md (#112)
 
-On the VM, as `deploy`, with the repository checked out (`git clone` over HTTPS):
+The host is ready for [deploy.md](deploy.md)'s first-time setup:
 
-1. Build the media image natively for arm64: `docker build -f infra/docker/backend.Dockerfile --target worker-media -t listenup-worker-media:arm64-test .`. **Expect the `praat-parselmouth` step to compile from source** (no Arm wheel exists); if it fails because CMake or a C++ compiler is missing, that confirms ADR 0073 follow-up 2, and the build output goes in the record. Report how long it took.
-2. Use a `compose.host.yml`-style override of `mem_limit: 7g` and `memswap_limit: 9g` for `worker-media` (the file's 18g is more than the VM has) and run one media process of 2 threads. Record the peak resident memory (`docker stats`).
-3. Run B1 to B4 per `docs/spikes/` and compare per-core-second numbers with ADR 0034's. Run B5 on a 4-vCPU trial-credit VM instead (ADR 0073, decision 3).
-4. Weekly: `docker stats --no-stream` and `uptime`. Oracle may reclaim a VM whose CPU (95th percentile), network and memory are **all** below 20% for 7 days (checked 2026-10-27); a loaded speech model keeps memory above 20% but CPU is idle between runs. If you see a reclaim notice, tell the team; do not add a fake load generator.
+- **Step 1** (VM and Docker) is done and recorded above.
+- **Steps 2 onwards are #112's work:**
+  - the firewall (section 1.5);
+  - the `deploy` user and the release key; `infra/deploy/provision-host.sh` covers this, so read it first;
+  - DNS, the managed database, storage and SMTP;
+  - the registry login and `.env`;
+  - `compose.host.yml` (section 6);
+  - GitHub's `production` environment, and the first deploy.
 
-## 9. Finish the spike
-
-1. Open a pull request that fills the table in step 6 and changes ADR 0073's status to **Accepted** (or a new ADR if the fallback was used). Link it to #16 (`Refs #16`).
-2. Close #16 when the acceptance criteria hold: a VM with Docker is reachable by the team and documented here, and the ADR records the host, its limits on the date, and the fallback.
-3. Check the Arm follow-ups [#231](https://github.com/abubakar1010/ListenUp/issues/231), [#232](https://github.com/abubakar1010/ListenUp/issues/232), [#233](https://github.com/abubakar1010/ListenUp/issues/233) and [#234](https://github.com/abubakar1010/ListenUp/issues/234) are done or consciously deferred before the live cutover (#112).
+Do not run them as part of #16.
 
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 | --- | --- |
-| "Out of host capacity" | Try another availability domain; retry later; see ADR 0073 fallback 1. |
-| SSH works, ports 80/443 time out | The security list (step 3) or host iptables (`sudo iptables -S INPUT`) is missing the rule. |
-| `permission denied` for `docker` | You are not in the `docker` group yet: log out and in, or use the `deploy` user. |
-| `exec format error` on a pulled image | The image is amd64 only: ADR 0073 follow-up 1 ([#231](https://github.com/abubakar1010/ListenUp/issues/231)). |
-| The instance was stopped by Oracle | Idle or over-limit reclaim; check that total A1 is 2 OCPUs and 12 GB and read ADR 0073. |
+| `Host key verification failed` | The host key changed: an OS reinstall in hPanel, or someone in between. Compare with the browser terminal (step 1.3) before you replace the `known_hosts` line. |
+| SSH works, ports 80/443 time out | hPanel's firewall (step 1.5) or the host's own iptables is missing the rule. |
+| `permission denied` for `docker` | You are not root or in the `docker` group; use the `deploy` user after #112. |
+| A container is killed with exit code 137 | Out of memory: check `docker stats` and section 6. |
+| Jobs slower than the benchmarks | Check the steal in section 5 before tuning anything. |
