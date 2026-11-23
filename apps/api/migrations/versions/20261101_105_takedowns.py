@@ -43,6 +43,9 @@ ALTER TABLE content.media_objects
     CHECK ((status = 'removed') = (takedown_id IS NOT NULL));
 CREATE INDEX media_objects_takedown_idx ON content.media_objects (takedown_id)
   WHERE takedown_id IS NOT NULL;
+-- A takedown finds every learner's copy by the hash in `upload:<user id>:<sha256>`.
+CREATE INDEX media_objects_upload_hash_idx
+  ON content.media_objects (split_part(fingerprint, ':', 3)) WHERE source = 'upload';
 """)
 
 
@@ -54,6 +57,7 @@ DO $$ BEGIN
   RAISE EXCEPTION 'Takedowns are recorded; keep this revision (docs/runbooks/takedowns.md)';
  END IF;
 END $$;
+DROP INDEX content.media_objects_upload_hash_idx;
 DROP INDEX content.media_objects_takedown_idx;
 ALTER TABLE content.media_objects
   DROP CONSTRAINT media_objects_removed_by_takedown,

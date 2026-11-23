@@ -53,6 +53,12 @@ class MediaObject(Base):
             "takedown_id",
             postgresql_where=text("takedown_id IS NOT NULL"),
         ),
+        # A takedown finds every learner's copy of a file by its hash (ADR 0098).
+        Index(
+            "media_objects_upload_hash_idx",
+            func.split_part(text("fingerprint"), ":", 3),
+            postgresql_where=text("source = 'upload'"),
+        ),
         Index(
             "media_objects_uploader_idx",
             "uploaded_by",

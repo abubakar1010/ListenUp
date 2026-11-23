@@ -753,6 +753,19 @@ RemovalGrounds = takedown.Grounds
 source_fingerprint = takedown.source_fingerprint
 
 
+# Every learner's copy of one file: a hashed upload's fingerprint is
+# `upload:<user id>:<sha256>` (ADR 0020), so its third part is the hash, which
+# `media_objects_upload_hash_idx` indexes. A provisional one has `pending` there.
+REMOVE_COPIES_SQL = """
+UPDATE content.media_objects
+   SET status = 'removed', takedown_id = :takedown, stage = NULL, error_code = NULL,
+       playback_key = NULL, peaks_key = NULL, video_key = NULL, updated_at = now()
+ WHERE source = 'upload' AND takedown_id IS NULL
+   AND split_part(fingerprint, ':', 3) = :sha
+RETURNING id
+"""
+
+
 @dataclass(frozen=True)
 class RemovedMedia:
     """A media object a takedown removed, and where its files are."""
@@ -771,19 +784,7 @@ async def remove_taken_down_media(
     transaction commits. Returns the ids of every media object this takedown removed,
     in this run or an earlier one; the files are deleted afterwards."""
     sha = fingerprint.removeprefix("upload:")
-    newly = (
-        await db.scalars(
-            text("""
-        UPDATE content.media_objects
-           SET status = 'removed', takedown_id = :takedown, stage = NULL, error_code = NULL,
-               playback_key = NULL, peaks_key = NULL, video_key = NULL, updated_at = now()
-         WHERE source = 'upload' AND takedown_id IS NULL
-           AND fingerprint LIKE 'upload:%:' || :sha
-        RETURNING id
-        """),
-            {"takedown": takedown_id, "sha": sha},
-        )
-    ).all()
+    newly = (await db.scalars(text(REMOVE_COPIES_SQL), {"takedown": takedown_id, "sha": sha})).all()
     for media_id in newly:
         for learner, content_id in await repository.media_content_owners(db, media_id):
             await publish(db, learner, EventType.CONTENT_READY, content_id)

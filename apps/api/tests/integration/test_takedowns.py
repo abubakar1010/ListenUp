@@ -609,3 +609,26 @@ def test_a_conversion_run_again_after_the_removal_stops_quietly(
     row = media_row(migrated_url, added.media_id)
     assert row is not None
     assert (row["status"], row["error_code"], row["playback_key"]) == ("removed", None, None)
+
+
+def test_every_copy_of_a_file_is_found_through_an_index(migrated_url: str) -> None:
+    """The barrier finds copies by hash with an index, not by scanning every upload."""
+    from sqlalchemy import create_engine, text
+
+    from listenup.modules.content import service as content
+
+    engine = create_engine(conninfo_to_url(migrated_url))
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SET LOCAL enable_seqscan = off"))
+            plan = "\n".join(
+                row[0]
+                for row in conn.execute(
+                    text("EXPLAIN " + content.REMOVE_COPIES_SQL),
+                    {"takedown": uuid.uuid4(), "sha": SHA},
+                )
+            )
+            conn.rollback()
+    finally:
+        engine.dispose()
+    assert "media_objects_upload_hash_idx" in plan, plan
