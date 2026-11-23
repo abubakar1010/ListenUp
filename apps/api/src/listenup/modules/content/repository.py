@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from listenup.modules.content.domain import takedown
+
 
 @dataclass(frozen=True)
 class UploadRow:
@@ -483,6 +485,7 @@ class ContentDetailRow:
     error_code: str | None
     stage: str | None
     queue_position: int | None
+    removal_grounds: str | None  # why a takedown removed it (#105)
 
 
 async def get_content_detail(
@@ -495,10 +498,11 @@ async def get_content_detail(
             SELECT c.id, c.title, m.source, m.status, m.duration_ms, c.created_at,
                    m.id, m.has_video, c.keep_video, m.error_code, """
                 + _STAGE_COLUMNS
-                + """
+                + """, t.grounds
               FROM content.contents c
               JOIN content.media_objects m ON m.id = c.media_object_id
               LEFT JOIN content.uploads u ON u.content_id = c.id
+              LEFT JOIN ops.takedowns t ON t.id = m.takedown_id
              WHERE c.id = :id AND c.user_id = :learner AND c.deleting_at IS NULL
             """
             ),
@@ -546,3 +550,13 @@ async def learner_content_ids_for_media(
         {"media_id": media_id, "learner": learner},
     )
     return [row.id for row in rows]
+
+
+async def source_taken_down(session: AsyncSession, sha256: str) -> bool:
+    """Whether a takedown names the uploaded file with this hash (#105, ADR 0098)."""
+    return bool(
+        await session.scalar(
+            text("SELECT EXISTS (SELECT 1 FROM ops.takedowns WHERE fingerprint = :fp)"),
+            {"fp": takedown.upload_fingerprint(sha256)},
+        )
+    )

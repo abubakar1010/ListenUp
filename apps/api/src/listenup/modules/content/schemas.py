@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from listenup.modules.content.domain import takedown
 from listenup.modules.content.domain.files import MAX_FILENAME_LENGTH, MAX_TITLE_LENGTH
 
 
@@ -59,7 +60,8 @@ class ConfirmUpload(BaseModel):
 
 
 ContentSource = Literal["upload", "youtube"]
-MediaStatus = Literal["pending", "downloading", "playable", "failed", "expired"]
+MediaStatus = Literal["pending", "downloading", "playable", "failed", "expired", "removed"]
+RemovalGrounds = takedown.Grounds  # one list of grounds, in the domain (ADR 0098)
 IntakeStage = Literal["queued", "waiting", "downloading", "checking", "converting", "saving"]
 
 
@@ -89,6 +91,13 @@ class ContentList(BaseModel):
     next_cursor: str | None = Field(description="Pass as `cursor` for the next page")
 
 
+class Removal(BaseModel):
+    """A takedown removed the clip (#105). Its sessions, marks and cards are kept."""
+
+    grounds: RemovalGrounds
+    message: str = Field(description="Why, in plain words, as the learner reads it")
+
+
 class ContentDetail(ContentItem):
     """One item, with what its page needs to show and play it."""
 
@@ -97,6 +106,10 @@ class ContentDetail(ContentItem):
     keep_video: bool
     error_code: str | None = Field(description="Why processing failed; null unless failed")
     error_detail: str | None = Field(description="The reason, as the learner reads it")
+    removal: Removal | None = Field(
+        default=None,
+        description="Why the clip was removed after a takedown; null unless `removed`",
+    )
     media_url: str | None = Field(
         description="Play from here (redirects to a signed URL); null until playable"
     )

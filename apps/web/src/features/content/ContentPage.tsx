@@ -11,6 +11,7 @@ import { PassagePlayerControls } from '../media/PassagePlayerControls';
 import { usePassagePlayer } from '../media/usePassagePlayer';
 import { usePlayerKeys } from '../media/usePlayerKeys';
 import { stageSentence } from './intakeStatus';
+import { RemovedNotice } from './RemovedNotice';
 import { isProcessing, useContent, type ContentDetail } from './useContent';
 
 const PAGE_CLASS =
@@ -108,6 +109,9 @@ function Clip({ item }: { item: ContentDetail }) {
 
 /** Announced politely, so a screen reader hears when processing finishes. */
 function ClipStatus({ item }: { item: ContentDetail }) {
+  if (item.status === 'removed') {
+    return <RemovedNotice item={item} />;
+  }
   if (item.status === 'failed') {
     return (
       <div

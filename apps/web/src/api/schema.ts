@@ -45,6 +45,28 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/admin/takedowns': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Record Takedown
+     * @description Record a takedown (SRS 2.2, #105). A background job removes the file and its
+     *     playback files for every learner who has it, keeps their sessions, marks and cards,
+     *     tells them why, and intake refuses the file afterwards.
+     */
+    post: operations['record_takedown_api_v1_admin_takedowns_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/admin/usage': {
     parameters: {
       query?: never;
@@ -1870,6 +1892,8 @@ export interface components {
        * @description For a `queued` item: 1 when it is the next of the learner's clips to start
        */
       queue_position?: number | null;
+      /** @description Why the clip was removed after a takedown; null unless `removed` */
+      removal?: components['schemas']['Removal'] | null;
       /**
        * Source
        * @enum {string}
@@ -1884,7 +1908,7 @@ export interface components {
        * Status
        * @enum {string}
        */
-      status: 'pending' | 'downloading' | 'playable' | 'failed' | 'expired';
+      status: 'pending' | 'downloading' | 'playable' | 'failed' | 'expired' | 'removed';
       /** Title */
       title: string;
     };
@@ -1921,7 +1945,7 @@ export interface components {
        * Status
        * @enum {string}
        */
-      status: 'pending' | 'downloading' | 'playable' | 'failed' | 'expired';
+      status: 'pending' | 'downloading' | 'playable' | 'failed' | 'expired' | 'removed';
       /** Title */
       title: string;
     };
@@ -2519,7 +2543,7 @@ export interface components {
        * @description Processing status of the clip's media
        * @enum {string}
        */
-      status: 'pending' | 'downloading' | 'playable' | 'failed' | 'expired';
+      status: 'pending' | 'downloading' | 'playable' | 'failed' | 'expired' | 'removed';
       /** Title */
       title: string;
     };
@@ -2827,6 +2851,22 @@ export interface components {
        * @description The terms of service version the learner accepted (#104); it must be the current one from GET /auth/consent-versions.
        */
       terms_version?: string | null;
+    };
+    /**
+     * Removal
+     * @description A takedown removed the clip (#105). Its sessions, marks and cards are kept.
+     */
+    Removal: {
+      /**
+       * Grounds
+       * @enum {string}
+       */
+      grounds: 'copyright' | 'other_rights' | 'unlawful';
+      /**
+       * Message
+       * @description Why, in plain words, as the learner reads it
+       */
+      message: string;
     };
     /** RestoreGoogle */
     RestoreGoogle: {
@@ -3225,6 +3265,50 @@ export interface components {
        */
       version: number;
     };
+    /** Takedown */
+    Takedown: {
+      /**
+       * Actioned At
+       * @description When every learner's copy was removed; null while the job runs
+       */
+      actioned_at: string | null;
+      /** Fingerprint */
+      fingerprint: string;
+      /**
+       * Grounds
+       * @enum {string}
+       */
+      grounds: 'copyright' | 'other_rights' | 'unlawful';
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Received At
+       * Format: date-time
+       */
+      received_at: string;
+    };
+    /** TakedownRequest */
+    TakedownRequest: {
+      /**
+       * Fingerprint
+       * @description The taken-down source: `upload:<sha256>`, the SHA-256 in hex of the file the rights holder identified (`sha256sum`). YouTube links follow with #38
+       */
+      fingerprint: string;
+      /**
+       * Grounds
+       * @description Why, as affected learners are told: copyright, other rights or the law
+       * @enum {string}
+       */
+      grounds: 'copyright' | 'other_rights' | 'unlawful';
+      /**
+       * Reason
+       * @description The administrator's note on the notice. Never shown to a learner
+       */
+      reason: string;
+    };
     /** TranscriptLine */
     TranscriptLine: {
       /** End Ms */
@@ -3445,6 +3529,56 @@ export interface operations {
         content?: never;
       };
       /** @description The same work is already queued (`job_already_queued`) */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  record_takedown_api_v1_admin_takedowns_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Retry-safe key for this submission */
+        'Idempotency-Key'?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TakedownRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Takedown'];
+        };
+      };
+      /** @description Not an administrator (`not_found`) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description This source is already taken down (`takedown_exists`) */
       409: {
         headers: {
           [name: string]: unknown;
@@ -5180,6 +5314,13 @@ export interface operations {
         };
         content?: never;
       };
+      /** @description Removed after a takedown (`media_removed`, #105) */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description Validation Error */
       422: {
         headers: {
@@ -5218,6 +5359,13 @@ export interface operations {
       };
       /** @description Not playable yet (`media_not_ready`) or blocked by an unfinished Blind listen (`blind_in_progress`) */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Removed after a takedown (`media_removed`, #105) */
+      410: {
         headers: {
           [name: string]: unknown;
         };

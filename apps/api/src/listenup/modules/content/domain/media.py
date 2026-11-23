@@ -10,6 +10,8 @@ from array import array
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from listenup.modules.content.domain.takedown import REFUSED_MESSAGE
+
 # C2: every passage is 30 s to 15 min. A clip shorter than the shortest passage can
 # never be practised; a longer clip is fine, since the learner picks a passage in it.
 MIN_CLIP_MS = 30_000
@@ -55,6 +57,8 @@ FAILURE_MESSAGES: dict[str, str] = {
     "conversion_failed": (
         "We could not convert this file; it may be damaged. Try another copy of it."
     ),
+    # A takedown names this file (#105, ADR 0098).
+    "source_taken_down": REFUSED_MESSAGE,
     "processing_failed": (
         "Something went wrong on our side while we prepared this clip, and retrying did not "
         "help. Add the file again; if it fails again, try another copy of it."

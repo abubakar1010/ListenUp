@@ -365,6 +365,23 @@ test('a clip that is still being prepared cannot start a plan yet', async () => 
   expect(screen.queryByRole('button', { name: 'Start plan' })).not.toBeInTheDocument();
 });
 
+test('a clip removed after a takedown cannot start a plan (#105)', async () => {
+  mockRoutes({
+    'GET /contents/clip-1': jsonResponse(
+      200,
+      clip({ status: 'removed', media_url: null, peaks_url: null }),
+    ),
+  });
+  renderPage();
+
+  expect(
+    await screen.findByText(
+      "This clip was removed from ListenUp, so it can't be practised any more.",
+    ),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Start plan' })).not.toBeInTheDocument();
+});
+
 test('a refusal is shown, and a retry of the same plan reuses its Idempotency-Key', async () => {
   let posts = 0;
   const { calls } = mockRoutes({

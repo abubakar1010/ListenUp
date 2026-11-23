@@ -124,7 +124,9 @@ test('Dictation opens with the player, one text area and the saved draft', async
   expect(screen.getAllByText('Draft saved').length).toBeGreaterThan(0);
   expect(screen.getByText('spell', { exact: false })).toHaveTextContent('4 words');
   const requests = calls.filter((call) => call.path !== '/health'); // the CSRF cookie
-  expect(requests.map((call) => `${call.method} ${call.path}`)).toEqual([
+  // The clip check (#105) runs beside the step's own requests, in no fixed order.
+  expect(requests.map((call) => `${call.method} ${call.path}`).sort()).toEqual([
+    `GET /contents/${SESSION.content_id}`,
     `GET /sessions/${SESSION.id}`,
     `POST ${ATTEMPT_PATH}`,
   ]);

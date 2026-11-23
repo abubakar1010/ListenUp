@@ -461,6 +461,8 @@ REGISTRY: dict[tuple[str, str], Entry] = {
     ("GET", "/api/v1/admin/usage"): Admin(),
     ("GET", "/api/v1/admin/jobs"): Admin(),
     ("POST", "/api/v1/admin/jobs/{job_id}/retry"): Admin(params=lambda w: {"job_id": 1}),
+    # A takedown removes a file for every learner (#105), so no learner may record one.
+    ("POST", "/api/v1/admin/takedowns"): Admin(),
 }
 
 REGISTRY[("DELETE", "/api/v1/contents/{content_id}")] = Owned(

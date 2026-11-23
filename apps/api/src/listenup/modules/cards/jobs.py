@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from listenup.modules.cards import audio, repository, writes
 from listenup.modules.content import service as content
@@ -40,6 +41,29 @@ async def give_up(
             await publish(db, learner, EventType.CARD_AUDIO_UPDATED, row.session_id)
 
 
+async def _clip_removed(db: AsyncSession, learner: uuid.UUID, content_id: uuid.UUID) -> bool:
+    return (await content.get_content(db, learner, content_id)).status == "removed"
+
+
+async def _withdraw(
+    db: AsyncSession,
+    learner: uuid.UUID,
+    card: uuid.UUID,
+    generation: uuid.UUID | None,
+    session_id: uuid.UUID,
+) -> None:
+    changed = await db.execute(
+        text(
+            "UPDATE practice.cards SET audio_status='unavailable', snippet_key=NULL, "
+            "audio_generation=NULL WHERE id=:id AND audio_status='pending' "
+            "AND audio_generation IS NOT DISTINCT FROM :generation RETURNING id"
+        ),
+        {"id": card, "generation": generation},
+    )
+    if changed.first() is not None:
+        await publish(db, learner, EventType.CARD_AUDIO_UPDATED, session_id)
+
+
 @job(Lane.INTAKE, GENERATE, on_give_up=give_up)
 async def generate_snippet(
     deps: JobDeps, *, card_id: str, user_id: str, generation_id: str | None = None
@@ -69,6 +93,13 @@ async def _generate_snippet(
         except ProblemError as error:
             if error.code not in ("content_not_ready", "content_not_found"):
                 raise
+            if error.code == "content_not_ready" and await _clip_removed(
+                db, learner, row.content_id
+            ):
+                # A takedown removed the clip (#105, ADR 0098): no snippet can ever be
+                # cut, so the audio is unavailable, like the cards the takedown found.
+                await _withdraw(db, learner, card, generation, row.session_id)
+                return
             raise PermanentError("Source playback is no longer available.") from error
         span = row.snippet_span
     if span is None:

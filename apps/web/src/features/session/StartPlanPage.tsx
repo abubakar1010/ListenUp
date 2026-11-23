@@ -84,6 +84,7 @@ const NOT_READY: Record<Exclude<ContentDetail['status'], 'playable'>, string> = 
   downloading: 'This clip is still downloading. You can start a plan as soon as it is ready.',
   failed: 'This clip could not be processed, so it cannot be practised. Add the file again.',
   expired: 'This clip needs downloading again before you can practise it.',
+  removed: "This clip was removed from ListenUp, so it can't be practised any more.",
 };
 
 function PlanForm({ clip, durationMs }: { clip: ContentDetail; durationMs: number }) {

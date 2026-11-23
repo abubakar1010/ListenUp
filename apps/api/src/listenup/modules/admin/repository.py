@@ -1,5 +1,7 @@
-"""Reads of the job queue for the admin view (#100, System Design 11.1)."""
+"""Reads of the job queue for the admin view (#100, System Design 11.1), and takedown
+records (#105, ADR 0098)."""
 
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -95,3 +97,96 @@ async def usage_rows(
         .all()
     )
     return daily, quotas
+
+
+# -- Takedowns (#105, ADR 0098) -------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TakedownRow:
+    id: uuid.UUID
+    fingerprint: str
+    grounds: str
+    received_at: datetime
+    actioned_at: datetime | None
+
+
+_TAKEDOWN_COLUMNS = "id, fingerprint, grounds, received_at, actioned_at"
+
+
+async def insert_takedown(
+    session: AsyncSession, takedown_id: uuid.UUID, fingerprint: str, grounds: str, reason: str
+) -> TakedownRow | None:
+    """The new record, or None when this source is already taken down."""
+    row = (
+        await session.execute(
+            text(f"""
+        INSERT INTO ops.takedowns (id, fingerprint, grounds, reason)
+        VALUES (:id, :fingerprint, :grounds, :reason)
+        ON CONFLICT (fingerprint) DO NOTHING
+        RETURNING {_TAKEDOWN_COLUMNS}
+        """),
+            {"id": takedown_id, "fingerprint": fingerprint, "grounds": grounds, "reason": reason},
+        )
+    ).first()
+    return TakedownRow(*row) if row else None
+
+
+async def takedown_by_fingerprint(session: AsyncSession, fingerprint: str) -> TakedownRow | None:
+    row = (
+        await session.execute(
+            text(f"SELECT {_TAKEDOWN_COLUMNS} FROM ops.takedowns WHERE fingerprint = :fp"),
+            {"fp": fingerprint},
+        )
+    ).first()
+    return TakedownRow(*row) if row else None
+
+
+async def takedown(session: AsyncSession, takedown_id: uuid.UUID) -> TakedownRow | None:
+    row = (
+        await session.execute(
+            text(f"SELECT {_TAKEDOWN_COLUMNS} FROM ops.takedowns WHERE id = :id"),
+            {"id": takedown_id},
+        )
+    ).first()
+    return TakedownRow(*row) if row else None
+
+
+async def finish_takedown(
+    session: AsyncSession,
+    takedown_id: uuid.UUID,
+    media_removed: int,
+    learners: int,
+    objects_removed: int,
+) -> dict[str, int]:
+    """Record that the takedown was carried out, with counts only (no learner ids).
+    Objects add up over runs, since a repeated run finds nothing left to delete."""
+    report: dict[str, int] = (
+        await session.scalar(
+            text("""
+        UPDATE ops.takedowns
+           SET actioned_at = coalesce(actioned_at, now()),
+               report = jsonb_build_object(
+                 'media_removed', CAST(:media AS int),
+                 'learners', CAST(:learners AS int),
+                 'objects_removed',
+                   coalesce((report ->> 'objects_removed')::int, 0) + CAST(:objects AS int))
+         WHERE id = :id
+        RETURNING report
+        """),
+            {
+                "id": takedown_id,
+                "media": media_removed,
+                "learners": learners,
+                "objects": objects_removed,
+            },
+        )
+    ) or {}
+    return report
+
+
+async def unactioned_takedowns(session: AsyncSession) -> list[uuid.UUID]:
+    rows = await session.scalars(
+        text("SELECT id FROM ops.takedowns WHERE actioned_at IS NULL ORDER BY received_at, id")
+    )
+    return list(rows.all())

@@ -260,6 +260,15 @@ function StatusBadge({ item }: { item: LibraryItem }) {
   if (status === 'expired') {
     return <span className={`${BADGE} text-ink-muted`}>Needs downloading again</span>;
   }
+  if (status === 'removed') {
+    // A takedown removed it (#105); the clip's page says why.
+    return (
+      <span className={`${BADGE} border-warning text-warning`}>
+        <AlertIcon className="size-4" />
+        Removed
+      </span>
+    );
+  }
   return (
     <span className={BADGE}>
       <span
