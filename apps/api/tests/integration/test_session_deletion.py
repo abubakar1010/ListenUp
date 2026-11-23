@@ -193,7 +193,7 @@ def test_reconciler_requeues_a_completed_session_manifest_for_late_uploads(
     make_client, migrated_url, storage
 ):
     """A signed PUT issued before the delete can land afterwards: the kept manifest
-    sends the job back, and it removes the late object (ADR 0085, 0092)."""
+    sends the job back, and it removes the late object (ADR 0085, 0100)."""
     from listenup.modules.library import jobs
 
     a = make_client()
@@ -408,7 +408,7 @@ def test_a_cleared_barrier_is_restored_and_the_deletion_still_finishes(
     make_client, migrated_url, storage
 ):
     """After a schema rollback and upgrade the barrier is gone, but the request is
-    still open: the job hides the session again and deletes it (ADR 0092)."""
+    still open: the job hides the session again and deletes it (ADR 0100)."""
     a = make_client()
     world = seed_learner_data(migrated_url, uuid.UUID(learner_id(a)))
     sid = world.sessions["done"]
