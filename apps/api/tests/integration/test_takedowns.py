@@ -587,3 +587,25 @@ def test_a_card_cut_after_the_takedown_has_no_audio_rather_than_a_failure(
             "SELECT audio_status, snippet_key, audio_generation FROM practice.cards WHERE id = %s",
             [mine.seed.card_id],
         ).fetchone() == ("unavailable", None, None)
+
+
+def test_a_conversion_run_again_after_the_removal_stops_quietly(
+    accounts: AdminFactory,  # noqa: F811
+    make_client: ClientFactory,
+    storage: FakeStorage,
+    media: Media,  # noqa: F811
+    migrated_url: str,
+) -> None:
+    """A retried conversion of a removed media object neither converts the file again
+    nor fails as if the original had gone missing."""
+    sha = hashlib.sha256(media.mp3.read_bytes()).hexdigest()
+    client = make_client()
+    added = add_file(client, storage, media.mp3, migrated_url)
+    run_job(migrated_url, added)
+    apply(migrated_url, record(accounts(), fingerprint=f"upload:{sha}"))
+
+    run_job(migrated_url, added)  # no PermanentError
+
+    row = media_row(migrated_url, added.media_id)
+    assert row is not None
+    assert (row["status"], row["error_code"], row["playback_key"]) == ("removed", None, None)

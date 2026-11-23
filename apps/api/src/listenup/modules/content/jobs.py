@@ -129,7 +129,8 @@ async def _convert(
     if state is None:
         logger.info("upload conversion skipped: the item is gone", extra={"media": str(media_id)})
         return
-    if state.status in ("playable", "failed"):
+    if state.status in ("playable", "failed", "removed"):
+        # Settled already; a takedown (#105) deletes a removed clip's files itself.
         await storage.delete(state.source_key)  # a crash may have left it
         return
 
