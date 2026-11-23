@@ -66,8 +66,9 @@ quantization change or shorter learner segment is adopted by this ADR.
   calibration and the remaining learner-grading prerequisites remain in force.
   VAD/window seams and public independent read speech provide no quality waiver.
 - The reusable workflow exposes a benchmark selector through dispatch and
-  `workflow_call`. Its benchmark-path pull-request trigger supplies pre-merge
-  runs while dispatch is unavailable before the file reaches main. Only B3 is
+  `workflow_call`. A path-filtered pull-request trigger supplied the three
+  pre-merge runs, while dispatch was unavailable before the file reached main;
+  it was removed before merge so later pull requests do not start B3. Only B3 is
   implemented here; #22/#232/#233 can extend the registry in their own work.
 - Public audio and model weights are fetched at runtime and never committed.
   Benchmark result artifacts are JSON; initial runs also contain automatic

@@ -1,4 +1,4 @@
-name: Speech benchmarks (E4)
+name: Speech benchmark B3 (E4)
 on:
   workflow_dispatch:
     inputs:
@@ -13,11 +13,6 @@ on:
       benchmark:
         required: true
         type: string
-  pull_request:
-    paths:
-      - .github/workflows/benchmarks.yml
-      - docs/spikes/shadow21/**
-      - docs/spikes/shadow20/**
 permissions:
   contents: read
 jobs:

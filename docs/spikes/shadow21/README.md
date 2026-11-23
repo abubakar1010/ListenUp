@@ -5,9 +5,9 @@ CI-runner evidence (E4), authorized by [owner exception E4](https://github.com/a
 The reusable `benchmarks.yml` accepts `benchmark: b3` through dispatch or
 `workflow_call`. Extend the selector/entrypoint for #22, #232 and #233 rather than
 silently running B3 for unknown names. No other benchmark is implemented here.
-The path-filtered pull-request trigger permits running this new workflow before
-it exists on main. Each synchronize event is a separate workflow run, not a
-matrix replicate. It runs the PR head SHA and records it in the artifact.
+A path-filtered pull-request trigger ran this workflow before it existed on main
+(each synchronize event was a separate workflow run, not a matrix replicate, and
+recorded the PR head SHA). It was removed before merge; run B3 by dispatch.
 
 Public data/model revisions and hashes come from `../shadow20/fetch.py`.
 The CMU notice in `../shadow20/CMU-NOTICE.txt` applies. Audio is modified by
