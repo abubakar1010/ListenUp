@@ -113,7 +113,9 @@ jobs:
 
   backend:
     name: Backend (lint, types, boundaries, tests)
-    runs-on: ubuntu-latest
+    # Pinned: the backup tests need the PostgreSQL 16 client, which Ubuntu 24.04
+    # ships and ubuntu-latest (26.04, PostgreSQL 18) does not. Move with the server.
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: apps/api
